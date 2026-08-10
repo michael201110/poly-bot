@@ -34,10 +34,13 @@ class RewardConfig:
     checkpoint_bonus: float = 10.0
     finish_bonus: float = 100.0
     crash_penalty: float = -10.0
+    stall_penalty: float = -5.0
     off_track_penalty: float = -1.0
     action_change_penalty: float = -0.002
     max_forward_progress_per_step_m: float = 10.0
     max_reverse_progress_per_step_m: float = 3.0
+    stall_speed_threshold_mps: float = 0.5
+    stall_timeout_s: float = 3.0
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
@@ -90,6 +93,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._previous_progress_m = 0.0
         self._previous_action = Action()
         self._episode_done = True
+        self._stationary_s = 0.0
         self.latest_telemetry: Telemetry | None = None
         self.simulator_capabilities: Mapping[str, Any] = {}
 
@@ -169,6 +173,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._previous_progress_m = transition.telemetry.route_progress_m
         self._previous_action = transition.telemetry.previous_action
         self._episode_done = False
+        self._stationary_s = 0.0
         self.latest_telemetry = transition.telemetry
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
@@ -194,10 +199,18 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if transition.ticks_advanced > self.frame_skip:
             raise ProtocolViolation("simulator advanced more ticks than requested")
 
-        reward, reward_terms = self._reward(transition, decoded_action)
+        dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
+        speed = float(np.linalg.norm(transition.telemetry.local_velocity_mps))
+        if speed < self.reward_config.stall_speed_threshold_mps:
+            self._stationary_s += dt
+        else:
+            self._stationary_s = 0.0
+        stalled = self._stationary_s >= self.reward_config.stall_timeout_s
+
+        reward, reward_terms = self._reward(transition, decoded_action, stalled=stalled)
         self._episode_steps += 1
         events = set(transition.events)
-        terminated = "finish" in events or "crash" in events
+        terminated = "finish" in events or "crash" in events or stalled
         truncated = "time_limit" in events or self._episode_steps >= self.max_episode_steps
         self._episode_done = terminated or truncated
         self._previous_progress_m = transition.telemetry.route_progress_m
@@ -206,11 +219,20 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=reward_terms)
+        if stalled:
+            info["events"] = (*transition.events, "stalled")
+            info["stationary_s"] = self._stationary_s
         if truncated and "time_limit" not in events:
             info["wrapper_time_limit"] = True
         return observation, reward, terminated, truncated, info
 
-    def _reward(self, transition: Transition, action: Action) -> tuple[float, dict[str, float]]:
+    def _reward(
+        self,
+        transition: Transition,
+        action: Action,
+        *,
+        stalled: bool = False,
+    ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
         raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
         progress_delta = float(
@@ -241,6 +263,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "checkpoint": config.checkpoint_bonus * events.count("checkpoint"),
             "finish": config.finish_bonus if "finish" in events else 0.0,
             "crash": config.crash_penalty if "crash" in events else 0.0,
+            "stall": config.stall_penalty if stalled else 0.0,
             "off_track": config.off_track_penalty if "off_track" in events else 0.0,
             "action_change": config.action_change_penalty
             * (

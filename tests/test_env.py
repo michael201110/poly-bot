@@ -76,6 +76,26 @@ def test_wrapper_time_limit_truncates_without_termination() -> None:
         env.close()
 
 
+def test_stationary_car_terminates_after_three_simulated_seconds() -> None:
+    env = make_env(track_id="mock/straight", frame_skip=10, max_episode_steps=100)
+    try:
+        env.reset(seed=0)
+        terminated = truncated = False
+        info = {}
+        while not (terminated or truncated):
+            _, _, terminated, truncated, info = env.step(
+                np.asarray([1, 0, 0], dtype=np.int64)
+            )
+
+        assert terminated
+        assert not truncated
+        assert "stalled" in info["events"]
+        assert info["stationary_s"] >= 3.0
+        assert info["reward_terms"]["stall"] == env.reward_config.stall_penalty
+    finally:
+        env.close()
+
+
 def test_frame_skip_matches_individual_fixed_ticks() -> None:
     held_action = np.asarray([2, 1, 0], dtype=np.int64)
     batched = make_env(track_id="mock/straight", frame_skip=4)
