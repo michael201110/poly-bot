@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -113,6 +114,34 @@ def _episode_summary(
         "progress_m": round(float(info["route_progress_m"]), 3),
         "reward": round(total_reward, 3),
     }
+
+
+def _reset_drive_when_ready(
+    env: PolyTrackEnv,
+    *,
+    seed: int,
+    timeout_s: float,
+) -> tuple[object, dict[str, object]]:
+    """Wait through menu/reference states instead of terminating the driver."""
+
+    deadline = time.monotonic() + timeout_s
+    waiting_for: str | None = None
+    while True:
+        try:
+            return env.reset(seed=seed)
+        except ProtocolViolation as exc:
+            message = str(exc)
+            if not message.startswith(("game_not_ready:", "missing_reference:")):
+                raise
+            if time.monotonic() >= deadline:
+                raise
+            if message != waiting_for:
+                print(
+                    f"Waiting for PolyTrack: {message.split(':', 1)[1].strip()}",
+                    flush=True,
+                )
+                waiting_for = message
+            time.sleep(0.5)
 
 
 def smoke_main(argv: Sequence[str] | None = None) -> int:
@@ -365,7 +394,11 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
         model = ppo_type.load(str(args.model), env=env) if ppo_type is not None else None
         for episode in range(args.episodes):
             episode_seed = args.seed + episode
-            observation, _ = env.reset(seed=episode_seed)
+            observation, _ = _reset_drive_when_ready(
+                env,
+                seed=episode_seed,
+                timeout_s=args.connect_timeout,
+            )
             total_reward = 0.0
             terminated = truncated = False
             info: dict[str, object] = {}

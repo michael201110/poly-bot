@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from polybot import cli
+from polybot.protocol import ProtocolViolation
 
 
 @pytest.mark.parametrize(
@@ -92,6 +93,39 @@ def test_drive_uses_real_game_defaults(
 def test_drive_rejects_stochastic_centerline_policy() -> None:
     with pytest.raises(SystemExit, match="2"):
         cli.drive_main(["--stochastic"])
+
+
+def test_drive_waits_for_race_and_reference(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    attempts = iter(
+        [
+            ProtocolViolation("game_not_ready: enter the race"),
+            ProtocolViolation("missing_reference: load a ghost"),
+            (np.zeros(1, dtype=np.float32), {}),
+        ]
+    )
+
+    class FakeEnvironment:
+        def reset(self, *, seed: int) -> tuple[np.ndarray, dict[str, object]]:
+            assert seed == 7
+            result = next(attempts)
+            if isinstance(result, Exception):
+                raise result
+            return result
+
+    monkeypatch.setattr(cli.time, "sleep", lambda seconds: None)
+    observation, info = cli._reset_drive_when_ready(
+        FakeEnvironment(),  # type: ignore[arg-type]
+        seed=7,
+        timeout_s=30,
+    )
+
+    np.testing.assert_array_equal(observation, np.zeros(1, dtype=np.float32))
+    assert info == {}
+    output = capsys.readouterr().out
+    assert "enter the race" in output
+    assert "load a ghost" in output
 
 
 def test_drive_does_not_expose_an_endpoint_the_mod_cannot_use() -> None:
