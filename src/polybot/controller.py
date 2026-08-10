@@ -15,11 +15,15 @@ class CenterlineController:
         *,
         steering_deadband: float = 0.18,
         steering_sign: int = 1,
+        max_speed_mps: float = 18.0,
     ) -> None:
         if steering_sign not in (-1, 1):
             raise ValueError("steering_sign must be -1 or 1")
+        if max_speed_mps <= 0:
+            raise ValueError("max_speed_mps must be positive")
         self.steering_deadband = steering_deadband
         self.steering_sign = steering_sign
+        self.max_speed_mps = max_speed_mps
 
     def action(self, telemetry: Telemetry) -> Action:
         valid_curvatures = [
@@ -53,7 +57,13 @@ class CenterlineController:
 
         speed = telemetry.local_velocity_mps[2]
         turn_demand = max(abs(pursuit_angle), 8.0 * max_curvature)
-        target_speed = float(np.clip(10.0 / (1.0 + 3.5 * turn_demand), 4.0, 10.0))
+        target_speed = float(
+            np.clip(
+                self.max_speed_mps / (1.0 + 3.5 * turn_demand),
+                min(6.0, self.max_speed_mps),
+                self.max_speed_mps,
+            )
+        )
         unstable = (
             abs(telemetry.heading_error_rad) > 0.45
             or abs(telemetry.lateral_offset_m) > telemetry.track_half_width_m * 0.65

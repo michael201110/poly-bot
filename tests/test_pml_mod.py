@@ -76,11 +76,14 @@ def test_worker_can_start_a_stationary_player_car() -> None:
     assert "targetSimulationTimeFrames: null" in source
 
 
-def test_worker_keeps_display_frames_monotonic_across_native_resets() -> None:
-    source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
+        encoding="utf-8"
+    )
 
-    assert "const visibleFrames = new Map();" in source
-    assert "Math.max(nativeFrame, previousFrame + 1)" in source
+    assert '(0, l.GG)(this, Ue, null, "f"),' in source
+    assert '(0, l.GG)(this, re, new st.A(), "f"),' in source
 
 
 def test_anchor_validator_rejects_missing_or_duplicate_tokens(tmp_path: Path) -> None:

@@ -66,8 +66,9 @@ def test_drive_uses_real_game_defaults(
             created["environment_closed"] = True
 
     class FakeController:
-        def __init__(self, *, steering_sign: int) -> None:
+        def __init__(self, *, steering_sign: int, max_speed_mps: float) -> None:
             created["steering_sign"] = steering_sign
+            created["max_speed_mps"] = max_speed_mps
 
         def policy_action(self, telemetry: object) -> np.ndarray:
             assert telemetry is not None
@@ -89,6 +90,7 @@ def test_drive_uses_real_game_defaults(
     }
     assert created["seed"] == 0
     assert created["steering_sign"] == 1
+    assert created["max_speed_mps"] == 18.0
     np.testing.assert_array_equal(created["action"], [1, 1, 0])
     assert created["environment_closed"] is True
     assert '"finished": true' in capsys.readouterr().out

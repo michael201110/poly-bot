@@ -374,6 +374,12 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
         help="invert the baseline controller if the car steers away from the ghost line",
     )
     parser.add_argument(
+        "--target-speed",
+        type=float,
+        default=18.0,
+        help="maximum baseline-controller speed in metres per second",
+    )
+    parser.add_argument(
         "--stochastic",
         action="store_true",
         help="sample PPO actions instead of using deterministic predictions",
@@ -384,6 +390,8 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--episodes must be positive")
     if args.stochastic and args.model is None:
         parser.error("--stochastic requires --model")
+    if args.target_speed <= 0:
+        parser.error("--target-speed must be positive")
     _validate_websocket_arguments(parser, args)
 
     ppo_type = None
@@ -408,7 +416,10 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     except BaseException:
         transport.close()
         raise
-    controller = CenterlineController(steering_sign=args.steering_sign)
+    controller = CenterlineController(
+        steering_sign=args.steering_sign,
+        max_speed_mps=args.target_speed,
+    )
     summaries: list[dict[str, object]] = []
     try:
         model = ppo_type.load(str(args.model), env=env) if ppo_type is not None else None

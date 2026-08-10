@@ -13,6 +13,7 @@ PINNED_MAIN_SHA256 = "e5687766fde6f5bf483bb316ea5c6d55aa9b9edc64e55cf5e527807a81
 WORKER_TOKENS = ("const r = i.data;",)
 MAIN_TOKENS = (
     "this.setCarState(e, !1);",
+    '(0, l.GG)(this, Ue, null, "f"),',
     "submitLeaderboard(e, t, n, i, r, a, s, o) {",
     "submitUserProfile(e, t, n, i) {",
     "verifyRecordings(e, t, n, i, r) {",
