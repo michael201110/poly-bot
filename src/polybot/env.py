@@ -40,7 +40,7 @@ class RewardConfig:
     action_change_penalty: float = -0.002
     max_forward_progress_per_step_m: float = 10.0
     max_reverse_progress_per_step_m: float = 3.0
-    stall_speed_threshold_mps: float = 0.5
+    stall_speed_threshold_mps: float = 5.0
     stall_timeout_s: float = 3.0
     off_track_lateral_ratio: float = 1.05
     off_track_heading_ratio: float = 0.80

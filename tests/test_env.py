@@ -98,6 +98,13 @@ def test_stationary_car_terminates_after_three_simulated_seconds() -> None:
         env.close()
 
 
+def test_stall_threshold_is_five_metres_per_second() -> None:
+    config = RewardConfig()
+
+    assert config.stall_speed_threshold_mps == 5.0
+    assert config.stall_timeout_s == 3.0
+
+
 def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> None:
     transport = MockSimulatorTransport()
     env = PolyTrackEnv(
