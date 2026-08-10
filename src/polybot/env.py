@@ -34,7 +34,7 @@ class RewardConfig:
     barrier_proximity_penalty_per_m: float = -0.20
     barrier_proximity_start_ratio: float = 0.55
     airborne_spin_penalty_per_rad: float = -0.30
-    airborne_spin_deadzone_radps: float = 1.50
+    airborne_spin_deadzone_radps: float = 0.0872665  # 5 degrees per second
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 10.0
     checkpoint_target_s: float = 30.0
