@@ -43,6 +43,7 @@ export function polybotWorkerInjection() {
         const startMessages = new Map();
         const localGhostMessages = new Map();
         const remoteGhostMessages = new Map();
+        const visibleFrames = new Map();
         const workerRelayId = `${Date.now()}-${Math.random()}`;
         let ghostRelay = null;
 
@@ -693,6 +694,16 @@ export function polybotWorkerInjection() {
             // still receives the player result, but PolyTrack cannot submit an
             // automated finish.
             const visibleBytes = new Uint8Array(visibleBuffer);
+            const visibleView = new DataView(visibleBuffer);
+            const carId = visibleView.getUint32(0, true);
+            const nativeFrame =
+              visibleBytes[4] | (visibleBytes[5] << 8) | (visibleBytes[6] << 16);
+            const previousFrame = visibleFrames.get(carId) ?? -1;
+            const visibleFrame = Math.max(nativeFrame, previousFrame + 1);
+            visibleFrames.set(carId, visibleFrame);
+            visibleBytes[4] = visibleFrame & 255;
+            visibleBytes[5] = (visibleFrame >> 8) & 255;
+            visibleBytes[6] = (visibleFrame >> 16) & 255;
             if (visibleBytes[11] & 2) {
               // A finished packet has a three-byte finishFrames field directly
               // after flags. Removing only the flag would misalign every later
