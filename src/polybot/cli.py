@@ -403,6 +403,7 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
             terminated = truncated = False
             info: dict[str, object] = {}
             while not (terminated or truncated):
+                step_started = time.monotonic()
                 if model is not None:
                     action, _ = model.predict(
                         observation,
@@ -414,6 +415,12 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
                     action = controller.policy_action(telemetry)
                 observation, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
+                # The worker is intentionally unthrottled for training. A
+                # visible drive should instead track simulation time so the
+                # car and camera do not appear to run at CPU speed.
+                remaining = args.frame_skip * 0.001 - (time.monotonic() - step_started)
+                if remaining > 0:
+                    time.sleep(remaining)
             summaries.append(_episode_summary(episode, episode_seed, info, total_reward))
     except ProtocolViolation as exc:
         print(f"PolyBot stopped: {exc}", file=sys.stderr)
