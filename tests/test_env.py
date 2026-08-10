@@ -7,7 +7,12 @@ import pytest
 from gymnasium.utils.env_checker import check_env
 
 from polybot.controller import CenterlineController
-from polybot.env import PolyTrackEnv, RewardConfig, _has_off_track_evidence
+from polybot.env import (
+    PolyTrackEnv,
+    RewardConfig,
+    _checkpoint_reward,
+    _has_off_track_evidence,
+)
 from polybot.mock import MockSimulatorTransport
 
 
@@ -60,6 +65,22 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
         assert env.reward_config.checkpoint_bonus == 10.0
         assert env.reward_config.finish_bonus > env.reward_config.checkpoint_bonus
         assert env.reward_config.unsafe_speed_penalty_per_m < 0
+    finally:
+        env.close()
+
+
+def test_faster_checkpoint_arrival_receives_more_reward() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        fast = replace(env.latest_telemetry, checkpoint_index=1, elapsed_s=5.0)
+        slow = replace(env.latest_telemetry, checkpoint_index=1, elapsed_s=25.0)
+
+        assert _checkpoint_reward(fast, env.reward_config) > _checkpoint_reward(
+            slow, env.reward_config
+        )
+        assert _checkpoint_reward(slow, env.reward_config) >= 10.0
     finally:
         env.close()
 

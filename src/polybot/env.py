@@ -32,6 +32,8 @@ class RewardConfig:
     on_track_speed_per_m: float = 0.04
     unsafe_speed_penalty_per_m: float = -0.08
     checkpoint_bonus: float = 10.0
+    checkpoint_fast_bonus: float = 10.0
+    checkpoint_target_s: float = 30.0
     finish_bonus: float = 100.0
     crash_penalty: float = -10.0
     stall_penalty: float = -5.0
@@ -63,6 +65,15 @@ def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
         lateral_ratio >= config.off_track_heading_ratio
         and abs(telemetry.heading_error_rad) >= config.off_track_heading_rad
     )
+
+
+def _checkpoint_reward(telemetry: Telemetry, config: RewardConfig) -> float:
+    """Reward each checkpoint, with extra credit for a fast average split."""
+
+    checkpoint_number = max(1, telemetry.checkpoint_index)
+    target_elapsed_s = config.checkpoint_target_s * checkpoint_number
+    pace_factor = float(np.clip(1.0 - telemetry.elapsed_s / target_elapsed_s, 0.0, 1.0))
+    return config.checkpoint_bonus + config.checkpoint_fast_bonus * pace_factor
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
@@ -326,7 +337,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),
-            "checkpoint": config.checkpoint_bonus * events.count("checkpoint"),
+            "checkpoint": _checkpoint_reward(telemetry, config)
+            * events.count("checkpoint"),
             "finish": config.finish_bonus if "finish" in events else 0.0,
             "crash": config.crash_penalty if "crash" in events else 0.0,
             "stall": config.stall_penalty if stalled else 0.0,
