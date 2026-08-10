@@ -29,6 +29,7 @@ dev = [
 polybot-smoke = "polybot.cli:smoke_main"
 polybot-train = "polybot.cli:train_main"
 polybot-eval = "polybot.cli:evaluate_main"
+polybot-drive = "polybot.cli:drive_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

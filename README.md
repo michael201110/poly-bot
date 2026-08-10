@@ -1,22 +1,21 @@
 # poly-bot
 
-An offline reinforcement-learning environment for training an AI to drive in
+A reinforcement-learning environment and local game adapter for training an AI to drive in
 [PolyTrack](https://www.kodub.com/apps/polytrack).
 
 The project is deliberately split into two parts:
 
 - a Python Gymnasium environment, trainer, evaluation tools, and deterministic mock simulator;
-- a small JavaScript bridge that adapts PolyTrack's simulation worker to the versioned protocol.
+- a PolyModLoader mod that manually steps PolyTrack's simulation worker and exposes telemetry over
+  a localhost-only WebSocket connection.
 
 The mock backend is usable before any game files are present. It validates the training loop,
 reward calculation, action encoding, and baseline controller without coupling those components to
 minified game internals.
 
-## Status
-
-The training foundation and bridge contract are implemented. The remaining game-specific task is
-to implement the four methods in `bridge/polytrack_game_api.stub.js` against a local PolyTrack
-desktop build. No leaderboard or multiplayer integration is included.
+The deterministic mock remains useful for testing policy code without starting the game. The real
+adapter targets PolyTrack 0.6.2 through PolyModLoader; leaderboard submissions and multiplayer are
+disabled while the mod is loaded.
 
 ## Quick start
 
@@ -42,20 +41,48 @@ Evaluate a saved policy deterministically:
 polybot-eval models/polybot-ppo --backend mock --episodes 5
 ```
 
-To connect a local game adapter, start the trainer in WebSocket mode and then load the bridge in
-the game:
+## Drive the real game
 
-```powershell
-polybot-train --backend websocket --host 127.0.0.1 --port 8765
+Open [PolyModLoader](https://web.polymodloader.com/) and add this mod URL once:
+
+```text
+https://cdn.polymodloader.com/gh/michael201110/poly-bot/main/pml-mod
 ```
 
-The Python process listens only on localhost by default. See
+Choose `latest`, click **Load**, then **Apply**. In PowerShell, install the command and start it:
+
+```powershell
+python -m pip install -e ".[dev,train]"
+polybot-drive --centerline
+```
+
+Then choose a track in PolyTrack, load a ghost lap, and enter its race. If the race was already
+open, restart it after enabling the mod.
+The v0.1.0 adapter uses that ghost as its route reference. The built-in centreline controller is a
+wiring test; to drive with a trained PPO policy instead, use:
+
+```powershell
+polybot-drive --model models/polybot-ppo
+```
+
+`polybot-drive` defaults to `--track current --frame-skip 10` and listens only on
+`ws://127.0.0.1:8765`. The mod permits read-only ghost downloads but blocks record submissions and
+multiplayer connections.
+
+To train against the real worker instead of driving one episode:
+
+```powershell
+polybot-train --backend websocket --timesteps 1000000 --model-out models/polybot-real
+```
+
+WebSocket training also selects `current` and a 10-tick action repeat automatically. See
 [`docs/game-integration.md`](docs/game-integration.md) for the integration seam and
 [`docs/protocol.md`](docs/protocol.md) for the wire format.
 
 ## Design principles
 
-- **Offline only.** The agent must not submit leaderboard records or automate PolyTrack servers.
+- **Local automation only.** The agent must not submit leaderboard records or automate PolyTrack
+  servers.
 - **Simulation first.** Training uses telemetry and fixed physics steps; pixels can be added later.
 - **Versioned boundary.** Game internals are isolated behind a narrow adapter so PolyTrack updates
   do not require rewriting the trainer.
@@ -67,12 +94,13 @@ The Python process listens only on localhost by default. See
 ```text
 bridge/                 JavaScript bridge and game-adapter template
 docs/                   Protocol and integration notes
+pml-mod/                PolyModLoader package for the real 0.6.2 simulation worker
 src/polybot/            Gymnasium environment, transport, mock, controller, CLI
 tests/                  Protocol, determinism, reward, and controller tests
 ```
 
 ## Safety and fair play
 
-This project is intended for local research and clearly labelled AI demonstrations. Keep the game
-offline while training, do not submit automated runs to public leaderboards, and review PolyTrack's
-current terms before distributing a modified build.
+This project is intended for local research and clearly labelled AI demonstrations. The mod blocks
+the game's write and multiplayer entry points and hides AI finish state from the UI; still review
+PolyTrack's current terms before distributing a modified build.

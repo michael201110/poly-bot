@@ -1,119 +1,139 @@
-# Connecting a local PolyTrack build
+# Running PolyBot in PolyTrack
 
-The integration target is the downloadable desktop build, running locally and offline. The hosted
-game is not suitable for high-throughput training and must not be automated against public services.
+The real-game path targets PolyTrack 0.6.2 through PolyModLoader. It is for local training and
+demonstrations, not leaderboard or multiplayer automation.
 
-## Confirmed PolyTrack 0.6.2 seam
+## One-time setup
 
-The community PolyModLoader project has a public PolyTrack 0.6.2 build. Pin commit
-[`c46423b`](https://github.com/polytrackmods/PolyModLoader/commit/c46423b1774939b97302c9f23ff4e3d86179156e)
-rather than assuming its default branch targets the same game version. The worker performs its own
-literal version check, so a mismatch should fail closed.
+1. Install Python 3.11 or newer and install this repository into its virtual environment:
 
-The build identifies these important files inside the desktop app:
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\Activate.ps1
+   python -m pip install -e ".[dev,train]"
+   ```
 
-- `main.bundle.js` — gameplay and UI code;
-- `simulation_worker.bundle.js` — simulation worker logic;
-- `electron/main.js` and `electron/preload.js` — Electron process bridge.
+2. Open the [PolyModLoader web build](https://web.polymodloader.com/). If your browser blocks its
+   connection to localhost, follow the [PML user guide](https://github-wiki-see.page/m/polytrackmods/PolyModLoader/wiki/For-Users)
+   to install the desktop app. The adapter is checked against the exact
+   [v0.6.2-2 source](https://github.com/polytrackmods/PolyModLoader/tree/v0.6.2-2) and requires a
+   loader running PolyTrack 0.6.2.
 
-The most useful supported extension point is PolyModLoader's `registerSimWorkerMixin`. It transforms
-the worker source before creating its Blob URL. These transformations are token-based and therefore
-brittle: every mixin must assert how many tokens it replaced and refuse to run on an unknown build.
+3. Open **Mods**, choose **Add URL**, paste the PolyBot mod URL, select `latest`, then click
+   **Load** and **Apply**:
 
-Inside the worker, the existing native `updateCarModel` call advances one physics tick and writes an
-encoded car-state packet. One call represents **1 ms**, not one rendered frame. The normal realtime
-loop accumulates wall time; the existing fast loop consumes prerecorded ghost controls. Neither loop
-should drive RL. Add a third, manually stepped mode around the existing one-tick helper.
+   ```text
+   https://cdn.polymodloader.com/gh/michael201110/poly-bot/main/pml-mod
+   ```
 
-Relevant upstream locations:
+The repository ships only the source-level mixin under `pml-mod/`. It does not redistribute the
+game's JavaScript bundle, WASM binary, or assets.
 
-- [worker initialization and version check](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/simulation_worker.bundle.js#L19227-L19235)
-- [native update and realtime loop](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/simulation_worker.bundle.js#L19571-L19640)
-- [existing fast replay loop](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/simulation_worker.bundle.js#L19642-L19676)
-- [`registerSimWorkerMixin` type](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/PolyTypes.d.ts#L136-L179)
+## Let the built-in controller drive
 
-Do not commit or redistribute a downloaded/decompiled game bundle, WASM binary, or copyrighted assets
-to this repository. Ship only the compatibility-checked mixin and require a local game installation.
+Start the Python listener:
 
-## Worker patch design
-
-Vanilla worker message IDs occupy `0` through `10`. Reserve custom IDs outside that range, initially:
-
-- `100` — `AiStep { requestId, carId, repeat, controls }`
-- `101` — `AiStepResult { requestId, framesAdvanced, stateBuffer }`
-
-The mixin should:
-
-1. Add an AI-manual mode that suppresses realtime scheduling and the fast ghost loop.
-2. Accept only one in-flight step for one car per worker initially.
-3. On `AiStep`, hold the supplied five control booleans and invoke the existing native one-tick helper
-   `repeat` times synchronously.
-4. Increment the game's frame counter on each call and stop early at finish or the game's frame limit.
-5. Return the final encoded state packet, request ID, and actual number of frames advanced.
-
-A policy repeat of 10–20 native ticks gives a 100–50 Hz control rate. The Python default of four is
-appropriate for the slower mock simulator; pass `--frame-skip 10` or higher for the 1 kHz real worker.
-
-Use `DeleteCar`, followed by the original cached `CreateCar` payload and `StartCar`, for a true episode
-reset. The normal reset control is a checkpoint respawn and does not guarantee a clean initial state.
-
-The encoded packet is variable-length with a 227-byte maximum. Parse it using the game's decoder;
-do not hash or compare the unused tail, which may contain stale bytes. The packet includes transform,
-speed, checkpoint/finish state, contacts, suspension/wheel values, steering, and applied controls. It
-does **not** include linear or angular velocity vectors; derive those from consecutive transforms with
-`dt = framesAdvanced * 0.001`. Continuous route progress and lookahead must come from decoded track
-geometry, gated by the native ordered checkpoint index.
-
-Reference: [authoritative 0.6.2 state decoder](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/main.bundle.js#L13530-L13647)
-
-## Adapter contract
-
-Implement `PolyTrackTrainingGameApi` using
-[`bridge/polytrack_game_api.stub.js`](../bridge/polytrack_game_api.stub.js). The transport bridge calls
-five methods:
-
-1. `ensureOffline()` blocks leaderboard, multiplayer, analytics, and remote game API calls. It must
-   return exactly `true` before the trainer is allowed to connect.
-2. `describe()` returns the fixed physics timestep, game version, and maximum ticks per action.
-3. `reset(...)` loads a track, restores a clean initial state, and returns telemetry at tick zero.
-4. `step(...)` holds the supplied controls while synchronously advancing an exact number of physics
-   ticks, then returns telemetry and events.
-5. `close()` releases controls and restores reversible hooks.
-
-Load the game API implementation before `polytrack_training_bridge.js`, then connect it:
-
-```js
-const gameApi = new PolyTrackTrainingGameApi();
-const bridge = new PolyTrackTrainingBridge({
-  gameApi,
-  url: "ws://127.0.0.1:8765",
-});
-await bridge.start();
+```powershell
+cd C:\Users\ASUS\Documents\GitHub\poly-bot
+.venv\Scripts\Activate.ps1
+polybot-drive --centerline
 ```
 
-## Recommended discovery order
+The `Waiting for the local PolyTrack mod at ws://127.0.0.1:8765 ...` line is expected. In PolyTrack,
+choose a track, load a ghost lap, and enter the race. The game worker connects to Python and the
+controller's actions are applied to the visible car. If a race was already open when you enabled the
+mod, restart that race.
 
-1. Locate the worker message that supplies driving inputs.
-2. Add the custom manual-step messages around the existing 1 ms update call.
-3. Cache the original create payload and implement delete/create/start episode reset.
-4. Reuse the authoritative state decoder in `main.bundle.js` rather than guessing packet offsets.
-5. Derive velocity from consecutive decoded transforms.
-6. Decode the active track into ordered centreline samples and checkpoint-gated progress.
-7. Run PolyTrack's existing determinism test, then replay the same action transcript at least 20 times.
+The v0.1.0 adapter uses the selected ghost trajectory as its route reference. Without one, reset
+fails with `missing_reference`. The centreline controller is mainly an end-to-end compatibility
+check; it has not learned the track and may fail on difficult sections.
 
-Avoid starting with DOM scraping. Speed text and timer labels are insufficient for stable control,
-and synthetic keyboard events do not provide deterministic stepping.
+## Drive with a trained PPO policy
 
-## First acceptance test
+Pass the model created by `polybot-train`; the `.zip` suffix is optional:
 
-The real adapter is ready for initial training when it can:
+```powershell
+polybot-drive --model models/polybot-real
+```
 
-- reset one simple track to byte-equivalent or tolerance-equivalent telemetry;
-- hold throttle for exactly 240 ticks and report increasing ordered progress;
-- replay an action transcript repeatedly without meaningful divergence;
-- reject a stale `episode_id` after reset;
-- complete the hand-written centreline-controller test;
-- operate with public network requests disabled.
+Predictions are deterministic by default. Add `--stochastic` only when deliberately sampling PPO's
+action distribution. A model must use the same observation layout, especially `--lookahead`, that
+was used for training.
 
-PolyTrack's terms prohibit fraudulent leaderboard records and disruptive automated server access.
-Keep all training and evaluation local, and clearly label any recorded AI demonstration.
+The drive command defaults to the current game track, 12 lookahead samples, a 10-tick action repeat,
+a 30,000-step (300 simulated second) episode limit, one episode, and the fixed localhost endpoint:
+
+```powershell
+polybot-drive --track current --lookahead 12 --frame-skip 10
+```
+
+## Train against the real worker
+
+Start training before launching the race, just as for `polybot-drive`:
+
+```powershell
+polybot-train --backend websocket --timesteps 1000000 --model-out models/polybot-real
+```
+
+For the WebSocket backend, `polybot-train` automatically defaults to `--track current` and
+`--frame-skip 10`; these remain `mock/gentle-s` and `4` for the mock backend. Resetting an episode
+recreates the car at the race start. The game remains visible, but fixed-step training is controlled
+by Python rather than render timing.
+
+You can evaluate a model against the currently selected race without changing it:
+
+```powershell
+polybot-eval models/polybot-real --backend websocket --episodes 5
+```
+
+## Troubleshooting
+
+- **`polybot-drive` is not recognized:** activate `.venv`, then run
+  `python -m pip install -e ".[dev,train]"` again. As a direct fallback, run
+  `.venv\Scripts\polybot-drive.exe --centerline`.
+- **It stays on `Waiting ...`:** the listener is working but the mod has not connected. Confirm the
+  PolyBot mod is enabled, launch through PolyModLoader, and enter a race. Check that both sides use
+  port 8765.
+- **The browser blocks localhost access:** allow local-network access when prompted, or use the
+  compatible PolyModLoader desktop build.
+- **`missing_reference`:** load a ghost for the selected track and restart the race.
+- **Version or mixin-token error:** the local game worker is not the supported 0.6.2 build. The mod
+  deliberately refuses to patch an unknown bundle.
+- **Model observation-space error:** pass the same `--lookahead` value used during training.
+- **Reset or step timeout:** let the current operation finish, or increase
+  `--request-timeout 120`. The connection wait can similarly be changed with
+  `--connect-timeout`.
+
+## Integration details
+
+The mod uses PolyModLoader's `registerSimWorkerMixin` extension point. It connects the simulation
+worker directly to the Python WebSocket server and implements the versioned `hello`, `reset`, and
+`step` operations in [`protocol.md`](protocol.md). No DOM scraping or synthetic keyboard events are
+involved.
+
+Read-only leaderboard access remains available solely to load a reference ghost. The mod rejects
+leaderboard/profile writes, verification calls, multiplayer sockets, and ICE-server requests, and
+masks the AI car's finish state before the game UI receives it.
+
+One native `updateCarModel` call advances one millisecond of physics. A policy action is held for
+the requested number of ticks; 10 ticks gives a 100 Hz control rate. A true episode reset uses the
+worker's original delete/create/start path rather than the game's checkpoint-respawn control.
+
+The authoritative 0.6.2 state packet supplies transform, speed, checkpoint/finish state, wheel
+contacts, suspension values, steering, and applied controls. Linear and angular velocities are
+derived from consecutive transforms. The route reference supplies progress, lateral/heading error,
+and policy lookahead points.
+
+The token-based mixin is intentionally fail-closed. Updating to another PolyTrack version requires
+checking the worker tokens, state decoder, one-tick helper, and reset path before changing the
+manifest target. Useful upstream references are:
+
+- [worker initialization and version check](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/simulation_worker.bundle.js#L19227-L19235)
+- [native update and worker loops](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/simulation_worker.bundle.js#L19571-L19676)
+- [authoritative state decoder](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/main.bundle.js#L13530-L13647)
+- [`registerSimWorkerMixin` type](https://github.com/polytrackmods/PolyModLoader/blob/c46423b1774939b97302c9f23ff4e3d86179156e/PolyTypes.d.ts#L136-L179)
+
+Before treating a new adapter as training-ready, verify that it can reset a simple track
+repeatably, advance an exact tick count, report ordered progress and checkpoints, replay the same
+action transcript without meaningful divergence, reject stale episode IDs, and keep public writes
+and multiplayer disabled.

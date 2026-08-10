@@ -133,10 +133,13 @@ class WebSocketServerTransport:
         if self._closed.is_set():
             raise TransportClosed("transport is closed")
         timeout = self.request_timeout_s if timeout_s is None else timeout_s
-        deadline = time.monotonic() + timeout
 
         with self._request_lock:
-            self.connect(max(0.0, deadline - time.monotonic()))
+            # Connecting and servicing a request have separate timeout budgets.
+            # A user may reasonably leave the trainer waiting for the game for
+            # several minutes while keeping individual physics requests strict.
+            self.connect()
+            deadline = time.monotonic() + timeout
             with self._connection_lock:
                 connection = self._connection
             if connection is None:

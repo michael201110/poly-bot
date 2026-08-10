@@ -4,6 +4,7 @@ import json
 import socket
 from threading import Thread
 
+import pytest
 from websockets.sync.client import connect
 
 from polybot.protocol import request_message, success_response
@@ -49,3 +50,37 @@ def test_websocket_transport_rejects_non_loopback_host() -> None:
         assert "loopback" in str(exc)
     else:
         raise AssertionError("non-loopback listener was accepted")
+
+
+def test_request_uses_connect_timeout_separately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    transport = WebSocketServerTransport(
+        "127.0.0.1",
+        unused_loopback_port(),
+        connect_timeout_s=300.0,
+        request_timeout_s=0.01,
+    )
+    connect_arguments: list[float | None] = []
+
+    class FakeConnection:
+        def send(self, raw: str) -> None:
+            request = json.loads(raw)
+            transport._incoming.put(success_response(request, {"ready": True}))
+
+        def close(self, *, code: int, reason: str) -> None:
+            del code, reason
+
+    monkeypatch.setattr(
+        transport,
+        "connect",
+        lambda timeout_s=None: connect_arguments.append(timeout_s),
+    )
+    transport._connection = FakeConnection()  # type: ignore[assignment]
+    try:
+        response = transport.request(request_message(1, "hello", {}))
+    finally:
+        transport.close()
+
+    assert response["result"] == {"ready": True}
+    assert connect_arguments == [None]
