@@ -235,6 +235,12 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     _websocket_arguments(parser)
     parser.add_argument("--timesteps", type=int, default=100_000)
     parser.add_argument(
+        "--learning-rate",
+        type=float,
+        default=3e-4,
+        help="PPO learning rate; use a smaller value for late-stage fine-tuning",
+    )
+    parser.add_argument(
         "--forward-bias",
         type=float,
         default=1.5,
@@ -269,6 +275,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
 
     if args.timesteps < 1:
         parser.error("--timesteps must be positive")
+    if args.learning_rate <= 0:
+        parser.error("--learning-rate must be positive")
     if args.forward_bias < 0:
         parser.error("--forward-bias must be non-negative")
     if args.checkpoint_episodes < 0:
@@ -307,10 +315,16 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 seed=args.seed,
                 verbose=1,
                 tensorboard_log=tensorboard_log,
+                learning_rate=args.learning_rate,
             )
             _bias_initial_policy_forward(model, args.forward_bias)
         else:
-            model = PPO.load(str(args.resume), env=env, tensorboard_log=tensorboard_log)
+            model = PPO.load(
+                str(args.resume),
+                env=env,
+                tensorboard_log=tensorboard_log,
+                custom_objects={"learning_rate": args.learning_rate},
+            )
 
         class EpisodeCheckpointCallback(BaseCallback):
             def __init__(self, output: Path, every: int) -> None:

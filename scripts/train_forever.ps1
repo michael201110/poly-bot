@@ -2,6 +2,7 @@ param(
     [int]$TimestepsPerRun = 100000,
     [int]$FrameSkip = 30,
     [int]$MaxSteps = 3334,
+    [double]$LearningRate = 0.0001,
     [string]$ModelPath = "models/polybot-real-fs30"
 )
 
@@ -23,6 +24,7 @@ while ($true) {
         --timesteps $TimestepsPerRun `
         --max-steps $MaxSteps `
         --frame-skip $FrameSkip `
+        --learning-rate $LearningRate `
         @resumeArguments `
         --checkpoint-episodes 5 `
         --model-out $ModelPath
