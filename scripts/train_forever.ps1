@@ -1,8 +1,8 @@
 param(
     [int]$TimestepsPerRun = 100000,
-    [int]$FrameSkip = 20,
-    [int]$MaxSteps = 5000,
-    [string]$ModelPath = "models/polybot-real-fs20"
+    [int]$FrameSkip = 10,
+    [int]$MaxSteps = 10000,
+    [string]$ModelPath = "models/polybot-real-fs10"
 )
 
 $ErrorActionPreference = "Continue"
