@@ -316,13 +316,52 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             def __init__(self, output: Path, every: int) -> None:
                 super().__init__()
                 self.output = output.with_suffix("")
+                self.best_output = self.output.with_name(f"{self.output.name}-best")
+                self.best_metadata = self.output.with_name(f"{self.output.name}-best.json")
                 self.every = every
                 self.episodes = 0
                 self.next_checkpoint = every
+                self.best_progress_ratio = 0.0
+                if self.best_metadata.exists():
+                    try:
+                        metadata = json.loads(self.best_metadata.read_text(encoding="utf-8"))
+                        self.best_progress_ratio = float(metadata["progress_ratio"])
+                    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
+                        pass
 
             def _on_step(self) -> bool:
                 dones = self.locals.get("dones", ())
                 self.episodes += sum(bool(done) for done in dones)
+                for info in self.locals.get("infos", ()):
+                    progress_m = float(info.get("route_progress_m", 0.0))
+                    track_length_m = max(1.0, float(info.get("track_length_m", 1.0)))
+                    progress_ratio = progress_m / track_length_m
+                    is_finish = "finish" in info.get("events", ())
+                    if (
+                        progress_ratio >= self.best_progress_ratio + 0.02
+                        or is_finish
+                    ):
+                        self.output.parent.mkdir(parents=True, exist_ok=True)
+                        self.model.save(str(self.best_output))
+                        self.best_progress_ratio = max(
+                            self.best_progress_ratio, progress_ratio
+                        )
+                        self.best_metadata.write_text(
+                            json.dumps(
+                                {
+                                    "progress_m": progress_m,
+                                    "track_length_m": track_length_m,
+                                    "progress_ratio": self.best_progress_ratio,
+                                    "finished": is_finish,
+                                },
+                                indent=2,
+                            ),
+                            encoding="utf-8",
+                        )
+                        print(
+                            f"Saved best model at {progress_ratio:.1%} track progress.",
+                            flush=True,
+                        )
                 if self.every and self.episodes >= self.next_checkpoint:
                     self.output.parent.mkdir(parents=True, exist_ok=True)
                     self.model.save(str(self.output))
