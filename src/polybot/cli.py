@@ -426,6 +426,7 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
                 info: dict[str, object] = {}
                 restart_reason: str | None = None
                 stuck_since: float | None = None
+                last_status = 0.0
                 while not (terminated or truncated):
                     step_started = time.monotonic()
                     if _terminal_restart_requested():
@@ -459,6 +460,17 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
                                 break
                         else:
                             stuck_since = None
+                        now = time.monotonic()
+                        if now - last_status >= 1.0:
+                            print(
+                                "drive "
+                                f"speed={speed:5.2f}m/s "
+                                f"offset={telemetry.lateral_offset_m:+6.2f}m "
+                                f"heading={telemetry.heading_error_rad:+6.2f}rad "
+                                f"steer={int(action[0]):+d}",
+                                flush=True,
+                            )
+                            last_status = now
                     # The worker is intentionally unthrottled for training. A
                     # visible drive should instead track simulation time.
                     remaining = args.frame_skip * 0.001 - (time.monotonic() - step_started)
