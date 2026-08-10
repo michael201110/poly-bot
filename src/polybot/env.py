@@ -33,6 +33,8 @@ class RewardConfig:
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_proximity_penalty_per_m: float = -0.20
     barrier_proximity_start_ratio: float = 0.55
+    airborne_spin_penalty_per_rad: float = -0.30
+    airborne_spin_deadzone_radps: float = 1.50
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 10.0
     checkpoint_target_s: float = 30.0
@@ -76,6 +78,18 @@ def _checkpoint_reward(telemetry: Telemetry, config: RewardConfig) -> float:
     target_elapsed_s = config.checkpoint_target_s * checkpoint_number
     pace_factor = float(np.clip(1.0 - telemetry.elapsed_s / target_elapsed_s, 0.0, 1.0))
     return config.checkpoint_bonus + config.checkpoint_fast_bonus * pace_factor
+
+
+def _airborne_spin_penalty(
+    telemetry: Telemetry, config: RewardConfig, dt: float
+) -> float:
+    """Penalize strong rotation in the air while tolerating normal jump pitch."""
+
+    if sum(contact >= 0.5 for contact in telemetry.wheel_contacts) >= 2:
+        return 0.0
+    angular_speed = float(np.linalg.norm(telemetry.angular_velocity_radps))
+    excess_spin = max(0.0, angular_speed - config.airborne_spin_deadzone_radps)
+    return config.airborne_spin_penalty_per_rad * excess_spin * dt
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
@@ -351,6 +365,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "barrier_proximity": config.barrier_proximity_penalty_per_m
             * distance_at_speed
             * barrier_factor**2,
+            "airborne_spin": _airborne_spin_penalty(telemetry, config, dt),
             "checkpoint": _checkpoint_reward(telemetry, config)
             * events.count("checkpoint"),
             "finish": config.finish_bonus if "finish" in events else 0.0,

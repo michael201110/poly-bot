@@ -10,6 +10,7 @@ from polybot.controller import CenterlineController
 from polybot.env import (
     PolyTrackEnv,
     RewardConfig,
+    _airborne_spin_penalty,
     _checkpoint_reward,
     _has_off_track_evidence,
 )
@@ -90,6 +91,24 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
 
     assert config.barrier_proximity_start_ratio > 0.5
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
+
+
+def test_strong_airborne_spin_is_penalized_but_grounded_rotation_is_not() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        spinning = replace(
+            env.latest_telemetry,
+            angular_velocity_radps=(4.0, 3.0, 0.0),
+            wheel_contacts=(0.0, 0.0, 0.0, 0.0),
+        )
+        grounded = replace(spinning, wheel_contacts=(1.0, 1.0, 1.0, 1.0))
+
+        assert _airborne_spin_penalty(spinning, env.reward_config, 0.1) < 0
+        assert _airborne_spin_penalty(grounded, env.reward_config, 0.1) == 0
+    finally:
+        env.close()
 
 
 def test_wrapper_time_limit_truncates_without_termination() -> None:
