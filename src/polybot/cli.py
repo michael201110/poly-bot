@@ -242,6 +242,18 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--model-out", type=Path, default=Path("models/polybot-ppo"))
     parser.add_argument(
+        "--resume",
+        type=Path,
+        default=None,
+        help="resume training from an existing PPO model",
+    )
+    parser.add_argument(
+        "--checkpoint-episodes",
+        type=int,
+        default=5,
+        help="save the latest model plus an archive after this many episode restarts; 0 disables",
+    )
+    parser.add_argument(
         "--tensorboard-log",
         type=Path,
         default=None,
@@ -259,10 +271,13 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--timesteps must be positive")
     if args.forward_bias < 0:
         parser.error("--forward-bias must be non-negative")
+    if args.checkpoint_episodes < 0:
+        parser.error("--checkpoint-episodes must be non-negative")
     _validate_websocket_arguments(parser, args)
 
     try:
         from stable_baselines3 import PPO
+        from stable_baselines3.common.callbacks import BaseCallback
     except ImportError as exc:
         parser.error("training dependencies are missing; install with: pip install -e '.[train]'")
         raise AssertionError("unreachable") from exc
@@ -282,20 +297,69 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         transport.close()
         raise
     try:
-        model = PPO(
-            "MlpPolicy",
-            env,
-            seed=args.seed,
-            verbose=1,
-            tensorboard_log=(
-                str(args.tensorboard_log) if args.tensorboard_log is not None else None
-            ),
+        tensorboard_log = (
+            str(args.tensorboard_log) if args.tensorboard_log is not None else None
         )
-        _bias_initial_policy_forward(model, args.forward_bias)
-        model.learn(total_timesteps=args.timesteps, progress_bar=args.progress_bar)
+        if args.resume is None:
+            model = PPO(
+                "MlpPolicy",
+                env,
+                seed=args.seed,
+                verbose=1,
+                tensorboard_log=tensorboard_log,
+            )
+            _bias_initial_policy_forward(model, args.forward_bias)
+        else:
+            model = PPO.load(str(args.resume), env=env, tensorboard_log=tensorboard_log)
+
+        class EpisodeCheckpointCallback(BaseCallback):
+            def __init__(self, output: Path, every: int) -> None:
+                super().__init__()
+                self.output = output.with_suffix("")
+                self.every = every
+                self.episodes = 0
+                self.next_checkpoint = every
+
+            def _on_step(self) -> bool:
+                dones = self.locals.get("dones", ())
+                self.episodes += sum(bool(done) for done in dones)
+                if self.every and self.episodes >= self.next_checkpoint:
+                    self.output.parent.mkdir(parents=True, exist_ok=True)
+                    self.model.save(str(self.output))
+                    archive = self.output.with_name(
+                        f"{self.output.name}-episode-{self.episodes}"
+                    )
+                    self.model.save(str(archive))
+                    print(f"Checkpointed model after {self.episodes} episodes.", flush=True)
+                    while self.next_checkpoint <= self.episodes:
+                        self.next_checkpoint += self.every
+                return True
+
+        callback = EpisodeCheckpointCallback(args.model_out, args.checkpoint_episodes)
+        try:
+            model.learn(
+                total_timesteps=args.timesteps,
+                callback=callback,
+                progress_bar=args.progress_bar,
+                reset_num_timesteps=args.resume is None,
+            )
+        except KeyboardInterrupt:
+            args.model_out.parent.mkdir(parents=True, exist_ok=True)
+            model.save(str(args.model_out.with_suffix("")))
+            print(f"Interrupted; saved model to {args.model_out.with_suffix('')}.zip")
+            return 130
+        except BaseException:
+            emergency = args.model_out.with_suffix("").with_name(
+                f"{args.model_out.with_suffix('').name}-emergency"
+            )
+            emergency.parent.mkdir(parents=True, exist_ok=True)
+            model.save(str(emergency))
+            print(f"Training failed; saved emergency model to {emergency}.zip")
+            raise
         args.model_out.parent.mkdir(parents=True, exist_ok=True)
-        model.save(str(args.model_out))
-        print(f"Saved model to {args.model_out}.zip")
+        output = args.model_out.with_suffix("")
+        model.save(str(output))
+        print(f"Saved model to {output}.zip")
     finally:
         env.close()
     return 0
