@@ -46,7 +46,22 @@ class RewardConfig:
     off_track_heading_ratio: float = 0.80
     off_track_heading_rad: float = 1.10
     off_track_timeout_s: float = 0.40
+    off_track_min_grounded_wheels: int = 2
     early_run_s: float = 20.0
+
+
+def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
+    """Reject geometric off-track evidence while the car is airborne."""
+
+    grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
+    if grounded_wheels < config.off_track_min_grounded_wheels:
+        return False
+    width = max(0.1, telemetry.track_half_width_m)
+    lateral_ratio = abs(telemetry.lateral_offset_m) / width
+    return lateral_ratio >= config.off_track_lateral_ratio or (
+        lateral_ratio >= config.off_track_heading_ratio
+        and abs(telemetry.heading_error_rad) >= config.off_track_heading_rad
+    )
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
@@ -218,15 +233,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         telemetry = transition.telemetry
         width = max(0.1, telemetry.track_half_width_m)
         lateral_ratio = abs(telemetry.lateral_offset_m) / width
-        off_track_candidate = (
-            "off_track" in transition.events
-            or lateral_ratio >= self.reward_config.off_track_lateral_ratio
-            or (
-                lateral_ratio >= self.reward_config.off_track_heading_ratio
-                and abs(telemetry.heading_error_rad)
-                >= self.reward_config.off_track_heading_rad
-            )
-        )
+        off_track_candidate = _has_off_track_evidence(telemetry, self.reward_config)
         if off_track_candidate:
             self._off_track_s += dt
         else:

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from gymnasium.utils.env_checker import check_env
 
 from polybot.controller import CenterlineController
-from polybot.env import PolyTrackEnv
+from polybot.env import PolyTrackEnv, RewardConfig, _has_off_track_evidence
 from polybot.mock import MockSimulatorTransport
 
 
@@ -124,6 +126,23 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
             info["reward_terms"]["off_track"]
             == env.reward_config.early_off_track_penalty
         )
+    finally:
+        env.close()
+
+
+def test_airborne_jump_does_not_count_as_off_track() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        airborne = replace(
+            env.latest_telemetry,
+            lateral_offset_m=20.0,
+            heading_error_rad=2.0,
+            wheel_contacts=(0.0, 0.0, 0.0, 0.0),
+        )
+
+        assert not _has_off_track_evidence(airborne, RewardConfig())
     finally:
         env.close()
 
