@@ -157,6 +157,24 @@ def _terminal_restart_requested() -> bool:
     return restart
 
 
+def _bias_initial_policy_forward(model: object, strength: float) -> None:
+    """Bias PPO's initial MultiDiscrete logits toward straight throttle."""
+
+    if strength == 0:
+        return
+    import torch
+
+    action_net = getattr(getattr(model, "policy", None), "action_net", None)
+    bias = getattr(action_net, "bias", None)
+    if bias is None or bias.numel() != 7:
+        raise RuntimeError("forward bias requires a MultiDiscrete([3, 2, 2]) PPO policy")
+    with torch.no_grad():
+        # Logit layout: steer[-1,0,1], throttle[0,1], brake[0,1].
+        bias[1] += strength * 0.5
+        bias[4] += strength
+        bias[5] += strength
+
+
 def smoke_main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the baseline against the mock simulator")
     _common_arguments(parser)
@@ -216,6 +234,12 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
     _websocket_arguments(parser)
     parser.add_argument("--timesteps", type=int, default=100_000)
+    parser.add_argument(
+        "--forward-bias",
+        type=float,
+        default=1.5,
+        help="initial PPO logit bias toward straight throttle and no brake; 0 disables it",
+    )
     parser.add_argument("--model-out", type=Path, default=Path("models/polybot-ppo"))
     parser.add_argument(
         "--tensorboard-log",
@@ -233,6 +257,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
 
     if args.timesteps < 1:
         parser.error("--timesteps must be positive")
+    if args.forward_bias < 0:
+        parser.error("--forward-bias must be non-negative")
     _validate_websocket_arguments(parser, args)
 
     try:
@@ -265,6 +291,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 str(args.tensorboard_log) if args.tensorboard_log is not None else None
             ),
         )
+        _bias_initial_policy_forward(model, args.forward_bias)
         model.learn(total_timesteps=args.timesteps, progress_bar=args.progress_bar)
         args.model_out.parent.mkdir(parents=True, exist_ok=True)
         model.save(str(args.model_out))
