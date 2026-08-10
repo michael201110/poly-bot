@@ -1127,7 +1127,6 @@ export function polybotWorkerInjection() {
                 } catch (error) {
                   console.warn("[PolyBot] Could not request a reference ghost", error);
                 }
-                connectSocket();
               } else if (typeof message.trackData === "string") {
                 localGhostMessages.set(message.trackData, message);
                 relayGhost(message);
@@ -1149,6 +1148,9 @@ export function polybotWorkerInjection() {
             }
             case messageTypes.StartCar:
               startMessages.set(message.carId, message);
+              if (message.carId === playerCarId) {
+                connectSocket();
+              }
               if (manualMode) {
                 setTimeout(pauseManualCars, 0);
               }

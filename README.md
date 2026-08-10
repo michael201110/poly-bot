@@ -58,7 +58,7 @@ polybot-drive --centerline
 
 Then choose a track in PolyTrack, load a ghost lap, and enter its race. If the race was already
 open, restart it after enabling the mod.
-The v0.1.0 adapter uses that ghost as its route reference. The built-in centreline controller is a
+The adapter uses that ghost as its route reference. The built-in centreline controller is a
 wiring test; to drive with a trained PPO policy instead, use:
 
 ```powershell

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
 from polybot.controller import CenterlineController
 from polybot.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
+from polybot.protocol import ProtocolViolation
 from polybot.transport import SimulatorTransport, WebSocketServerTransport
 
 
@@ -380,6 +382,9 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
                 observation, reward, terminated, truncated, info = env.step(action)
                 total_reward += reward
             summaries.append(_episode_summary(episode, episode_seed, info, total_reward))
+    except ProtocolViolation as exc:
+        print(f"PolyBot stopped: {exc}", file=sys.stderr)
+        return 2
     finally:
         env.close()
 

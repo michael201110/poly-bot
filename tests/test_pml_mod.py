@@ -31,23 +31,41 @@ def test_pml_manifest_resolves_versioned_entry_point() -> None:
         "main": "main.mod.js",
     }
     assert (MOD_ROOT / version / version_manifest["main"]).is_file()
-    assert (MOD_ROOT / version / "worker_runtime.js").is_file()
+    runtime_version = "0.1.0"
+    assert (MOD_ROOT / runtime_version / "worker_runtime.js").is_file()
 
     main_source = (MOD_ROOT / version / version_manifest["main"]).read_text(encoding="utf-8")
     assert 'from "./worker_runtime.js"' not in main_source
     expected = (
         "https://cdn.polymodloader.com/gh/michael201110/"
-        f"poly-bot/v{version}/pml-mod/{version}/worker_runtime.js"
+        f"poly-bot/v{version}/pml-mod/{runtime_version}/worker_runtime.js"
     )
     assert f'from "{expected}"' in main_source
 
 
 def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
     validator = _load_validator()
-    source = (MOD_ROOT / "0.1.0" / "main.mod.js").read_text(encoding="utf-8")
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
+        encoding="utf-8"
+    )
 
     for token in (*validator.WORKER_TOKENS, *validator.MAIN_TOKENS):
         assert token in source
+
+
+def test_worker_connects_only_after_player_start() -> None:
+    source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+    create_case = source.split("case messageTypes.CreateCar:", 1)[1].split(
+        "case messageTypes.DeleteCar:", 1
+    )[0]
+    start_case = source.split("case messageTypes.StartCar:", 1)[1].split(
+        "default:", 1
+    )[0]
+
+    assert "connectSocket();" not in create_case
+    assert "message.carId === playerCarId" in start_case
+    assert "connectSocket();" in start_case
 
 
 def test_anchor_validator_rejects_missing_or_duplicate_tokens(tmp_path: Path) -> None:

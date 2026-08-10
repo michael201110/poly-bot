@@ -44,7 +44,7 @@ choose a track, load a ghost lap, and enter the race. The game worker connects t
 controller's actions are applied to the visible car. If a race was already open when you enabled the
 mod, restart that race.
 
-The v0.1.0 adapter uses the selected ghost trajectory as its route reference. Without one, reset
+The adapter uses the selected ghost trajectory as its route reference. Without one, reset
 fails with `missing_reference`. The centreline controller is mainly an end-to-end compatibility
 check; it has not learned the track and may fail on difficult sections.
 
