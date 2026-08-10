@@ -118,6 +118,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._landing_grace_s = 0.0
+        self._was_airborne = False
         self.latest_telemetry: Telemetry | None = None
         self.simulator_capabilities: Mapping[str, Any] = {}
 
@@ -200,6 +201,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._landing_grace_s = 0.0
+        self._was_airborne = False
         self.latest_telemetry = transition.telemetry
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
@@ -229,10 +231,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         telemetry = transition.telemetry
         grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
         airborne = grounded_wheels < self.reward_config.off_track_min_grounded_wheels
-        if airborne:
+        if airborne != self._was_airborne:
             self._landing_grace_s = self.reward_config.landing_grace_s
         else:
             self._landing_grace_s = max(0.0, self._landing_grace_s - dt)
+        self._was_airborne = airborne
         landing_grace = self._landing_grace_s > 0.0
 
         speed = float(np.linalg.norm(telemetry.local_velocity_mps))
