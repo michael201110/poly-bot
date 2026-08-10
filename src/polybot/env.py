@@ -31,6 +31,8 @@ class RewardConfig:
     elapsed_cost_per_s: float = -0.02
     on_track_speed_per_m: float = 0.04
     unsafe_speed_penalty_per_m: float = -0.08
+    barrier_proximity_penalty_per_m: float = -0.20
+    barrier_proximity_start_ratio: float = 0.55
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 10.0
     checkpoint_target_s: float = 30.0
@@ -327,6 +329,15 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         center_factor = float(np.clip(1.0 - abs(telemetry.lateral_offset_m) / width, 0, 1))
         heading_factor = max(0.0, float(np.cos(telemetry.heading_error_rad)))
         on_track_factor = center_factor * heading_factor
+        lateral_ratio = abs(telemetry.lateral_offset_m) / width
+        barrier_factor = float(
+            np.clip(
+                (lateral_ratio - config.barrier_proximity_start_ratio)
+                / (1.0 - config.barrier_proximity_start_ratio),
+                0.0,
+                1.0,
+            )
+        )
         distance_at_speed = forward_speed * dt
         terms = {
             "progress": config.progress_per_m * progress_delta,
@@ -337,6 +348,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),
+            "barrier_proximity": config.barrier_proximity_penalty_per_m
+            * distance_at_speed
+            * barrier_factor**2,
             "checkpoint": _checkpoint_reward(telemetry, config)
             * events.count("checkpoint"),
             "finish": config.finish_bonus if "finish" in events else 0.0,

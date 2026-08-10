@@ -85,6 +85,13 @@ def test_faster_checkpoint_arrival_receives_more_reward() -> None:
         env.close()
 
 
+def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
+    config = RewardConfig()
+
+    assert config.barrier_proximity_start_ratio > 0.5
+    assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
+
+
 def test_wrapper_time_limit_truncates_without_termination() -> None:
     env = make_env(track_id="mock/straight", max_episode_steps=1)
     try:
