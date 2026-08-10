@@ -11,6 +11,7 @@ from polybot.env import (
     PolyTrackEnv,
     RewardConfig,
     _airborne_spin_penalty,
+    _airborne_tilt_penalty,
     _checkpoint_reward,
     _has_off_track_evidence,
 )
@@ -110,6 +111,26 @@ def test_strong_airborne_spin_is_penalized_but_grounded_rotation_is_not() -> Non
         assert env.reward_config.airborne_spin_deadzone_radps == pytest.approx(
             np.deg2rad(2), rel=1e-5
         )
+    finally:
+        env.close()
+
+
+def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        sideways = replace(
+            env.latest_telemetry,
+            up_vector=(1.0, 0.0, 0.0),
+            wheel_contacts=(0.0, 0.0, 0.0, 0.0),
+        )
+        inverted = replace(sideways, up_vector=(0.0, -1.0, 0.0))
+
+        sideways_penalty = _airborne_tilt_penalty(sideways, env.reward_config, 0.1)
+        inverted_penalty = _airborne_tilt_penalty(inverted, env.reward_config, 0.1)
+        assert inverted_penalty < sideways_penalty < 0
+        assert env.reward_config.barrier_launch_penalty <= -15.0
     finally:
         env.close()
 

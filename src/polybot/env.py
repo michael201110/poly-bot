@@ -31,10 +31,12 @@ class RewardConfig:
     elapsed_cost_per_s: float = -0.02
     on_track_speed_per_m: float = 0.04
     unsafe_speed_penalty_per_m: float = -0.08
-    barrier_proximity_penalty_per_m: float = -0.20
+    barrier_proximity_penalty_per_m: float = -1.00
     barrier_proximity_start_ratio: float = 0.55
+    barrier_launch_penalty: float = -15.0
     airborne_spin_penalty_per_rad: float = -0.30
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
+    airborne_tilt_penalty_per_s: float = -15.0
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 10.0
     checkpoint_target_s: float = 30.0
@@ -90,6 +92,17 @@ def _airborne_spin_penalty(
     angular_speed = float(np.linalg.norm(telemetry.angular_velocity_radps))
     excess_spin = max(0.0, angular_speed - config.airborne_spin_deadzone_radps)
     return config.airborne_spin_penalty_per_rad * excess_spin * dt
+
+
+def _airborne_tilt_penalty(
+    telemetry: Telemetry, config: RewardConfig, dt: float
+) -> float:
+    """Penalize tilted and inverted flight even after the car stops rotating."""
+
+    if sum(contact >= 0.5 for contact in telemetry.wheel_contacts) >= 2:
+        return 0.0
+    uprightness = float(np.clip(telemetry.up_vector[1], -1.0, 1.0))
+    return config.airborne_tilt_penalty_per_s * (1.0 - uprightness) * dt
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
@@ -256,8 +269,15 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
         dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
         telemetry = transition.telemetry
+        width = max(0.1, telemetry.track_half_width_m)
+        lateral_ratio = abs(telemetry.lateral_offset_m) / width
         grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
         airborne = grounded_wheels < self.reward_config.off_track_min_grounded_wheels
+        barrier_launch = (
+            airborne
+            and not self._was_airborne
+            and lateral_ratio >= self.reward_config.barrier_proximity_start_ratio
+        )
         if airborne != self._was_airborne:
             self._landing_grace_s = self.reward_config.landing_grace_s
         else:
@@ -274,8 +294,6 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             self._stationary_s = 0.0
         stalled = self._stationary_s >= self.reward_config.stall_timeout_s
 
-        width = max(0.1, telemetry.track_half_width_m)
-        lateral_ratio = abs(telemetry.lateral_offset_m) / width
         off_track_candidate = _has_off_track_evidence(telemetry, self.reward_config)
         if off_track_candidate and not landing_grace:
             self._off_track_s += dt
@@ -290,6 +308,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             stalled=stalled,
             off_track=off_track,
             early_off_track=early_off_track,
+            barrier_launch=barrier_launch,
         )
         self._episode_steps += 1
         events = set(transition.events)
@@ -325,6 +344,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         stalled: bool = False,
         off_track: bool = False,
         early_off_track: bool = False,
+        barrier_launch: bool = False,
     ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
         raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
@@ -366,6 +386,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             * distance_at_speed
             * barrier_factor**2,
             "airborne_spin": _airborne_spin_penalty(telemetry, config, dt),
+            "airborne_tilt": _airborne_tilt_penalty(telemetry, config, dt),
+            "barrier_launch": config.barrier_launch_penalty if barrier_launch else 0.0,
             "checkpoint": _checkpoint_reward(telemetry, config)
             * events.count("checkpoint"),
             "finish": config.finish_bonus if "finish" in events else 0.0,
