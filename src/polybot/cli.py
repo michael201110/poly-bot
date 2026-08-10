@@ -144,6 +144,19 @@ def _reset_drive_when_ready(
             time.sleep(0.5)
 
 
+def _terminal_restart_requested() -> bool:
+    """Return true when R is waiting in an interactive Windows terminal."""
+
+    if sys.platform != "win32":
+        return False
+    import msvcrt
+
+    restart = False
+    while msvcrt.kbhit():
+        restart = msvcrt.getwch().lower() == "r" or restart
+    return restart
+
+
 def smoke_main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run the baseline against the mock simulator")
     _common_arguments(parser)
@@ -354,6 +367,13 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--episodes", type=int, default=1, help="number of races to drive")
     parser.add_argument(
+        "--steering-sign",
+        type=int,
+        choices=(-1, 1),
+        default=1,
+        help="invert the baseline controller if the car steers away from the ghost line",
+    )
+    parser.add_argument(
         "--stochastic",
         action="store_true",
         help="sample PPO actions instead of using deterministic predictions",
@@ -388,40 +408,67 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     except BaseException:
         transport.close()
         raise
-    controller = CenterlineController()
+    controller = CenterlineController(steering_sign=args.steering_sign)
     summaries: list[dict[str, object]] = []
     try:
         model = ppo_type.load(str(args.model), env=env) if ppo_type is not None else None
+        print("Press R in this terminal to restart the current run.", flush=True)
         for episode in range(args.episodes):
             episode_seed = args.seed + episode
-            observation, _ = _reset_drive_when_ready(
-                env,
-                seed=episode_seed,
-                timeout_s=args.connect_timeout,
-            )
-            total_reward = 0.0
-            terminated = truncated = False
-            info: dict[str, object] = {}
-            while not (terminated or truncated):
-                step_started = time.monotonic()
-                if model is not None:
-                    action, _ = model.predict(
-                        observation,
-                        deterministic=not args.stochastic,
-                    )
-                else:
-                    telemetry = env.latest_telemetry
-                    assert telemetry is not None
-                    action = controller.policy_action(telemetry)
-                observation, reward, terminated, truncated, info = env.step(action)
-                total_reward += reward
-                # The worker is intentionally unthrottled for training. A
-                # visible drive should instead track simulation time so the
-                # car and camera do not appear to run at CPU speed.
-                remaining = args.frame_skip * 0.001 - (time.monotonic() - step_started)
-                if remaining > 0:
-                    time.sleep(remaining)
-            summaries.append(_episode_summary(episode, episode_seed, info, total_reward))
+            while True:
+                observation, _ = _reset_drive_when_ready(
+                    env,
+                    seed=episode_seed,
+                    timeout_s=args.connect_timeout,
+                )
+                total_reward = 0.0
+                terminated = truncated = False
+                info: dict[str, object] = {}
+                restart_reason: str | None = None
+                stuck_since: float | None = None
+                while not (terminated or truncated):
+                    step_started = time.monotonic()
+                    if _terminal_restart_requested():
+                        restart_reason = "manual restart"
+                        break
+                    if model is not None:
+                        action, _ = model.predict(
+                            observation,
+                            deterministic=not args.stochastic,
+                        )
+                    else:
+                        telemetry = env.latest_telemetry
+                        assert telemetry is not None
+                        action = controller.policy_action(telemetry)
+                    observation, reward, terminated, truncated, info = env.step(action)
+                    total_reward += reward
+                    if not (terminated or truncated):
+                        telemetry = env.latest_telemetry
+                        assert telemetry is not None
+                        if (
+                            abs(telemetry.lateral_offset_m)
+                            > telemetry.track_half_width_m * 1.1
+                        ):
+                            restart_reason = "off track"
+                            break
+                        speed = abs(telemetry.local_velocity_mps[2])
+                        if telemetry.elapsed_s > 3.0 and speed < 0.5:
+                            stuck_since = stuck_since or time.monotonic()
+                            if time.monotonic() - stuck_since >= 2.0:
+                                restart_reason = "stuck"
+                                break
+                        else:
+                            stuck_since = None
+                    # The worker is intentionally unthrottled for training. A
+                    # visible drive should instead track simulation time.
+                    remaining = args.frame_skip * 0.001 - (time.monotonic() - step_started)
+                    if remaining > 0:
+                        time.sleep(remaining)
+                if restart_reason is not None:
+                    print(f"Restarting run ({restart_reason})...", flush=True)
+                    continue
+                summaries.append(_episode_summary(episode, episode_seed, info, total_reward))
+                break
     except ProtocolViolation as exc:
         print(f"PolyBot stopped: {exc}", file=sys.stderr)
         return 2

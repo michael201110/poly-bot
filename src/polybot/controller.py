@@ -10,8 +10,16 @@ from polybot.protocol import Action, Telemetry
 class CenterlineController:
     """A deliberately small curvature-aware centreline follower."""
 
-    def __init__(self, *, steering_deadband: float = 0.12) -> None:
+    def __init__(
+        self,
+        *,
+        steering_deadband: float = 0.18,
+        steering_sign: int = 1,
+    ) -> None:
+        if steering_sign not in (-1, 1):
+            raise ValueError("steering_sign must be -1 or 1")
         self.steering_deadband = steering_deadband
+        self.steering_sign = steering_sign
 
     def action(self, telemetry: Telemetry) -> Action:
         valid_curvatures = [
@@ -28,14 +36,14 @@ class CenterlineController:
             )
             if valid
         ]
-        pursuit = valid_points[min(2, len(valid_points) - 1)] if valid_points else (10, 0, 0, 0)
+        pursuit = valid_points[min(4, len(valid_points) - 1)] if valid_points else (20, 0, 0, 0)
         pursuit_angle = float(np.arctan2(pursuit[1], max(2.0, pursuit[0])))
 
         steering_signal = (
-            1.8 * pursuit_angle
-            - 0.08 * telemetry.lateral_offset_m
-            - 0.70 * telemetry.heading_error_rad
-        )
+            1.2 * pursuit_angle
+            - 0.05 * telemetry.lateral_offset_m
+            - 0.50 * telemetry.heading_error_rad
+        ) * self.steering_sign
         if steering_signal > self.steering_deadband:
             steer = 1
         elif steering_signal < -self.steering_deadband:
@@ -45,12 +53,12 @@ class CenterlineController:
 
         speed = telemetry.local_velocity_mps[2]
         turn_demand = max(abs(pursuit_angle), 8.0 * max_curvature)
-        target_speed = float(np.clip(18.0 / (1.0 + 3.5 * turn_demand), 6.0, 18.0))
+        target_speed = float(np.clip(10.0 / (1.0 + 3.5 * turn_demand), 4.0, 10.0))
         unstable = (
             abs(telemetry.heading_error_rad) > 0.45
             or abs(telemetry.lateral_offset_m) > telemetry.track_half_width_m * 0.65
         )
-        brake = speed > target_speed + 1.0 or (unstable and speed > 7.0)
+        brake = speed > target_speed + 0.75 or (unstable and speed > 5.0)
         throttle = not brake and speed < target_speed
         return Action(steer=steer, throttle=throttle, brake=brake)
 
