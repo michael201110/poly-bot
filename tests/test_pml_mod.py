@@ -68,6 +68,14 @@ def test_worker_connects_when_player_is_created_and_started() -> None:
     assert "connectSocket();" in start_case
 
 
+def test_worker_can_start_a_stationary_player_car() -> None:
+    source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+
+    assert "return Boolean(playerMessage && chooseGhostMessage(playerMessage));" in source
+    assert "if (!startMessages.has(playerMessage.carId))" in source
+    assert "targetSimulationTimeFrames: null" in source
+
+
 def test_anchor_validator_rejects_missing_or_duplicate_tokens(tmp_path: Path) -> None:
     validator = _load_validator()
     worker = tmp_path / "worker.js"

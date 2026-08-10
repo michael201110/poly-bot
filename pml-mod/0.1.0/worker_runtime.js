@@ -496,11 +496,7 @@ export function polybotWorkerInjection() {
 
         function readyForEpisode() {
           const playerMessage = choosePlayerMessage();
-          return Boolean(
-            playerMessage &&
-              startMessages.has(playerMessage.carId) &&
-              chooseGhostMessage(playerMessage),
-          );
+          return Boolean(playerMessage && chooseGhostMessage(playerMessage));
         }
 
         async function waitUntilReady() {
@@ -512,12 +508,6 @@ export function polybotWorkerInjection() {
             throw new BridgeError(
               "game_not_ready",
               "Enter a PolyTrack time-trial race before starting PolyBot.",
-            );
-          }
-          if (!startMessages.has(playerCarId)) {
-            throw new BridgeError(
-              "game_not_ready",
-              "The player car has not started. Enter the race, then try again.",
             );
           }
           if (!chooseGhostMessage(choosePlayerMessage())) {
@@ -780,6 +770,16 @@ export function polybotWorkerInjection() {
             ...playerMessage,
             carRecording: ghostCandidate.carRecording,
           };
+          if (!startMessages.has(playerMessage.carId)) {
+            // PolyTrack normally sends StartCar on the first human driving
+            // input. Create the same native message so the AI can initiate a
+            // stationary race without requiring a key press from the user.
+            startMessages.set(playerMessage.carId, {
+              messageType: messageTypes.StartCar,
+              carId: playerMessage.carId,
+              targetSimulationTimeFrames: null,
+            });
+          }
           manualMode = true;
           try {
             deleteAllCars();
