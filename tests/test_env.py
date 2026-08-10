@@ -37,9 +37,27 @@ def test_throttle_produces_progress_reward() -> None:
         env.reset(seed=0)
         _, reward, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
         assert info["reward_terms"]["progress"] > 0
+        assert info["reward_terms"]["on_track_speed"] >= 0
         assert np.isfinite(reward)
         assert not terminated
         assert not truncated
+    finally:
+        env.close()
+
+
+def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
+    env = make_env(track_id="mock/straight", frame_skip=10)
+    try:
+        env.reset(seed=0)
+        speed_reward = 0.0
+        for _ in range(10):
+            _, _, _, _, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
+            speed_reward += info["reward_terms"]["on_track_speed"]
+
+        assert speed_reward > 0
+        assert env.reward_config.checkpoint_bonus == 10.0
+        assert env.reward_config.finish_bonus > env.reward_config.checkpoint_bonus
+        assert env.reward_config.unsafe_speed_penalty_per_m < 0
     finally:
         env.close()
 

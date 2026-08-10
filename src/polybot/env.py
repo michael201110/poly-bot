@@ -27,12 +27,14 @@ from polybot.transport import SimulatorTransport
 class RewardConfig:
     """Reward coefficients kept independent from the game adapter."""
 
-    progress_per_m: float = 0.05
-    step_cost: float = -0.01
-    checkpoint_bonus: float = 1.0
-    finish_bonus: float = 25.0
-    crash_penalty: float = -3.0
-    off_track_penalty: float = -0.05
+    progress_per_m: float = 0.10
+    elapsed_cost_per_s: float = -0.02
+    on_track_speed_per_m: float = 0.04
+    unsafe_speed_penalty_per_m: float = -0.08
+    checkpoint_bonus: float = 10.0
+    finish_bonus: float = 100.0
+    crash_penalty: float = -10.0
+    off_track_penalty: float = -1.0
     action_change_penalty: float = -0.002
     max_forward_progress_per_step_m: float = 10.0
     max_reverse_progress_per_step_m: float = 3.0
@@ -219,9 +221,23 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             )
         )
         events = transition.events
+        telemetry = transition.telemetry
+        dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
+        forward_speed = max(0.0, telemetry.local_velocity_mps[2])
+        width = max(0.1, telemetry.track_half_width_m)
+        center_factor = float(np.clip(1.0 - abs(telemetry.lateral_offset_m) / width, 0, 1))
+        heading_factor = max(0.0, float(np.cos(telemetry.heading_error_rad)))
+        on_track_factor = center_factor * heading_factor
+        distance_at_speed = forward_speed * dt
         terms = {
             "progress": config.progress_per_m * progress_delta,
-            "step": config.step_cost,
+            "elapsed": config.elapsed_cost_per_s * dt,
+            "on_track_speed": config.on_track_speed_per_m
+            * distance_at_speed
+            * on_track_factor,
+            "unsafe_speed": config.unsafe_speed_penalty_per_m
+            * distance_at_speed
+            * (1.0 - on_track_factor),
             "checkpoint": config.checkpoint_bonus * events.count("checkpoint"),
             "finish": config.finish_bonus if "finish" in events else 0.0,
             "crash": config.crash_penalty if "crash" in events else 0.0,
