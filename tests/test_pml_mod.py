@@ -54,7 +54,7 @@ def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
         assert token in source
 
 
-def test_worker_connects_only_after_player_start() -> None:
+def test_worker_connects_when_player_is_created_and_started() -> None:
     source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
     create_case = source.split("case messageTypes.CreateCar:", 1)[1].split(
         "case messageTypes.DeleteCar:", 1
@@ -63,7 +63,7 @@ def test_worker_connects_only_after_player_start() -> None:
         "default:", 1
     )[0]
 
-    assert "connectSocket();" not in create_case
+    assert "connectSocket();" in create_case
     assert "message.carId === playerCarId" in start_case
     assert "connectSocket();" in start_case
 

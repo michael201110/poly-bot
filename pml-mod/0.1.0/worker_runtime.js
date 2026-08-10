@@ -1127,6 +1127,7 @@ export function polybotWorkerInjection() {
                 } catch (error) {
                   console.warn("[PolyBot] Could not request a reference ghost", error);
                 }
+                connectSocket();
               } else if (typeof message.trackData === "string") {
                 localGhostMessages.set(message.trackData, message);
                 relayGhost(message);
