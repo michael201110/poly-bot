@@ -78,7 +78,7 @@ def test_wrapper_time_limit_truncates_without_termination() -> None:
         env.close()
 
 
-def test_stationary_car_terminates_after_three_simulated_seconds() -> None:
+def test_stationary_car_terminates_after_five_simulated_seconds() -> None:
     env = make_env(track_id="mock/straight", frame_skip=10, max_episode_steps=100)
     try:
         env.reset(seed=0)
@@ -92,7 +92,7 @@ def test_stationary_car_terminates_after_three_simulated_seconds() -> None:
         assert terminated
         assert not truncated
         assert "stalled" in info["events"]
-        assert info["stationary_s"] >= 3.0
+        assert info["stationary_s"] >= 5.0
         assert info["reward_terms"]["stall"] == env.reward_config.stall_penalty
     finally:
         env.close()
@@ -102,7 +102,7 @@ def test_stall_threshold_is_five_metres_per_second() -> None:
     config = RewardConfig()
 
     assert config.stall_speed_threshold_mps == 5.0
-    assert config.stall_timeout_s == 3.0
+    assert config.stall_timeout_s == 5.0
 
 
 def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> None:

@@ -41,12 +41,13 @@ class RewardConfig:
     max_forward_progress_per_step_m: float = 10.0
     max_reverse_progress_per_step_m: float = 3.0
     stall_speed_threshold_mps: float = 5.0
-    stall_timeout_s: float = 3.0
+    stall_timeout_s: float = 5.0
     off_track_lateral_ratio: float = 1.05
     off_track_heading_ratio: float = 0.80
     off_track_heading_rad: float = 1.10
-    off_track_timeout_s: float = 0.40
+    off_track_timeout_s: float = 1.25
     off_track_min_grounded_wheels: int = 2
+    landing_grace_s: float = 2.0
     early_run_s: float = 20.0
 
 
@@ -116,6 +117,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_done = True
         self._stationary_s = 0.0
         self._off_track_s = 0.0
+        self._landing_grace_s = 0.0
         self.latest_telemetry: Telemetry | None = None
         self.simulator_capabilities: Mapping[str, Any] = {}
 
@@ -197,6 +199,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_done = False
         self._stationary_s = 0.0
         self._off_track_s = 0.0
+        self._landing_grace_s = 0.0
         self.latest_telemetry = transition.telemetry
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
@@ -223,18 +226,28 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ProtocolViolation("simulator advanced more ticks than requested")
 
         dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
-        speed = float(np.linalg.norm(transition.telemetry.local_velocity_mps))
-        if speed < self.reward_config.stall_speed_threshold_mps:
+        telemetry = transition.telemetry
+        grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
+        airborne = grounded_wheels < self.reward_config.off_track_min_grounded_wheels
+        if airborne:
+            self._landing_grace_s = self.reward_config.landing_grace_s
+        else:
+            self._landing_grace_s = max(0.0, self._landing_grace_s - dt)
+        landing_grace = self._landing_grace_s > 0.0
+
+        speed = float(np.linalg.norm(telemetry.local_velocity_mps))
+        if landing_grace:
+            self._stationary_s = 0.0
+        elif speed < self.reward_config.stall_speed_threshold_mps:
             self._stationary_s += dt
         else:
             self._stationary_s = 0.0
         stalled = self._stationary_s >= self.reward_config.stall_timeout_s
 
-        telemetry = transition.telemetry
         width = max(0.1, telemetry.track_half_width_m)
         lateral_ratio = abs(telemetry.lateral_offset_m) / width
         off_track_candidate = _has_off_track_evidence(telemetry, self.reward_config)
-        if off_track_candidate:
+        if off_track_candidate and not landing_grace:
             self._off_track_s += dt
         else:
             self._off_track_s = max(0.0, self._off_track_s - 2.0 * dt)
@@ -250,7 +263,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         )
         self._episode_steps += 1
         events = set(transition.events)
-        terminated = "finish" in events or "crash" in events or stalled or off_track
+        crash = "crash" in events and not landing_grace
+        terminated = "finish" in events or crash or stalled or off_track
         truncated = "time_limit" in events or self._episode_steps >= self.max_episode_steps
         self._episode_done = terminated or truncated
         self._previous_progress_m = transition.telemetry.route_progress_m
@@ -267,6 +281,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["off_track_s"] = self._off_track_s
             info["off_track_lateral_ratio"] = lateral_ratio
             info["early_off_track"] = early_off_track
+        if landing_grace:
+            info["landing_grace_s"] = self._landing_grace_s
         if truncated and "time_limit" not in events:
             info["wrapper_time_limit"] = True
         return observation, reward, terminated, truncated, info
