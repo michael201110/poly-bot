@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "polytrack-ai"
+version = "0.1.0"
+description = "Offline reinforcement-learning environment for PolyTrack"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+dependencies = [
+  "gymnasium>=1.0,<2",
+  "numpy>=1.26,<3",
+  "websockets>=13,<17",
+]
+
+[project.optional-dependencies]
+train = [
+  "stable-baselines3>=2.4,<3",
+  "torch>=2.2",
+]
+dev = [
+  "pytest>=8,<10",
+  "ruff>=0.9",
+]
+
+[project.scripts]
+polybot-smoke = "polybot.cli:smoke_main"
+polybot-train = "polybot.cli:train_main"
+polybot-eval = "polybot.cli:evaluate_main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
