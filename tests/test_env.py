@@ -108,7 +108,7 @@ def test_strong_airborne_spin_is_penalized_but_grounded_rotation_is_not() -> Non
         assert _airborne_spin_penalty(spinning, env.reward_config, 0.1) < 0
         assert _airborne_spin_penalty(grounded, env.reward_config, 0.1) == 0
         assert env.reward_config.airborne_spin_deadzone_radps == pytest.approx(
-            np.deg2rad(5), rel=1e-5
+            np.deg2rad(2), rel=1e-5
         )
     finally:
         env.close()
