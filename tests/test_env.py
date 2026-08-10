@@ -96,6 +96,38 @@ def test_stationary_car_terminates_after_three_simulated_seconds() -> None:
         env.close()
 
 
+def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> None:
+    transport = MockSimulatorTransport()
+    env = PolyTrackEnv(
+        transport,
+        track_id="mock/straight",
+        frame_skip=10,
+        max_episode_steps=100,
+    )
+    try:
+        env.reset(seed=0)
+        assert transport.state is not None
+        transport.state.lateral_offset_m = transport.track_half_width_m * 1.2
+        terminated = truncated = False
+        info = {}
+        while not (terminated or truncated):
+            _, _, terminated, truncated, info = env.step(
+                np.asarray([1, 1, 0], dtype=np.int64)
+            )
+
+        assert terminated
+        assert not truncated
+        assert "off_track" in info["events"]
+        assert info["off_track_s"] >= env.reward_config.off_track_timeout_s
+        assert info["early_off_track"] is True
+        assert (
+            info["reward_terms"]["off_track"]
+            == env.reward_config.early_off_track_penalty
+        )
+    finally:
+        env.close()
+
+
 def test_frame_skip_matches_individual_fixed_ticks() -> None:
     held_action = np.asarray([2, 1, 0], dtype=np.int64)
     batched = make_env(track_id="mock/straight", frame_skip=4)

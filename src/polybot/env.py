@@ -35,12 +35,18 @@ class RewardConfig:
     finish_bonus: float = 100.0
     crash_penalty: float = -10.0
     stall_penalty: float = -5.0
-    off_track_penalty: float = -1.0
+    off_track_penalty: float = -5.0
+    early_off_track_penalty: float = -15.0
     action_change_penalty: float = -0.002
     max_forward_progress_per_step_m: float = 10.0
     max_reverse_progress_per_step_m: float = 3.0
     stall_speed_threshold_mps: float = 0.5
     stall_timeout_s: float = 3.0
+    off_track_lateral_ratio: float = 1.05
+    off_track_heading_ratio: float = 0.80
+    off_track_heading_rad: float = 1.10
+    off_track_timeout_s: float = 0.40
+    early_run_s: float = 20.0
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
@@ -94,6 +100,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._previous_action = Action()
         self._episode_done = True
         self._stationary_s = 0.0
+        self._off_track_s = 0.0
         self.latest_telemetry: Telemetry | None = None
         self.simulator_capabilities: Mapping[str, Any] = {}
 
@@ -174,6 +181,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._previous_action = transition.telemetry.previous_action
         self._episode_done = False
         self._stationary_s = 0.0
+        self._off_track_s = 0.0
         self.latest_telemetry = transition.telemetry
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
@@ -207,10 +215,35 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             self._stationary_s = 0.0
         stalled = self._stationary_s >= self.reward_config.stall_timeout_s
 
-        reward, reward_terms = self._reward(transition, decoded_action, stalled=stalled)
+        telemetry = transition.telemetry
+        width = max(0.1, telemetry.track_half_width_m)
+        lateral_ratio = abs(telemetry.lateral_offset_m) / width
+        off_track_candidate = (
+            "off_track" in transition.events
+            or lateral_ratio >= self.reward_config.off_track_lateral_ratio
+            or (
+                lateral_ratio >= self.reward_config.off_track_heading_ratio
+                and abs(telemetry.heading_error_rad)
+                >= self.reward_config.off_track_heading_rad
+            )
+        )
+        if off_track_candidate:
+            self._off_track_s += dt
+        else:
+            self._off_track_s = max(0.0, self._off_track_s - 2.0 * dt)
+        off_track = self._off_track_s >= self.reward_config.off_track_timeout_s
+        early_off_track = off_track and telemetry.elapsed_s <= self.reward_config.early_run_s
+
+        reward, reward_terms = self._reward(
+            transition,
+            decoded_action,
+            stalled=stalled,
+            off_track=off_track,
+            early_off_track=early_off_track,
+        )
         self._episode_steps += 1
         events = set(transition.events)
-        terminated = "finish" in events or "crash" in events or stalled
+        terminated = "finish" in events or "crash" in events or stalled or off_track
         truncated = "time_limit" in events or self._episode_steps >= self.max_episode_steps
         self._episode_done = terminated or truncated
         self._previous_progress_m = transition.telemetry.route_progress_m
@@ -222,6 +255,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if stalled:
             info["events"] = (*transition.events, "stalled")
             info["stationary_s"] = self._stationary_s
+        if off_track:
+            info["events"] = tuple(dict.fromkeys((*info["events"], "off_track")))
+            info["off_track_s"] = self._off_track_s
+            info["off_track_lateral_ratio"] = lateral_ratio
+            info["early_off_track"] = early_off_track
         if truncated and "time_limit" not in events:
             info["wrapper_time_limit"] = True
         return observation, reward, terminated, truncated, info
@@ -232,6 +270,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         action: Action,
         *,
         stalled: bool = False,
+        off_track: bool = False,
+        early_off_track: bool = False,
     ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
         raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
@@ -264,7 +304,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "finish": config.finish_bonus if "finish" in events else 0.0,
             "crash": config.crash_penalty if "crash" in events else 0.0,
             "stall": config.stall_penalty if stalled else 0.0,
-            "off_track": config.off_track_penalty if "off_track" in events else 0.0,
+            "off_track": (
+                config.early_off_track_penalty
+                if early_off_track
+                else config.off_track_penalty if off_track else 0.0
+            ),
             "action_change": config.action_change_penalty
             * (
                 abs(action.steer - self._previous_action.steer)
