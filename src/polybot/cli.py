@@ -361,7 +361,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 self.episodes += sum(bool(done) for done in dones)
                 for info, done in zip(self.locals.get("infos", ()), dones, strict=False):
                     reward_terms = info.get("reward_terms", {})
-                    if reward_terms.get("barrier_launch", 0.0) < 0.0:
+                    if (
+                        reward_terms.get("barrier_launch", 0.0) < 0.0
+                        or reward_terms.get("barrier_contact", 0.0) < 0.0
+                    ):
                         self.clean_episode = False
                     progress_m = float(info.get("route_progress_m", 0.0))
                     track_length_m = max(1.0, float(info.get("track_length_m", 1.0)))
