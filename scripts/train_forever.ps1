@@ -26,6 +26,8 @@ while ($true) {
         --max-steps $MaxSteps `
         --frame-skip $FrameSkip `
         --learning-rate $LearningRate `
+        --gamma 0.999 `
+        --gae-lambda 0.98 `
         --entropy-coef $EntropyCoefficient `
         --curriculum-last-fraction 0.0 `
         --curriculum-probability 0.0 `

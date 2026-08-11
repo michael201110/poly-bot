@@ -14,6 +14,7 @@ from polybot.env import (
     _airborne_tilt_penalty,
     _checkpoint_reward,
     _finish_reward,
+    _ground_slip_penalty,
     _has_off_track_evidence,
 )
 from polybot.mock import MockSimulatorTransport
@@ -206,6 +207,32 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         one_wheel_down = replace(sideways, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
         assert _airborne_tilt_penalty(one_wheel_down, env.reward_config, 0.1) == 0
         assert env.reward_config.barrier_launch_penalty <= -15.0
+    finally:
+        env.close()
+
+
+def test_large_slip_angle_is_penalized_only_with_four_wheels_grounded() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        sliding = replace(
+            env.latest_telemetry,
+            local_velocity_mps=(10.0, 0.0, 20.0),
+            wheel_contacts=(1.0, 1.0, 1.0, 1.0),
+        )
+        controlled = replace(
+            sliding,
+            local_velocity_mps=(20.0 * np.tan(np.deg2rad(10)), 0.0, 20.0),
+        )
+        three_wheels = replace(sliding, wheel_contacts=(1.0, 1.0, 1.0, 0.0))
+
+        assert env.reward_config.ground_slip_tolerance_rad == pytest.approx(
+            np.deg2rad(10), rel=1e-5
+        )
+        assert _ground_slip_penalty(sliding, env.reward_config, 0.1) < 0
+        assert _ground_slip_penalty(controlled, env.reward_config, 0.1) == pytest.approx(0)
+        assert _ground_slip_penalty(three_wheels, env.reward_config, 0.1) == 0
     finally:
         env.close()
 

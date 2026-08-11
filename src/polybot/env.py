@@ -51,6 +51,8 @@ class RewardConfig:
     airborne_roll_limit_rad: float = 1.047198  # 60 degrees
     airborne_roll_timeout_s: float = 0.10
     airborne_roll_failure_penalty: float = -100.0
+    ground_slip_tolerance_rad: float = 0.174533  # 10 degrees
+    ground_slip_penalty_per_rad_s: float = -25.0
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 90.0
     checkpoint_target_s: float = 30.0
@@ -143,6 +145,20 @@ def _airborne_tilt_penalty(telemetry: Telemetry, config: RewardConfig, dt: float
         config.airborne_roll_penalty_per_s * roll_error
         + config.airborne_tilt_penalty_per_s * pitch_error
     ) * dt
+
+
+def _ground_slip_penalty(
+    telemetry: Telemetry, config: RewardConfig, dt: float
+) -> float:
+    """Penalize tyre-scrubbing slip only while all four wheels are grounded."""
+
+    if not all(contact >= 0.5 for contact in telemetry.wheel_contacts):
+        return 0.0
+    lateral_speed = abs(telemetry.local_velocity_mps[0])
+    forward_speed = abs(telemetry.local_velocity_mps[2])
+    slip_angle = float(np.arctan2(lateral_speed, max(forward_speed, 1e-6)))
+    excess_slip = max(0.0, slip_angle - config.ground_slip_tolerance_rad)
+    return config.ground_slip_penalty_per_rad_s * excess_slip * dt
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
@@ -541,6 +557,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             * barrier_factor**2,
             "airborne_spin": _airborne_spin_penalty(telemetry, config, dt),
             "airborne_tilt": _airborne_tilt_penalty(telemetry, config, dt),
+            "ground_slip": _ground_slip_penalty(telemetry, config, dt),
             "barrier_launch": config.barrier_launch_penalty if barrier_launch else 0.0,
             "barrier_contact": (config.barrier_contact_penalty if barrier_contact else 0.0),
             "off_track_landing": (config.off_track_landing_penalty if off_track_landing else 0.0),

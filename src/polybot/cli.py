@@ -244,6 +244,18 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         help="PPO learning rate; use a smaller value for late-stage fine-tuning",
     )
     parser.add_argument(
+        "--gamma",
+        type=float,
+        default=0.99,
+        help="PPO reward discount; values near 1 carry lap-time rewards farther back",
+    )
+    parser.add_argument(
+        "--gae-lambda",
+        type=float,
+        default=0.95,
+        help="PPO generalized-advantage smoothing factor",
+    )
+    parser.add_argument(
         "--entropy-coef",
         type=float,
         default=0.0,
@@ -289,6 +301,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--timesteps must be positive")
     if args.learning_rate <= 0:
         parser.error("--learning-rate must be positive")
+    if not 0 < args.gamma <= 1:
+        parser.error("--gamma must be in (0, 1]")
+    if not 0 < args.gae_lambda <= 1:
+        parser.error("--gae-lambda must be in (0, 1]")
     if not -0.1 <= args.entropy_coef <= 0.1:
         parser.error("--entropy-coef must be between -0.1 and 0.1")
     if not 0 <= args.curriculum_last_fraction <= 1:
@@ -335,6 +351,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 tensorboard_log=tensorboard_log,
                 learning_rate=args.learning_rate,
                 ent_coef=args.entropy_coef,
+                gamma=args.gamma,
+                gae_lambda=args.gae_lambda,
             )
             _bias_initial_policy_forward(model, args.forward_bias)
         else:
@@ -345,6 +363,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 custom_objects={
                     "learning_rate": args.learning_rate,
                     "ent_coef": args.entropy_coef,
+                    "gamma": args.gamma,
+                    "gae_lambda": args.gae_lambda,
                 },
             )
 
