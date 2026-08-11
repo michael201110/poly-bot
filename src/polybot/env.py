@@ -44,7 +44,7 @@ class RewardConfig:
     airborne_roll_penalty_per_s: float = -40.0
     airborne_pitch_tolerance_rad: float = 0.523599  # 30 degrees
     checkpoint_bonus: float = 10.0
-    checkpoint_fast_bonus: float = 10.0
+    checkpoint_fast_bonus: float = 30.0
     checkpoint_target_s: float = 30.0
     finish_bonus: float = 250.0
     crash_penalty: float = -10.0
