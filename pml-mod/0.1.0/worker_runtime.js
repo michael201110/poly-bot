@@ -1046,6 +1046,21 @@ export function polybotWorkerInjection() {
             }
             await new Promise((resolve) => setTimeout(resolve, finishDisplayDelayMs));
             pauseManualCars();
+            const finishedPlayer = findCar(playerCarId);
+            if (finishedPlayer) {
+              // Backspace is PolyTrack's native restart control. Use one native
+              // reset tick to dismiss the finish overlay before Python begins
+              // the next deterministic episode.
+              const resetBuffer = advanceCar(finishedPlayer, {
+                up: false,
+                right: false,
+                down: false,
+                left: false,
+                reset: true,
+              });
+              finishedPlayer.frames += 1;
+              publishStates([resetBuffer]);
+            }
           }
           return result;
         }

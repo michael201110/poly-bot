@@ -89,7 +89,6 @@ def test_worker_publishes_checkpoint_transitions_and_local_finish_state() -> Non
     assert "decoded.nextCheckpointIndex > visibleCheckpoint" in source
     assert "publishStates([buffer]);" in source
     assert '"local_finish_ui"' in source
-    assert "visibleBytes[11] &= ~2" not in source
 
 
 def test_worker_coasts_in_realtime_before_resetting_a_finish() -> None:
@@ -100,6 +99,10 @@ def test_worker_coasts_in_realtime_before_resetting_a_finish() -> None:
     assert "car.isPaused = false;" in source
     assert "setTimeout(resolve, finishDisplayDelayMs)" in source
     assert "pauseManualCars();" in source
+    assert "const finishedPlayer = findCar(playerCarId);" in source
+    assert "reset: true" in source
+    assert "publishStates([resetBuffer]);" in source
+    assert "visibleBytes[11] &= ~2" not in source
 
 
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
