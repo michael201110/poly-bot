@@ -34,6 +34,7 @@ class RewardConfig:
     takeoff_target_speed_mps: float = 45.0
     takeoff_speed_reward_per_mps: float = 2.0
     takeoff_speed_reward_limit: float = 30.0
+    imitation_bonus_per_s: float = 4.0
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_proximity_penalty_per_m: float = -1.00
     barrier_proximity_start_ratio: float = 0.55
@@ -482,6 +483,22 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                     config.takeoff_speed_reward_limit,
                 )
             )
+        imitation_reward = 0.0
+        try:
+            expert_action = Action.from_wire(
+                transition.simulator_info.get("expert_action")
+            )
+        except (ProtocolViolation, ValueError):
+            expert_action = None
+        if expert_action is not None:
+            action_matches = (
+                int(action.steer == expert_action.steer)
+                + int(action.throttle == expert_action.throttle)
+                + int(action.brake == expert_action.brake)
+            ) / 3.0
+            imitation_reward = (
+                config.imitation_bonus_per_s * dt * on_track_factor * action_matches
+            )
         terms = {
             "progress": config.progress_per_m * progress_delta,
             "elapsed": config.elapsed_cost_per_s * dt,
@@ -494,6 +511,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             if airborne
             else 0.0,
             "takeoff_speed": takeoff_speed_reward,
+            "ghost_imitation": imitation_reward,
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),

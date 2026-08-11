@@ -351,9 +351,14 @@ export function polybotWorkerInjection() {
           };
         }
 
-        function addReferencePoint(points, decoded, force = false) {
+        function addReferencePoint(points, decoded, controls, force = false) {
           const point = {
             frame: decoded.frames,
+            expertAction: {
+              steer: controls.right ? 1 : controls.left ? -1 : 0,
+              throttle: controls.up ? 1 : 0,
+              brake: controls.down ? 1 : 0,
+            },
             position: decoded.position,
             quaternion: decoded.quaternion,
             nextCheckpointIndex: decoded.nextCheckpointIndex,
@@ -453,7 +458,7 @@ export function polybotWorkerInjection() {
               hiddenCar.frames += 1;
               const decoded = decodeState(buffer);
               if (frame % referenceSampleTicks === 0 || decoded.hasFinished) {
-                addReferencePoint(points, decoded, decoded.hasFinished);
+                addReferencePoint(points, decoded, controls, decoded.hasFinished);
               }
               if (decoded.hasFinished) {
                 finished = true;
@@ -734,6 +739,7 @@ export function polybotWorkerInjection() {
               native_frame: decoded.frames,
               speed_kmh: decoded.speedKmh,
               collision_impulses: decoded.collisionImpulses,
+              expert_action: guide.expertAction,
               off_track: offTrack,
               leaderboard_finish_masked: true,
             },
