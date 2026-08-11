@@ -146,7 +146,6 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
     assert config.barrier_proximity_start_ratio > 0.5
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
     assert config.barrier_contact_penalty == -50.0
-    assert config.barrier_contact_timeout_s == 0.0
     assert config.barrier_collision_impulse_threshold == 0.0
     assert config.off_track_landing_penalty == -30.0
 
@@ -291,7 +290,7 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         env.close()
 
 
-def test_sustained_grounded_barrier_contact_terminates_episode() -> None:
+def test_native_chassis_collision_terminates_episode() -> None:
     transport = MockSimulatorTransport()
     env = PolyTrackEnv(
         transport,

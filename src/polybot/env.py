@@ -40,8 +40,6 @@ class RewardConfig:
     barrier_proximity_start_ratio: float = 0.55
     barrier_launch_penalty: float = -15.0
     barrier_contact_penalty: float = -50.0
-    barrier_contact_ratio: float = 0.90
-    barrier_contact_timeout_s: float = 0.0
     barrier_collision_impulse_threshold: float = 0.0
     off_track_landing_penalty: float = -30.0
     airborne_spin_penalty_per_rad: float = -0.30
