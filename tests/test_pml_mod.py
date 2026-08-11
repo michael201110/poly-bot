@@ -92,6 +92,16 @@ def test_worker_publishes_checkpoint_transitions_and_local_finish_state() -> Non
     assert "visibleBytes[11] &= ~2" not in source
 
 
+def test_worker_coasts_in_realtime_before_resetting_a_finish() -> None:
+    source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+
+    assert "const finishDisplayDelayMs = 500;" in source
+    assert "async function stepEpisode(params)" in source
+    assert "car.isPaused = false;" in source
+    assert "setTimeout(resolve, finishDisplayDelayMs)" in source
+    assert "pauseManualCars();" in source
+
+
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
     source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(

@@ -23,6 +23,7 @@ export function polybotWorkerInjection() {
         const hiddenCarId = 2147483000;
         const reconnectDelayMs = 1000;
         const readyWaitMs = 8000;
+        const finishDisplayDelayMs = 500;
         const relayName = "polybot-ghost-relay-v1";
 
         let socket = null;
@@ -943,7 +944,7 @@ export function polybotWorkerInjection() {
           };
         }
 
-        function stepEpisode(params) {
+        async function stepEpisode(params) {
           if (!session || params.episode_id !== session.episodeId) {
             throw new BridgeError("stale_episode", "episode_id is stale or unknown");
           }
@@ -1029,7 +1030,7 @@ export function polybotWorkerInjection() {
           if (decoded.hasFinished) {
             events.push("finish");
           }
-          return transition(
+          const result = transition(
             decoded,
             action,
             ticksAdvanced,
@@ -1037,6 +1038,16 @@ export function polybotWorkerInjection() {
             null,
             collisionImpulsePeak,
           );
+          if (decoded.hasFinished) {
+            // Let PolyTrack's native realtime loop animate the completed car
+            // briefly instead of freezing the last fixed-step state onscreen.
+            for (const car of cars) {
+              car.isPaused = false;
+            }
+            await new Promise((resolve) => setTimeout(resolve, finishDisplayDelayMs));
+            pauseManualCars();
+          }
+          return result;
         }
 
         async function dispatchRequest(request) {
@@ -1086,7 +1097,7 @@ export function polybotWorkerInjection() {
             case "reset":
               return resetEpisode(params);
             case "step":
-              return stepEpisode(params);
+              return await stepEpisode(params);
             case "close":
               leaveManualMode();
               return { closed: true };
