@@ -230,6 +230,7 @@ def test_large_slip_angle_is_penalized_only_with_four_wheels_grounded() -> None:
         assert env.reward_config.ground_slip_tolerance_rad == pytest.approx(
             np.deg2rad(10), rel=1e-5
         )
+        assert env.reward_config.ground_slip_penalty_per_rad_s == -250.0
         assert _ground_slip_penalty(sliding, env.reward_config, 0.1) < 0
         assert _ground_slip_penalty(controlled, env.reward_config, 0.1) == pytest.approx(0)
         assert _ground_slip_penalty(three_wheels, env.reward_config, 0.1) == 0

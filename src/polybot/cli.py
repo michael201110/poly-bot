@@ -381,6 +381,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 self.best_lap_time_s = float("inf")
                 self.clean_episode = True
                 self.episode_imitation_reward = 0.0
+                self.episode_ground_slip_penalty = 0.0
                 if self.best_metadata.exists():
                     try:
                         metadata = json.loads(self.best_metadata.read_text(encoding="utf-8"))
@@ -396,6 +397,9 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 for info, done in zip(self.locals.get("infos", ()), dones, strict=False):
                     reward_terms = info.get("reward_terms", {})
                     self.episode_imitation_reward += float(reward_terms.get("ghost_imitation", 0.0))
+                    self.episode_ground_slip_penalty += float(
+                        reward_terms.get("ground_slip", 0.0)
+                    )
                     if (
                         reward_terms.get("barrier_launch", 0.0) < 0.0
                         or reward_terms.get("barrier_contact", 0.0) < 0.0
@@ -456,11 +460,13 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                             f"Episode {completed_episode}: reward={reward_text} "
                             f"progress={progress_ratio:.1%} result={result} "
                             f"{time_label}={elapsed_s:.3f}s steps={episode_length} "
-                            f"ghost={self.episode_imitation_reward:+.2f}",
+                            f"ghost={self.episode_imitation_reward:+.2f} "
+                            f"slip={self.episode_ground_slip_penalty:+.2f}",
                             flush=True,
                         )
                         self.clean_episode = True
                         self.episode_imitation_reward = 0.0
+                        self.episode_ground_slip_penalty = 0.0
                 if self.every and self.episodes >= self.next_checkpoint:
                     self.output.parent.mkdir(parents=True, exist_ok=True)
                     self.model.save(str(self.output))
