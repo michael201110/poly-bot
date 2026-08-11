@@ -28,7 +28,7 @@ class RewardConfig:
     """Reward coefficients kept independent from the game adapter."""
 
     progress_per_m: float = 0.10
-    elapsed_cost_per_s: float = -0.02
+    elapsed_cost_per_s: float = 0.0
     on_track_speed_per_m: float = 0.06
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_proximity_penalty_per_m: float = -1.00
