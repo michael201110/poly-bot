@@ -126,8 +126,8 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
 
     assert config.barrier_proximity_start_ratio > 0.5
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
-    assert config.barrier_contact_penalty <= -25.0
-    assert config.barrier_contact_timeout_s == 0.25
+    assert config.barrier_contact_penalty == -50.0
+    assert config.barrier_contact_timeout_s == 0.05
     assert config.barrier_collision_impulse_threshold == 0.05
     assert config.off_track_landing_penalty == -30.0
 
@@ -279,7 +279,7 @@ def test_sustained_grounded_barrier_contact_terminates_episode() -> None:
         assert terminated
         assert not truncated
         assert "barrier_contact" in info["events"]
-        assert info["reward_terms"]["barrier_contact"] <= -25.0
+        assert info["reward_terms"]["barrier_contact"] == -50.0
     finally:
         env.close()
 
