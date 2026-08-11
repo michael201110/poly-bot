@@ -40,7 +40,7 @@ class RewardConfig:
     barrier_proximity_start_ratio: float = 0.55
     barrier_launch_penalty: float = -15.0
     barrier_contact_penalty: float = -50.0
-    barrier_contact_ratio: float = 0.90
+    barrier_contact_ratio: float = 0.80
     barrier_contact_timeout_s: float = 0.0
     barrier_collision_impulse_threshold: float = 0.0
     off_track_landing_penalty: float = -30.0
@@ -377,8 +377,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             collision_impulse = 0.0
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
-        barrier_contact = (
-            collision_impulse > self.reward_config.barrier_collision_impulse_threshold
+        barrier_contact = collision_impulse > (
+            self.reward_config.barrier_collision_impulse_threshold
+        ) or (
+            grounded_wheels >= self.reward_config.off_track_min_grounded_wheels
+            and lateral_ratio >= self.reward_config.barrier_contact_ratio
         )
         self._barrier_contact_s = dt if barrier_contact else 0.0
 

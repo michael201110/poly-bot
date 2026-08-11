@@ -146,6 +146,7 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
     assert config.barrier_proximity_start_ratio > 0.5
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
     assert config.barrier_contact_penalty == -50.0
+    assert config.barrier_contact_ratio == 0.80
     assert config.barrier_contact_timeout_s == 0.0
     assert config.barrier_collision_impulse_threshold == 0.0
     assert config.off_track_landing_penalty == -30.0
@@ -258,7 +259,9 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         frame_skip=10,
         max_episode_steps=100,
         reward_config=replace(
-            RewardConfig(), barrier_collision_impulse_threshold=float("inf")
+            RewardConfig(),
+            barrier_contact_ratio=float("inf"),
+            barrier_collision_impulse_threshold=float("inf"),
         ),
     )
     try:
@@ -285,7 +288,7 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         env.close()
 
 
-def test_sustained_grounded_barrier_contact_terminates_episode() -> None:
+def test_grounded_front_wheel_barrier_envelope_terminates_episode() -> None:
     transport = MockSimulatorTransport()
     env = PolyTrackEnv(
         transport,
@@ -296,7 +299,9 @@ def test_sustained_grounded_barrier_contact_terminates_episode() -> None:
     try:
         env.reset(seed=0)
         assert transport.state is not None
-        transport.state.lateral_offset_m = transport.track_half_width_m * 0.95
+        # The mock only emits a native collision impulse from 90% width onward,
+        # so this specifically exercises the front-wheel safety envelope.
+        transport.state.lateral_offset_m = transport.track_half_width_m * 0.81
         _, _, terminated, truncated, info = env.step(
             np.asarray([1, 1, 0], dtype=np.int64)
         )
