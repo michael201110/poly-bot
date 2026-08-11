@@ -11,42 +11,52 @@ $ErrorActionPreference = "Continue"
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $trainer = Join-Path $repoRoot ".venv/Scripts/polybot-train.exe"
 $modelZip = Join-Path $repoRoot "$ModelPath.zip"
-$lastTenMarker = Join-Path $repoRoot "$ModelPath-last10-50.complete"
+$curriculumSections = @(
+    @{ Name = "00-25"; Start = 0.00; End = 0.25 },
+    @{ Name = "25-50"; Start = 0.25; End = 0.50 },
+    @{ Name = "50-75"; Start = 0.50; End = 0.75 },
+    @{ Name = "75-100"; Start = 0.75; End = 1.00 }
+)
 
 Set-Location $repoRoot
 
-while (-not (Test-Path -LiteralPath $lastTenMarker)) {
-    $resumeArguments = @()
-    if (Test-Path -LiteralPath $modelZip) {
-        $resumeArguments = @("--resume", $ModelPath)
-    }
+foreach ($section in $curriculumSections) {
+    $sectionMarker = Join-Path $repoRoot "$ModelPath-curriculum-$($section.Name).complete"
+    while (-not (Test-Path -LiteralPath $sectionMarker)) {
+        $resumeArguments = @()
+        if (Test-Path -LiteralPath $modelZip) {
+            $resumeArguments = @("--resume", $ModelPath)
+        }
 
-    Write-Output "Training the final 10% for 50 episodes."
-    & $trainer `
-        --backend websocket `
-        --timesteps $TimestepsPerRun `
-        --max-episodes 50 `
-        --max-steps $MaxSteps `
-        --frame-skip $FrameSkip `
-        --learning-rate $LearningRate `
-        --gamma 0.999 `
-        --gae-lambda 0.98 `
-        --entropy-coef $EntropyCoefficient `
-        --curriculum-last-fraction 0.10 `
-        --curriculum-probability 1.0 `
-        @resumeArguments `
-        --checkpoint-episodes 5 `
-        --model-out $ModelPath
+        Write-Output "Training section $($section.Name)% for 500 episodes."
+        & $trainer `
+            --backend websocket `
+            --timesteps $TimestepsPerRun `
+            --max-episodes 500 `
+            --max-steps $MaxSteps `
+            --frame-skip $FrameSkip `
+            --learning-rate $LearningRate `
+            --gamma 0.999 `
+            --gae-lambda 0.98 `
+            --entropy-coef $EntropyCoefficient `
+            --curriculum-start-ratio $section.Start `
+            --curriculum-end-ratio $section.End `
+            @resumeArguments `
+            --checkpoint-episodes 5 `
+            --model-out $ModelPath
 
-    $phaseExitCode = $LASTEXITCODE
-    if ($phaseExitCode -eq 0) {
-        New-Item -ItemType File -Path $lastTenMarker -Force | Out-Null
-        Write-Output "Completed 50 final-section episodes; reverting to full episodes."
-    } else {
-        Write-Output "Final-section trainer exited with code $phaseExitCode; restarting in 3 seconds."
-        Start-Sleep -Seconds 3
+        $phaseExitCode = $LASTEXITCODE
+        if ($phaseExitCode -eq 0) {
+            New-Item -ItemType File -Path $sectionMarker -Force | Out-Null
+            Write-Output "Completed section $($section.Name)%."
+        } else {
+            Write-Output "Section trainer exited with code $phaseExitCode; restarting in 3 seconds."
+            Start-Sleep -Seconds 3
+        }
     }
 }
+
+Write-Output "Completed one-time quarter-track curriculum; reverting to full episodes."
 
 while ($true) {
     $resumeArguments = @()

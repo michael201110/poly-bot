@@ -243,6 +243,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--curriculum-last-fraction", type=float, default=0.0)
     parser.add_argument("--curriculum-probability", type=float, default=0.0)
+    parser.add_argument("--curriculum-start-ratio", type=float, default=None)
+    parser.add_argument("--curriculum-end-ratio", type=float, default=None)
     parser.add_argument(
         "--learning-rate",
         type=float,
@@ -319,6 +321,12 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--curriculum-last-fraction must be in [0, 1]")
     if not 0 <= args.curriculum_probability <= 1:
         parser.error("--curriculum-probability must be in [0, 1]")
+    if (args.curriculum_start_ratio is None) != (args.curriculum_end_ratio is None):
+        parser.error("curriculum section start and end must be provided together")
+    if args.curriculum_start_ratio is not None and not (
+        0 <= args.curriculum_start_ratio < args.curriculum_end_ratio <= 1
+    ):
+        parser.error("curriculum section must satisfy 0 <= start < end <= 1")
     if args.forward_bias < 0:
         parser.error("--forward-bias must be non-negative")
     if args.checkpoint_episodes < 0:
@@ -344,6 +352,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             request_timeout_s=args.request_timeout,
             curriculum_last_fraction=args.curriculum_last_fraction,
             curriculum_probability=args.curriculum_probability,
+            curriculum_start_ratio=args.curriculum_start_ratio,
+            curriculum_end_ratio=args.curriculum_end_ratio,
         )
     except BaseException:
         transport.close()
@@ -420,8 +430,13 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     is_finish = "finish" in info.get("events", ())
                     elapsed_s = float(info.get("elapsed_s", 0.0))
                     faster_finish = is_finish and elapsed_s < self.best_lap_time_s
-                    if args.curriculum_probability == 0.0 and self.clean_episode and (
+                    if (
+                        args.curriculum_probability == 0.0
+                        and args.curriculum_start_ratio is None
+                        and self.clean_episode
+                        and (
                         progress_ratio >= self.best_progress_ratio + 0.02 or faster_finish
+                        )
                     ):
                         self.output.parent.mkdir(parents=True, exist_ok=True)
                         self.model.save(str(self.best_output))

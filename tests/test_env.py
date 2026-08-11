@@ -75,6 +75,33 @@ def test_full_track_curriculum_can_start_anywhere_before_finish() -> None:
         env.close()
 
 
+def test_curriculum_section_starts_exactly_and_terminates_at_boundary() -> None:
+    env = make_env(
+        track_id="mock/straight",
+        curriculum_start_ratio=0.25,
+        curriculum_end_ratio=0.50,
+    )
+    try:
+        _, reset_info = env.reset(seed=42)
+        reset_ratio = reset_info["route_progress_m"] / reset_info["track_length_m"]
+        assert reset_ratio == pytest.approx(0.25)
+
+        terminated = False
+        info: dict[str, object] = {}
+        for _ in range(2_000):
+            _, _, terminated, truncated, info = env.step(
+                np.asarray([1, 1, 0], dtype=np.int64)
+            )
+            if terminated or truncated:
+                break
+
+        assert terminated
+        assert "curriculum_section_complete" in info["events"]
+        assert info["reward_terms"]["curriculum_section"] == 250.0
+    finally:
+        env.close()
+
+
 def test_throttle_produces_progress_reward() -> None:
     env = make_env(track_id="mock/straight", frame_skip=4)
     try:

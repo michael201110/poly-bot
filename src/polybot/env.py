@@ -57,6 +57,7 @@ class RewardConfig:
     finish_bonus: float = 1000.0
     finish_fast_bonus: float = 2000.0
     finish_target_s: float = 60.0
+    curriculum_section_bonus: float = 250.0
     crash_penalty: float = -10.0
     stall_penalty: float = -5.0
     off_track_penalty: float = -5.0
@@ -186,6 +187,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         request_timeout_s: float = 10.0,
         curriculum_last_fraction: float = 0.0,
         curriculum_probability: float = 0.0,
+        curriculum_start_ratio: float | None = None,
+        curriculum_end_ratio: float | None = None,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -200,6 +203,12 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("curriculum_last_fraction must be in [0, 1]")
         if not 0.0 <= curriculum_probability <= 1.0:
             raise ValueError("curriculum_probability must be in [0, 1]")
+        if (curriculum_start_ratio is None) != (curriculum_end_ratio is None):
+            raise ValueError("curriculum section start and end must be provided together")
+        if curriculum_start_ratio is not None and not (
+            0.0 <= curriculum_start_ratio < curriculum_end_ratio <= 1.0
+        ):
+            raise ValueError("curriculum section must satisfy 0 <= start < end <= 1")
 
         self.transport = transport
         self.track_id = track_id
@@ -210,6 +219,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.request_timeout_s = request_timeout_s
         self.curriculum_last_fraction = curriculum_last_fraction
         self.curriculum_probability = curriculum_probability
+        self.curriculum_start_ratio = curriculum_start_ratio
+        self.curriculum_end_ratio = curriculum_end_ratio
 
         self.action_space = spaces.MultiDiscrete(np.asarray([3, 2, 2], dtype=np.int64))
         self.observation_space = spaces.Box(
@@ -297,7 +308,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             else int(self.np_random.integers(0, np.iinfo(np.int32).max))
         )
         start_progress_ratio = 0.0
-        if (
+        if self.curriculum_start_ratio is not None:
+            start_progress_ratio = self.curriculum_start_ratio
+        elif (
             self.curriculum_last_fraction > 0.0
             and self.np_random.random() < self.curriculum_probability
         ):
@@ -406,6 +419,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         else:
             self._airborne_roll_s = max(0.0, self._airborne_roll_s - 2.0 * dt)
         airborne_roll_failure = self._airborne_roll_s >= self.reward_config.airborne_roll_timeout_s
+        curriculum_section_complete = bool(
+            self.curriculum_end_ratio is not None
+            and telemetry.route_progress_m
+            >= telemetry.track_length_m * self.curriculum_end_ratio
+        )
 
         reward, reward_terms = self._reward(
             transition,
@@ -417,6 +435,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             off_track_landing=off_track_landing,
             clean_takeoff=clean_takeoff,
             airborne_roll_failure=airborne_roll_failure,
+            curriculum_section_complete=curriculum_section_complete,
         )
         self._episode_steps += 1
         events = set(transition.events)
@@ -428,6 +447,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             or off_track
             or barrier_contact
             or airborne_roll_failure
+            or curriculum_section_complete
         )
         truncated = "time_limit" in events or self._episode_steps >= self.max_episode_steps
         self._episode_done = terminated or truncated
@@ -453,6 +473,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if airborne_roll_failure:
             info["events"] = tuple(dict.fromkeys((*info["events"], "airborne_roll_failure")))
             info["airborne_roll_s"] = self._airborne_roll_s
+        if curriculum_section_complete:
+            info["events"] = tuple(
+                dict.fromkeys((*info["events"], "curriculum_section_complete"))
+            )
         if landing_grace:
             info["landing_grace_s"] = self._landing_grace_s
         if truncated and "time_limit" not in events:
@@ -471,6 +495,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         off_track_landing: bool = False,
         clean_takeoff: bool = False,
         airborne_roll_failure: bool = False,
+        curriculum_section_complete: bool = False,
     ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
         raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
@@ -555,6 +580,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             ),
             "checkpoint": _checkpoint_reward(telemetry, config) * events.count("checkpoint"),
             "finish": _finish_reward(telemetry, config) if "finish" in events else 0.0,
+            "curriculum_section": (
+                config.curriculum_section_bonus if curriculum_section_complete else 0.0
+            ),
             "crash": config.crash_penalty if "crash" in events else 0.0,
             "stall": config.stall_penalty if stalled else 0.0,
             "off_track": (
