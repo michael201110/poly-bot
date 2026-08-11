@@ -41,8 +41,8 @@ class RewardConfig:
     barrier_launch_penalty: float = -15.0
     barrier_contact_penalty: float = -50.0
     barrier_contact_ratio: float = 0.90
-    barrier_contact_timeout_s: float = 0.05
-    barrier_collision_impulse_threshold: float = 0.05
+    barrier_contact_timeout_s: float = 0.0
+    barrier_collision_impulse_threshold: float = 0.0
     off_track_landing_penalty: float = -30.0
     airborne_spin_penalty_per_rad: float = -0.30
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
@@ -377,18 +377,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             collision_impulse = 0.0
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
-        barrier_contact_candidate = (
-            lateral_ratio >= self.reward_config.barrier_contact_ratio
-            and collision_impulse
-            >= self.reward_config.barrier_collision_impulse_threshold
-        )
-        if barrier_contact_candidate:
-            self._barrier_contact_s += dt
-        else:
-            self._barrier_contact_s = max(0.0, self._barrier_contact_s - 2.0 * dt)
         barrier_contact = (
-            self._barrier_contact_s >= self.reward_config.barrier_contact_timeout_s
+            collision_impulse > self.reward_config.barrier_collision_impulse_threshold
         )
+        self._barrier_contact_s = dt if barrier_contact else 0.0
 
         if airborne and abs(telemetry.roll_rad) >= self.reward_config.airborne_roll_limit_rad:
             self._airborne_roll_s += dt

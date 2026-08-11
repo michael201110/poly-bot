@@ -146,8 +146,8 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
     assert config.barrier_proximity_start_ratio > 0.5
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
     assert config.barrier_contact_penalty == -50.0
-    assert config.barrier_contact_timeout_s == 0.05
-    assert config.barrier_collision_impulse_threshold == 0.05
+    assert config.barrier_contact_timeout_s == 0.0
+    assert config.barrier_collision_impulse_threshold == 0.0
     assert config.off_track_landing_penalty == -30.0
 
 
@@ -257,7 +257,9 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         track_id="mock/straight",
         frame_skip=10,
         max_episode_steps=100,
-        reward_config=replace(RewardConfig(), barrier_contact_ratio=2.0),
+        reward_config=replace(
+            RewardConfig(), barrier_collision_impulse_threshold=float("inf")
+        ),
     )
     try:
         env.reset(seed=0)
@@ -295,12 +297,9 @@ def test_sustained_grounded_barrier_contact_terminates_episode() -> None:
         env.reset(seed=0)
         assert transport.state is not None
         transport.state.lateral_offset_m = transport.track_half_width_m * 0.95
-        terminated = truncated = False
-        info = {}
-        while not (terminated or truncated):
-            _, _, terminated, truncated, info = env.step(
-                np.asarray([1, 1, 0], dtype=np.int64)
-            )
+        _, _, terminated, truncated, info = env.step(
+            np.asarray([1, 1, 0], dtype=np.int64)
+        )
 
         assert terminated
         assert not truncated
