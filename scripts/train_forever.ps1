@@ -1,10 +1,10 @@
 param(
     [int]$TimestepsPerRun = 100000,
-    [int]$FrameSkip = 30,
-    [int]$MaxSteps = 3334,
-    [double]$LearningRate = 0.0005,
-    [double]$EntropyCoefficient = 0.005,
-    [string]$ModelPath = "models/polybot-real-fs30"
+    [int]$FrameSkip = 50,
+    [int]$MaxSteps = 2000,
+    [double]$LearningRate = 0.0003,
+    [double]$EntropyCoefficient = 0.0,
+    [string]$ModelPath = "models/polybot-real-fs50"
 )
 
 $ErrorActionPreference = "Continue"
