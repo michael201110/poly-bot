@@ -38,6 +38,7 @@ class RewardConfig:
     barrier_contact_penalty: float = -25.0
     barrier_contact_ratio: float = 0.90
     barrier_contact_timeout_s: float = 0.25
+    off_track_landing_penalty: float = -30.0
     airborne_spin_penalty_per_rad: float = -0.30
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
     airborne_tilt_penalty_per_s: float = -15.0
@@ -311,6 +312,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             and not self._was_airborne
             and lateral_ratio >= self.reward_config.barrier_proximity_start_ratio
         )
+        off_track_landing = (
+            not airborne
+            and self._was_airborne
+            and lateral_ratio >= self.reward_config.off_track_lateral_ratio
+        )
         if airborne != self._was_airborne:
             self._landing_grace_s = self.reward_config.landing_grace_s
         else:
@@ -355,6 +361,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             early_off_track=early_off_track,
             barrier_launch=barrier_launch,
             barrier_contact=barrier_contact,
+            off_track_landing=off_track_landing,
         )
         self._episode_steps += 1
         events = set(transition.events)
@@ -381,6 +388,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 dict.fromkeys((*info["events"], "barrier_contact"))
             )
             info["barrier_contact_s"] = self._barrier_contact_s
+        if off_track_landing:
+            info["events"] = tuple(
+                dict.fromkeys((*info["events"], "off_track_landing"))
+            )
         if landing_grace:
             info["landing_grace_s"] = self._landing_grace_s
         if truncated and "time_limit" not in events:
@@ -397,6 +408,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         early_off_track: bool = False,
         barrier_launch: bool = False,
         barrier_contact: bool = False,
+        off_track_landing: bool = False,
     ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
         raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
@@ -464,6 +476,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "barrier_launch": config.barrier_launch_penalty if barrier_launch else 0.0,
             "barrier_contact": (
                 config.barrier_contact_penalty if barrier_contact else 0.0
+            ),
+            "off_track_landing": (
+                config.off_track_landing_penalty if off_track_landing else 0.0
             ),
             "checkpoint": _checkpoint_reward(telemetry, config)
             * events.count("checkpoint"),

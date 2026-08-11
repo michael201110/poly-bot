@@ -127,6 +127,7 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
     assert config.barrier_contact_penalty <= -25.0
     assert config.barrier_contact_timeout_s == 0.25
+    assert config.off_track_landing_penalty == -30.0
 
 
 def test_strong_airborne_spin_is_penalized_but_grounded_rotation_is_not() -> None:
