@@ -103,8 +103,8 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
         assert env.reward_config.imitation_bonus_per_s == 6.0
         assert env.reward_config.checkpoint_bonus == 10.0
         assert env.reward_config.checkpoint_fast_bonus == 90.0
-        assert env.reward_config.finish_bonus == 500.0
-        assert env.reward_config.finish_fast_bonus == 1000.0
+        assert env.reward_config.finish_bonus == 1000.0
+        assert env.reward_config.finish_fast_bonus == 2000.0
         assert env.reward_config.finish_target_s == 60.0
         assert env.reward_config.unsafe_speed_penalty_per_m < 0
     finally:
@@ -136,7 +136,7 @@ def test_faster_finish_receives_more_reward() -> None:
         slow = replace(env.latest_telemetry, elapsed_s=110.0)
 
         assert _finish_reward(fast, env.reward_config) > _finish_reward(slow, env.reward_config)
-        assert _finish_reward(slow, env.reward_config) >= 500.0
+        assert _finish_reward(slow, env.reward_config) >= 1000.0
     finally:
         env.close()
 

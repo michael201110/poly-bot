@@ -53,8 +53,8 @@ class RewardConfig:
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 90.0
     checkpoint_target_s: float = 30.0
-    finish_bonus: float = 500.0
-    finish_fast_bonus: float = 1000.0
+    finish_bonus: float = 1000.0
+    finish_fast_bonus: float = 2000.0
     finish_target_s: float = 60.0
     crash_penalty: float = -10.0
     stall_penalty: float = -5.0
