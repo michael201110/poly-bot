@@ -31,6 +31,7 @@ class RewardConfig:
     elapsed_cost_per_s: float = 0.0
     on_track_speed_per_m: float = 0.10
     airborne_speed_per_m: float = 0.16
+    airborne_brake_bonus_per_s: float = 0.25
     takeoff_target_speed_mps: float = 45.0
     takeoff_speed_reward_per_mps: float = 2.0
     takeoff_speed_reward_limit: float = 30.0
@@ -125,6 +126,16 @@ def _airborne_spin_penalty(telemetry: Telemetry, config: RewardConfig, dt: float
         + max(0.0, abs(roll_rate) - config.airborne_spin_deadzone_radps)
     )
     return config.airborne_spin_penalty_per_rad * excess_spin * dt
+
+
+def _airborne_brake_reward(
+    telemetry: Telemetry, action: Action, config: RewardConfig, dt: float
+) -> float:
+    """Slightly reward braking only while every wheel is off the ground."""
+
+    if not action.brake or any(contact >= 0.5 for contact in telemetry.wheel_contacts):
+        return 0.0
+    return config.airborne_brake_bonus_per_s * dt
 
 
 def _airborne_tilt_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
@@ -528,6 +539,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "airborne_speed": config.airborne_speed_per_m * distance_at_speed * airborne_stability
             if airborne
             else 0.0,
+            "airborne_brake": _airborne_brake_reward(telemetry, action, config, dt),
             "takeoff_speed": takeoff_speed_reward,
             "ghost_imitation": imitation_reward,
             "unsafe_speed": config.unsafe_speed_penalty_per_m

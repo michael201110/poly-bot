@@ -10,6 +10,7 @@ from polybot.controller import CenterlineController
 from polybot.env import (
     PolyTrackEnv,
     RewardConfig,
+    _airborne_brake_reward,
     _airborne_spin_penalty,
     _airborne_tilt_penalty,
     _checkpoint_reward,
@@ -18,6 +19,7 @@ from polybot.env import (
     _has_off_track_evidence,
 )
 from polybot.mock import MockSimulatorTransport
+from polybot.protocol import Action
 
 
 def make_env(**kwargs: object) -> PolyTrackEnv:
@@ -204,6 +206,28 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) < 0
         one_wheel_down = replace(sideways, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
         assert _airborne_tilt_penalty(one_wheel_down, env.reward_config, 0.1) == 0
+    finally:
+        env.close()
+
+
+def test_air_braking_receives_only_a_small_fully_airborne_reward() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        airborne = replace(
+            env.latest_telemetry,
+            wheel_contacts=(0.0, 0.0, 0.0, 0.0),
+        )
+        one_wheel_down = replace(airborne, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
+        braking = Action(steer=0, throttle=False, brake=True)
+        coasting = Action(steer=0, throttle=False, brake=False)
+
+        assert _airborne_brake_reward(
+            airborne, braking, env.reward_config, 0.5
+        ) == pytest.approx(0.125)
+        assert _airborne_brake_reward(airborne, coasting, env.reward_config, 0.5) == 0
+        assert _airborne_brake_reward(one_wheel_down, braking, env.reward_config, 0.5) == 0
     finally:
         env.close()
 
