@@ -220,12 +220,12 @@ def test_large_slip_angle_is_penalized_only_with_four_wheels_grounded() -> None:
         )
         controlled = replace(
             sliding,
-            local_velocity_mps=(20.0 * np.tan(np.deg2rad(10)), 0.0, 20.0),
+            local_velocity_mps=(20.0 * np.tan(np.deg2rad(5)), 0.0, 20.0),
         )
         three_wheels = replace(sliding, wheel_contacts=(1.0, 1.0, 1.0, 0.0))
 
         assert env.reward_config.ground_slip_tolerance_rad == pytest.approx(
-            np.deg2rad(10), rel=1e-5
+            np.deg2rad(5), rel=1e-5
         )
         assert env.reward_config.ground_slip_penalty_per_rad_s == -1000.0
         assert _ground_slip_penalty(sliding, env.reward_config, 0.1) < 0
