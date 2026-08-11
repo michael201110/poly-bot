@@ -30,6 +30,7 @@ class RewardConfig:
     progress_per_m: float = 0.10
     elapsed_cost_per_s: float = 0.0
     on_track_speed_per_m: float = 0.06
+    airborne_speed_per_m: float = 0.08
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_proximity_penalty_per_m: float = -1.00
     barrier_proximity_start_ratio: float = 0.55
@@ -414,6 +415,23 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         center_factor = float(np.clip(1.0 - abs(telemetry.lateral_offset_m) / width, 0, 1))
         heading_factor = max(0.0, float(np.cos(telemetry.heading_error_rad)))
         on_track_factor = center_factor * heading_factor
+        airborne = (
+            sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
+            < config.off_track_min_grounded_wheels
+        )
+        airborne_stability = float(
+            np.clip(1.0 - abs(telemetry.roll_rad) / (np.pi / 4.0), 0.0, 1.0)
+            * np.clip(
+                1.0
+                - max(
+                    0.0,
+                    abs(telemetry.pitch_rad) - config.airborne_pitch_tolerance_rad,
+                )
+                / (np.pi / 4.0),
+                0.0,
+                1.0,
+            )
+        )
         lateral_ratio = abs(telemetry.lateral_offset_m) / width
         barrier_factor = float(
             np.clip(
@@ -430,6 +448,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "on_track_speed": config.on_track_speed_per_m
             * distance_at_speed
             * on_track_factor,
+            "airborne_speed": config.airborne_speed_per_m
+            * distance_at_speed
+            * airborne_stability
+            if airborne
+            else 0.0,
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),
