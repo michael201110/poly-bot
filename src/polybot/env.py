@@ -69,6 +69,7 @@ class RewardConfig:
     off_track_lateral_ratio: float = 1.05
     off_track_heading_ratio: float = 0.80
     off_track_heading_rad: float = 1.10
+    off_track_max_abs_roll_rad: float = 0.523599  # 30 degrees
     off_track_timeout_s: float = 1.25
     off_track_min_grounded_wheels: int = 2
     landing_grace_s: float = 2.0
@@ -80,6 +81,10 @@ def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
 
     grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
     if grounded_wheels < config.off_track_min_grounded_wheels:
+        return False
+    # Banked wall-ride sections deliberately put the car far from the ghost's
+    # centre line. Lateral distance is not valid off-track evidence there.
+    if abs(telemetry.roll_rad) >= config.off_track_max_abs_roll_rad:
         return False
     width = max(0.1, telemetry.track_half_width_m)
     lateral_ratio = abs(telemetry.lateral_offset_m) / width

@@ -331,6 +331,24 @@ def test_airborne_jump_does_not_count_as_off_track() -> None:
         env.close()
 
 
+def test_bank_wall_ride_does_not_count_as_off_track() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        wall_riding = replace(
+            env.latest_telemetry,
+            lateral_offset_m=20.0,
+            heading_error_rad=2.0,
+            roll_rad=np.deg2rad(60),
+            wheel_contacts=(1.0, 1.0, 1.0, 1.0),
+        )
+
+        assert not _has_off_track_evidence(wall_riding, RewardConfig())
+    finally:
+        env.close()
+
+
 def test_frame_skip_matches_individual_fixed_ticks() -> None:
     held_action = np.asarray([2, 1, 0], dtype=np.int64)
     batched = make_env(track_id="mock/straight", frame_skip=4)
