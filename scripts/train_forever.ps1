@@ -3,6 +3,7 @@ param(
     [int]$FrameSkip = 30,
     [int]$MaxSteps = 3334,
     [double]$LearningRate = 0.0001,
+    [double]$EntropyCoefficient = 0.005,
     [string]$ModelPath = "models/polybot-real-fs30"
 )
 
@@ -25,6 +26,7 @@ while ($true) {
         --max-steps $MaxSteps `
         --frame-skip $FrameSkip `
         --learning-rate $LearningRate `
+        --entropy-coef $EntropyCoefficient `
         @resumeArguments `
         --checkpoint-episodes 5 `
         --model-out $ModelPath

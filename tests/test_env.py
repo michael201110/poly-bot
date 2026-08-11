@@ -123,13 +123,22 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         sideways = replace(
             env.latest_telemetry,
             up_vector=(1.0, 0.0, 0.0),
+            roll_rad=np.pi / 2,
             wheel_contacts=(0.0, 0.0, 0.0, 0.0),
         )
-        inverted = replace(sideways, up_vector=(0.0, -1.0, 0.0))
+        inverted = replace(sideways, up_vector=(0.0, -1.0, 0.0), roll_rad=np.pi)
+        allowed_pitch = replace(
+            sideways,
+            roll_rad=0.0,
+            pitch_rad=np.deg2rad(30),
+        )
+        excessive_pitch = replace(allowed_pitch, pitch_rad=np.deg2rad(45))
 
         sideways_penalty = _airborne_tilt_penalty(sideways, env.reward_config, 0.1)
         inverted_penalty = _airborne_tilt_penalty(inverted, env.reward_config, 0.1)
         assert inverted_penalty < sideways_penalty < 0
+        assert _airborne_tilt_penalty(allowed_pitch, env.reward_config, 0.1) == 0
+        assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) < 0
         assert env.reward_config.barrier_launch_penalty <= -15.0
     finally:
         env.close()

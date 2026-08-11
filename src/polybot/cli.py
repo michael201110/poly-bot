@@ -241,6 +241,12 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         help="PPO learning rate; use a smaller value for late-stage fine-tuning",
     )
     parser.add_argument(
+        "--entropy-coef",
+        type=float,
+        default=0.0,
+        help="PPO entropy incentive for exploration; small values such as 0.005 work best",
+    )
+    parser.add_argument(
         "--forward-bias",
         type=float,
         default=1.5,
@@ -277,6 +283,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--timesteps must be positive")
     if args.learning_rate <= 0:
         parser.error("--learning-rate must be positive")
+    if args.entropy_coef < 0:
+        parser.error("--entropy-coef must be non-negative")
     if args.forward_bias < 0:
         parser.error("--forward-bias must be non-negative")
     if args.checkpoint_episodes < 0:
@@ -316,6 +324,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 verbose=1,
                 tensorboard_log=tensorboard_log,
                 learning_rate=args.learning_rate,
+                ent_coef=args.entropy_coef,
             )
             _bias_initial_policy_forward(model, args.forward_bias)
         else:
@@ -323,7 +332,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 str(args.resume),
                 env=env,
                 tensorboard_log=tensorboard_log,
-                custom_objects={"learning_rate": args.learning_rate},
+                custom_objects={
+                    "learning_rate": args.learning_rate,
+                    "ent_coef": args.entropy_coef,
+                },
             )
 
         class EpisodeCheckpointCallback(BaseCallback):
@@ -336,6 +348,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 self.episodes = 0
                 self.next_checkpoint = every
                 self.best_progress_ratio = 0.0
+                self.clean_episode = True
                 if self.best_metadata.exists():
                     try:
                         metadata = json.loads(self.best_metadata.read_text(encoding="utf-8"))
@@ -346,14 +359,20 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             def _on_step(self) -> bool:
                 dones = self.locals.get("dones", ())
                 self.episodes += sum(bool(done) for done in dones)
-                for info in self.locals.get("infos", ()):
+                for info, done in zip(self.locals.get("infos", ()), dones, strict=False):
+                    reward_terms = info.get("reward_terms", {})
+                    if reward_terms.get("barrier_launch", 0.0) < 0.0:
+                        self.clean_episode = False
                     progress_m = float(info.get("route_progress_m", 0.0))
                     track_length_m = max(1.0, float(info.get("track_length_m", 1.0)))
                     progress_ratio = progress_m / track_length_m
                     is_finish = "finish" in info.get("events", ())
                     if (
-                        progress_ratio >= self.best_progress_ratio + 0.02
-                        or is_finish
+                        self.clean_episode
+                        and (
+                            progress_ratio >= self.best_progress_ratio + 0.02
+                            or is_finish
+                        )
                     ):
                         self.output.parent.mkdir(parents=True, exist_ok=True)
                         self.model.save(str(self.best_output))
@@ -376,6 +395,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                             f"Saved best model at {progress_ratio:.1%} track progress.",
                             flush=True,
                         )
+                    if done:
+                        self.clean_episode = True
                 if self.every and self.episodes >= self.next_checkpoint:
                     self.output.parent.mkdir(parents=True, exist_ok=True)
                     self.model.save(str(self.output))
