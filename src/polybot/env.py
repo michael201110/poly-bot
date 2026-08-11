@@ -40,7 +40,7 @@ class RewardConfig:
     barrier_proximity_start_ratio: float = 0.55
     barrier_launch_penalty: float = -15.0
     barrier_contact_penalty: float = -50.0
-    barrier_contact_ratio: float = 0.80
+    barrier_contact_ratio: float = 0.90
     barrier_contact_timeout_s: float = 0.0
     barrier_collision_impulse_threshold: float = 0.0
     off_track_landing_penalty: float = -30.0
@@ -50,7 +50,7 @@ class RewardConfig:
     airborne_tilt_penalty_per_s: float = -15.0
     airborne_roll_penalty_per_s: float = -40.0
     airborne_pitch_tolerance_rad: float = 1.047198  # 60 degrees
-    airborne_roll_limit_rad: float = 0.523599  # 30 degrees
+    airborne_roll_limit_rad: float = 1.047198  # 60 degrees
     airborne_roll_timeout_s: float = 0.10
     airborne_roll_failure_penalty: float = -100.0
     checkpoint_bonus: float = 10.0
@@ -114,7 +114,7 @@ def _airborne_spin_penalty(
 ) -> float:
     """Penalize strong rotation in the air while tolerating normal jump pitch."""
 
-    if sum(contact >= 0.5 for contact in telemetry.wheel_contacts) >= 2:
+    if any(contact >= 0.5 for contact in telemetry.wheel_contacts):
         return 0.0
     pitch_rate, yaw_rate, roll_rate = telemetry.angular_velocity_radps
     excess_spin = (
@@ -130,7 +130,7 @@ def _airborne_tilt_penalty(
 ) -> float:
     """Penalize tilted and inverted flight even after the car stops rotating."""
 
-    if sum(contact >= 0.5 for contact in telemetry.wheel_contacts) >= 2:
+    if any(contact >= 0.5 for contact in telemetry.wheel_contacts):
         return 0.0
     roll_error = abs(telemetry.roll_rad) / (np.pi / 2.0)
     pitch_error = max(
@@ -377,15 +377,17 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             collision_impulse = 0.0
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
-        barrier_contact = collision_impulse > (
-            self.reward_config.barrier_collision_impulse_threshold
-        ) or (
-            grounded_wheels >= self.reward_config.off_track_min_grounded_wheels
-            and lateral_ratio >= self.reward_config.barrier_contact_ratio
+        barrier_contact = (
+            collision_impulse > self.reward_config.barrier_collision_impulse_threshold
         )
         self._barrier_contact_s = dt if barrier_contact else 0.0
 
-        if airborne and abs(telemetry.roll_rad) >= self.reward_config.airborne_roll_limit_rad:
+        fully_airborne = grounded_wheels == 0
+        if (
+            fully_airborne
+            and abs(telemetry.roll_rad)
+            >= self.reward_config.airborne_roll_limit_rad
+        ):
             self._airborne_roll_s += dt
         else:
             self._airborne_roll_s = max(0.0, self._airborne_roll_s - 2.0 * dt)

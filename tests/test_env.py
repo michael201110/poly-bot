@@ -146,7 +146,6 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
     assert config.barrier_proximity_start_ratio > 0.5
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
     assert config.barrier_contact_penalty == -50.0
-    assert config.barrier_contact_ratio == 0.80
     assert config.barrier_contact_timeout_s == 0.0
     assert config.barrier_collision_impulse_threshold == 0.0
     assert config.off_track_landing_penalty == -30.0
@@ -163,9 +162,11 @@ def test_strong_airborne_spin_is_penalized_but_grounded_rotation_is_not() -> Non
             wheel_contacts=(0.0, 0.0, 0.0, 0.0),
         )
         grounded = replace(spinning, wheel_contacts=(1.0, 1.0, 1.0, 1.0))
+        one_wheel_down = replace(spinning, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
 
         assert _airborne_spin_penalty(spinning, env.reward_config, 0.1) < 0
         assert _airborne_spin_penalty(grounded, env.reward_config, 0.1) == 0
+        assert _airborne_spin_penalty(one_wheel_down, env.reward_config, 0.1) == 0
         assert env.reward_config.airborne_spin_deadzone_radps == pytest.approx(
             np.deg2rad(2), rel=1e-5
         )
@@ -197,7 +198,7 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         assert inverted_penalty < sideways_penalty < 0
         assert env.reward_config.airborne_roll_penalty_per_s == -40.0
         assert env.reward_config.airborne_roll_limit_rad == pytest.approx(
-            np.deg2rad(30), rel=1e-5
+            np.deg2rad(60), rel=1e-5
         )
         assert env.reward_config.airborne_roll_failure_penalty == -100.0
         assert env.reward_config.airborne_pitch_deadzone_radps == pytest.approx(
@@ -205,6 +206,10 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         )
         assert _airborne_tilt_penalty(allowed_pitch, env.reward_config, 0.1) == 0
         assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) < 0
+        one_wheel_down = replace(
+            sideways, wheel_contacts=(1.0, 0.0, 0.0, 0.0)
+        )
+        assert _airborne_tilt_penalty(one_wheel_down, env.reward_config, 0.1) == 0
         assert env.reward_config.barrier_launch_penalty <= -15.0
     finally:
         env.close()
@@ -259,9 +264,7 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         frame_skip=10,
         max_episode_steps=100,
         reward_config=replace(
-            RewardConfig(),
-            barrier_contact_ratio=float("inf"),
-            barrier_collision_impulse_threshold=float("inf"),
+            RewardConfig(), barrier_collision_impulse_threshold=float("inf")
         ),
     )
     try:
@@ -288,7 +291,7 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         env.close()
 
 
-def test_grounded_front_wheel_barrier_envelope_terminates_episode() -> None:
+def test_sustained_grounded_barrier_contact_terminates_episode() -> None:
     transport = MockSimulatorTransport()
     env = PolyTrackEnv(
         transport,
@@ -299,9 +302,7 @@ def test_grounded_front_wheel_barrier_envelope_terminates_episode() -> None:
     try:
         env.reset(seed=0)
         assert transport.state is not None
-        # The mock only emits a native collision impulse from 90% width onward,
-        # so this specifically exercises the front-wheel safety envelope.
-        transport.state.lateral_offset_m = transport.track_half_width_m * 0.81
+        transport.state.lateral_offset_m = transport.track_half_width_m * 0.95
         _, _, terminated, truncated, info = env.step(
             np.asarray([1, 1, 0], dtype=np.int64)
         )
