@@ -225,12 +225,33 @@ def test_large_slip_angle_is_penalized_only_with_four_wheels_grounded() -> None:
         three_wheels = replace(sliding, wheel_contacts=(1.0, 1.0, 1.0, 0.0))
 
         assert env.reward_config.ground_slip_tolerance_rad == pytest.approx(
-            np.deg2rad(10), rel=1e-5
+            np.deg2rad(5), rel=1e-5
         )
         assert env.reward_config.ground_slip_penalty_per_rad_s == -1000.0
         assert _ground_slip_penalty(sliding, env.reward_config, 0.1) < 0
         assert _ground_slip_penalty(controlled, env.reward_config, 0.1) == pytest.approx(0)
         assert _ground_slip_penalty(three_wheels, env.reward_config, 0.1) == 0
+    finally:
+        env.close()
+
+
+def test_ground_slip_penalty_is_symmetric() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        sliding_left = replace(
+            env.latest_telemetry,
+            local_velocity_mps=(12.0, 0.0, 40.0),
+            wheel_contacts=(1.0, 1.0, 1.0, 1.0),
+        )
+        sliding_right = replace(sliding_left, local_velocity_mps=(-12.0, 0.0, 40.0))
+
+        assert _ground_slip_penalty(
+            sliding_left, env.reward_config, 0.1
+        ) == pytest.approx(
+            _ground_slip_penalty(sliding_right, env.reward_config, 0.1)
+        )
     finally:
         env.close()
 
