@@ -40,6 +40,22 @@ def test_reset_is_deterministic_for_same_seed() -> None:
         env.close()
 
 
+def test_curriculum_reset_starts_within_requested_final_section() -> None:
+    env = make_env(
+        track_id="mock/straight",
+        curriculum_last_fraction=0.30,
+        curriculum_probability=1.0,
+    )
+    try:
+        _, info = env.reset(seed=42)
+
+        progress_ratio = info["route_progress_m"] / info["track_length_m"]
+        assert 0.70 <= progress_ratio <= 0.95
+        assert info["ticks_advanced"] == 0
+    finally:
+        env.close()
+
+
 def test_throttle_produces_progress_reward() -> None:
     env = make_env(track_id="mock/straight", frame_skip=4)
     try:

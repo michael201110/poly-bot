@@ -133,6 +133,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         max_episode_steps: int = 2_000,
         reward_config: RewardConfig | None = None,
         request_timeout_s: float = 10.0,
+        curriculum_last_fraction: float = 0.0,
+        curriculum_probability: float = 0.0,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -143,6 +145,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("max_episode_steps must be positive")
         if not track_id:
             raise ValueError("track_id cannot be empty")
+        if not 0.0 <= curriculum_last_fraction < 1.0:
+            raise ValueError("curriculum_last_fraction must be in [0, 1)")
+        if not 0.0 <= curriculum_probability <= 1.0:
+            raise ValueError("curriculum_probability must be in [0, 1]")
 
         self.transport = transport
         self.track_id = track_id
@@ -151,6 +157,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.max_episode_steps = max_episode_steps
         self.reward_config = reward_config or RewardConfig()
         self.request_timeout_s = request_timeout_s
+        self.curriculum_last_fraction = curriculum_last_fraction
+        self.curriculum_probability = curriculum_probability
 
         self.action_space = spaces.MultiDiscrete(np.asarray([3, 2, 2], dtype=np.int64))
         self.observation_space = spaces.Box(
@@ -236,11 +244,20 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             if seed is not None
             else int(self.np_random.integers(0, np.iinfo(np.int32).max))
         )
+        start_progress_ratio = 0.0
+        if (
+            self.curriculum_last_fraction > 0.0
+            and self.np_random.random() < self.curriculum_probability
+        ):
+            start_progress_ratio = float(
+                self.np_random.uniform(1.0 - self.curriculum_last_fraction, 0.95)
+            )
         result = self._exchange(
             "reset",
             {
                 "seed": simulator_seed,
                 "track_id": track_id,
+                "start_progress_ratio": start_progress_ratio,
             },
         )
         transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)

@@ -353,6 +353,7 @@ export function polybotWorkerInjection() {
 
         function addReferencePoint(points, decoded, force = false) {
           const point = {
+            frame: decoded.frames,
             position: decoded.position,
             quaternion: decoded.quaternion,
             nextCheckpointIndex: decoded.nextCheckpointIndex,
@@ -759,6 +760,18 @@ export function polybotWorkerInjection() {
               "The PolyTrack worker controls the loaded track; use --track current.",
             );
           }
+          const startProgressRatio = params.start_progress_ratio ?? 0;
+          if (
+            typeof startProgressRatio !== "number" ||
+            !Number.isFinite(startProgressRatio) ||
+            startProgressRatio < 0 ||
+            startProgressRatio >= 1
+          ) {
+            throw new BridgeError(
+              "invalid_request",
+              "start_progress_ratio must be a finite number in [0, 1).",
+            );
+          }
 
           await waitUntilReady();
           const playerMessage = choosePlayerMessage();
@@ -811,21 +824,78 @@ export function polybotWorkerInjection() {
             };
             const initialBuffers = [];
             let initialBuffer = null;
-            for (const car of cars) {
-              if (!car.hasStarted) {
-                continue;
+            let startReferenceIndex = 0;
+            if (startProgressRatio > 0) {
+              const targetProgress = reference.length * startProgressRatio;
+              startReferenceIndex = reference.points.findIndex(
+                (point) => point.s >= targetProgress,
+              );
+              if (startReferenceIndex < 0) {
+                startReferenceIndex = reference.points.length - 1;
               }
-              const controls =
-                car.id === playerCarId
-                  ? neutralControls
-                  : car.userControls === null
-                    ? car.controls.getControls(car.frames)
-                    : neutralControls;
-              const buffer = advanceCar(car, controls);
-              car.frames += 1;
-              initialBuffers.push(buffer);
-              if (car.id === playerCarId) {
-                initialBuffer = buffer;
+              const targetFrame = reference.points[startReferenceIndex].frame;
+              internalDispatch({
+                ...ghostMessage,
+                messageType: messageTypes.CreateCar,
+                carId: hiddenCarId,
+              });
+              internalDispatch({
+                messageType: messageTypes.StartCar,
+                carId: hiddenCarId,
+                targetSimulationTimeFrames: null,
+              });
+              const replayCar = findCar(hiddenCarId);
+              if (!replayCar || replayCar.userControls !== null) {
+                throw new BridgeError(
+                  "missing_reference",
+                  "Could not create the curriculum replay car.",
+                );
+              }
+              replayCar.isPaused = true;
+              const finalBuffers = new Map();
+              try {
+                while (player.frames < targetFrame) {
+                  const replayControls = replayCar.controls.getControls(replayCar.frames);
+                  for (const car of cars) {
+                    if (!car.hasStarted) {
+                      continue;
+                    }
+                    const controls =
+                      car.id === playerCarId || car.id === hiddenCarId
+                        ? replayControls
+                        : car.userControls === null
+                          ? car.controls.getControls(car.frames)
+                          : neutralControls;
+                    const buffer = advanceCar(car, controls);
+                    car.frames += 1;
+                    finalBuffers.set(car.id, buffer);
+                    if (car.id === playerCarId) {
+                      initialBuffer = buffer;
+                    }
+                  }
+                }
+              } finally {
+                internalDispatch({ messageType: messageTypes.DeleteCar, carId: hiddenCarId });
+                finalBuffers.delete(hiddenCarId);
+              }
+              initialBuffers.push(...finalBuffers.values());
+            } else {
+              for (const car of cars) {
+                if (!car.hasStarted) {
+                  continue;
+                }
+                const controls =
+                  car.id === playerCarId
+                    ? neutralControls
+                    : car.userControls === null
+                      ? car.controls.getControls(car.frames)
+                      : neutralControls;
+                const buffer = advanceCar(car, controls);
+                car.frames += 1;
+                initialBuffers.push(buffer);
+                if (car.id === playerCarId) {
+                  initialBuffer = buffer;
+                }
               }
             }
             if (!initialBuffer) {
@@ -841,8 +911,8 @@ export function polybotWorkerInjection() {
               previousDecoded: decoded,
               previousAction: { steer: 0, throttle: 0, brake: 0 },
               previousCheckpoint: decoded.nextCheckpointIndex,
-              referenceIndex: 0,
-              progressM: 0,
+              referenceIndex: startReferenceIndex,
+              progressM: reference.points[startReferenceIndex].s,
             };
             return transition(
               decoded,

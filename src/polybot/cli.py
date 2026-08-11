@@ -234,6 +234,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
     _websocket_arguments(parser)
     parser.add_argument("--timesteps", type=int, default=100_000)
+    parser.add_argument("--curriculum-last-fraction", type=float, default=0.0)
+    parser.add_argument("--curriculum-probability", type=float, default=0.0)
     parser.add_argument(
         "--learning-rate",
         type=float,
@@ -285,6 +287,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--learning-rate must be positive")
     if args.entropy_coef < 0:
         parser.error("--entropy-coef must be non-negative")
+    if not 0 <= args.curriculum_last_fraction < 1:
+        parser.error("--curriculum-last-fraction must be in [0, 1)")
+    if not 0 <= args.curriculum_probability <= 1:
+        parser.error("--curriculum-probability must be in [0, 1]")
     if args.forward_bias < 0:
         parser.error("--forward-bias must be non-negative")
     if args.checkpoint_episodes < 0:
@@ -308,6 +314,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             frame_skip=args.frame_skip,
             max_episode_steps=args.max_steps,
             request_timeout_s=args.request_timeout,
+            curriculum_last_fraction=args.curriculum_last_fraction,
+            curriculum_probability=args.curriculum_probability,
         )
     except BaseException:
         transport.close()

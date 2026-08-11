@@ -132,6 +132,13 @@ class MockSimulatorTransport:
             raise ProtocolViolation("track_id must be a non-empty string")
 
         track_length, amplitude = self._track_settings(track_id)
+        start_progress_ratio = params.get("start_progress_ratio", 0.0)
+        if (
+            isinstance(start_progress_ratio, bool)
+            or not isinstance(start_progress_ratio, (int, float))
+            or not 0.0 <= start_progress_ratio < 1.0
+        ):
+            raise ProtocolViolation("start_progress_ratio must be in [0, 1)")
         self._episode_counter += 1
         phase = ((seed % 997) / 997.0) * math.tau if amplitude else 0.0
         self.state = _MockState(
@@ -141,6 +148,9 @@ class MockSimulatorTransport:
             track_length_m=track_length,
             curvature_amplitude=amplitude,
             curvature_phase=phase,
+            progress_m=track_length * float(start_progress_ratio),
+            speed_mps=20.0 if start_progress_ratio else 0.0,
+            checkpoint_index=int(track_length * float(start_progress_ratio) // 50.0),
         )
         return self._transition(ticks_advanced=0, events=[])
 
