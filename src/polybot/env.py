@@ -30,7 +30,7 @@ class RewardConfig:
     progress_per_m: float = 0.10
     elapsed_cost_per_s: float = 0.0
     on_track_speed_per_m: float = 0.06
-    airborne_speed_per_m: float = 0.08
+    airborne_speed_per_m: float = 0.16
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_proximity_penalty_per_m: float = -1.00
     barrier_proximity_start_ratio: float = 0.55
