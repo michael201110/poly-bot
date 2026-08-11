@@ -4,7 +4,8 @@ param(
     [int]$MaxSteps = 2000,
     [double]$LearningRate = 0.0009,
     [double]$EntropyCoefficient = 0.005,
-    [string]$ModelPath = "models/polybot-real-speed-fs30-w128"
+    [string]$ModelPath = "models/polybot-real-speed-fs30-w128",
+    [switch]$QuarterCurriculum
 )
 
 $ErrorActionPreference = "Continue"
@@ -20,43 +21,45 @@ $curriculumSections = @(
 
 Set-Location $repoRoot
 
-foreach ($section in $curriculumSections) {
-    $sectionMarker = Join-Path $repoRoot "$ModelPath-curriculum-$($section.Name).complete"
-    while (-not (Test-Path -LiteralPath $sectionMarker)) {
-        $resumeArguments = @()
-        if (Test-Path -LiteralPath $modelZip) {
-            $resumeArguments = @("--resume", $ModelPath)
-        }
+if ($QuarterCurriculum) {
+    foreach ($section in $curriculumSections) {
+        $sectionMarker = Join-Path $repoRoot "$ModelPath-curriculum-$($section.Name).complete"
+        while (-not (Test-Path -LiteralPath $sectionMarker)) {
+            $resumeArguments = @()
+            if (Test-Path -LiteralPath $modelZip) {
+                $resumeArguments = @("--resume", $ModelPath)
+            }
 
-        Write-Output "Training section $($section.Name)% for 500 episodes."
-        & $trainer `
-            --backend websocket `
-            --timesteps $TimestepsPerRun `
-            --max-episodes 500 `
-            --max-steps $MaxSteps `
-            --frame-skip $FrameSkip `
-            --learning-rate $LearningRate `
-            --gamma 0.999 `
-            --gae-lambda 0.98 `
-            --entropy-coef $EntropyCoefficient `
-            --curriculum-start-ratio $section.Start `
-            --curriculum-end-ratio $section.End `
-            @resumeArguments `
-            --checkpoint-episodes 5 `
-            --model-out $ModelPath
+            Write-Output "Training section $($section.Name)% for 500 episodes."
+            & $trainer `
+                --backend websocket `
+                --timesteps $TimestepsPerRun `
+                --max-episodes 500 `
+                --max-steps $MaxSteps `
+                --frame-skip $FrameSkip `
+                --learning-rate $LearningRate `
+                --gamma 0.999 `
+                --gae-lambda 0.98 `
+                --entropy-coef $EntropyCoefficient `
+                --curriculum-start-ratio $section.Start `
+                --curriculum-end-ratio $section.End `
+                @resumeArguments `
+                --checkpoint-episodes 5 `
+                --model-out $ModelPath
 
-        $phaseExitCode = $LASTEXITCODE
-        if ($phaseExitCode -eq 0) {
-            New-Item -ItemType File -Path $sectionMarker -Force | Out-Null
-            Write-Output "Completed section $($section.Name)%."
-        } else {
-            Write-Output "Section trainer exited with code $phaseExitCode; restarting in 3 seconds."
-            Start-Sleep -Seconds 3
+            $phaseExitCode = $LASTEXITCODE
+            if ($phaseExitCode -eq 0) {
+                New-Item -ItemType File -Path $sectionMarker -Force | Out-Null
+                Write-Output "Completed section $($section.Name)%."
+            } else {
+                Write-Output "Section trainer exited with code $phaseExitCode; restarting in 3 seconds."
+                Start-Sleep -Seconds 3
+            }
         }
     }
-}
 
-Write-Output "Completed one-time quarter-track curriculum; reverting to full episodes."
+    Write-Output "Completed one-time quarter-track curriculum; reverting to full episodes."
+}
 
 while ($true) {
     $resumeArguments = @()
