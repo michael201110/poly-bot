@@ -383,7 +383,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             and collision_impulse
             >= self.reward_config.barrier_collision_impulse_threshold
         )
-        if barrier_contact_candidate and not landing_grace:
+        if barrier_contact_candidate:
             self._barrier_contact_s += dt
         else:
             self._barrier_contact_s = max(0.0, self._barrier_contact_s - 2.0 * dt)
