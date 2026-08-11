@@ -235,6 +235,12 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
     _websocket_arguments(parser)
     parser.add_argument("--timesteps", type=int, default=100_000)
+    parser.add_argument(
+        "--max-episodes",
+        type=int,
+        default=0,
+        help="stop and save after this many episodes; 0 uses the timestep limit",
+    )
     parser.add_argument("--curriculum-last-fraction", type=float, default=0.0)
     parser.add_argument("--curriculum-probability", type=float, default=0.0)
     parser.add_argument(
@@ -299,6 +305,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
 
     if args.timesteps < 1:
         parser.error("--timesteps must be positive")
+    if args.max_episodes < 0:
+        parser.error("--max-episodes must be non-negative")
     if args.learning_rate <= 0:
         parser.error("--learning-rate must be positive")
     if not 0 < args.gamma <= 1:
@@ -412,7 +420,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     is_finish = "finish" in info.get("events", ())
                     elapsed_s = float(info.get("elapsed_s", 0.0))
                     faster_finish = is_finish and elapsed_s < self.best_lap_time_s
-                    if self.clean_episode and (
+                    if args.curriculum_probability == 0.0 and self.clean_episode and (
                         progress_ratio >= self.best_progress_ratio + 0.02 or faster_finish
                     ):
                         self.output.parent.mkdir(parents=True, exist_ok=True)
@@ -474,7 +482,15 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     print(f"Checkpointed model after {self.episodes} episodes.", flush=True)
                     while self.next_checkpoint <= self.episodes:
                         self.next_checkpoint += self.every
-                return True
+                reached_episode_limit = bool(
+                    args.max_episodes and self.episodes >= args.max_episodes
+                )
+                if reached_episode_limit:
+                    print(
+                        f"Reached episode limit ({args.max_episodes}); saving phase model.",
+                        flush=True,
+                    )
+                return not reached_episode_limit
 
         callback = EpisodeCheckpointCallback(args.model_out, args.checkpoint_episodes)
         try:
