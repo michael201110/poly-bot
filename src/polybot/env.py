@@ -378,8 +378,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
         barrier_contact_candidate = (
-            grounded_wheels >= self.reward_config.off_track_min_grounded_wheels
-            and lateral_ratio >= self.reward_config.barrier_contact_ratio
+            lateral_ratio >= self.reward_config.barrier_contact_ratio
             and collision_impulse
             >= self.reward_config.barrier_collision_impulse_threshold
         )

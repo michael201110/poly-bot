@@ -718,7 +718,14 @@ export function polybotWorkerInjection() {
           );
         }
 
-        function transition(decoded, action, ticksAdvanced, events, seed = null) {
+        function transition(
+          decoded,
+          action,
+          ticksAdvanced,
+          events,
+          seed = null,
+          collisionImpulsePeak = null,
+        ) {
           const state = buildTelemetry(decoded, action, ticksAdvanced * fixedDtSeconds);
           const guide = reference.points[session.referenceIndex];
           const offTrack = Math.abs(state.track.lateral_offset_m) > state.track.half_width_m * 1.5;
@@ -738,7 +745,10 @@ export function polybotWorkerInjection() {
               guide_progress_m: finite(session.progressM),
               native_frame: decoded.frames,
               speed_kmh: decoded.speedKmh,
-              collision_impulses: decoded.collisionImpulses,
+              collision_impulses:
+                collisionImpulsePeak === null
+                  ? decoded.collisionImpulses
+                  : [finite(collisionImpulsePeak)],
               expert_action: guide.expertAction,
               off_track: offTrack,
               leaderboard_finish_masked: true,
@@ -979,6 +989,7 @@ export function polybotWorkerInjection() {
           let decoded = session.previousDecoded;
           const finalBuffers = new Map();
           let ticksAdvanced = 0;
+          let collisionImpulsePeak = 0;
           for (let tick = 0; tick < params.ticks; tick += 1) {
             for (const car of cars) {
               if (!car.hasStarted) {
@@ -995,6 +1006,9 @@ export function polybotWorkerInjection() {
               finalBuffers.set(car.id, buffer);
               if (car.id === playerCarId) {
                 decoded = decodeState(buffer);
+                for (const impulse of decoded.collisionImpulses) {
+                  collisionImpulsePeak = Math.max(collisionImpulsePeak, Math.abs(impulse));
+                }
               }
             }
             ticksAdvanced += 1;
@@ -1021,7 +1035,14 @@ export function polybotWorkerInjection() {
           if (decoded.hasFinished) {
             events.push("finish");
           }
-          return transition(decoded, action, ticksAdvanced, events);
+          return transition(
+            decoded,
+            action,
+            ticksAdvanced,
+            events,
+            null,
+            collisionImpulsePeak,
+          );
         }
 
         async function dispatchRequest(request) {

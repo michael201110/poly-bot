@@ -76,6 +76,13 @@ def test_worker_can_start_a_stationary_player_car() -> None:
     assert "targetSimulationTimeFrames: null" in source
 
 
+def test_worker_preserves_transient_collision_impulses_across_frame_skip() -> None:
+    source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+
+    assert "collisionImpulsePeak = Math.max" in source
+    assert "[finite(collisionImpulsePeak)]" in source
+
+
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
     source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
