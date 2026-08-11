@@ -340,11 +340,15 @@ def test_bank_wall_ride_does_not_count_as_off_track() -> None:
             env.latest_telemetry,
             lateral_offset_m=20.0,
             heading_error_rad=2.0,
-            roll_rad=np.deg2rad(60),
-            wheel_contacts=(1.0, 1.0, 1.0, 1.0),
+            roll_rad=np.deg2rad(15),
+            wheel_contacts=(1.0, 1.0, 1.0, 0.0),
         )
 
         assert not _has_off_track_evidence(wall_riding, RewardConfig())
+        assert _has_off_track_evidence(
+            replace(wall_riding, wheel_contacts=(1.0, 1.0, 0.0, 0.0)),
+            RewardConfig(),
+        )
     finally:
         env.close()
 
