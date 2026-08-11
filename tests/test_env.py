@@ -127,6 +127,7 @@ def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
     assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
     assert config.barrier_contact_penalty <= -25.0
     assert config.barrier_contact_timeout_s == 0.25
+    assert config.barrier_collision_impulse_threshold == 0.05
     assert config.off_track_landing_penalty == -30.0
 
 

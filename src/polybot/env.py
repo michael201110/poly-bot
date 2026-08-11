@@ -38,6 +38,7 @@ class RewardConfig:
     barrier_contact_penalty: float = -25.0
     barrier_contact_ratio: float = 0.90
     barrier_contact_timeout_s: float = 0.25
+    barrier_collision_impulse_threshold: float = 0.05
     off_track_landing_penalty: float = -30.0
     airborne_spin_penalty_per_rad: float = -0.30
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
@@ -341,9 +342,20 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         off_track = self._off_track_s >= self.reward_config.off_track_timeout_s
         early_off_track = off_track and telemetry.elapsed_s <= self.reward_config.early_run_s
 
+        raw_collision_impulses = transition.simulator_info.get("collision_impulses", ())
+        try:
+            collision_impulse = float(
+                np.linalg.norm(np.asarray(raw_collision_impulses, dtype=np.float64))
+            )
+        except (TypeError, ValueError):
+            collision_impulse = 0.0
+        if not np.isfinite(collision_impulse):
+            collision_impulse = 0.0
         barrier_contact_candidate = (
             grounded_wheels >= self.reward_config.off_track_min_grounded_wheels
             and lateral_ratio >= self.reward_config.barrier_contact_ratio
+            and collision_impulse
+            >= self.reward_config.barrier_collision_impulse_threshold
         )
         if barrier_contact_candidate and not landing_grace:
             self._barrier_contact_s += dt

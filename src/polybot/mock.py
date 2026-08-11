@@ -248,6 +248,11 @@ class MockSimulatorTransport:
             "info": {
                 "track_id": state.track_id,
                 "off_track": abs(state.lateral_offset_m) > self.track_half_width_m,
+                "collision_impulses": (
+                    [1.0, 0.0, 0.0]
+                    if abs(state.lateral_offset_m) >= self.track_half_width_m * 0.9
+                    else [0.0, 0.0, 0.0]
+                ),
             },
         }
 
