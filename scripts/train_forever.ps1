@@ -2,8 +2,8 @@ param(
     [int]$TimestepsPerRun = 100000,
     [int]$FrameSkip = 30,
     [int]$MaxSteps = 2000,
-    [double]$LearningRate = 0.002,
-    [double]$EntropyCoefficient = 0.005,
+    [double]$LearningRate = 0.0005,
+    [double]$EntropyCoefficient = 0.0,
     [string]$ModelPath = "models/polybot-real-speed-fs30-w128",
     [switch]$QuarterCurriculum
 )
