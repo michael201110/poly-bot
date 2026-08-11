@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
@@ -162,6 +163,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         request_timeout_s: float = 10.0,
         curriculum_last_fraction: float = 0.0,
         curriculum_probability: float = 0.0,
+        finish_display_delay_s: float = 0.5,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -176,6 +178,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("curriculum_last_fraction must be in [0, 1]")
         if not 0.0 <= curriculum_probability <= 1.0:
             raise ValueError("curriculum_probability must be in [0, 1]")
+        if finish_display_delay_s < 0.0:
+            raise ValueError("finish_display_delay_s must be non-negative")
 
         self.transport = transport
         self.track_id = track_id
@@ -186,6 +190,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.request_timeout_s = request_timeout_s
         self.curriculum_last_fraction = curriculum_last_fraction
         self.curriculum_probability = curriculum_probability
+        self.finish_display_delay_s = finish_display_delay_s
 
         self.action_space = spaces.MultiDiscrete(np.asarray([3, 2, 2], dtype=np.int64))
         self.observation_space = spaces.Box(
@@ -439,6 +444,12 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["landing_grace_s"] = self._landing_grace_s
         if truncated and "time_limit" not in events:
             info["wrapper_time_limit"] = True
+        if (
+            "finish" in events
+            and self.finish_display_delay_s > 0.0
+            and self.simulator_capabilities.get("simulator") == "polytrack-pml-worker"
+        ):
+            time.sleep(self.finish_display_delay_s)
         return observation, reward, terminated, truncated, info
 
     def _reward(
