@@ -83,6 +83,15 @@ def test_worker_preserves_transient_collision_impulses_across_frame_skip() -> No
     assert "[finite(collisionImpulsePeak)]" in source
 
 
+def test_worker_publishes_checkpoint_transitions_and_local_finish_state() -> None:
+    source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+
+    assert "decoded.nextCheckpointIndex > visibleCheckpoint" in source
+    assert "publishStates([buffer]);" in source
+    assert '"local_finish_ui"' in source
+    assert "visibleBytes[11] &= ~2" not in source
+
+
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
     source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(

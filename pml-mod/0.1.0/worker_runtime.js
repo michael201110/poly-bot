@@ -693,22 +693,7 @@ export function polybotWorkerInjection() {
         }
 
         function publishStates(buffers) {
-          const visibleBuffers = buffers.map((buffer) => {
-            const visibleBuffer = buffer.slice(0);
-            // Finish flags are deliberately hidden from the game UI. Python
-            // still receives the player result, but PolyTrack cannot submit an
-            // automated finish.
-            const visibleBytes = new Uint8Array(visibleBuffer);
-            if (visibleBytes[11] & 2) {
-              // A finished packet has a three-byte finishFrames field directly
-              // after flags. Removing only the flag would misalign every later
-              // field in the game's decoder, so remove that field as well.
-              visibleBytes.copyWithin(12, 15);
-              visibleBytes.fill(0, visibleBytes.length - 3);
-              visibleBytes[11] &= ~2;
-            }
-            return visibleBuffer;
-          });
+          const visibleBuffers = buffers.map((buffer) => buffer.slice(0));
           postMessage(
             {
               messageType: messageTypes.UpdateResult,
@@ -751,7 +736,7 @@ export function polybotWorkerInjection() {
                   : [finite(collisionImpulsePeak)],
               expert_action: guide.expertAction,
               off_track: offTrack,
-              leaderboard_finish_masked: true,
+              leaderboard_submission_blocked: true,
             },
           };
           if (seed !== null) {
@@ -990,6 +975,7 @@ export function polybotWorkerInjection() {
           const finalBuffers = new Map();
           let ticksAdvanced = 0;
           let collisionImpulsePeak = 0;
+          let visibleCheckpoint = decoded.nextCheckpointIndex;
           for (let tick = 0; tick < params.ticks; tick += 1) {
             for (const car of cars) {
               if (!car.hasStarted) {
@@ -1008,6 +994,14 @@ export function polybotWorkerInjection() {
                 decoded = decodeState(buffer);
                 for (const impulse of decoded.collisionImpulses) {
                   collisionImpulsePeak = Math.max(collisionImpulsePeak, Math.abs(impulse));
+                }
+                if (
+                  decoded.nextCheckpointIndex > visibleCheckpoint &&
+                  tick + 1 < params.ticks &&
+                  !decoded.hasFinished
+                ) {
+                  publishStates([buffer]);
+                  visibleCheckpoint = decoded.nextCheckpointIndex;
                 }
               }
             }
@@ -1081,7 +1075,7 @@ export function polybotWorkerInjection() {
                 max_ticks_per_step: maxTicksPerStep,
                 lookahead_count: lookaheadCount,
                 features: [
-                  "offline_finish_mask",
+                  "local_finish_ui",
                   "fixed_step",
                   "native_physics",
                   "ghost_reference",
