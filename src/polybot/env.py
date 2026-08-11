@@ -35,7 +35,7 @@ class RewardConfig:
     takeoff_target_speed_mps: float = 45.0
     takeoff_speed_reward_per_mps: float = 2.0
     takeoff_speed_reward_limit: float = 30.0
-    imitation_bonus_per_s: float = 6.0
+    imitation_bonus_per_s: float = 18.0
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_contact_penalty: float = -50.0
     barrier_collision_impulse_threshold: float = 0.0
