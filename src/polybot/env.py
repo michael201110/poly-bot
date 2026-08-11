@@ -40,6 +40,7 @@ class RewardConfig:
     airborne_spin_penalty_per_rad: float = -0.30
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
     airborne_tilt_penalty_per_s: float = -15.0
+    airborne_roll_penalty_per_s: float = -40.0
     airborne_pitch_tolerance_rad: float = 0.523599  # 30 degrees
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 10.0
@@ -109,8 +110,12 @@ def _airborne_tilt_penalty(
     pitch_error = max(
         0.0, abs(telemetry.pitch_rad) - config.airborne_pitch_tolerance_rad
     ) / (np.pi / 2.0)
-    attitude_error = min(2.0, roll_error + pitch_error)
-    return config.airborne_tilt_penalty_per_s * attitude_error * dt
+    roll_error = min(2.0, roll_error)
+    pitch_error = min(2.0, pitch_error)
+    return (
+        config.airborne_roll_penalty_per_s * roll_error
+        + config.airborne_tilt_penalty_per_s * pitch_error
+    ) * dt
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
