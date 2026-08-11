@@ -178,6 +178,10 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         inverted_penalty = _airborne_tilt_penalty(inverted, env.reward_config, 0.1)
         assert inverted_penalty < sideways_penalty < 0
         assert env.reward_config.airborne_roll_penalty_per_s == -40.0
+        assert env.reward_config.airborne_roll_limit_rad == pytest.approx(
+            np.deg2rad(30), rel=1e-5
+        )
+        assert env.reward_config.airborne_roll_failure_penalty == -100.0
         assert _airborne_tilt_penalty(allowed_pitch, env.reward_config, 0.1) == 0
         assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) < 0
         assert env.reward_config.barrier_launch_penalty <= -15.0

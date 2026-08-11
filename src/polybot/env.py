@@ -49,6 +49,9 @@ class RewardConfig:
     airborne_tilt_penalty_per_s: float = -15.0
     airborne_roll_penalty_per_s: float = -40.0
     airborne_pitch_tolerance_rad: float = 0.523599  # 30 degrees
+    airborne_roll_limit_rad: float = 0.523599  # 30 degrees
+    airborne_roll_timeout_s: float = 0.10
+    airborne_roll_failure_penalty: float = -100.0
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 30.0
     checkpoint_target_s: float = 30.0
@@ -186,6 +189,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._barrier_contact_s = 0.0
+        self._airborne_roll_s = 0.0
         self._landing_grace_s = 0.0
         self._was_airborne = False
         self.latest_telemetry: Telemetry | None = None
@@ -279,6 +283,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._barrier_contact_s = 0.0
+        self._airborne_roll_s = 0.0
         self._landing_grace_s = 0.0
         self._was_airborne = False
         self.latest_telemetry = transition.telemetry
@@ -370,6 +375,14 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             self._barrier_contact_s >= self.reward_config.barrier_contact_timeout_s
         )
 
+        if airborne and abs(telemetry.roll_rad) >= self.reward_config.airborne_roll_limit_rad:
+            self._airborne_roll_s += dt
+        else:
+            self._airborne_roll_s = max(0.0, self._airborne_roll_s - 2.0 * dt)
+        airborne_roll_failure = (
+            self._airborne_roll_s >= self.reward_config.airborne_roll_timeout_s
+        )
+
         reward, reward_terms = self._reward(
             transition,
             decoded_action,
@@ -380,11 +393,19 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             barrier_contact=barrier_contact,
             off_track_landing=off_track_landing,
             clean_takeoff=clean_takeoff,
+            airborne_roll_failure=airborne_roll_failure,
         )
         self._episode_steps += 1
         events = set(transition.events)
         crash = "crash" in events and not landing_grace
-        terminated = "finish" in events or crash or stalled or off_track or barrier_contact
+        terminated = (
+            "finish" in events
+            or crash
+            or stalled
+            or off_track
+            or barrier_contact
+            or airborne_roll_failure
+        )
         truncated = "time_limit" in events or self._episode_steps >= self.max_episode_steps
         self._episode_done = terminated or truncated
         self._previous_progress_m = transition.telemetry.route_progress_m
@@ -410,6 +431,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["events"] = tuple(
                 dict.fromkeys((*info["events"], "off_track_landing"))
             )
+        if airborne_roll_failure:
+            info["events"] = tuple(
+                dict.fromkeys((*info["events"], "airborne_roll_failure"))
+            )
+            info["airborne_roll_s"] = self._airborne_roll_s
         if landing_grace:
             info["landing_grace_s"] = self._landing_grace_s
         if truncated and "time_limit" not in events:
@@ -428,6 +454,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         barrier_contact: bool = False,
         off_track_landing: bool = False,
         clean_takeoff: bool = False,
+        airborne_roll_failure: bool = False,
     ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
         raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
@@ -530,6 +557,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             ),
             "off_track_landing": (
                 config.off_track_landing_penalty if off_track_landing else 0.0
+            ),
+            "airborne_roll_failure": (
+                config.airborne_roll_failure_penalty
+                if airborne_roll_failure
+                else 0.0
             ),
             "checkpoint": _checkpoint_reward(telemetry, config)
             * events.count("checkpoint"),

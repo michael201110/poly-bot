@@ -378,6 +378,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                         reward_terms.get("barrier_launch", 0.0) < 0.0
                         or reward_terms.get("barrier_contact", 0.0) < 0.0
                         or reward_terms.get("off_track_landing", 0.0) < 0.0
+                        or reward_terms.get("airborne_roll_failure", 0.0) < 0.0
                     ):
                         self.clean_episode = False
                     progress_m = float(info.get("route_progress_m", 0.0))
