@@ -79,7 +79,7 @@ def test_throttle_produces_progress_reward() -> None:
         _, reward, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
         assert info["reward_terms"]["progress"] > 0
         assert info["reward_terms"]["on_track_speed"] >= 0
-        assert info["reward_terms"]["ghost_imitation"] > 0
+        assert info["reward_terms"]["ghost_imitation"] == 0
         assert np.isfinite(reward)
         assert not terminated
         assert not truncated
@@ -99,10 +99,12 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
         assert speed_reward > 0
         assert env.reward_config.airborne_speed_per_m == 0.16
         assert env.reward_config.takeoff_target_speed_mps == 45.0
-        assert env.reward_config.imitation_bonus_per_s == 6.0
+        assert env.reward_config.imitation_bonus_per_s == 0.0
         assert env.reward_config.checkpoint_bonus == 10.0
-        assert env.reward_config.checkpoint_fast_bonus == 30.0
+        assert env.reward_config.checkpoint_fast_bonus == 90.0
         assert env.reward_config.finish_bonus == 500.0
+        assert env.reward_config.finish_fast_bonus == 1000.0
+        assert env.reward_config.finish_target_s == 60.0
         assert env.reward_config.unsafe_speed_penalty_per_m < 0
     finally:
         env.close()
@@ -132,9 +134,7 @@ def test_faster_finish_receives_more_reward() -> None:
         fast = replace(env.latest_telemetry, elapsed_s=30.0)
         slow = replace(env.latest_telemetry, elapsed_s=110.0)
 
-        assert _finish_reward(fast, env.reward_config) > _finish_reward(
-            slow, env.reward_config
-        )
+        assert _finish_reward(fast, env.reward_config) > _finish_reward(slow, env.reward_config)
         assert _finish_reward(slow, env.reward_config) >= 500.0
     finally:
         env.close()
@@ -196,18 +196,14 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         inverted_penalty = _airborne_tilt_penalty(inverted, env.reward_config, 0.1)
         assert inverted_penalty < sideways_penalty < 0
         assert env.reward_config.airborne_roll_penalty_per_s == -40.0
-        assert env.reward_config.airborne_roll_limit_rad == pytest.approx(
-            np.deg2rad(60), rel=1e-5
-        )
+        assert env.reward_config.airborne_roll_limit_rad == pytest.approx(np.deg2rad(60), rel=1e-5)
         assert env.reward_config.airborne_roll_failure_penalty == -100.0
         assert env.reward_config.airborne_pitch_deadzone_radps == pytest.approx(
             np.deg2rad(90), rel=1e-5
         )
         assert _airborne_tilt_penalty(allowed_pitch, env.reward_config, 0.1) == 0
         assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) < 0
-        one_wheel_down = replace(
-            sideways, wheel_contacts=(1.0, 0.0, 0.0, 0.0)
-        )
+        one_wheel_down = replace(sideways, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
         assert _airborne_tilt_penalty(one_wheel_down, env.reward_config, 0.1) == 0
         assert env.reward_config.barrier_launch_penalty <= -15.0
     finally:
@@ -235,9 +231,7 @@ def test_stationary_car_terminates_after_five_simulated_seconds() -> None:
         terminated = truncated = False
         info = {}
         while not (terminated or truncated):
-            _, _, terminated, truncated, info = env.step(
-                np.asarray([1, 0, 0], dtype=np.int64)
-            )
+            _, _, terminated, truncated, info = env.step(np.asarray([1, 0, 0], dtype=np.int64))
 
         assert terminated
         assert not truncated
@@ -262,9 +256,7 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         track_id="mock/straight",
         frame_skip=10,
         max_episode_steps=100,
-        reward_config=replace(
-            RewardConfig(), barrier_collision_impulse_threshold=float("inf")
-        ),
+        reward_config=replace(RewardConfig(), barrier_collision_impulse_threshold=float("inf")),
     )
     try:
         env.reset(seed=0)
@@ -273,19 +265,14 @@ def test_sustained_early_off_track_state_terminates_with_larger_penalty() -> Non
         terminated = truncated = False
         info = {}
         while not (terminated or truncated):
-            _, _, terminated, truncated, info = env.step(
-                np.asarray([1, 1, 0], dtype=np.int64)
-            )
+            _, _, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
 
         assert terminated
         assert not truncated
         assert "off_track" in info["events"]
         assert info["off_track_s"] >= env.reward_config.off_track_timeout_s
         assert info["early_off_track"] is True
-        assert (
-            info["reward_terms"]["off_track"]
-            == env.reward_config.early_off_track_penalty
-        )
+        assert info["reward_terms"]["off_track"] == env.reward_config.early_off_track_penalty
     finally:
         env.close()
 
@@ -302,9 +289,7 @@ def test_native_chassis_collision_terminates_episode() -> None:
         env.reset(seed=0)
         assert transport.state is not None
         transport.state.lateral_offset_m = transport.track_half_width_m * 0.95
-        _, _, terminated, truncated, info = env.step(
-            np.asarray([1, 1, 0], dtype=np.int64)
-        )
+        _, _, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
 
         assert terminated
         assert not truncated

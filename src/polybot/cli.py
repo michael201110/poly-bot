@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 from collections.abc import Sequence
@@ -324,9 +325,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         transport.close()
         raise
     try:
-        tensorboard_log = (
-            str(args.tensorboard_log) if args.tensorboard_log is not None else None
-        )
+        tensorboard_log = str(args.tensorboard_log) if args.tensorboard_log is not None else None
         if args.resume is None:
             model = PPO(
                 "MlpPolicy",
@@ -359,12 +358,14 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 self.episodes = 0
                 self.next_checkpoint = every
                 self.best_progress_ratio = 0.0
+                self.best_lap_time_s = float("inf")
                 self.clean_episode = True
                 self.episode_imitation_reward = 0.0
                 if self.best_metadata.exists():
                     try:
                         metadata = json.loads(self.best_metadata.read_text(encoding="utf-8"))
                         self.best_progress_ratio = float(metadata["progress_ratio"])
+                        self.best_lap_time_s = float(metadata.get("best_lap_time_s", float("inf")))
                     except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
                         pass
 
@@ -374,9 +375,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 self.episodes += sum(bool(done) for done in dones)
                 for info, done in zip(self.locals.get("infos", ()), dones, strict=False):
                     reward_terms = info.get("reward_terms", {})
-                    self.episode_imitation_reward += float(
-                        reward_terms.get("ghost_imitation", 0.0)
-                    )
+                    self.episode_imitation_reward += float(reward_terms.get("ghost_imitation", 0.0))
                     if (
                         reward_terms.get("barrier_launch", 0.0) < 0.0
                         or reward_terms.get("barrier_contact", 0.0) < 0.0
@@ -388,34 +387,38 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     track_length_m = max(1.0, float(info.get("track_length_m", 1.0)))
                     progress_ratio = progress_m / track_length_m
                     is_finish = "finish" in info.get("events", ())
-                    if (
-                        self.clean_episode
-                        and (
-                            progress_ratio >= self.best_progress_ratio + 0.02
-                            or is_finish
-                        )
+                    elapsed_s = float(info.get("elapsed_s", 0.0))
+                    faster_finish = is_finish and elapsed_s < self.best_lap_time_s
+                    if self.clean_episode and (
+                        progress_ratio >= self.best_progress_ratio + 0.02 or faster_finish
                     ):
                         self.output.parent.mkdir(parents=True, exist_ok=True)
                         self.model.save(str(self.best_output))
-                        self.best_progress_ratio = max(
-                            self.best_progress_ratio, progress_ratio
-                        )
+                        self.best_progress_ratio = max(self.best_progress_ratio, progress_ratio)
+                        if faster_finish:
+                            self.best_lap_time_s = elapsed_s
+                        metadata = {
+                            "progress_m": progress_m,
+                            "track_length_m": track_length_m,
+                            "progress_ratio": self.best_progress_ratio,
+                            "finished": self.best_progress_ratio >= 1.0,
+                        }
+                        if math.isfinite(self.best_lap_time_s):
+                            metadata["best_lap_time_s"] = self.best_lap_time_s
                         self.best_metadata.write_text(
-                            json.dumps(
-                                {
-                                    "progress_m": progress_m,
-                                    "track_length_m": track_length_m,
-                                    "progress_ratio": self.best_progress_ratio,
-                                    "finished": is_finish,
-                                },
-                                indent=2,
-                            ),
+                            json.dumps(metadata, indent=2),
                             encoding="utf-8",
                         )
-                        print(
-                            f"Saved best model at {progress_ratio:.1%} track progress.",
-                            flush=True,
-                        )
+                        if faster_finish:
+                            print(
+                                f"Saved fastest model with a {elapsed_s:.3f}s lap.",
+                                flush=True,
+                            )
+                        else:
+                            print(
+                                f"Saved best model at {progress_ratio:.1%} track progress.",
+                                flush=True,
+                            )
                     if done:
                         completed_episode += 1
                         episode_data = info.get("episode", {})
@@ -428,10 +431,11 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                             if episode_reward is not None
                             else "unknown"
                         )
+                        time_label = "lap" if is_finish else "time"
                         print(
                             f"Episode {completed_episode}: reward={reward_text} "
                             f"progress={progress_ratio:.1%} result={result} "
-                            f"steps={episode_length} "
+                            f"{time_label}={elapsed_s:.3f}s steps={episode_length} "
                             f"ghost={self.episode_imitation_reward:+.2f}",
                             flush=True,
                         )
@@ -440,9 +444,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 if self.every and self.episodes >= self.next_checkpoint:
                     self.output.parent.mkdir(parents=True, exist_ok=True)
                     self.model.save(str(self.output))
-                    archive = self.output.with_name(
-                        f"{self.output.name}-episode-{self.episodes}"
-                    )
+                    archive = self.output.with_name(f"{self.output.name}-episode-{self.episodes}")
                     self.model.save(str(archive))
                     print(f"Checkpointed model after {self.episodes} episodes.", flush=True)
                     while self.next_checkpoint <= self.episodes:
@@ -662,10 +664,7 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
                     if not (terminated or truncated):
                         telemetry = env.latest_telemetry
                         assert telemetry is not None
-                        if (
-                            abs(telemetry.lateral_offset_m)
-                            > telemetry.track_half_width_m * 1.1
-                        ):
+                        if abs(telemetry.lateral_offset_m) > telemetry.track_half_width_m * 1.1:
                             restart_reason = "off track"
                             break
                         speed = abs(telemetry.local_velocity_mps[2])

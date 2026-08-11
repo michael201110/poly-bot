@@ -34,7 +34,7 @@ class RewardConfig:
     takeoff_target_speed_mps: float = 45.0
     takeoff_speed_reward_per_mps: float = 2.0
     takeoff_speed_reward_limit: float = 30.0
-    imitation_bonus_per_s: float = 6.0
+    imitation_bonus_per_s: float = 0.0
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_proximity_penalty_per_m: float = -1.00
     barrier_proximity_start_ratio: float = 0.55
@@ -52,11 +52,11 @@ class RewardConfig:
     airborne_roll_timeout_s: float = 0.10
     airborne_roll_failure_penalty: float = -100.0
     checkpoint_bonus: float = 10.0
-    checkpoint_fast_bonus: float = 30.0
+    checkpoint_fast_bonus: float = 90.0
     checkpoint_target_s: float = 30.0
     finish_bonus: float = 500.0
-    finish_fast_bonus: float = 250.0
-    finish_target_s: float = 120.0
+    finish_fast_bonus: float = 1000.0
+    finish_target_s: float = 60.0
     crash_penalty: float = -10.0
     stall_penalty: float = -5.0
     off_track_penalty: float = -5.0
@@ -110,15 +110,11 @@ def _checkpoint_reward(telemetry: Telemetry, config: RewardConfig) -> float:
 def _finish_reward(telemetry: Telemetry, config: RewardConfig) -> float:
     """Reward a valid finish, with additional credit for completing it quickly."""
 
-    pace_factor = float(
-        np.clip(1.0 - telemetry.elapsed_s / config.finish_target_s, 0.0, 1.0)
-    )
+    pace_factor = float(np.clip(1.0 - telemetry.elapsed_s / config.finish_target_s, 0.0, 1.0))
     return config.finish_bonus + config.finish_fast_bonus * pace_factor
 
 
-def _airborne_spin_penalty(
-    telemetry: Telemetry, config: RewardConfig, dt: float
-) -> float:
+def _airborne_spin_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
     """Penalize strong rotation in the air while tolerating normal jump pitch."""
 
     if any(contact >= 0.5 for contact in telemetry.wheel_contacts):
@@ -132,17 +128,15 @@ def _airborne_spin_penalty(
     return config.airborne_spin_penalty_per_rad * excess_spin * dt
 
 
-def _airborne_tilt_penalty(
-    telemetry: Telemetry, config: RewardConfig, dt: float
-) -> float:
+def _airborne_tilt_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
     """Penalize tilted and inverted flight even after the car stops rotating."""
 
     if any(contact >= 0.5 for contact in telemetry.wheel_contacts):
         return 0.0
     roll_error = abs(telemetry.roll_rad) / (np.pi / 2.0)
-    pitch_error = max(
-        0.0, abs(telemetry.pitch_rad) - config.airborne_pitch_tolerance_rad
-    ) / (np.pi / 2.0)
+    pitch_error = max(0.0, abs(telemetry.pitch_rad) - config.airborne_pitch_tolerance_rad) / (
+        np.pi / 2.0
+    )
     roll_error = min(2.0, roll_error)
     pitch_error = min(2.0, pitch_error)
     return (
@@ -384,23 +378,15 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             collision_impulse = 0.0
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
-        barrier_contact = (
-            collision_impulse > self.reward_config.barrier_collision_impulse_threshold
-        )
+        barrier_contact = collision_impulse > self.reward_config.barrier_collision_impulse_threshold
         self._barrier_contact_s = dt if barrier_contact else 0.0
 
         fully_airborne = grounded_wheels == 0
-        if (
-            fully_airborne
-            and abs(telemetry.roll_rad)
-            >= self.reward_config.airborne_roll_limit_rad
-        ):
+        if fully_airborne and abs(telemetry.roll_rad) >= self.reward_config.airborne_roll_limit_rad:
             self._airborne_roll_s += dt
         else:
             self._airborne_roll_s = max(0.0, self._airborne_roll_s - 2.0 * dt)
-        airborne_roll_failure = (
-            self._airborne_roll_s >= self.reward_config.airborne_roll_timeout_s
-        )
+        airborne_roll_failure = self._airborne_roll_s >= self.reward_config.airborne_roll_timeout_s
 
         reward, reward_terms = self._reward(
             transition,
@@ -442,18 +428,12 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["off_track_lateral_ratio"] = lateral_ratio
             info["early_off_track"] = early_off_track
         if barrier_contact:
-            info["events"] = tuple(
-                dict.fromkeys((*info["events"], "barrier_contact"))
-            )
+            info["events"] = tuple(dict.fromkeys((*info["events"], "barrier_contact")))
             info["barrier_contact_s"] = self._barrier_contact_s
         if off_track_landing:
-            info["events"] = tuple(
-                dict.fromkeys((*info["events"], "off_track_landing"))
-            )
+            info["events"] = tuple(dict.fromkeys((*info["events"], "off_track_landing")))
         if airborne_roll_failure:
-            info["events"] = tuple(
-                dict.fromkeys((*info["events"], "airborne_roll_failure"))
-            )
+            info["events"] = tuple(dict.fromkeys((*info["events"], "airborne_roll_failure")))
             info["airborne_roll_s"] = self._airborne_roll_s
         if landing_grace:
             info["landing_grace_s"] = self._landing_grace_s
@@ -531,9 +511,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             )
         imitation_reward = 0.0
         try:
-            expert_action = Action.from_wire(
-                transition.simulator_info.get("expert_action")
-            )
+            expert_action = Action.from_wire(transition.simulator_info.get("expert_action"))
         except (ProtocolViolation, ValueError):
             expert_action = None
         if expert_action is not None:
@@ -544,20 +522,13 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             )
             signed_agreement = 2.0 * agreement - 1.0
             imitation_reward = (
-                config.imitation_bonus_per_s
-                * dt
-                * on_track_factor
-                * signed_agreement
+                config.imitation_bonus_per_s * dt * on_track_factor * signed_agreement
             )
         terms = {
             "progress": config.progress_per_m * progress_delta,
             "elapsed": config.elapsed_cost_per_s * dt,
-            "on_track_speed": config.on_track_speed_per_m
-            * distance_at_speed
-            * on_track_factor,
-            "airborne_speed": config.airborne_speed_per_m
-            * distance_at_speed
-            * airborne_stability
+            "on_track_speed": config.on_track_speed_per_m * distance_at_speed * on_track_factor,
+            "airborne_speed": config.airborne_speed_per_m * distance_at_speed * airborne_stability
             if airborne
             else 0.0,
             "takeoff_speed": takeoff_speed_reward,
@@ -571,26 +542,21 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "airborne_spin": _airborne_spin_penalty(telemetry, config, dt),
             "airborne_tilt": _airborne_tilt_penalty(telemetry, config, dt),
             "barrier_launch": config.barrier_launch_penalty if barrier_launch else 0.0,
-            "barrier_contact": (
-                config.barrier_contact_penalty if barrier_contact else 0.0
-            ),
-            "off_track_landing": (
-                config.off_track_landing_penalty if off_track_landing else 0.0
-            ),
+            "barrier_contact": (config.barrier_contact_penalty if barrier_contact else 0.0),
+            "off_track_landing": (config.off_track_landing_penalty if off_track_landing else 0.0),
             "airborne_roll_failure": (
-                config.airborne_roll_failure_penalty
-                if airborne_roll_failure
-                else 0.0
+                config.airborne_roll_failure_penalty if airborne_roll_failure else 0.0
             ),
-            "checkpoint": _checkpoint_reward(telemetry, config)
-            * events.count("checkpoint"),
+            "checkpoint": _checkpoint_reward(telemetry, config) * events.count("checkpoint"),
             "finish": _finish_reward(telemetry, config) if "finish" in events else 0.0,
             "crash": config.crash_penalty if "crash" in events else 0.0,
             "stall": config.stall_penalty if stalled else 0.0,
             "off_track": (
                 config.early_off_track_penalty
                 if early_off_track
-                else config.off_track_penalty if off_track else 0.0
+                else config.off_track_penalty
+                if off_track
+                else 0.0
             ),
             "action_change": config.action_change_penalty
             * (
