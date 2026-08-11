@@ -116,6 +116,21 @@ def test_latest_mod_uses_native_backspace_after_finish() -> None:
     assert 'code: "Backspace"' in source
 
 
+def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
+    worker_source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(
+        encoding="utf-8"
+    )
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    main_source = (
+        MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js"
+    ).read_text(encoding="utf-8")
+
+    assert "polybotAbortRestart: true" in worker_source
+    assert "setTimeout(resolve, 100)" in worker_source
+    assert "event.data?.polybotAbortRestart === true" in main_source
+    assert "pressBackspace();" in main_source
+
+
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
     source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(

@@ -141,11 +141,9 @@ def test_faster_finish_receives_more_reward() -> None:
         env.close()
 
 
-def test_barrier_proximity_penalty_is_stronger_near_track_edge() -> None:
+def test_barrier_punishment_requires_native_collision() -> None:
     config = RewardConfig()
 
-    assert config.barrier_proximity_start_ratio > 0.5
-    assert config.barrier_proximity_penalty_per_m < config.unsafe_speed_penalty_per_m
     assert config.barrier_contact_penalty == -50.0
     assert config.barrier_collision_impulse_threshold == 0.0
     assert config.off_track_landing_penalty == -30.0
@@ -206,7 +204,6 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
         assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) < 0
         one_wheel_down = replace(sideways, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
         assert _airborne_tilt_penalty(one_wheel_down, env.reward_config, 0.1) == 0
-        assert env.reward_config.barrier_launch_penalty <= -15.0
     finally:
         env.close()
 

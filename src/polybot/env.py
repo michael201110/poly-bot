@@ -36,9 +36,6 @@ class RewardConfig:
     takeoff_speed_reward_limit: float = 30.0
     imitation_bonus_per_s: float = 6.0
     unsafe_speed_penalty_per_m: float = -0.08
-    barrier_proximity_penalty_per_m: float = -1.00
-    barrier_proximity_start_ratio: float = 0.55
-    barrier_launch_penalty: float = -15.0
     barrier_contact_penalty: float = -50.0
     barrier_collision_impulse_threshold: float = 0.0
     off_track_landing_penalty: float = -30.0
@@ -350,12 +347,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         lateral_ratio = abs(telemetry.lateral_offset_m) / width
         grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
         airborne = grounded_wheels < self.reward_config.off_track_min_grounded_wheels
-        barrier_launch = (
-            airborne
-            and not self._was_airborne
-            and lateral_ratio >= self.reward_config.barrier_proximity_start_ratio
-        )
-        clean_takeoff = airborne and not self._was_airborne and not barrier_launch
+        clean_takeoff = airborne and not self._was_airborne
         off_track_landing = (
             not airborne
             and self._was_airborne
@@ -410,7 +402,6 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             stalled=stalled,
             off_track=off_track,
             early_off_track=early_off_track,
-            barrier_launch=barrier_launch,
             barrier_contact=barrier_contact,
             off_track_landing=off_track_landing,
             clean_takeoff=clean_takeoff,
@@ -465,7 +456,6 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         stalled: bool = False,
         off_track: bool = False,
         early_off_track: bool = False,
-        barrier_launch: bool = False,
         barrier_contact: bool = False,
         off_track_landing: bool = False,
         clean_takeoff: bool = False,
@@ -501,15 +491,6 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                     abs(telemetry.pitch_rad) - config.airborne_pitch_tolerance_rad,
                 )
                 / (np.pi / 4.0),
-                0.0,
-                1.0,
-            )
-        )
-        lateral_ratio = abs(telemetry.lateral_offset_m) / width
-        barrier_factor = float(
-            np.clip(
-                (lateral_ratio - config.barrier_proximity_start_ratio)
-                / (1.0 - config.barrier_proximity_start_ratio),
                 0.0,
                 1.0,
             )
@@ -552,13 +533,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),
-            "barrier_proximity": config.barrier_proximity_penalty_per_m
-            * distance_at_speed
-            * barrier_factor**2,
             "airborne_spin": _airborne_spin_penalty(telemetry, config, dt),
             "airborne_tilt": _airborne_tilt_penalty(telemetry, config, dt),
             "ground_slip": _ground_slip_penalty(telemetry, config, dt),
-            "barrier_launch": config.barrier_launch_penalty if barrier_launch else 0.0,
             "barrier_contact": (config.barrier_contact_penalty if barrier_contact else 0.0),
             "off_track_landing": (config.off_track_landing_penalty if off_track_landing else 0.0),
             "airborne_roll_failure": (

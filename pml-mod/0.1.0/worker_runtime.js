@@ -757,6 +757,16 @@ export function polybotWorkerInjection() {
           if (!Number.isSafeInteger(params.seed) || params.seed < 0) {
             throw new BridgeError("invalid_request", "seed must be a non-negative integer");
           }
+          if (session && !session.previousDecoded?.hasFinished) {
+            postMessage({
+              messageType: messageTypes.UpdateResult,
+              carStateBuffers: [],
+              polybotAbortRestart: true,
+            });
+            // Let the main thread process native Backspace before frame numbers
+            // regress during deterministic car recreation.
+            await new Promise((resolve) => setTimeout(resolve, 100));
+          }
           if (params.track_id !== "current") {
             throw new BridgeError(
               "track_mismatch",
