@@ -48,7 +48,7 @@ class RewardConfig:
     airborne_roll_limit_rad: float = 1.047198  # 60 degrees
     airborne_roll_timeout_s: float = 0.10
     airborne_roll_failure_penalty: float = -100.0
-    ground_slip_tolerance_rad: float = 0.0872665  # 5 degrees
+    ground_slip_tolerance_rad: float = 0.174533  # 10 degrees
     ground_slip_penalty_per_rad_s: float = -1000.0
     checkpoint_bonus: float = 10.0
     checkpoint_fast_bonus: float = 90.0
