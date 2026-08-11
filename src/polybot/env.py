@@ -46,9 +46,10 @@ class RewardConfig:
     off_track_landing_penalty: float = -30.0
     airborne_spin_penalty_per_rad: float = -0.30
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
+    airborne_pitch_deadzone_radps: float = 1.570796  # 90 degrees per second
     airborne_tilt_penalty_per_s: float = -15.0
     airborne_roll_penalty_per_s: float = -40.0
-    airborne_pitch_tolerance_rad: float = 0.523599  # 30 degrees
+    airborne_pitch_tolerance_rad: float = 1.047198  # 60 degrees
     airborne_roll_limit_rad: float = 0.523599  # 30 degrees
     airborne_roll_timeout_s: float = 0.10
     airborne_roll_failure_penalty: float = -100.0
@@ -104,8 +105,12 @@ def _airborne_spin_penalty(
 
     if sum(contact >= 0.5 for contact in telemetry.wheel_contacts) >= 2:
         return 0.0
-    angular_speed = float(np.linalg.norm(telemetry.angular_velocity_radps))
-    excess_spin = max(0.0, angular_speed - config.airborne_spin_deadzone_radps)
+    pitch_rate, yaw_rate, roll_rate = telemetry.angular_velocity_radps
+    excess_spin = (
+        max(0.0, abs(pitch_rate) - config.airborne_pitch_deadzone_radps)
+        + max(0.0, abs(yaw_rate) - config.airborne_spin_deadzone_radps)
+        + max(0.0, abs(roll_rate) - config.airborne_spin_deadzone_radps)
+    )
     return config.airborne_spin_penalty_per_rad * excess_spin * dt
 
 
