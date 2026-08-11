@@ -693,12 +693,13 @@ export function polybotWorkerInjection() {
           };
         }
 
-        function publishStates(buffers) {
+        function publishStates(buffers, playerFinished = false) {
           const visibleBuffers = buffers.map((buffer) => buffer.slice(0));
           postMessage(
             {
               messageType: messageTypes.UpdateResult,
               carStateBuffers: visibleBuffers,
+              polybotPlayerFinished: playerFinished,
             },
             { transfer: visibleBuffers },
           );
@@ -1014,7 +1015,7 @@ export function polybotWorkerInjection() {
           session.tick += ticksAdvanced;
 
           if (finalBuffers.size > 0) {
-            publishStates([...finalBuffers.values()]);
+            publishStates([...finalBuffers.values()], decoded.hasFinished);
           }
           const events = [];
           if (decoded.nextCheckpointIndex > session.previousCheckpoint) {
@@ -1044,23 +1045,10 @@ export function polybotWorkerInjection() {
             for (const car of cars) {
               car.isPaused = false;
             }
-            await new Promise((resolve) => setTimeout(resolve, finishDisplayDelayMs));
+            await new Promise((resolve) =>
+              setTimeout(resolve, finishDisplayDelayMs + 100),
+            );
             pauseManualCars();
-            const finishedPlayer = findCar(playerCarId);
-            if (finishedPlayer) {
-              // Backspace is PolyTrack's native restart control. Use one native
-              // reset tick to dismiss the finish overlay before Python begins
-              // the next deterministic episode.
-              const resetBuffer = advanceCar(finishedPlayer, {
-                up: false,
-                right: false,
-                down: false,
-                left: false,
-                reset: true,
-              });
-              finishedPlayer.frames += 1;
-              publishStates([resetBuffer]);
-            }
           }
           return result;
         }

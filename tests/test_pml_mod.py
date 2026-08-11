@@ -97,12 +97,23 @@ def test_worker_coasts_in_realtime_before_resetting_a_finish() -> None:
     assert "const finishDisplayDelayMs = 500;" in source
     assert "async function stepEpisode(params)" in source
     assert "car.isPaused = false;" in source
-    assert "setTimeout(resolve, finishDisplayDelayMs)" in source
+    assert "setTimeout(resolve, finishDisplayDelayMs + 100)" in source
     assert "pauseManualCars();" in source
-    assert "const finishedPlayer = findCar(playerCarId);" in source
-    assert "reset: true" in source
-    assert "publishStates([resetBuffer]);" in source
+    assert "polybotPlayerFinished: playerFinished" in source
     assert "visibleBytes[11] &= ~2" not in source
+
+
+def test_latest_mod_uses_native_backspace_after_finish() -> None:
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "__polybotWrapSimulationWorker" in source
+    assert "polybotPlayerFinished" in source
+    assert 'new KeyboardEvent("keydown", eventOptions)' in source
+    assert 'new KeyboardEvent("keyup", eventOptions)' in source
+    assert 'code: "Backspace"' in source
 
 
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
