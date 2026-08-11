@@ -3,7 +3,7 @@ param(
     [int]$FrameSkip = 30,
     [int]$MaxSteps = 2000,
     [double]$LearningRate = 0.0003,
-    [double]$EntropyCoefficient = 0.0,
+    [double]$EntropyCoefficient = 0.005,
     [string]$ModelPath = "models/polybot-real-speed-fs30"
 )
 
