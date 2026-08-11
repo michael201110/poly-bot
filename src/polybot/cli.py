@@ -357,6 +357,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 self.next_checkpoint = every
                 self.best_progress_ratio = 0.0
                 self.clean_episode = True
+                self.episode_imitation_reward = 0.0
                 if self.best_metadata.exists():
                     try:
                         metadata = json.loads(self.best_metadata.read_text(encoding="utf-8"))
@@ -370,6 +371,9 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 self.episodes += sum(bool(done) for done in dones)
                 for info, done in zip(self.locals.get("infos", ()), dones, strict=False):
                     reward_terms = info.get("reward_terms", {})
+                    self.episode_imitation_reward += float(
+                        reward_terms.get("ghost_imitation", 0.0)
+                    )
                     if (
                         reward_terms.get("barrier_launch", 0.0) < 0.0
                         or reward_terms.get("barrier_contact", 0.0) < 0.0
@@ -423,10 +427,12 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                         print(
                             f"Episode {completed_episode}: reward={reward_text} "
                             f"progress={progress_ratio:.1%} result={result} "
-                            f"steps={episode_length}",
+                            f"steps={episode_length} "
+                            f"ghost={self.episode_imitation_reward:+.2f}",
                             flush=True,
                         )
                         self.clean_episode = True
+                        self.episode_imitation_reward = 0.0
                 if self.every and self.episodes >= self.next_checkpoint:
                     self.output.parent.mkdir(parents=True, exist_ok=True)
                     self.model.save(str(self.output))

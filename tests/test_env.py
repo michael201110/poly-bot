@@ -78,6 +78,7 @@ def test_throttle_produces_progress_reward() -> None:
         _, reward, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
         assert info["reward_terms"]["progress"] > 0
         assert info["reward_terms"]["on_track_speed"] >= 0
+        assert info["reward_terms"]["ghost_imitation"] > 0
         assert np.isfinite(reward)
         assert not terminated
         assert not truncated
@@ -97,7 +98,7 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
         assert speed_reward > 0
         assert env.reward_config.airborne_speed_per_m == 0.16
         assert env.reward_config.takeoff_target_speed_mps == 45.0
-        assert env.reward_config.imitation_bonus_per_s == 4.0
+        assert env.reward_config.imitation_bonus_per_s == 6.0
         assert env.reward_config.checkpoint_bonus == 10.0
         assert env.reward_config.checkpoint_fast_bonus == 30.0
         assert env.reward_config.finish_bonus == 250.0
