@@ -96,7 +96,7 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
 
         assert speed_reward > 0
         assert env.reward_config.checkpoint_bonus == 10.0
-        assert env.reward_config.finish_bonus > env.reward_config.checkpoint_bonus
+        assert env.reward_config.finish_bonus == 250.0
         assert env.reward_config.unsafe_speed_penalty_per_m < 0
     finally:
         env.close()
