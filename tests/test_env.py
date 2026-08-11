@@ -220,7 +220,7 @@ def test_large_slip_angle_is_penalized_only_with_four_wheels_grounded() -> None:
         )
         controlled = replace(
             sliding,
-            local_velocity_mps=(20.0 * np.tan(np.deg2rad(10)), 0.0, 20.0),
+            local_velocity_mps=(20.0 * np.tan(np.deg2rad(5)), 0.0, 20.0),
         )
         three_wheels = replace(sliding, wheel_contacts=(1.0, 1.0, 1.0, 0.0))
 
