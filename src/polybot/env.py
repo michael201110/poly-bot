@@ -145,8 +145,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("max_episode_steps must be positive")
         if not track_id:
             raise ValueError("track_id cannot be empty")
-        if not 0.0 <= curriculum_last_fraction < 1.0:
-            raise ValueError("curriculum_last_fraction must be in [0, 1)")
+        if not 0.0 <= curriculum_last_fraction <= 1.0:
+            raise ValueError("curriculum_last_fraction must be in [0, 1]")
         if not 0.0 <= curriculum_probability <= 1.0:
             raise ValueError("curriculum_probability must be in [0, 1]")
 

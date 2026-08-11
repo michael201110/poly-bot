@@ -56,6 +56,21 @@ def test_curriculum_reset_starts_within_requested_final_section() -> None:
         env.close()
 
 
+def test_full_track_curriculum_can_start_anywhere_before_finish() -> None:
+    env = make_env(
+        track_id="mock/straight",
+        curriculum_last_fraction=1.0,
+        curriculum_probability=1.0,
+    )
+    try:
+        _, info = env.reset(seed=42)
+
+        progress_ratio = info["route_progress_m"] / info["track_length_m"]
+        assert 0.0 <= progress_ratio <= 0.95
+    finally:
+        env.close()
+
+
 def test_throttle_produces_progress_reward() -> None:
     env = make_env(track_id="mock/straight", frame_skip=4)
     try:

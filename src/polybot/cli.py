@@ -287,8 +287,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--learning-rate must be positive")
     if args.entropy_coef < 0:
         parser.error("--entropy-coef must be non-negative")
-    if not 0 <= args.curriculum_last_fraction < 1:
-        parser.error("--curriculum-last-fraction must be in [0, 1)")
+    if not 0 <= args.curriculum_last_fraction <= 1:
+        parser.error("--curriculum-last-fraction must be in [0, 1]")
     if not 0 <= args.curriculum_probability <= 1:
         parser.error("--curriculum-probability must be in [0, 1]")
     if args.forward_bias < 0:
