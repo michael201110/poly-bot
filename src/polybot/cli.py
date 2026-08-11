@@ -246,7 +246,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         "--entropy-coef",
         type=float,
         default=0.0,
-        help="PPO entropy incentive for exploration; small values such as 0.005 work best",
+        help=(
+            "PPO entropy coefficient: positive explores more, while a small negative "
+            "value favors a more decisive policy"
+        ),
     )
     parser.add_argument(
         "--forward-bias",
@@ -285,8 +288,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--timesteps must be positive")
     if args.learning_rate <= 0:
         parser.error("--learning-rate must be positive")
-    if args.entropy_coef < 0:
-        parser.error("--entropy-coef must be non-negative")
+    if not -0.1 <= args.entropy_coef <= 0.1:
+        parser.error("--entropy-coef must be between -0.1 and 0.1")
     if not 0 <= args.curriculum_last_fraction <= 1:
         parser.error("--curriculum-last-fraction must be in [0, 1]")
     if not 0 <= args.curriculum_probability <= 1:
