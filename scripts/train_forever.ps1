@@ -27,7 +27,7 @@ while ($true) {
         --frame-skip $FrameSkip `
         --learning-rate $LearningRate `
         --entropy-coef $EntropyCoefficient `
-        --curriculum-last-fraction 0.30 `
+        --curriculum-last-fraction 0.50 `
         --curriculum-probability 0.70 `
         @resumeArguments `
         --checkpoint-episodes 5 `
