@@ -96,6 +96,7 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
 
         assert speed_reward > 0
         assert env.reward_config.airborne_speed_per_m == 0.16
+        assert env.reward_config.takeoff_target_speed_mps == 45.0
         assert env.reward_config.checkpoint_bonus == 10.0
         assert env.reward_config.checkpoint_fast_bonus == 30.0
         assert env.reward_config.finish_bonus == 250.0

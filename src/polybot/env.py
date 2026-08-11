@@ -29,8 +29,11 @@ class RewardConfig:
 
     progress_per_m: float = 0.10
     elapsed_cost_per_s: float = 0.0
-    on_track_speed_per_m: float = 0.06
+    on_track_speed_per_m: float = 0.10
     airborne_speed_per_m: float = 0.16
+    takeoff_target_speed_mps: float = 45.0
+    takeoff_speed_reward_per_mps: float = 2.0
+    takeoff_speed_reward_limit: float = 30.0
     unsafe_speed_penalty_per_m: float = -0.08
     barrier_proximity_penalty_per_m: float = -1.00
     barrier_proximity_start_ratio: float = 0.55
@@ -313,6 +316,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             and not self._was_airborne
             and lateral_ratio >= self.reward_config.barrier_proximity_start_ratio
         )
+        clean_takeoff = airborne and not self._was_airborne and not barrier_launch
         off_track_landing = (
             not airborne
             and self._was_airborne
@@ -374,6 +378,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             barrier_launch=barrier_launch,
             barrier_contact=barrier_contact,
             off_track_landing=off_track_landing,
+            clean_takeoff=clean_takeoff,
         )
         self._episode_steps += 1
         events = set(transition.events)
@@ -421,6 +426,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         barrier_launch: bool = False,
         barrier_contact: bool = False,
         off_track_landing: bool = False,
+        clean_takeoff: bool = False,
     ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
         raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
@@ -466,6 +472,16 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             )
         )
         distance_at_speed = forward_speed * dt
+        takeoff_speed_reward = 0.0
+        if clean_takeoff:
+            takeoff_speed_reward = float(
+                np.clip(
+                    (forward_speed - config.takeoff_target_speed_mps)
+                    * config.takeoff_speed_reward_per_mps,
+                    -config.takeoff_speed_reward_limit,
+                    config.takeoff_speed_reward_limit,
+                )
+            )
         terms = {
             "progress": config.progress_per_m * progress_delta,
             "elapsed": config.elapsed_cost_per_s * dt,
@@ -477,6 +493,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             * airborne_stability
             if airborne
             else 0.0,
+            "takeoff_speed": takeoff_speed_reward,
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),
