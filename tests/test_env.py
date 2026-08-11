@@ -13,6 +13,7 @@ from polybot.env import (
     _airborne_spin_penalty,
     _airborne_tilt_penalty,
     _checkpoint_reward,
+    _finish_reward,
     _has_off_track_evidence,
 )
 from polybot.mock import MockSimulatorTransport
@@ -101,7 +102,7 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
         assert env.reward_config.imitation_bonus_per_s == 6.0
         assert env.reward_config.checkpoint_bonus == 10.0
         assert env.reward_config.checkpoint_fast_bonus == 30.0
-        assert env.reward_config.finish_bonus == 250.0
+        assert env.reward_config.finish_bonus == 500.0
         assert env.reward_config.unsafe_speed_penalty_per_m < 0
     finally:
         env.close()
@@ -119,6 +120,22 @@ def test_faster_checkpoint_arrival_receives_more_reward() -> None:
             slow, env.reward_config
         )
         assert _checkpoint_reward(slow, env.reward_config) >= 10.0
+    finally:
+        env.close()
+
+
+def test_faster_finish_receives_more_reward() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        fast = replace(env.latest_telemetry, elapsed_s=30.0)
+        slow = replace(env.latest_telemetry, elapsed_s=110.0)
+
+        assert _finish_reward(fast, env.reward_config) > _finish_reward(
+            slow, env.reward_config
+        )
+        assert _finish_reward(slow, env.reward_config) >= 500.0
     finally:
         env.close()
 
