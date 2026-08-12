@@ -253,7 +253,8 @@ class MockSimulatorTransport:
                     if abs(state.lateral_offset_m) >= self.track_half_width_m * 0.9
                     else [0.0, 0.0, 0.0]
                 ),
-                "expert_action": {"steer": 0, "throttle": 1, "brake": 0},
+                "ghost_position_error_m": abs(state.lateral_offset_m),
+                "ghost_rotation_error_rad": abs(state.heading_error_rad),
             },
         }
 

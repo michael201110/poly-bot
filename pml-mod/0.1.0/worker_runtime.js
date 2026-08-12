@@ -183,6 +183,10 @@ export function polybotWorkerInjection() {
           ];
         }
 
+        function quaternionDot(a, b) {
+          return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+        }
+
         function rotateVector(quaternion, vector) {
           const q = normalizeQuaternion(quaternion);
           const pure = [vector[0], vector[1], vector[2], 0];
@@ -737,6 +741,22 @@ export function polybotWorkerInjection() {
                   ? decoded.collisionImpulses
                   : [finite(collisionImpulsePeak)],
               expert_action: guide.expertAction,
+              ghost_position_error_m: finite(distance(decoded.position, guide.position)),
+              ghost_rotation_error_rad: finite(
+                2 *
+                  Math.acos(
+                    clamp(
+                      Math.abs(
+                        quaternionDot(
+                          normalizeQuaternion(decoded.quaternion),
+                          normalizeQuaternion(guide.quaternion),
+                        ),
+                      ),
+                      0,
+                      1,
+                    ),
+                  ),
+              ),
               off_track: offTrack,
               leaderboard_submission_blocked: true,
             },
@@ -765,7 +785,7 @@ export function polybotWorkerInjection() {
             });
             // Let the main thread process native Backspace before frame numbers
             // regress during deterministic car recreation.
-            await new Promise((resolve) => setTimeout(resolve, 100));
+            await new Promise((resolve) => setTimeout(resolve, finishDisplayDelayMs + 100));
           }
           if (params.track_id !== "current") {
             throw new BridgeError(

@@ -126,9 +126,10 @@ def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
     ).read_text(encoding="utf-8")
 
     assert "polybotAbortRestart: true" in worker_source
-    assert "setTimeout(resolve, 100)" in worker_source
-    assert "event.data?.polybotAbortRestart === true" in main_source
+    assert "setTimeout(resolve, finishDisplayDelayMs + 100)" in worker_source
+    assert "event.data?.polybotAbortRestart !== true" in main_source
     assert "pressBackspace();" in main_source
+    assert "restartScheduled" in main_source
 
 
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:

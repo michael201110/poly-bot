@@ -15,6 +15,7 @@ from polybot.env import (
     _airborne_tilt_penalty,
     _checkpoint_reward,
     _finish_reward,
+    _ghost_pose_reward,
     _ground_slip_penalty,
     _has_off_track_evidence,
 )
@@ -97,19 +98,20 @@ def test_curriculum_section_starts_exactly_and_terminates_at_boundary() -> None:
 
         assert terminated
         assert "curriculum_section_complete" in info["events"]
-        assert info["reward_terms"]["curriculum_section"] == 250.0
+        assert info["reward_terms"]["curriculum_section"] == 0.0
     finally:
         env.close()
 
 
-def test_throttle_produces_progress_reward() -> None:
+def test_only_ghost_pose_rewards_an_unfinished_step() -> None:
     env = make_env(track_id="mock/straight", frame_skip=4)
     try:
         env.reset(seed=0)
         _, reward, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
-        assert info["reward_terms"]["progress"] > 0
-        assert info["reward_terms"]["on_track_speed"] >= 0
+        assert info["reward_terms"]["progress"] == 0
+        assert info["reward_terms"]["on_track_speed"] == 0
         assert info["reward_terms"]["ghost_imitation"] > 0
+        assert reward == pytest.approx(info["reward_terms"]["ghost_imitation"])
         assert np.isfinite(reward)
         assert not terminated
         assert not truncated
@@ -117,7 +119,7 @@ def test_throttle_produces_progress_reward() -> None:
         env.close()
 
 
-def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
+def test_speed_and_checkpoint_shaping_are_disabled() -> None:
     env = make_env(track_id="mock/straight", frame_skip=10)
     try:
         env.reset(seed=0)
@@ -126,21 +128,21 @@ def test_reward_prioritizes_checkpoints_and_aligned_speed() -> None:
             _, _, _, _, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
             speed_reward += info["reward_terms"]["on_track_speed"]
 
-        assert speed_reward > 0
-        assert env.reward_config.airborne_speed_per_m == 0.16
+        assert speed_reward == 0
+        assert env.reward_config.airborne_speed_per_m == 0
         assert env.reward_config.takeoff_target_speed_mps == 45.0
         assert env.reward_config.imitation_bonus_per_s == 18.0
-        assert env.reward_config.checkpoint_bonus == 10.0
-        assert env.reward_config.checkpoint_fast_bonus == 90.0
+        assert env.reward_config.checkpoint_bonus == 0
+        assert env.reward_config.checkpoint_fast_bonus == 0
         assert env.reward_config.finish_bonus == 1000.0
         assert env.reward_config.finish_fast_bonus == 2000.0
         assert env.reward_config.finish_target_s == 60.0
-        assert env.reward_config.unsafe_speed_penalty_per_m < 0
+        assert env.reward_config.unsafe_speed_penalty_per_m == 0
     finally:
         env.close()
 
 
-def test_faster_checkpoint_arrival_receives_more_reward() -> None:
+def test_checkpoint_reward_is_disabled() -> None:
     env = make_env(track_id="mock/straight")
     try:
         env.reset(seed=0)
@@ -148,12 +150,31 @@ def test_faster_checkpoint_arrival_receives_more_reward() -> None:
         fast = replace(env.latest_telemetry, checkpoint_index=1, elapsed_s=5.0)
         slow = replace(env.latest_telemetry, checkpoint_index=1, elapsed_s=25.0)
 
-        assert _checkpoint_reward(fast, env.reward_config) > _checkpoint_reward(
-            slow, env.reward_config
-        )
-        assert _checkpoint_reward(slow, env.reward_config) >= 10.0
+        assert _checkpoint_reward(fast, env.reward_config) == 0
+        assert _checkpoint_reward(slow, env.reward_config) == 0
     finally:
         env.close()
+
+
+def test_ghost_pose_reward_prefers_positional_and_rotational_alignment() -> None:
+    config = RewardConfig()
+    aligned = {
+        "ghost_position_error_m": 0.0,
+        "ghost_rotation_error_rad": 0.0,
+    }
+    displaced = {
+        "ghost_position_error_m": 2.0,
+        "ghost_rotation_error_rad": 0.0,
+    }
+    rotated = {
+        "ghost_position_error_m": 0.0,
+        "ghost_rotation_error_rad": np.deg2rad(20),
+    }
+
+    assert _ghost_pose_reward(aligned, config, 0.5) == pytest.approx(9.0)
+    assert _ghost_pose_reward(displaced, config, 0.5) == pytest.approx(9.0 / np.e)
+    assert _ghost_pose_reward(rotated, config, 0.5) == pytest.approx(9.0 / np.e)
+    assert _ghost_pose_reward({}, config, 0.5) == 0.0
 
 
 def test_faster_finish_receives_more_reward() -> None:
@@ -173,9 +194,9 @@ def test_faster_finish_receives_more_reward() -> None:
 def test_barrier_punishment_requires_native_collision() -> None:
     config = RewardConfig()
 
-    assert config.barrier_contact_penalty == -50.0
+    assert config.barrier_contact_penalty == 0.0
     assert config.barrier_collision_impulse_threshold == 0.0
-    assert config.off_track_landing_penalty == -30.0
+    assert config.off_track_landing_penalty == 0.0
 
 
 def test_strong_airborne_spin_is_penalized_but_grounded_rotation_is_not() -> None:
@@ -191,7 +212,7 @@ def test_strong_airborne_spin_is_penalized_but_grounded_rotation_is_not() -> Non
         grounded = replace(spinning, wheel_contacts=(1.0, 1.0, 1.0, 1.0))
         one_wheel_down = replace(spinning, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
 
-        assert _airborne_spin_penalty(spinning, env.reward_config, 0.1) < 0
+        assert _airborne_spin_penalty(spinning, env.reward_config, 0.1) == 0
         assert _airborne_spin_penalty(grounded, env.reward_config, 0.1) == 0
         assert _airborne_spin_penalty(one_wheel_down, env.reward_config, 0.1) == 0
         assert env.reward_config.airborne_spin_deadzone_radps == pytest.approx(
@@ -222,15 +243,15 @@ def test_barrel_roll_orientation_is_penalized_while_airborne() -> None:
 
         sideways_penalty = _airborne_tilt_penalty(sideways, env.reward_config, 0.1)
         inverted_penalty = _airborne_tilt_penalty(inverted, env.reward_config, 0.1)
-        assert inverted_penalty < sideways_penalty < 0
-        assert env.reward_config.airborne_roll_penalty_per_s == -40.0
+        assert inverted_penalty == sideways_penalty == 0
+        assert env.reward_config.airborne_roll_penalty_per_s == 0.0
         assert env.reward_config.airborne_roll_limit_rad == pytest.approx(np.deg2rad(60), rel=1e-5)
-        assert env.reward_config.airborne_roll_failure_penalty == -100.0
+        assert env.reward_config.airborne_roll_failure_penalty == 0.0
         assert env.reward_config.airborne_pitch_deadzone_radps == pytest.approx(
             np.deg2rad(90), rel=1e-5
         )
         assert _airborne_tilt_penalty(allowed_pitch, env.reward_config, 0.1) == 0
-        assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) < 0
+        assert _airborne_tilt_penalty(excessive_pitch, env.reward_config, 0.1) == 0
         one_wheel_down = replace(sideways, wheel_contacts=(1.0, 0.0, 0.0, 0.0))
         assert _airborne_tilt_penalty(one_wheel_down, env.reward_config, 0.1) == 0
     finally:
@@ -250,9 +271,7 @@ def test_air_braking_receives_only_a_small_fully_airborne_reward() -> None:
         braking = Action(steer=0, throttle=False, brake=True)
         coasting = Action(steer=0, throttle=False, brake=False)
 
-        assert _airborne_brake_reward(
-            airborne, braking, env.reward_config, 0.5
-        ) == pytest.approx(0.125)
+        assert _airborne_brake_reward(airborne, braking, env.reward_config, 0.5) == 0
         assert _airborne_brake_reward(airborne, coasting, env.reward_config, 0.5) == 0
         assert _airborne_brake_reward(one_wheel_down, braking, env.reward_config, 0.5) == 0
     finally:
@@ -278,8 +297,8 @@ def test_large_slip_angle_is_penalized_only_with_four_wheels_grounded() -> None:
         assert env.reward_config.ground_slip_tolerance_rad == pytest.approx(
             np.deg2rad(5), rel=1e-5
         )
-        assert env.reward_config.ground_slip_penalty_per_rad_s == -1000.0
-        assert _ground_slip_penalty(sliding, env.reward_config, 0.1) < 0
+        assert env.reward_config.ground_slip_penalty_per_rad_s == 0.0
+        assert _ground_slip_penalty(sliding, env.reward_config, 0.1) == 0
         assert _ground_slip_penalty(controlled, env.reward_config, 0.1) == pytest.approx(0)
         assert _ground_slip_penalty(three_wheels, env.reward_config, 0.1) == 0
     finally:
@@ -391,7 +410,7 @@ def test_native_chassis_collision_terminates_episode() -> None:
         assert terminated
         assert not truncated
         assert "barrier_contact" in info["events"]
-        assert info["reward_terms"]["barrier_contact"] == -50.0
+        assert info["reward_terms"]["barrier_contact"] == 0.0
     finally:
         env.close()
 

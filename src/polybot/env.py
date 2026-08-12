@@ -27,42 +27,44 @@ from polybot.transport import SimulatorTransport
 class RewardConfig:
     """Reward coefficients kept independent from the game adapter."""
 
-    progress_per_m: float = 0.10
+    progress_per_m: float = 0.0
     elapsed_cost_per_s: float = 0.0
-    on_track_speed_per_m: float = 0.10
-    airborne_speed_per_m: float = 0.16
-    airborne_brake_bonus_per_s: float = 0.25
+    on_track_speed_per_m: float = 0.0
+    airborne_speed_per_m: float = 0.0
+    airborne_brake_bonus_per_s: float = 0.0
     takeoff_target_speed_mps: float = 45.0
-    takeoff_speed_reward_per_mps: float = 2.0
-    takeoff_speed_reward_limit: float = 30.0
+    takeoff_speed_reward_per_mps: float = 0.0
+    takeoff_speed_reward_limit: float = 0.0
     imitation_bonus_per_s: float = 18.0
-    unsafe_speed_penalty_per_m: float = -0.08
-    barrier_contact_penalty: float = -50.0
+    imitation_position_scale_m: float = 2.0
+    imitation_rotation_scale_rad: float = 0.349066  # 20 degrees
+    unsafe_speed_penalty_per_m: float = 0.0
+    barrier_contact_penalty: float = 0.0
     barrier_collision_impulse_threshold: float = 0.0
-    off_track_landing_penalty: float = -30.0
-    airborne_spin_penalty_per_rad: float = -0.30
+    off_track_landing_penalty: float = 0.0
+    airborne_spin_penalty_per_rad: float = 0.0
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
     airborne_pitch_deadzone_radps: float = 1.570796  # 90 degrees per second
-    airborne_tilt_penalty_per_s: float = -15.0
-    airborne_roll_penalty_per_s: float = -40.0
+    airborne_tilt_penalty_per_s: float = 0.0
+    airborne_roll_penalty_per_s: float = 0.0
     airborne_pitch_tolerance_rad: float = 1.047198  # 60 degrees
     airborne_roll_limit_rad: float = 1.047198  # 60 degrees
     airborne_roll_timeout_s: float = 0.10
-    airborne_roll_failure_penalty: float = -100.0
+    airborne_roll_failure_penalty: float = 0.0
     ground_slip_tolerance_rad: float = 0.0872665  # 5 degrees
-    ground_slip_penalty_per_rad_s: float = -1000.0
-    checkpoint_bonus: float = 10.0
-    checkpoint_fast_bonus: float = 90.0
+    ground_slip_penalty_per_rad_s: float = 0.0
+    checkpoint_bonus: float = 0.0
+    checkpoint_fast_bonus: float = 0.0
     checkpoint_target_s: float = 30.0
     finish_bonus: float = 1000.0
     finish_fast_bonus: float = 2000.0
     finish_target_s: float = 60.0
-    curriculum_section_bonus: float = 250.0
-    crash_penalty: float = -10.0
-    stall_penalty: float = -5.0
-    off_track_penalty: float = -5.0
-    early_off_track_penalty: float = -15.0
-    action_change_penalty: float = -0.002
+    curriculum_section_bonus: float = 0.0
+    crash_penalty: float = 0.0
+    stall_penalty: float = 0.0
+    off_track_penalty: float = 0.0
+    early_off_track_penalty: float = 0.0
+    action_change_penalty: float = 0.0
     max_forward_progress_per_step_m: float = 10.0
     max_reverse_progress_per_step_m: float = 3.0
     stall_speed_threshold_mps: float = 5.0
@@ -113,6 +115,27 @@ def _finish_reward(telemetry: Telemetry, config: RewardConfig) -> float:
 
     pace_factor = float(np.clip(1.0 - telemetry.elapsed_s / config.finish_target_s, 0.0, 1.0))
     return config.finish_bonus + config.finish_fast_bonus * pace_factor
+
+
+def _ghost_pose_reward(
+    simulator_info: Mapping[str, Any], config: RewardConfig, dt: float
+) -> float:
+    """Reward proximity and full 3D orientation agreement with the ghost pose."""
+
+    try:
+        position_error = float(simulator_info["ghost_position_error_m"])
+        rotation_error = float(simulator_info["ghost_rotation_error_rad"])
+    except (KeyError, TypeError, ValueError):
+        return 0.0
+    if not np.isfinite(position_error) or not np.isfinite(rotation_error):
+        return 0.0
+    position_similarity = np.exp(
+        -max(0.0, position_error) / config.imitation_position_scale_m
+    )
+    rotation_similarity = np.exp(
+        -max(0.0, rotation_error) / config.imitation_rotation_scale_rad
+    )
+    return float(config.imitation_bonus_per_s * dt * position_similarity * rotation_similarity)
 
 
 def _airborne_spin_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
@@ -542,21 +565,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                     config.takeoff_speed_reward_limit,
                 )
             )
-        imitation_reward = 0.0
-        try:
-            expert_action = Action.from_wire(transition.simulator_info.get("expert_action"))
-        except (ProtocolViolation, ValueError):
-            expert_action = None
-        if expert_action is not None:
-            agreement = (
-                0.50 * int(action.steer == expert_action.steer)
-                + 0.30 * int(action.throttle == expert_action.throttle)
-                + 0.20 * int(action.brake == expert_action.brake)
-            )
-            signed_agreement = 2.0 * agreement - 1.0
-            imitation_reward = (
-                config.imitation_bonus_per_s * dt * on_track_factor * signed_agreement
-            )
+        imitation_reward = _ghost_pose_reward(transition.simulator_info, config, dt)
         terms = {
             "progress": config.progress_per_m * progress_delta,
             "elapsed": config.elapsed_cost_per_s * dt,
