@@ -7,8 +7,8 @@ param(
     [string]$ModelPath = "models/polybot-real-speed-fs30-w128",
     [switch]$QuarterCurriculum,
     [switch]$TimedCurriculum,
-    [double]$TimedCurriculumStart = 9.5,
-    [double]$TimedCurriculumEnd = 15.0
+    [double]$TimedCurriculumStart = 9.0,
+    [double]$TimedCurriculumEnd = 16.0
 )
 
 $ErrorActionPreference = "Continue"
@@ -25,7 +25,8 @@ $curriculumSections = @(
 Set-Location $repoRoot
 
 if ($TimedCurriculum) {
-    $timedMarker = Join-Path $repoRoot "$ModelPath-curriculum-time-9.5-15.complete"
+    $timedSegmentName = "$TimedCurriculumStart-$TimedCurriculumEnd"
+    $timedMarker = Join-Path $repoRoot "$ModelPath-curriculum-time-$timedSegmentName.complete"
     while (-not (Test-Path -LiteralPath $timedMarker)) {
         $resumeArguments = @()
         if (Test-Path -LiteralPath $modelZip) {
