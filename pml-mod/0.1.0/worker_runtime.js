@@ -632,7 +632,7 @@ export function polybotWorkerInjection() {
           const basis = carBasis(decoded);
           const referenceIndex = findReferenceIndex(decoded);
           const guide = reference.points[referenceIndex];
-          const timedGuide = findTimedReferencePoint();
+          findTimedReferencePoint();
           const offset = subtract(decoded.position, guide.position);
           const lateralOffset = dot(offset, guide.right);
           const headingError =
@@ -735,6 +735,7 @@ export function polybotWorkerInjection() {
         ) {
           const state = buildTelemetry(decoded, action, ticksAdvanced * fixedDtSeconds);
           const guide = reference.points[session.referenceIndex];
+          const timedGuide = reference.points[session.timedReferenceIndex];
           const offTrack = Math.abs(state.track.lateral_offset_m) > state.track.half_width_m * 1.5;
           if (offTrack && !events.includes("off_track")) {
             events.push("off_track");
