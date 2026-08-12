@@ -103,6 +103,31 @@ def test_curriculum_section_starts_exactly_and_terminates_at_boundary() -> None:
         env.close()
 
 
+def test_timed_curriculum_terminates_after_selected_duration() -> None:
+    env = make_env(
+        track_id="mock/straight",
+        frame_skip=10,
+        curriculum_start_s=9.5,
+        curriculum_end_s=15.0,
+    )
+    try:
+        env.reset(seed=42)
+        terminated = False
+        info: dict[str, object] = {}
+        for _ in range(100):
+            _, _, terminated, truncated, info = env.step(
+                np.asarray([1, 1, 0], dtype=np.int64)
+            )
+            if terminated or truncated:
+                break
+
+        assert terminated
+        assert info["elapsed_s"] == pytest.approx(5.5)
+        assert "curriculum_section_complete" in info["events"]
+    finally:
+        env.close()
+
+
 def test_only_ghost_pose_rewards_an_unfinished_step() -> None:
     env = make_env(track_id="mock/straight", frame_skip=4)
     try:

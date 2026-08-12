@@ -5,7 +5,10 @@ param(
     [double]$LearningRate = 0.0005,
     [double]$EntropyCoefficient = 0.0,
     [string]$ModelPath = "models/polybot-real-speed-fs30-w128",
-    [switch]$QuarterCurriculum
+    [switch]$QuarterCurriculum,
+    [switch]$TimedCurriculum,
+    [double]$TimedCurriculumStart = 9.5,
+    [double]$TimedCurriculumEnd = 15.0
 )
 
 $ErrorActionPreference = "Continue"
@@ -20,6 +23,39 @@ $curriculumSections = @(
 )
 
 Set-Location $repoRoot
+
+if ($TimedCurriculum) {
+    $timedMarker = Join-Path $repoRoot "$ModelPath-curriculum-time-9.5-15.complete"
+    while (-not (Test-Path -LiteralPath $timedMarker)) {
+        $resumeArguments = @()
+        if (Test-Path -LiteralPath $modelZip) {
+            $resumeArguments = @("--resume", $ModelPath)
+        }
+        Write-Output "Training ghost-time segment $TimedCurriculumStart-$TimedCurriculumEnd seconds for 500 episodes."
+        & $trainer `
+            --backend websocket `
+            --timesteps $TimestepsPerRun `
+            --max-episodes 500 `
+            --max-steps $MaxSteps `
+            --frame-skip $FrameSkip `
+            --learning-rate $LearningRate `
+            --gamma 0.999 `
+            --gae-lambda 0.98 `
+            --entropy-coef $EntropyCoefficient `
+            --curriculum-start-s $TimedCurriculumStart `
+            --curriculum-end-s $TimedCurriculumEnd `
+            @resumeArguments `
+            --checkpoint-episodes 5 `
+            --model-out $ModelPath
+        if ($LASTEXITCODE -eq 0) {
+            New-Item -ItemType File -Path $timedMarker -Force | Out-Null
+        } else {
+            Write-Output "Timed curriculum exited with code $LASTEXITCODE; restarting in 3 seconds."
+            Start-Sleep -Seconds 3
+        }
+    }
+    Write-Output "Completed timed curriculum; reverting to full episodes."
+}
 
 if ($QuarterCurriculum) {
     foreach ($section in $curriculumSections) {

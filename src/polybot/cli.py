@@ -245,6 +245,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--curriculum-probability", type=float, default=0.0)
     parser.add_argument("--curriculum-start-ratio", type=float, default=None)
     parser.add_argument("--curriculum-end-ratio", type=float, default=None)
+    parser.add_argument("--curriculum-start-s", type=float, default=None)
+    parser.add_argument("--curriculum-end-s", type=float, default=None)
     parser.add_argument(
         "--learning-rate",
         type=float,
@@ -327,6 +329,14 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         0 <= args.curriculum_start_ratio < args.curriculum_end_ratio <= 1
     ):
         parser.error("curriculum section must satisfy 0 <= start < end <= 1")
+    if (args.curriculum_start_s is None) != (args.curriculum_end_s is None):
+        parser.error("timed curriculum start and end must be provided together")
+    if args.curriculum_start_s is not None and not (
+        0 <= args.curriculum_start_s < args.curriculum_end_s
+    ):
+        parser.error("timed curriculum must satisfy 0 <= start < end")
+    if args.curriculum_start_ratio is not None and args.curriculum_start_s is not None:
+        parser.error("progress and timed curriculum cannot be combined")
     if args.forward_bias < 0:
         parser.error("--forward-bias must be non-negative")
     if args.checkpoint_episodes < 0:
@@ -354,6 +364,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             curriculum_probability=args.curriculum_probability,
             curriculum_start_ratio=args.curriculum_start_ratio,
             curriculum_end_ratio=args.curriculum_end_ratio,
+            curriculum_start_s=args.curriculum_start_s,
+            curriculum_end_s=args.curriculum_end_s,
         )
     except BaseException:
         transport.close()
@@ -433,6 +445,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     if (
                         args.curriculum_probability == 0.0
                         and args.curriculum_start_ratio is None
+                        and args.curriculum_start_s is None
                         and self.clean_episode
                         and (
                         progress_ratio >= self.best_progress_ratio + 0.02 or faster_finish

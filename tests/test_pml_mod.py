@@ -83,6 +83,7 @@ def test_ghost_pose_reward_uses_the_same_elapsed_reference_frame() -> None:
     assert "session.startReferenceFrame + session.tick" in source
     assert "distance(decoded.position, timedGuide.position)" in source
     assert "normalizeQuaternion(timedGuide.quaternion)" in source
+    assert "point.frame * fixedDtSeconds >= startTimeSeconds" in source
 
 
 def test_worker_preserves_transient_collision_impulses_across_frame_skip() -> None:

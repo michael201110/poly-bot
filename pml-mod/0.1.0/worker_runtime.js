@@ -812,6 +812,7 @@ export function polybotWorkerInjection() {
             );
           }
           const startProgressRatio = params.start_progress_ratio ?? 0;
+          const startTimeSeconds = params.start_time_s ?? null;
           if (
             typeof startProgressRatio !== "number" ||
             !Number.isFinite(startProgressRatio) ||
@@ -821,6 +822,23 @@ export function polybotWorkerInjection() {
             throw new BridgeError(
               "invalid_request",
               "start_progress_ratio must be a finite number in [0, 1).",
+            );
+          }
+          if (
+            startTimeSeconds !== null &&
+            (typeof startTimeSeconds !== "number" ||
+              !Number.isFinite(startTimeSeconds) ||
+              startTimeSeconds < 0)
+          ) {
+            throw new BridgeError(
+              "invalid_request",
+              "start_time_s must be null or a non-negative finite number.",
+            );
+          }
+          if (startTimeSeconds !== null && startProgressRatio > 0) {
+            throw new BridgeError(
+              "invalid_request",
+              "start_time_s and start_progress_ratio cannot both select a start.",
             );
           }
 
@@ -876,10 +894,11 @@ export function polybotWorkerInjection() {
             const initialBuffers = [];
             let initialBuffer = null;
             let startReferenceIndex = 0;
-            if (startProgressRatio > 0) {
-              const targetProgress = reference.length * startProgressRatio;
-              startReferenceIndex = reference.points.findIndex(
-                (point) => point.s >= targetProgress,
+            if (startProgressRatio > 0 || startTimeSeconds !== null) {
+              startReferenceIndex = reference.points.findIndex((point) =>
+                startTimeSeconds !== null
+                  ? point.frame * fixedDtSeconds >= startTimeSeconds
+                  : point.s >= reference.length * startProgressRatio,
               );
               if (startReferenceIndex < 0) {
                 startReferenceIndex = reference.points.length - 1;

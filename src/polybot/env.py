@@ -214,6 +214,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         curriculum_probability: float = 0.0,
         curriculum_start_ratio: float | None = None,
         curriculum_end_ratio: float | None = None,
+        curriculum_start_s: float | None = None,
+        curriculum_end_s: float | None = None,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -234,6 +236,14 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             0.0 <= curriculum_start_ratio < curriculum_end_ratio <= 1.0
         ):
             raise ValueError("curriculum section must satisfy 0 <= start < end <= 1")
+        if (curriculum_start_s is None) != (curriculum_end_s is None):
+            raise ValueError("timed curriculum start and end must be provided together")
+        if curriculum_start_s is not None and not (
+            0.0 <= curriculum_start_s < curriculum_end_s
+        ):
+            raise ValueError("timed curriculum must satisfy 0 <= start < end")
+        if curriculum_start_ratio is not None and curriculum_start_s is not None:
+            raise ValueError("progress and timed curriculum cannot be combined")
 
         self.transport = transport
         self.track_id = track_id
@@ -246,6 +256,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.curriculum_probability = curriculum_probability
         self.curriculum_start_ratio = curriculum_start_ratio
         self.curriculum_end_ratio = curriculum_end_ratio
+        self.curriculum_start_s = curriculum_start_s
+        self.curriculum_end_s = curriculum_end_s
 
         self.action_space = spaces.MultiDiscrete(np.asarray([3, 2, 2], dtype=np.int64))
         self.observation_space = spaces.Box(
@@ -348,6 +360,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 "seed": simulator_seed,
                 "track_id": track_id,
                 "start_progress_ratio": start_progress_ratio,
+                "start_time_s": self.curriculum_start_s,
             },
         )
         transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)
@@ -445,9 +458,15 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             self._airborne_roll_s = max(0.0, self._airborne_roll_s - 2.0 * dt)
         airborne_roll_failure = self._airborne_roll_s >= self.reward_config.airborne_roll_timeout_s
         curriculum_section_complete = bool(
-            self.curriculum_end_ratio is not None
-            and telemetry.route_progress_m
-            >= telemetry.track_length_m * self.curriculum_end_ratio
+            (
+                self.curriculum_end_ratio is not None
+                and telemetry.route_progress_m
+                >= telemetry.track_length_m * self.curriculum_end_ratio
+            )
+            or (
+                self.curriculum_end_s is not None
+                and telemetry.elapsed_s >= self.curriculum_end_s - self.curriculum_start_s
+            )
         )
 
         reward, reward_terms = self._reward(
