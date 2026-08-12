@@ -136,7 +136,7 @@ def test_speed_and_checkpoint_shaping_are_disabled() -> None:
         assert env.reward_config.checkpoint_fast_bonus == 0
         assert env.reward_config.finish_bonus == 1000.0
         assert env.reward_config.finish_fast_bonus == 2000.0
-        assert env.reward_config.finish_target_s == 60.0
+        assert env.reward_config.finish_target_s == 22.0
         assert env.reward_config.unsafe_speed_penalty_per_m == 0
     finally:
         env.close()
@@ -182,8 +182,8 @@ def test_faster_finish_receives_more_reward() -> None:
     try:
         env.reset(seed=0)
         assert env.latest_telemetry is not None
-        fast = replace(env.latest_telemetry, elapsed_s=30.0)
-        slow = replace(env.latest_telemetry, elapsed_s=110.0)
+        fast = replace(env.latest_telemetry, elapsed_s=22.9)
+        slow = replace(env.latest_telemetry, elapsed_s=23.1)
 
         assert _finish_reward(fast, env.reward_config) > _finish_reward(slow, env.reward_config)
         assert _finish_reward(slow, env.reward_config) >= 1000.0

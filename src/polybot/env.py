@@ -58,7 +58,7 @@ class RewardConfig:
     checkpoint_target_s: float = 30.0
     finish_bonus: float = 1000.0
     finish_fast_bonus: float = 2000.0
-    finish_target_s: float = 60.0
+    finish_target_s: float = 22.0
     curriculum_section_bonus: float = 0.0
     crash_penalty: float = 0.0
     stall_penalty: float = 0.0
@@ -113,7 +113,9 @@ def _checkpoint_reward(telemetry: Telemetry, config: RewardConfig) -> float:
 def _finish_reward(telemetry: Telemetry, config: RewardConfig) -> float:
     """Reward a valid finish, with additional credit for completing it quickly."""
 
-    pace_factor = float(np.clip(1.0 - telemetry.elapsed_s / config.finish_target_s, 0.0, 1.0))
+    pace_factor = float(
+        np.clip(config.finish_target_s / max(telemetry.elapsed_s, 1e-6), 0.0, 1.0)
+    )
     return config.finish_bonus + config.finish_fast_bonus * pace_factor
 
 
