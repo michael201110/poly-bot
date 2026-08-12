@@ -85,6 +85,8 @@ def test_ghost_pose_reward_uses_the_same_elapsed_reference_frame() -> None:
     assert "normalizeQuaternion(timedGuide.quaternion)" in source
     assert "point.frame * fixedDtSeconds >= startTimeSeconds" in source
     assert "const timedGuide = reference.points[session.timedReferenceIndex];" in source
+    assert "replayTicks % 250 === 0" in source
+    assert "setTimeout(resolve, 0)" in source
 
 
 def test_worker_preserves_transient_collision_impulses_across_frame_skip() -> None:

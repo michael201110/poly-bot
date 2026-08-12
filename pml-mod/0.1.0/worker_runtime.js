@@ -924,6 +924,7 @@ export function polybotWorkerInjection() {
               }
               replayCar.isPaused = true;
               const finalBuffers = new Map();
+              let replayTicks = 0;
               try {
                 while (player.frames < targetFrame) {
                   const replayControls = replayCar.controls.getControls(replayCar.frames);
@@ -943,6 +944,12 @@ export function polybotWorkerInjection() {
                     if (car.id === playerCarId) {
                       initialBuffer = buffer;
                     }
+                  }
+                  replayTicks += 1;
+                  if (replayTicks % 250 === 0) {
+                    // Keep the worker event loop responsive during long native
+                    // fast-forwards to a timed curriculum start.
+                    await new Promise((resolve) => setTimeout(resolve, 0));
                   }
                 }
               } finally {

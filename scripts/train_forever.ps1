@@ -37,6 +37,7 @@ if ($TimedCurriculum) {
             --backend websocket `
             --timesteps $TimestepsPerRun `
             --max-episodes 500 `
+            --request-timeout 300 `
             --max-steps $MaxSteps `
             --frame-skip $FrameSkip `
             --learning-rate $LearningRate `
