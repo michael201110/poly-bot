@@ -232,7 +232,7 @@ def test_faster_finish_receives_more_reward() -> None:
 def test_barrier_punishment_requires_native_collision() -> None:
     config = RewardConfig()
 
-    assert config.barrier_contact_penalty == 0.0
+    assert config.barrier_contact_penalty == -50.0
     assert config.barrier_collision_impulse_threshold == 0.0
     assert config.off_track_landing_penalty == 0.0
 
@@ -448,7 +448,7 @@ def test_native_chassis_collision_terminates_episode() -> None:
         assert terminated
         assert not truncated
         assert "barrier_contact" in info["events"]
-        assert info["reward_terms"]["barrier_contact"] == 0.0
+        assert info["reward_terms"]["barrier_contact"] == -50.0
     finally:
         env.close()
 

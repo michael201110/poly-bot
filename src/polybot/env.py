@@ -39,7 +39,7 @@ class RewardConfig:
     imitation_position_scale_m: float = 2.0
     imitation_rotation_scale_rad: float = 0.349066  # 20 degrees
     unsafe_speed_penalty_per_m: float = 0.0
-    barrier_contact_penalty: float = 0.0
+    barrier_contact_penalty: float = -50.0
     barrier_collision_impulse_threshold: float = 0.0
     off_track_landing_penalty: float = 0.0
     airborne_spin_penalty_per_rad: float = 0.0
