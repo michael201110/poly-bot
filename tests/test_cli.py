@@ -41,6 +41,22 @@ def test_initial_policy_bias_prefers_straight_throttle_without_brake() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--ghost-pose-reward", "-1"],
+        ["--barrier-contact-penalty", "1"],
+        ["--finish-bonus", "-1"],
+        ["--finish-fast-bonus", "-1"],
+        ["--finish-target-s", "0"],
+        ["--finish-pace-decay", "0"],
+    ],
+)
+def test_train_rejects_invalid_reward_overrides(arguments: list[str]) -> None:
+    with pytest.raises(SystemExit, match="2"):
+        cli.train_main(arguments)
+
+
 def test_drive_uses_real_game_defaults(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from polybot.controller import CenterlineController
-from polybot.env import PolyTrackEnv
+from polybot.env import PolyTrackEnv, RewardConfig
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import ProtocolViolation
 from polybot.transport import SimulatorTransport, WebSocketServerTransport
@@ -274,6 +274,12 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             "value favors a more decisive policy"
         ),
     )
+    parser.add_argument("--ghost-pose-reward", type=float, default=18.0)
+    parser.add_argument("--barrier-contact-penalty", type=float, default=-50.0)
+    parser.add_argument("--finish-bonus", type=float, default=1000.0)
+    parser.add_argument("--finish-fast-bonus", type=float, default=2000.0)
+    parser.add_argument("--finish-target-s", type=float, default=22.0)
+    parser.add_argument("--finish-pace-decay", type=float, default=1.5)
     parser.add_argument(
         "--forward-bias",
         type=float,
@@ -319,6 +325,14 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--gae-lambda must be in (0, 1]")
     if not -0.1 <= args.entropy_coef <= 0.1:
         parser.error("--entropy-coef must be between -0.1 and 0.1")
+    if args.ghost_pose_reward < 0:
+        parser.error("--ghost-pose-reward must be non-negative")
+    if args.barrier_contact_penalty > 0:
+        parser.error("--barrier-contact-penalty must be zero or negative")
+    if args.finish_bonus < 0 or args.finish_fast_bonus < 0:
+        parser.error("finish rewards must be non-negative")
+    if args.finish_target_s <= 0 or args.finish_pace_decay <= 0:
+        parser.error("finish target and pace decay must be positive")
     if not 0 <= args.curriculum_last_fraction <= 1:
         parser.error("--curriculum-last-fraction must be in [0, 1]")
     if not 0 <= args.curriculum_probability <= 1:
@@ -351,6 +365,14 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         raise AssertionError("unreachable") from exc
 
     transport = _make_transport(args)
+    reward_config = RewardConfig(
+        imitation_bonus_per_s=args.ghost_pose_reward,
+        barrier_contact_penalty=args.barrier_contact_penalty,
+        finish_bonus=args.finish_bonus,
+        finish_fast_bonus=args.finish_fast_bonus,
+        finish_target_s=args.finish_target_s,
+        finish_pace_decay_per_s=args.finish_pace_decay,
+    )
 
     try:
         env = PolyTrackEnv(
@@ -359,6 +381,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             lookahead_count=args.lookahead,
             frame_skip=args.frame_skip,
             max_episode_steps=args.max_steps,
+            reward_config=reward_config,
             request_timeout_s=args.request_timeout,
             curriculum_last_fraction=args.curriculum_last_fraction,
             curriculum_probability=args.curriculum_probability,

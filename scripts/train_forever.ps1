@@ -4,6 +4,12 @@ param(
     [int]$MaxSteps = 2000,
     [double]$LearningRate = 0.0005,
     [double]$EntropyCoefficient = 0.0,
+    [double]$GhostPoseReward = 18.0,
+    [double]$BarrierPenalty = -50.0,
+    [double]$FinishBonus = 1000.0,
+    [double]$FinishFastBonus = 2000.0,
+    [double]$FinishTargetSeconds = 22.0,
+    [double]$FinishPaceDecay = 1.5,
     [string]$ModelPath = "models/polybot-real-speed-fs30-w128",
     [switch]$QuarterCurriculum,
     [switch]$TimedCurriculum,
@@ -23,6 +29,14 @@ $curriculumSections = @(
 )
 
 Set-Location $repoRoot
+$rewardArguments = @(
+    "--ghost-pose-reward", $GhostPoseReward,
+    "--barrier-contact-penalty", $BarrierPenalty,
+    "--finish-bonus", $FinishBonus,
+    "--finish-fast-bonus", $FinishFastBonus,
+    "--finish-target-s", $FinishTargetSeconds,
+    "--finish-pace-decay", $FinishPaceDecay
+)
 
 if ($TimedCurriculum) {
     $timedSegmentName = "$TimedCurriculumStart-$TimedCurriculumEnd"
@@ -44,6 +58,7 @@ if ($TimedCurriculum) {
             --gamma 0.999 `
             --gae-lambda 0.98 `
             --entropy-coef $EntropyCoefficient `
+            @rewardArguments `
             --curriculum-start-s $TimedCurriculumStart `
             --curriculum-end-s $TimedCurriculumEnd `
             @resumeArguments `
@@ -79,6 +94,7 @@ if ($QuarterCurriculum) {
                 --gamma 0.999 `
                 --gae-lambda 0.98 `
                 --entropy-coef $EntropyCoefficient `
+                @rewardArguments `
                 --curriculum-start-ratio $section.Start `
                 --curriculum-end-ratio $section.End `
                 @resumeArguments `
@@ -114,6 +130,7 @@ while ($true) {
         --gamma 0.999 `
         --gae-lambda 0.98 `
         --entropy-coef $EntropyCoefficient `
+        @rewardArguments `
         --curriculum-last-fraction 0.0 `
         --curriculum-probability 0.0 `
         @resumeArguments `
