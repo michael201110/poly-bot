@@ -29,7 +29,8 @@ export function polybotWorkerInjection() {
         let socket = null;
         let reconnectTimer = null;
         let internalDispatchDepth = 0;
-        let busy = false;
+        let activeRequestToken = null;
+        let connectionGeneration = 0;
         let manualMode = false;
         let playerCarId = null;
         let lookaheadCount = null;
@@ -789,7 +790,7 @@ export function polybotWorkerInjection() {
           return result;
         }
 
-        async function resetEpisode(params) {
+        async function resetEpisode(params, requestToken) {
           if (lookaheadCount === null) {
             throw new BridgeError("invalid_state", "hello must be called before reset");
           }
@@ -954,6 +955,12 @@ export function polybotWorkerInjection() {
                     // Keep the worker event loop responsive during long native
                     // fast-forwards to a timed curriculum start.
                     await new Promise((resolve) => setTimeout(resolve, 0));
+                    if (activeRequestToken !== requestToken) {
+                      throw new BridgeError(
+                        "request_cancelled",
+                        "trainer disconnected during timed reset",
+                      );
+                    }
                   }
                 }
               } finally {
@@ -1134,7 +1141,7 @@ export function polybotWorkerInjection() {
           return result;
         }
 
-        async function dispatchRequest(request) {
+        async function dispatchRequest(request, requestToken) {
           if (request.protocol !== protocol) {
             throw new BridgeError("unsupported_protocol", "unsupported protocol name");
           }
@@ -1179,7 +1186,7 @@ export function polybotWorkerInjection() {
                 ],
               };
             case "reset":
-              return resetEpisode(params);
+              return resetEpisode(params, requestToken);
             case "step":
               return await stepEpisode(params);
             case "close":
@@ -1193,19 +1200,19 @@ export function polybotWorkerInjection() {
           }
         }
 
-        function send(message) {
-          if (socket?.readyState === WebSocket.OPEN) {
-            socket.send(JSON.stringify(message));
+        function send(targetSocket, message) {
+          if (targetSocket?.readyState === WebSocket.OPEN) {
+            targetSocket.send(JSON.stringify(message));
           }
         }
 
-        async function onSocketMessage(raw) {
+        async function onSocketMessage(sourceSocket, generation, raw) {
           let request = null;
           try {
             request = JSON.parse(raw);
             requireObject(request, "request");
           } catch (error) {
-            send({
+            send(sourceSocket, {
               protocol,
               v: protocolVersion,
               id: null,
@@ -1215,8 +1222,8 @@ export function polybotWorkerInjection() {
             return;
           }
 
-          if (busy) {
-            send({
+          if (activeRequestToken !== null) {
+            send(sourceSocket, {
               protocol,
               v: protocolVersion,
               id: request.id ?? null,
@@ -1226,17 +1233,21 @@ export function polybotWorkerInjection() {
             return;
           }
 
-          busy = true;
+          const requestToken = { sourceSocket, generation };
+          activeRequestToken = requestToken;
           try {
-            const result = await dispatchRequest(request);
-            send({ protocol, v: protocolVersion, id: request.id, ok: true, result });
+            const result = await dispatchRequest(request, requestToken);
+            if (activeRequestToken !== requestToken) {
+              return;
+            }
+            send(sourceSocket, { protocol, v: protocolVersion, id: request.id, ok: true, result });
             if (request.op === "close") {
               setTimeout(() => socket?.close(1000, "PolyBot bridge closed"), 0);
             }
           } catch (error) {
             const code = error instanceof BridgeError ? error.code : "adapter_error";
             console.error("[PolyBot] Request failed", error);
-            send({
+            send(sourceSocket, {
               protocol,
               v: protocolVersion,
               id: request.id ?? null,
@@ -1244,7 +1255,9 @@ export function polybotWorkerInjection() {
               error: { code, message: error.message || String(error) },
             });
           } finally {
-            busy = false;
+            if (activeRequestToken === requestToken) {
+              activeRequestToken = null;
+            }
           }
         }
 
@@ -1271,14 +1284,22 @@ export function polybotWorkerInjection() {
             return;
           }
           socket = nextSocket;
+          connectionGeneration += 1;
+          const generation = connectionGeneration;
           nextSocket.addEventListener("open", () => {
             console.info(`[PolyBot] Connected to ${bridgeUrl}`);
           });
           nextSocket.addEventListener("message", (event) => {
-            void onSocketMessage(event.data);
+            void onSocketMessage(nextSocket, generation, event.data);
           });
           nextSocket.addEventListener("close", () => {
             if (socket === nextSocket) {
+              if (
+                activeRequestToken?.sourceSocket === nextSocket &&
+                activeRequestToken?.generation === generation
+              ) {
+                activeRequestToken = null;
+              }
               socket = null;
               leaveManualMode();
               scheduleReconnect();
