@@ -280,6 +280,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--finish-fast-bonus", type=float, default=2000.0)
     parser.add_argument("--finish-target-s", type=float, default=22.0)
     parser.add_argument("--finish-pace-decay", type=float, default=1.5)
+    parser.add_argument("--ground-slip-penalty", type=float, default=-1000.0)
+    parser.add_argument("--ground-slip-tolerance-deg", type=float, default=5.0)
     parser.add_argument(
         "--forward-bias",
         type=float,
@@ -333,6 +335,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         parser.error("finish rewards must be non-negative")
     if args.finish_target_s <= 0 or args.finish_pace_decay <= 0:
         parser.error("finish target and pace decay must be positive")
+    if args.ground_slip_penalty > 0:
+        parser.error("--ground-slip-penalty must be zero or negative")
+    if not 0 <= args.ground_slip_tolerance_deg < 90:
+        parser.error("--ground-slip-tolerance-deg must be in [0, 90)")
     if not 0 <= args.curriculum_last_fraction <= 1:
         parser.error("--curriculum-last-fraction must be in [0, 1]")
     if not 0 <= args.curriculum_probability <= 1:
@@ -372,6 +378,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         finish_fast_bonus=args.finish_fast_bonus,
         finish_target_s=args.finish_target_s,
         finish_pace_decay_per_s=args.finish_pace_decay,
+        ground_slip_penalty_per_rad_s=args.ground_slip_penalty,
+        ground_slip_tolerance_rad=math.radians(args.ground_slip_tolerance_deg),
     )
 
     try:

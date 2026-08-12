@@ -10,6 +10,8 @@ param(
     [double]$FinishFastBonus = 2000.0,
     [double]$FinishTargetSeconds = 22.0,
     [double]$FinishPaceDecay = 1.5,
+    [double]$GroundSlipPenalty = -1000.0,
+    [double]$GroundSlipToleranceDegrees = 5.0,
     [string]$ModelPath = "models/polybot-real-speed-fs30-w128",
     [switch]$QuarterCurriculum,
     [switch]$TimedCurriculum,
@@ -35,7 +37,9 @@ $rewardArguments = @(
     "--finish-bonus", $FinishBonus,
     "--finish-fast-bonus", $FinishFastBonus,
     "--finish-target-s", $FinishTargetSeconds,
-    "--finish-pace-decay", $FinishPaceDecay
+    "--finish-pace-decay", $FinishPaceDecay,
+    "--ground-slip-penalty", $GroundSlipPenalty,
+    "--ground-slip-tolerance-deg", $GroundSlipToleranceDegrees
 )
 
 if ($TimedCurriculum) {

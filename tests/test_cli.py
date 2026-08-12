@@ -50,6 +50,8 @@ def test_initial_policy_bias_prefers_straight_throttle_without_brake() -> None:
         ["--finish-fast-bonus", "-1"],
         ["--finish-target-s", "0"],
         ["--finish-pace-decay", "0"],
+        ["--ground-slip-penalty", "1"],
+        ["--ground-slip-tolerance-deg", "90"],
     ],
 )
 def test_train_rejects_invalid_reward_overrides(arguments: list[str]) -> None:
