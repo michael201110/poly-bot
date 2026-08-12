@@ -585,6 +585,21 @@ export function polybotWorkerInjection() {
           return bestIndex;
         }
 
+        function findTimedReferencePoint() {
+          const points = reference.points;
+          const targetFrame = session.startReferenceFrame + session.tick;
+          let index = session.timedReferenceIndex;
+          while (
+            index + 1 < points.length &&
+            Math.abs(points[index + 1].frame - targetFrame) <=
+              Math.abs(points[index].frame - targetFrame)
+          ) {
+            index += 1;
+          }
+          session.timedReferenceIndex = index;
+          return points[index];
+        }
+
         function angularVelocity(previousQuaternion, quaternion, dt, basis) {
           if (!previousQuaternion || dt <= 0) {
             return [0, 0, 0];
@@ -617,6 +632,7 @@ export function polybotWorkerInjection() {
           const basis = carBasis(decoded);
           const referenceIndex = findReferenceIndex(decoded);
           const guide = reference.points[referenceIndex];
+          const timedGuide = findTimedReferencePoint();
           const offset = subtract(decoded.position, guide.position);
           const lateralOffset = dot(offset, guide.right);
           const headingError =
@@ -741,7 +757,9 @@ export function polybotWorkerInjection() {
                   ? decoded.collisionImpulses
                   : [finite(collisionImpulsePeak)],
               expert_action: guide.expertAction,
-              ghost_position_error_m: finite(distance(decoded.position, guide.position)),
+              ghost_position_error_m: finite(
+                distance(decoded.position, timedGuide.position),
+              ),
               ghost_rotation_error_rad: finite(
                 2 *
                   Math.acos(
@@ -749,7 +767,7 @@ export function polybotWorkerInjection() {
                       Math.abs(
                         quaternionDot(
                           normalizeQuaternion(decoded.quaternion),
-                          normalizeQuaternion(guide.quaternion),
+                          normalizeQuaternion(timedGuide.quaternion),
                         ),
                       ),
                       0,
@@ -946,6 +964,8 @@ export function polybotWorkerInjection() {
               previousCheckpoint: decoded.nextCheckpointIndex,
               referenceIndex: startReferenceIndex,
               progressM: reference.points[startReferenceIndex].s,
+              startReferenceFrame: reference.points[startReferenceIndex].frame,
+              timedReferenceIndex: startReferenceIndex,
             };
             return transition(
               decoded,

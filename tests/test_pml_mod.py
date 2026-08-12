@@ -76,6 +76,15 @@ def test_worker_can_start_a_stationary_player_car() -> None:
     assert "targetSimulationTimeFrames: null" in source
 
 
+def test_ghost_pose_reward_uses_the_same_elapsed_reference_frame() -> None:
+    source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+
+    assert "function findTimedReferencePoint()" in source
+    assert "session.startReferenceFrame + session.tick" in source
+    assert "distance(decoded.position, timedGuide.position)" in source
+    assert "normalizeQuaternion(timedGuide.quaternion)" in source
+
+
 def test_worker_preserves_transient_collision_impulses_across_frame_skip() -> None:
     source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
 
