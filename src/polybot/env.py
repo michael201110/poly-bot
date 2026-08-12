@@ -361,6 +361,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 "track_id": track_id,
                 "start_progress_ratio": start_progress_ratio,
                 "start_time_s": self.curriculum_start_s,
+                "native_restart": self.curriculum_start_s is None,
             },
         )
         transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)

@@ -796,7 +796,11 @@ export function polybotWorkerInjection() {
           if (!Number.isSafeInteger(params.seed) || params.seed < 0) {
             throw new BridgeError("invalid_request", "seed must be a non-negative integer");
           }
-          if (session && !session.previousDecoded?.hasFinished) {
+          if (
+            session &&
+            !session.previousDecoded?.hasFinished &&
+            params.native_restart !== false
+          ) {
             postMessage({
               messageType: messageTypes.UpdateResult,
               carStateBuffers: [],

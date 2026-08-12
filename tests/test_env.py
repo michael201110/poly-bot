@@ -112,6 +112,12 @@ def test_timed_curriculum_terminates_after_selected_duration() -> None:
     )
     try:
         env.reset(seed=42)
+        reset_request = next(
+            request
+            for request in env.transport.command_log
+            if request.get("op") == "reset"
+        )
+        assert reset_request["params"]["native_restart"] is False
         terminated = False
         info: dict[str, object] = {}
         for _ in range(100):
