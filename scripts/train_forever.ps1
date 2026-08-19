@@ -1,5 +1,6 @@
 param(
     [int]$TimestepsPerRun = 100000,
+    [int]$EpisodesPerRun = 500,
     [int]$FrameSkip = 30,
     [int]$MaxSteps = 2000,
     [double]$LearningRate = 0.0005,
@@ -50,11 +51,11 @@ if ($TimedCurriculum) {
         if (Test-Path -LiteralPath $modelZip) {
             $resumeArguments = @("--resume", $ModelPath)
         }
-        Write-Output "Training ghost-time segment $TimedCurriculumStart-$TimedCurriculumEnd seconds for 500 episodes."
+        Write-Output "Training ghost-time segment $TimedCurriculumStart-$TimedCurriculumEnd seconds for $EpisodesPerRun episodes."
         & $trainer `
             --backend websocket `
             --timesteps $TimestepsPerRun `
-            --max-episodes 500 `
+            --max-episodes $EpisodesPerRun `
             --request-timeout 300 `
             --max-steps $MaxSteps `
             --frame-skip $FrameSkip `
@@ -87,11 +88,11 @@ if ($QuarterCurriculum) {
                 $resumeArguments = @("--resume", $ModelPath)
             }
 
-            Write-Output "Training section $($section.Name)% for 500 episodes."
+            Write-Output "Training section $($section.Name)% for $EpisodesPerRun episodes."
             & $trainer `
                 --backend websocket `
                 --timesteps $TimestepsPerRun `
-                --max-episodes 500 `
+                --max-episodes $EpisodesPerRun `
                 --max-steps $MaxSteps `
                 --frame-skip $FrameSkip `
                 --learning-rate $LearningRate `
