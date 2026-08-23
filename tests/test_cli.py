@@ -29,9 +29,7 @@ def test_backend_defaults(backend: str, track: str, frame_skip: int, max_steps: 
 
 
 def test_initial_policy_bias_prefers_straight_throttle_without_brake() -> None:
-    model = SimpleNamespace(
-        policy=SimpleNamespace(action_net=SimpleNamespace(bias=torch.zeros(7)))
-    )
+    model = SimpleNamespace(policy=SimpleNamespace(action_net=SimpleNamespace(bias=torch.zeros(7))))
 
     cli._bias_initial_policy_forward(model, 1.5)
 

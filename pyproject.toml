@@ -20,6 +20,9 @@ train = [
   "stable-baselines3>=2.4,<3",
   "torch>=2.2",
 ]
+gui = [
+  "PySide6>=6.7,<7",
+]
 dev = [
   "pytest>=8,<10",
   "ruff>=0.9",
@@ -30,6 +33,7 @@ polybot-smoke = "polybot.cli:smoke_main"
 polybot-train = "polybot.cli:train_main"
 polybot-eval = "polybot.cli:evaluate_main"
 polybot-drive = "polybot.cli:drive_main"
+polybot-gui = "polybot.gui.main:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

@@ -35,9 +35,7 @@ class CenterlineController:
 
         valid_points = [
             point
-            for point, valid in zip(
-                telemetry.lookahead, telemetry.lookahead_mask, strict=True
-            )
+            for point, valid in zip(telemetry.lookahead, telemetry.lookahead_mask, strict=True)
             if valid
         ]
         pursuit = valid_points[min(4, len(valid_points) - 1)] if valid_points else (20, 0, 0, 0)

@@ -1,0 +1,22 @@
+{
+  "track_name": "Summer 1",
+  "track_id": "current",
+  "architecture": "xl",
+  "parameter_count": 3340334,
+  "algorithm": "PPO",
+  "observation_schema": "polybot.telemetry.v1",
+  "lookahead_count": 12,
+  "action_schema": "pwm-multidiscrete-v1",
+  "pwm_enabled": true,
+  "pwm_resolution": 41,
+  "frame_skip": 30,
+  "training_timesteps": 0,
+  "training_episodes": null,
+  "best_lap_time_s": null,
+  "training_date": "not-trained",
+  "seed": 0,
+  "reward_settings": {},
+  "ppo_hyperparameters": {},
+  "polybot_version": "0.1.0",
+  "git_commit": "unknown"
+}

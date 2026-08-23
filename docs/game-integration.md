@@ -7,10 +7,9 @@ demonstrations, not leaderboard or multiplayer automation.
 
 1. Install Python 3.11 or newer and install this repository into its virtual environment:
 
-   ```powershell
+   ```text
    python -m venv .venv
-   .venv\Scripts\Activate.ps1
-   python -m pip install -e ".[dev,train]"
+   python -m pip install -e ".[dev,train,gui]"
    ```
 
 2. Open the [PolyModLoader web build](https://web.polymodloader.com/). If your browser blocks its
@@ -33,9 +32,7 @@ game's JavaScript bundle, WASM binary, or assets.
 
 Start the Python listener:
 
-```powershell
-cd C:\Users\ASUS\Documents\GitHub\poly-bot
-.venv\Scripts\Activate.ps1
+```text
 polybot-drive --centerline
 ```
 
@@ -52,7 +49,7 @@ check; it has not learned the track and may fail on difficult sections.
 
 Pass the model created by `polybot-train`; the `.zip` suffix is optional:
 
-```powershell
+```text
 polybot-drive --model models/polybot-real
 ```
 
@@ -63,7 +60,7 @@ was used for training.
 The drive command defaults to the current game track, 12 lookahead samples, a 10-tick action repeat,
 a 30,000-step (300 simulated second) episode limit, one episode, and the fixed localhost endpoint:
 
-```powershell
+```text
 polybot-drive --track current --lookahead 12 --frame-skip 10
 ```
 
@@ -71,8 +68,8 @@ polybot-drive --track current --lookahead 12 --frame-skip 10
 
 Start training before launching the race, just as for `polybot-drive`:
 
-```powershell
-polybot-train --backend websocket --timesteps 1000000 --model-out models/polybot-real
+```text
+polybot-gui
 ```
 
 For the WebSocket backend, `polybot-train` automatically defaults to `--track current` and
@@ -82,15 +79,15 @@ by Python rather than render timing.
 
 You can evaluate a model against the currently selected race without changing it:
 
-```powershell
+```text
 polybot-eval models/polybot-real --backend websocket --episodes 5
 ```
 
 ## Troubleshooting
 
 - **`polybot-drive` is not recognized:** activate `.venv`, then run
-  `python -m pip install -e ".[dev,train]"` again. As a direct fallback, run
-  `.venv\Scripts\polybot-drive.exe --centerline`.
+  `python -m pip install -e ".[dev,train,gui]"` again. As a platform-neutral direct fallback,
+  run `python -c "from polybot.cli import drive_main; raise SystemExit(drive_main())" --centerline`.
 - **It stays on `Waiting ...`:** the listener is working but the mod has not connected. Confirm the
   PolyBot mod is enabled, launch through PolyModLoader, and enter a race. Check that both sides use
   port 8765.

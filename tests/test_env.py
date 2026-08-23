@@ -90,9 +90,7 @@ def test_curriculum_section_starts_exactly_and_terminates_at_boundary() -> None:
         terminated = False
         info: dict[str, object] = {}
         for _ in range(2_000):
-            _, _, terminated, truncated, info = env.step(
-                np.asarray([1, 1, 0], dtype=np.int64)
-            )
+            _, _, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
             if terminated or truncated:
                 break
 
@@ -113,17 +111,13 @@ def test_timed_curriculum_terminates_after_selected_duration() -> None:
     try:
         env.reset(seed=42)
         reset_request = next(
-            request
-            for request in env.transport.command_log
-            if request.get("op") == "reset"
+            request for request in env.transport.command_log if request.get("op") == "reset"
         )
         assert reset_request["params"]["native_restart"] is False
         terminated = False
         info: dict[str, object] = {}
         for _ in range(100):
-            _, _, terminated, truncated, info = env.step(
-                np.asarray([1, 1, 0], dtype=np.int64)
-            )
+            _, _, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
             if terminated or truncated:
                 break
 
@@ -332,9 +326,7 @@ def test_large_slip_angle_is_penalized_only_with_four_wheels_grounded() -> None:
         )
         three_wheels = replace(sliding, wheel_contacts=(1.0, 1.0, 1.0, 0.0))
 
-        assert env.reward_config.ground_slip_tolerance_rad == pytest.approx(
-            np.deg2rad(5), rel=1e-5
-        )
+        assert env.reward_config.ground_slip_tolerance_rad == pytest.approx(np.deg2rad(5), rel=1e-5)
         assert env.reward_config.ground_slip_penalty_per_rad_s == 0.0
         assert _ground_slip_penalty(sliding, env.reward_config, 0.1) == 0
         assert _ground_slip_penalty(controlled, env.reward_config, 0.1) == pytest.approx(0)
@@ -355,9 +347,7 @@ def test_ground_slip_penalty_is_symmetric() -> None:
         )
         sliding_right = replace(sliding_left, local_velocity_mps=(-12.0, 0.0, 40.0))
 
-        assert _ground_slip_penalty(
-            sliding_left, env.reward_config, 0.1
-        ) == pytest.approx(
+        assert _ground_slip_penalty(sliding_left, env.reward_config, 0.1) == pytest.approx(
             _ground_slip_penalty(sliding_right, env.reward_config, 0.1)
         )
     finally:

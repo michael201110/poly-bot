@@ -20,9 +20,7 @@ def _load_validator():
 def test_pml_manifest_resolves_versioned_entry_point() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
     version = manifest["latest"]["0.6.2"]
-    version_manifest = json.loads(
-        (MOD_ROOT / version / "version.json").read_text(encoding="utf-8")
-    )
+    version_manifest = json.loads((MOD_ROOT / version / "version.json").read_text(encoding="utf-8"))
 
     assert manifest["id"] == "polybot-bridge"
     assert version_manifest == {
@@ -46,9 +44,7 @@ def test_pml_manifest_resolves_versioned_entry_point() -> None:
 def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
     validator = _load_validator()
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
-        encoding="utf-8"
-    )
+    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(encoding="utf-8")
 
     for token in (*validator.WORKER_TOKENS, *validator.MAIN_TOKENS):
         assert token in source
@@ -59,9 +55,7 @@ def test_worker_connects_when_player_is_created_and_started() -> None:
     create_case = source.split("case messageTypes.CreateCar:", 1)[1].split(
         "case messageTypes.DeleteCar:", 1
     )[0]
-    start_case = source.split("case messageTypes.StartCar:", 1)[1].split(
-        "default:", 1
-    )[0]
+    start_case = source.split("case messageTypes.StartCar:", 1)[1].split("default:", 1)[0]
 
     assert "connectSocket();" in create_case
     assert "message.carId === playerCarId" in start_case
@@ -122,9 +116,7 @@ def test_worker_coasts_in_realtime_before_resetting_a_finish() -> None:
 
 def test_latest_mod_uses_native_backspace_after_finish() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
-        encoding="utf-8"
-    )
+    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(encoding="utf-8")
 
     assert "__polybotWrapSimulationWorker" in source
     assert "polybotPlayerFinished" in source
@@ -134,13 +126,11 @@ def test_latest_mod_uses_native_backspace_after_finish() -> None:
 
 
 def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
-    worker_source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(
+    worker_source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    main_source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
         encoding="utf-8"
     )
-    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    main_source = (
-        MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js"
-    ).read_text(encoding="utf-8")
 
     assert "polybotAbortRestart: true" in worker_source
     assert "setTimeout(resolve, finishDisplayDelayMs + 100)" in worker_source
@@ -151,9 +141,7 @@ def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
 
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
-        encoding="utf-8"
-    )
+    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(encoding="utf-8")
 
     assert '(0, l.GG)(this, Ue, null, "f"),' in source
     assert '(0, l.GG)(this, re, new st.A(), "f"),' in source

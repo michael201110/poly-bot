@@ -20,6 +20,7 @@ from polybot.protocol import (
     request_message,
     response_result,
 )
+from polybot.pwm import PwmSteering, decode_pwm_level
 from polybot.transport import SimulatorTransport
 
 
@@ -119,9 +120,7 @@ def _finish_reward(telemetry: Telemetry, config: RewardConfig) -> float:
     return config.finish_bonus + config.finish_fast_bonus * pace_factor
 
 
-def _ghost_pose_reward(
-    simulator_info: Mapping[str, Any], config: RewardConfig, dt: float
-) -> float:
+def _ghost_pose_reward(simulator_info: Mapping[str, Any], config: RewardConfig, dt: float) -> float:
     """Reward proximity and full 3D orientation agreement with the ghost pose."""
 
     try:
@@ -131,12 +130,8 @@ def _ghost_pose_reward(
         return 0.0
     if not np.isfinite(position_error) or not np.isfinite(rotation_error):
         return 0.0
-    position_similarity = np.exp(
-        -max(0.0, position_error) / config.imitation_position_scale_m
-    )
-    rotation_similarity = np.exp(
-        -max(0.0, rotation_error) / config.imitation_rotation_scale_rad
-    )
+    position_similarity = np.exp(-max(0.0, position_error) / config.imitation_position_scale_m)
+    rotation_similarity = np.exp(-max(0.0, rotation_error) / config.imitation_rotation_scale_rad)
     return float(config.imitation_bonus_per_s * dt * position_similarity * rotation_similarity)
 
 
@@ -181,9 +176,7 @@ def _airborne_tilt_penalty(telemetry: Telemetry, config: RewardConfig, dt: float
     ) * dt
 
 
-def _ground_slip_penalty(
-    telemetry: Telemetry, config: RewardConfig, dt: float
-) -> float:
+def _ground_slip_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
     """Penalize tyre-scrubbing slip only while all four wheels are grounded."""
 
     if not all(contact >= 0.5 for contact in telemetry.wheel_contacts):
@@ -216,6 +209,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         curriculum_end_ratio: float | None = None,
         curriculum_start_s: float | None = None,
         curriculum_end_s: float | None = None,
+        pwm_enabled: bool = False,
+        pwm_levels: int = 41,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -238,9 +233,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("curriculum section must satisfy 0 <= start < end <= 1")
         if (curriculum_start_s is None) != (curriculum_end_s is None):
             raise ValueError("timed curriculum start and end must be provided together")
-        if curriculum_start_s is not None and not (
-            0.0 <= curriculum_start_s < curriculum_end_s
-        ):
+        if curriculum_start_s is not None and not (0.0 <= curriculum_start_s < curriculum_end_s):
             raise ValueError("timed curriculum must satisfy 0 <= start < end")
         if curriculum_start_ratio is not None and curriculum_start_s is not None:
             raise ValueError("progress and timed curriculum cannot be combined")
@@ -258,8 +251,16 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.curriculum_end_ratio = curriculum_end_ratio
         self.curriculum_start_s = curriculum_start_s
         self.curriculum_end_s = curriculum_end_s
+        if pwm_levels < 3 or pwm_levels % 2 == 0:
+            raise ValueError("pwm_levels must be an odd integer >= 3")
+        self.pwm_enabled = pwm_enabled
+        self.pwm_levels = pwm_levels
+        self._pwm = PwmSteering()
 
-        self.action_space = spaces.MultiDiscrete(np.asarray([3, 2, 2], dtype=np.int64))
+        steering_actions = pwm_levels if pwm_enabled else 3
+        self.action_space = spaces.MultiDiscrete(
+            np.asarray([steering_actions, 2, 2], dtype=np.int64)
+        )
         self.observation_space = spaces.Box(
             low=-5.0,
             high=5.0,
@@ -321,7 +322,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if (
             isinstance(max_ticks, bool)
             or not isinstance(max_ticks, int)
-            or max_ticks < self.frame_skip
+            or max_ticks < (1 if self.pwm_enabled else self.frame_skip)
         ):
             raise ProtocolViolation("simulator cannot advance the requested frame_skip")
         self.simulator_capabilities = dict(result)
@@ -380,6 +381,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._landing_grace_s = 0.0
         self._was_airborne = False
         self.latest_telemetry = transition.telemetry
+        self._pwm.reset()
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
         return observation, info
@@ -389,16 +391,46 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise RuntimeError("reset() must be called before step() or after an episode ends")
         if not self.action_space.contains(action):
             raise ValueError(f"action {action!r} is outside {self.action_space}")
-        decoded_action = Action.from_policy(action)
-        result = self._exchange(
-            "step",
-            {
-                "episode_id": self._episode_id,
-                "action": decoded_action.to_wire(),
-                "ticks": self.frame_skip,
-            },
-        )
-        transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)
+        values = np.asarray(action, dtype=np.int64)
+        throttle, brake = bool(values[1]), bool(values[2])
+        if self.pwm_enabled:
+            steering = decode_pwm_level(int(values[0]), self.pwm_levels)
+            tick_steering = self._pwm.generate(steering, self.frame_skip)
+            transitions: list[Transition] = []
+            for steer in tick_steering:
+                result = self._exchange(
+                    "step",
+                    {
+                        "episode_id": self._episode_id,
+                        "action": Action(steer, throttle, brake).to_wire(),
+                        "ticks": 1,
+                    },
+                )
+                item = Transition.from_wire(result, lookahead_count=self.lookahead_count)
+                transitions.append(item)
+                if "finish" in item.events or "crash" in item.events:
+                    break
+            last = transitions[-1]
+            transition = Transition(
+                episode_id=last.episode_id,
+                tick=last.tick,
+                ticks_advanced=sum(item.ticks_advanced for item in transitions),
+                telemetry=last.telemetry,
+                events=tuple(event for item in transitions for event in item.events),
+                simulator_info=last.simulator_info,
+            )
+            decoded_action = Action((steering > 0) - (steering < 0), throttle, brake)
+        else:
+            decoded_action = Action.from_policy(action)
+            result = self._exchange(
+                "step",
+                {
+                    "episode_id": self._episode_id,
+                    "action": decoded_action.to_wire(),
+                    "ticks": self.frame_skip,
+                },
+            )
+            transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)
         if transition.episode_id != self._episode_id:
             raise ProtocolViolation("simulator returned a stale or unexpected episode_id")
         if transition.ticks_advanced > self.frame_skip:
@@ -519,9 +551,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["events"] = tuple(dict.fromkeys((*info["events"], "airborne_roll_failure")))
             info["airborne_roll_s"] = self._airborne_roll_s
         if curriculum_section_complete:
-            info["events"] = tuple(
-                dict.fromkeys((*info["events"], "curriculum_section_complete"))
-            )
+            info["events"] = tuple(dict.fromkeys((*info["events"], "curriculum_section_complete")))
         if landing_grace:
             info["landing_grace_s"] = self._landing_grace_s
         if truncated and "time_limit" not in events:

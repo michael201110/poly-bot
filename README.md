@@ -21,13 +21,17 @@ disabled while the mod is loaded.
 
 Python 3.11 or newer is required.
 
-```powershell
+```text
 python -m venv .venv
-.venv\Scripts\Activate.ps1
-python -m pip install -e ".[dev,train]"
+python -m pip install -e ".[dev,train,gui]"
 pytest
-polybot-smoke
+polybot-gui
 ```
+
+Activate the environment using the normal command for your shell, or invoke its Python directly.
+The graphical application is the primary training interface on Windows and Linux. It supports
+track-scoped models, resume/stop, CPU/CUDA selection, XL networks, PWM steering, curriculum, and
+rolling checkpoints. See [`docs/training.md`](docs/training.md).
 
 Train a first PPO policy in the mock environment:
 
@@ -49,7 +53,7 @@ Open [PolyModLoader](https://web.polymodloader.com/) and add this mod URL once:
 https://cdn.polymodloader.com/gh/michael201110/poly-bot/main/pml-mod
 ```
 
-Choose `latest`, click **Load**, then **Apply**. In PowerShell, install the command and start it:
+Choose `latest`, click **Load**, then **Apply**. In a terminal, install the command and start it:
 
 ```powershell
 python -m pip install -e ".[dev,train]"
@@ -95,7 +99,7 @@ WebSocket training also selects `current` and a 10-tick action repeat automatica
 bridge/                 JavaScript bridge and game-adapter template
 docs/                   Protocol and integration notes
 pml-mod/                PolyModLoader package for the real 0.6.2 simulation worker
-src/polybot/            Gymnasium environment, transport, mock, controller, CLI
+src/polybot/            Environment, transport, training services, GUI, controller, CLI
 tests/                  Protocol, determinism, reward, and controller tests
 ```
 

@@ -32,9 +32,7 @@ def widen_actor_critic_policy(source: Any, target: Any) -> None:
         # New second-layer neurons retain random inputs but initially have zero
         # output weights, allowing them to begin learning without policy drift.
         target_state[second_weight][:old_width].zero_()
-        target_state[second_weight][:old_width, :old_width].copy_(
-            source_state[second_weight]
-        )
+        target_state[second_weight][:old_width, :old_width].copy_(source_state[second_weight])
         target_state[second_bias][:old_width].copy_(source_state[second_bias])
 
     for head in ("action_net", "value_net"):

@@ -7,6 +7,11 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-models/
+models/**/checkpoints/
+models/**/latest.zip
+models/**/*.tmp
+!models/**/best.zip
+!models/**/metadata.json
+!models/**/README.md
 runs/
 logs/

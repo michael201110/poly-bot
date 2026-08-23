@@ -235,6 +235,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
     _websocket_arguments(parser)
     parser.add_argument("--timesteps", type=int, default=100_000)
+    parser.add_argument("--architecture", choices=("legacy", "medium", "large", "xl"), default="xl")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--pwm", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--pwm-levels", type=int, default=41)
     parser.add_argument(
         "--max-episodes",
         type=int,
@@ -366,9 +370,21 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     try:
         from stable_baselines3 import PPO
         from stable_baselines3.common.callbacks import BaseCallback
+
+        from polybot.training.config import policy_kwargs
+        from polybot.training.devices import resolve_device
     except ImportError as exc:
         parser.error("training dependencies are missing; install with: pip install -e '.[train]'")
         raise AssertionError("unreachable") from exc
+    try:
+        selected_device = resolve_device(args.device)
+    except RuntimeError as exc:
+        parser.error(str(exc))
+    print(
+        f"Device: {selected_device.resolved}"
+        + (f" ({selected_device.gpu_name})" if selected_device.gpu_name else ""),
+        flush=True,
+    )
 
     transport = _make_transport(args)
     reward_config = RewardConfig(
@@ -397,6 +413,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             curriculum_end_ratio=args.curriculum_end_ratio,
             curriculum_start_s=args.curriculum_start_s,
             curriculum_end_s=args.curriculum_end_s,
+            pwm_enabled=args.pwm,
+            pwm_levels=args.pwm_levels,
         )
     except BaseException:
         transport.close()
@@ -414,6 +432,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 ent_coef=args.entropy_coef,
                 gamma=args.gamma,
                 gae_lambda=args.gae_lambda,
+                policy_kwargs=policy_kwargs(args.architecture),
+                device=selected_device.resolved,
             )
             _bias_initial_policy_forward(model, args.forward_bias)
         else:
@@ -427,6 +447,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     "gamma": args.gamma,
                     "gae_lambda": args.gae_lambda,
                 },
+                device=selected_device.resolved,
             )
 
         class EpisodeCheckpointCallback(BaseCallback):
@@ -458,9 +479,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 for info, done in zip(self.locals.get("infos", ()), dones, strict=False):
                     reward_terms = info.get("reward_terms", {})
                     self.episode_imitation_reward += float(reward_terms.get("ghost_imitation", 0.0))
-                    self.episode_ground_slip_penalty += float(
-                        reward_terms.get("ground_slip", 0.0)
-                    )
+                    self.episode_ground_slip_penalty += float(reward_terms.get("ground_slip", 0.0))
                     if (
                         reward_terms.get("barrier_contact", 0.0) < 0.0
                         or reward_terms.get("off_track_landing", 0.0) < 0.0
@@ -478,9 +497,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                         and args.curriculum_start_ratio is None
                         and args.curriculum_start_s is None
                         and self.clean_episode
-                        and (
-                        progress_ratio >= self.best_progress_ratio + 0.02 or faster_finish
-                        )
+                        and (progress_ratio >= self.best_progress_ratio + 0.02 or faster_finish)
                     ):
                         self.output.parent.mkdir(parents=True, exist_ok=True)
                         self.model.save(str(self.best_output))
