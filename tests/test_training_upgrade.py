@@ -2,8 +2,11 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+import numpy as np
 import pytest
 
+from polybot.env import PolyTrackEnv
+from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
 from polybot.training.config import architecture, estimate_ppo_parameters
@@ -45,3 +48,23 @@ def test_device_resolution_without_cuda() -> None:
     assert resolve_device("cpu", torch).resolved == "cpu"
     with pytest.raises(RuntimeError, match="unavailable|is_available"):
         resolve_device("cuda", torch)
+
+
+def test_pwm_sequence_uses_one_protocol_round_trip() -> None:
+    transport = MockSimulatorTransport()
+    env = PolyTrackEnv(
+        transport,
+        track_id="mock/gentle-s",
+        pwm_enabled=True,
+        pwm_levels=41,
+        frame_skip=16,
+    )
+    env.reset(seed=1)
+    before = len(transport.command_log)
+    env.step(np.array([30, 1, 0]))  # +50% steering
+    requests = transport.command_log[before:]
+    assert len(requests) == 1
+    params = requests[0]["params"]
+    assert len(params["actions"]) == 16
+    assert {action["steer"] for action in params["actions"]} == {0.0, 1.0}
+    env.close()

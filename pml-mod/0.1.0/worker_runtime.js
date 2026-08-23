@@ -1047,26 +1047,38 @@ export function polybotWorkerInjection() {
               `ticks must be an integer from 1 to ${maxTicksPerStep}`,
             );
           }
-          const action = validateAction(params.action);
+          let actions;
+          if (params.actions === undefined) {
+            const action = validateAction(params.action);
+            actions = Array.from({ length: params.ticks }, () => action);
+          } else {
+            if (!Array.isArray(params.actions) || params.actions.length !== params.ticks) {
+              throw new BridgeError(
+                "invalid_action",
+                "actions must contain exactly one digital action per requested tick",
+              );
+            }
+            actions = params.actions.map((action) => validateAction(action));
+          }
           const player = findCar(playerCarId);
           if (!player) {
             throw new BridgeError("game_not_ready", "The player car no longer exists");
           }
           player.isPaused = true;
-          const controls = {
-            up: Boolean(action.throttle),
-            right: action.steer === 1,
-            down: Boolean(action.brake),
-            left: action.steer === -1,
-            reset: false,
-          };
-
           let decoded = session.previousDecoded;
           const finalBuffers = new Map();
           let ticksAdvanced = 0;
           let collisionImpulsePeak = 0;
           let visibleCheckpoint = decoded.nextCheckpointIndex;
           for (let tick = 0; tick < params.ticks; tick += 1) {
+            const tickAction = actions[tick];
+            const controls = {
+              up: Boolean(tickAction.throttle),
+              right: tickAction.steer === 1,
+              down: Boolean(tickAction.brake),
+              left: tickAction.steer === -1,
+              reset: false,
+            };
             for (const car of cars) {
               if (!car.hasStarted) {
                 continue;
@@ -1119,9 +1131,10 @@ export function polybotWorkerInjection() {
           if (decoded.hasFinished) {
             events.push("finish");
           }
+          const finalAction = actions[Math.max(0, ticksAdvanced - 1)];
           const result = transition(
             decoded,
-            action,
+            finalAction,
             ticksAdvanced,
             events,
             null,
@@ -1183,6 +1196,7 @@ export function polybotWorkerInjection() {
                   "ghost_reference",
                   "cross_worker_reference",
                   "visible_car",
+                  "action_sequence",
                 ],
               };
             case "reset":

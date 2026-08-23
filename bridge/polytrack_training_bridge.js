@@ -174,7 +174,7 @@
         fixed_dt_s: description.fixed_dt_s,
         max_ticks_per_step: description.max_ticks_per_step,
         lookahead_count: this.lookaheadCount,
-        features: ["offline", "fixed_step", ...(description.features || [])],
+        features: ["offline", "fixed_step", "action_sequence", ...(description.features || [])],
       };
     }
 
@@ -215,29 +215,52 @@
       if (!Number.isSafeInteger(params.ticks) || params.ticks < 1) {
         throw new BridgeError("invalid_action", "ticks must be a positive integer");
       }
-      const action = requireObject(params.action, "action");
-      if (![-1, 0, 1].includes(action.steer)) {
-        throw new BridgeError("invalid_action", "steer must be -1, 0, or 1");
+      const validateAction = (value) => {
+        const action = requireObject(value, "action");
+        if (![-1, 0, 1].includes(action.steer)) {
+          throw new BridgeError("invalid_action", "steer must be -1, 0, or 1");
+        }
+        if (![0, 1].includes(action.throttle) || ![0, 1].includes(action.brake)) {
+          throw new BridgeError("invalid_action", "throttle and brake must be 0 or 1");
+        }
+        return action;
+      };
+      if (params.actions !== undefined && !Array.isArray(params.actions)) {
+        throw new BridgeError("invalid_action", "actions must be an array");
       }
-      if (![0, 1].includes(action.throttle) || ![0, 1].includes(action.brake)) {
-        throw new BridgeError("invalid_action", "throttle and brake must be 0 or 1");
+      const actions = params.actions === undefined
+        ? Array.from({ length: params.ticks }, () => validateAction(params.action))
+        : params.actions.map(validateAction);
+      if (actions.length !== params.ticks) {
+        throw new BridgeError("invalid_action", "actions must contain one action per tick");
       }
-      const result = requireObject(
-        await this.gameApi.step({ action, ticks: params.ticks }),
-        "gameApi.step result",
-      );
+      let result = null;
+      let ticksAdvanced = 0;
+      const events = [];
+      for (const action of actions) {
+        result = requireObject(
+          await this.gameApi.step({ action, ticks: 1 }),
+          "gameApi.step result",
+        );
+        ticksAdvanced += result.ticks_advanced;
+        events.push(...(result.events || []));
+        if ((result.events || []).includes("finish") || (result.events || []).includes("crash")) {
+          break;
+        }
+      }
+      result = requireObject(result, "gameApi.step result");
       if (!Number.isSafeInteger(result.tick) || !Number.isSafeInteger(result.ticks_advanced)) {
         throw new BridgeError("invalid_telemetry", "step tick fields must be integers");
       }
-      if (result.ticks_advanced < 0 || result.ticks_advanced > params.ticks) {
+      if (ticksAdvanced < 0 || ticksAdvanced > params.ticks) {
         throw new BridgeError("invalid_telemetry", "ticks_advanced is outside the requested range");
       }
       return {
         episode_id: this.episodeId,
         tick: result.tick,
-        ticks_advanced: result.ticks_advanced,
+        ticks_advanced: ticksAdvanced,
         state: requireObject(result.state, "gameApi.step result.state"),
-        events: result.events || [],
+        events,
         info: result.info || {},
       };
     }

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from itertools import groupby
 from typing import Any
 
 import gymnasium as gym
@@ -284,6 +286,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._was_airborne = False
         self.latest_telemetry: Telemetry | None = None
         self.simulator_capabilities: Mapping[str, Any] = {}
+        self._native_finish_restart_pending = False
 
     def _exchange(self, op: str, params: Mapping[str, Any]) -> Mapping[str, Any]:
         if self._closed:
@@ -335,6 +338,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         options: dict[str, Any] | None = None,
     ) -> tuple[np.ndarray, dict[str, Any]]:
         super().reset(seed=seed)
+        # PolyTrack replaces its simulation worker shortly after displaying a
+        # finish. Avoid sending the next reset to that retiring worker.
+        if self._native_finish_restart_pending:
+            time.sleep(1.0)
+            self._native_finish_restart_pending = False
         self._handshake()
         options = options or {}
         track_id = options.get("track_id", self.track_id)
@@ -362,7 +370,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 "track_id": track_id,
                 "start_progress_ratio": start_progress_ratio,
                 "start_time_s": self.curriculum_start_s,
-                "native_restart": self.curriculum_start_s is None,
+                "native_restart": False,
             },
         )
         transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)
@@ -397,19 +405,44 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             steering = decode_pwm_level(int(values[0]), self.pwm_levels)
             tick_steering = self._pwm.generate(steering, self.frame_skip)
             transitions: list[Transition] = []
-            for steer in tick_steering:
+            features = self.simulator_capabilities.get("features", ())
+            if "action_sequence" in features:
                 result = self._exchange(
                     "step",
                     {
                         "episode_id": self._episode_id,
-                        "action": Action(steer, throttle, brake).to_wire(),
-                        "ticks": 1,
+                        "actions": [
+                            Action(steer, throttle, brake).to_wire() for steer in tick_steering
+                        ],
+                        "ticks": len(tick_steering),
                     },
                 )
-                item = Transition.from_wire(result, lookahead_count=self.lookahead_count)
-                transitions.append(item)
-                if "finish" in item.events or "crash" in item.events:
-                    break
+                transitions.append(
+                    Transition.from_wire(result, lookahead_count=self.lookahead_count)
+                )
+            else:
+                max_ticks = int(self.simulator_capabilities["max_ticks_per_step"])
+                for steer, values_in_run in groupby(tick_steering):
+                    remaining = sum(1 for _ in values_in_run)
+                    while remaining:
+                        run_ticks = min(remaining, max_ticks)
+                        result = self._exchange(
+                            "step",
+                            {
+                                "episode_id": self._episode_id,
+                                "action": Action(steer, throttle, brake).to_wire(),
+                                "ticks": run_ticks,
+                            },
+                        )
+                        item = Transition.from_wire(result, lookahead_count=self.lookahead_count)
+                        transitions.append(item)
+                        remaining -= run_ticks
+                        if "finish" in item.events or "crash" in item.events:
+                            break
+                    if transitions and (
+                        "finish" in transitions[-1].events or "crash" in transitions[-1].events
+                    ):
+                        break
             last = transitions[-1]
             transition = Transition(
                 episode_id=last.episode_id,
@@ -517,6 +550,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_steps += 1
         events = set(transition.events)
         crash = "crash" in events and not landing_grace
+        if "finish" in events:
+            self._native_finish_restart_pending = True
         terminated = (
             "finish" in events
             or crash

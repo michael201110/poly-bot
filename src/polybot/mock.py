@@ -118,7 +118,12 @@ class MockSimulatorTransport:
             "fixed_dt_s": self.fixed_dt_s,
             "max_ticks_per_step": self.max_ticks_per_step,
             "lookahead_count": lookahead_count,
-            "features": ["seeded_reset", "fixed_step", "ordered_progress"],
+            "features": [
+                "seeded_reset",
+                "fixed_step",
+                "ordered_progress",
+                "action_sequence",
+            ],
         }
 
     def _reset(self, params: Mapping[str, Any]) -> dict[str, Any]:
@@ -177,12 +182,18 @@ class MockSimulatorTransport:
             raise ProtocolViolation(f"ticks must be between 1 and {self.max_ticks_per_step}")
         if state.finished or state.crashed:
             raise ProtocolViolation("episode has ended; reset before stepping again")
-        action = Action.from_wire(params.get("action"))
+        raw_actions = params.get("actions")
+        if raw_actions is None:
+            actions = [Action.from_wire(params.get("action"))] * ticks
+        else:
+            if not isinstance(raw_actions, list) or len(raw_actions) != ticks:
+                raise ProtocolViolation("actions must contain exactly one action per tick")
+            actions = [Action.from_wire(value) for value in raw_actions]
 
         events: list[str] = []
         start_checkpoint = state.checkpoint_index
         ticks_advanced = 0
-        for _ in range(ticks):
+        for action in actions:
             self._physics_tick(action)
             ticks_advanced += 1
             if state.finished or state.crashed:

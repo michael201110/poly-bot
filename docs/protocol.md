@@ -90,6 +90,11 @@ is required by every subsequent step. A stale command from a previous run is rej
 
 ### `step`
 
+Adapters advertising the `action_sequence` feature also accept an `actions` array containing
+exactly one legal digital action per requested tick. This batches PWM scheduling into one transport
+round trip while preserving the game boundary: every entry still uses steering `-1`, `0`, or `+1`
+and digital throttle/brake. Trainers fall back to constant-action requests for older adapters.
+
 The adapter holds one digital action for exactly `ticks` physics updates. It may stop early if the
 car finishes or crashes, in which case `ticks_advanced` is less than requested.
 
