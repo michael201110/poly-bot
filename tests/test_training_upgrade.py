@@ -10,7 +10,7 @@ from polybot.env import (
     summer_1_pace_reward_config,
     summer_1_reward_config,
 )
-from polybot.gui.main import preferred_model
+from polybot.gui.main import preferred_model, timed_curriculum_bounds
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
@@ -120,6 +120,13 @@ def test_gui_prefers_latest_model_unless_current_selection_is_valid(tmp_path) ->
     assert preferred_model(models) == latest
     assert preferred_model(models, str(best)) == best
     assert preferred_model(models, "New model") == latest
+
+
+def test_gui_validates_timed_curriculum_bounds() -> None:
+    assert timed_curriculum_bounds("full", 10.0, 5.0) is None
+    assert timed_curriculum_bounds("timed", 5.0, 12.5) == (5.0, 12.5)
+    with pytest.raises(ValueError, match="start < end"):
+        timed_curriculum_bounds("timed", 12.5, 5.0)
 
 
 def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:

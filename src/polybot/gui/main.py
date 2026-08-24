@@ -26,6 +26,16 @@ def preferred_model(models: list[Path], current: str = "") -> Path | None:
     return next((path for path in models if path.name.casefold() == "latest.zip"), None)
 
 
+def timed_curriculum_bounds(mode: str, start_s: float, end_s: float) -> tuple[float, float] | None:
+    """Return validated timed bounds, or no bounds for another curriculum mode."""
+
+    if mode != "timed":
+        return None
+    if not 0 <= start_s < end_s:
+        raise ValueError("timed curriculum must satisfy 0 <= start < end")
+    return start_s, end_s
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--track-name")
@@ -151,6 +161,16 @@ def main() -> int:
                 self.reward_inputs[name] = editor
             self.curriculum = QComboBox()
             self.curriculum.addItems(["full", "quarters", "quarters-randomised", "timed"])
+            self.curriculum_start_s = QDoubleSpinBox()
+            self.curriculum_start_s.setDecimals(2)
+            self.curriculum_start_s.setRange(0.0, 3600.0)
+            self.curriculum_start_s.setValue(0.0)
+            self.curriculum_start_s.setSuffix(" s")
+            self.curriculum_end_s = QDoubleSpinBox()
+            self.curriculum_end_s.setDecimals(2)
+            self.curriculum_end_s.setRange(0.01, 3600.0)
+            self.curriculum_end_s.setValue(10.0)
+            self.curriculum_end_s.setSuffix(" s")
             self.checkpoint = QSpinBox()
             self.checkpoint.setRange(0, 100_000_000)
             self.checkpoint.setValue(10_000)
@@ -185,6 +205,8 @@ def main() -> int:
                 ("Reward profile", self.reward_profile),
                 ("All reward parameters", self.reward_table),
                 ("Curriculum", self.curriculum),
+                ("Timed section start", self.curriculum_start_s),
+                ("Timed section end", self.curriculum_end_s),
                 ("Checkpoint interval", self.checkpoint),
                 ("Model location", self.output),
                 ("Training status", self.runtime),
@@ -225,10 +247,12 @@ def main() -> int:
             self.pwm.toggled.connect(self.refresh_parameters)
             self.levels.valueChanged.connect(self.refresh_parameters)
             self.reward_profile.currentTextChanged.connect(self.apply_reward_profile)
+            self.curriculum.currentTextChanged.connect(self.refresh_curriculum_controls)
             self.refresh_models()
             if launch.model:
                 self.model.setCurrentText(launch.model)
             self.refresh_parameters()
+            self.refresh_curriculum_controls()
             self.apply_reward_profile()
 
         def apply_reward_profile(self) -> None:
@@ -267,6 +291,11 @@ def main() -> int:
                 Telemetry.vector_size(12), dims, self.arch.currentText()
             )
             self.parameters.setText(f"{count:,} (pre-creation estimate)")
+
+        def refresh_curriculum_controls(self) -> None:
+            enabled = self.curriculum.currentText() == "timed"
+            self.curriculum_start_s.setEnabled(enabled)
+            self.curriculum_end_s.setEnabled(enabled)
 
         def refresh_models(self) -> None:
             current = self.model.currentText()
@@ -345,6 +374,17 @@ def main() -> int:
                 return
             cfg = self.config()
             cfg.curriculum.mode = self.curriculum.currentText()
+            try:
+                bounds = timed_curriculum_bounds(
+                    cfg.curriculum.mode,
+                    self.curriculum_start_s.value(),
+                    self.curriculum_end_s.value(),
+                )
+            except ValueError as exc:
+                QMessageBox.critical(self, "Invalid timed section", str(exc))
+                return
+            if bounds is not None:
+                cfg.curriculum.start_s, cfg.curriculum.end_s = bounds
             self.manager = TrainingManager(cfg, self.events.update.emit)
             threading.Thread(target=self._run, args=(selected,), daemon=True).start()
             self.runtime.setText("Starting…")
