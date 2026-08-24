@@ -10,6 +10,7 @@ from polybot.env import (
     summer_1_pace_reward_config,
     summer_1_reward_config,
 )
+from polybot.gui.main import preferred_model
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
@@ -96,6 +97,16 @@ def test_fresh_run_archive_preserves_latest_and_metadata(tmp_path) -> None:
     assert archived.read_bytes() == b"model"
     assert archived.with_suffix(".metadata.json").exists()
     assert (directory / "latest.zip").read_bytes() == b"model"
+
+
+def test_gui_prefers_latest_model_unless_current_selection_is_valid(tmp_path) -> None:
+    best = tmp_path / "best.zip"
+    latest = tmp_path / "latest.zip"
+    models = [best, latest]
+
+    assert preferred_model(models) == latest
+    assert preferred_model(models, str(best)) == best
+    assert preferred_model(models, "New model") == latest
 
 
 def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:

@@ -16,6 +16,15 @@ from polybot.training.models import ModelRegistry
 from polybot.training.reward_profiles import RewardProfileStore
 
 
+def preferred_model(models: list[Path], current: str = "") -> Path | None:
+    """Keep a valid selection, otherwise prefer the track's latest model."""
+
+    current_path = Path(current) if current.strip() else None
+    if current_path is not None and current_path in models:
+        return current_path
+    return next((path for path in models if path.name.casefold() == "latest.zip"), None)
+
+
 def main() -> int:
     try:
         from PySide6.QtCore import QObject, Signal
@@ -65,7 +74,7 @@ def main() -> int:
             self.backend.addItems(["websocket", "mock"])
             self.model = QComboBox()
             self.model.setEditable(True)
-            self.model.addItem("New model")
+            self.model.lineEdit().setPlaceholderText("No saved model found")
             self.arch = QComboBox()
             self.arch.addItems(["xl", "large", "medium", "legacy"])
             self.device = QComboBox()
@@ -177,14 +186,16 @@ def main() -> int:
             self.log = QPlainTextEdit()
             self.log.setReadOnly(True)
             self.log.document().setMaximumBlockCount(500)
-            start, stop, resume, save_profile, browse = (
-                QPushButton("Start training"),
+            fresh, stop, resume, save_profile, browse = (
+                QPushButton("Start a NEW model…"),
                 QPushButton("Stop cleanly"),
-                QPushButton("Resume selected"),
+                QPushButton("Resume latest / selected"),
                 QPushButton("Save reward profile"),
                 QPushButton("Browse…"),
             )
-            for button in (start, stop, resume, save_profile, browse):
+            resume.setDefault(True)
+            fresh.setToolTip("Create a fresh policy instead of loading the selected model")
+            for button in (resume, stop, fresh, save_profile, browse):
                 buttons.addWidget(button)
             layout = QVBoxLayout(root)
             layout.addLayout(form)
@@ -196,8 +207,8 @@ def main() -> int:
             scroll.setWidget(root)
             self.setCentralWidget(scroll)
             self.resize(780, 800)
-            start.clicked.connect(lambda: self.start(False))
-            resume.clicked.connect(lambda: self.start(True))
+            fresh.clicked.connect(self.start_fresh)
+            resume.clicked.connect(self.resume_selected)
             stop.clicked.connect(self.stop)
             save_profile.clicked.connect(self.save_reward_profile)
             browse.clicked.connect(self.browse)
@@ -249,14 +260,15 @@ def main() -> int:
 
         def refresh_models(self) -> None:
             current = self.model.currentText()
-            self.model.clear()
-            self.model.addItem("New model")
-            for path in ModelRegistry(self.output.text() or "models").list_models(
+            models = ModelRegistry(self.output.text() or "models").list_models(
                 self.track.currentText()
-            ):
+            )
+            selected = preferred_model(models, current)
+            self.model.clear()
+            for path in models:
                 self.model.addItem(str(path))
-            if current:
-                self.model.setCurrentText(current)
+            if selected is not None:
+                self.model.setCurrentText(str(selected))
 
         def browse(self) -> None:
             value = QFileDialog.getExistingDirectory(
@@ -289,7 +301,31 @@ def main() -> int:
                 rewards=self.reward_config_from_table(),
             )
 
-        def start(self, resume: bool) -> None:
+        def resume_selected(self) -> None:
+            selected = self.model.currentText().strip()
+            if not selected or not Path(selected).is_file():
+                QMessageBox.critical(
+                    self,
+                    "No model selected",
+                    "Select an existing .zip model before resuming. "
+                    "Resume will never create a fresh model.",
+                )
+                return
+            self.start(selected)
+
+        def start_fresh(self) -> None:
+            answer = QMessageBox.question(
+                self,
+                "Start a fresh model?",
+                "This creates a brand-new policy and does not load the selected model.\n\n"
+                "The existing latest model will be archived first. Continue?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No,
+            )
+            if answer == QMessageBox.StandardButton.Yes:
+                self.start(None)
+
+        def start(self, selected: str | None) -> None:
             if self.manager:
                 return
             try:
@@ -300,11 +336,6 @@ def main() -> int:
             cfg = self.config()
             cfg.curriculum.mode = self.curriculum.currentText()
             self.manager = TrainingManager(cfg, self.events.update.emit)
-            selected = (
-                self.model.currentText()
-                if resume and self.model.currentText() != "New model"
-                else None
-            )
             threading.Thread(target=self._run, args=(selected,), daemon=True).start()
             self.runtime.setText("Starting…")
 
