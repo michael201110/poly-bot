@@ -120,6 +120,22 @@ class ModelRegistry:
         self.write_metadata(metadata)
         return target
 
+    def archive_latest(self, track_name: str) -> Path | None:
+        """Preserve the current latest pair before intentionally starting fresh."""
+
+        directory = self.track_dir(track_name)
+        latest = directory / "latest.zip"
+        if not latest.exists():
+            return None
+        checkpoint_dir = self.initialise_track(track_name) / "checkpoints"
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        target = checkpoint_dir / f"pre-fresh-{stamp}.zip"
+        shutil.copy2(latest, target)
+        metadata = directory / "latest.metadata.json"
+        if metadata.exists():
+            shutil.copy2(metadata, target.with_suffix(".metadata.json"))
+        return target
+
 
 def git_commit(cwd: Path | None = None) -> str:
     try:

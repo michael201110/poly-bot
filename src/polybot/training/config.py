@@ -6,7 +6,7 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from polybot.env import RewardConfig
+from polybot.env import RewardConfig, summer_1_reward_config
 
 ARCHITECTURE_PRESETS: dict[str, tuple[int, ...]] = {
     "legacy": (64, 64),
@@ -70,7 +70,7 @@ class TrainingConfig:
     seed: int = 0
     lookahead_count: int = 12
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
-    rewards: RewardConfig = field(default_factory=RewardConfig)
+    rewards: RewardConfig = field(default_factory=summer_1_reward_config)
 
     def __post_init__(self) -> None:
         if self.backend not in {"websocket", "mock"}:

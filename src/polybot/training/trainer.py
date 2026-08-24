@@ -13,6 +13,7 @@ from polybot.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
 from polybot.training.config import TrainingConfig, policy_kwargs
 from polybot.training.devices import DeviceInfo, resolve_device
+from polybot.training.initialization import apply_forward_bias
 from polybot.training.models import (
     IncompatibleModelError,
     ModelMetadata,
@@ -66,30 +67,103 @@ class TrainingService:
         registry = ModelRegistry(cfg.output_root)
         directory = registry.initialise_track(cfg.track_name)
         output = directory / "latest"
+        if not resume:
+            archived = registry.archive_latest(cfg.track_name)
+            if archived:
+                self.status({"type": "archived", "path": str(archived)})
         service = self
         started_at = time.monotonic()
 
         class Callback(BaseCallback):
+            def __init__(self) -> None:
+                super().__init__()
+                self.last_ui_update = 0.0
+                self.episode = 1
+                self.episode_reward = 0.0
+                self.episode_steps = 0
+                self.max_progress = 0.0
+                self.finishes = 0
+                self.crashes = 0
+                self.best_lap_s: float | None = None
+
             def _on_step(self) -> bool:
-                info = (self.locals.get("infos") or [{}])[-1]
-                rewards = self.locals.get("rewards") or [0.0]
-                elapsed_real = max(time.monotonic() - started_at, 1e-9)
-                service.status(
-                    {
-                        "type": "progress",
-                        "track": cfg.track_name,
-                        "model": cfg.model_name,
-                        "architecture": cfg.architecture,
-                        "timesteps": self.num_timesteps,
-                        "steps_per_second": self.num_timesteps / elapsed_real,
-                        "reward": float(rewards[-1]),
-                        "model_path": str(output.with_suffix(".zip")),
-                        "learning_rate": cfg.learning_rate,
-                        **info,
-                    }
-                )
+                infos = self.locals.get("infos")
+                info = infos[-1] if infos is not None and len(infos) else {}
+                rewards = self.locals.get("rewards")
+                reward = float(rewards[-1]) if rewards is not None and len(rewards) else 0.0
+                dones = self.locals.get("dones")
+                done = bool(dones[-1]) if dones is not None and len(dones) else False
+                self.episode_reward += reward
+                self.episode_steps += 1
+                track_length = max(1.0, float(info.get("track_length_m", 1.0)))
+                progress = float(info.get("route_progress_m", 0.0)) / track_length
+                self.max_progress = max(self.max_progress, progress)
+                events = tuple(info.get("events", ()))
+                elapsed_s = float(info.get("elapsed_s", 0.0))
+                simulator_info = info.get("simulator_info", {})
+                speed_kmh = float(simulator_info.get("speed_kmh", 0.0))
+                now = time.monotonic()
+                if now - self.last_ui_update >= 0.25 or done:
+                    service.status(
+                        {
+                            "type": "progress",
+                            "timesteps": self.num_timesteps,
+                            "steps_per_second": self.num_timesteps / max(now - started_at, 1e-9),
+                            "episode": self.episode,
+                            "episode_reward": self.episode_reward,
+                            "episode_steps": self.episode_steps,
+                            "max_progress": self.max_progress,
+                            "elapsed_s": elapsed_s,
+                            "speed_kmh": speed_kmh,
+                            "finishes": self.finishes,
+                            "crashes": self.crashes,
+                            "best_lap_s": self.best_lap_s,
+                        }
+                    )
+                    self.last_ui_update = now
+                if done:
+                    finished = "finish" in events
+                    crashed = "crash" in events
+                    self.finishes += int(finished)
+                    self.crashes += int(crashed)
+                    if finished:
+                        self.best_lap_s = min(self.best_lap_s or elapsed_s, elapsed_s)
+                    result = next(
+                        (
+                            name
+                            for name in (
+                                "finish",
+                                "crash",
+                                "barrier_contact",
+                                "off_track",
+                                "stalled",
+                                "time_limit",
+                            )
+                            if name in events
+                        ),
+                        events[-1] if events else "reset",
+                    )
+                    service.status(
+                        {
+                            "type": "episode",
+                            "episode": self.episode,
+                            "reward": self.episode_reward,
+                            "steps": self.episode_steps,
+                            "progress": self.max_progress,
+                            "elapsed_s": elapsed_s,
+                            "result": result,
+                            "finishes": self.finishes,
+                            "crashes": self.crashes,
+                            "best_lap_s": self.best_lap_s,
+                        }
+                    )
+                    self.episode += 1
+                    self.episode_reward = 0.0
+                    self.episode_steps = 0
+                    self.max_progress = 0.0
                 if cfg.checkpoint_interval and self.num_timesteps % cfg.checkpoint_interval == 0:
                     self.model.save(str(directory / "checkpoints" / f"step-{self.num_timesteps}"))
+                    service.status({"type": "checkpoint", "timesteps": self.num_timesteps})
                 return not service._stop.is_set()
 
         try:
@@ -131,6 +205,7 @@ class TrainingService:
                     batch_size=max(2, min(64, cfg.timesteps)),
                     verbose=0,
                 )
+                apply_forward_bias(self.model)
             parameters = sum(p.numel() for p in self.model.policy.parameters())
             self.status(
                 {

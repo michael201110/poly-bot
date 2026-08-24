@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Mapping
 from dataclasses import dataclass
+from dataclasses import replace as dataclass_replace
 from itertools import groupby
 from typing import Any
 
@@ -59,6 +60,8 @@ class RewardConfig:
     checkpoint_bonus: float = 0.0
     checkpoint_fast_bonus: float = 0.0
     checkpoint_target_s: float = 30.0
+    checkpoint_speed_bonus_per_mps: float = 0.0
+    checkpoint_speed_bonus_limit_mps: float = 45.0
     finish_bonus: float = 1000.0
     finish_fast_bonus: float = 2000.0
     finish_target_s: float = 22.0
@@ -82,6 +85,68 @@ class RewardConfig:
     off_track_min_grounded_wheels: int = 2
     landing_grace_s: float = 2.0
     early_run_s: float = 20.0
+
+
+def summer_1_reward_config() -> RewardConfig:
+    """Balanced dense-to-sparse curriculum for a fresh Summer 1 policy."""
+
+    return RewardConfig(
+        progress_per_m=1.0,
+        elapsed_cost_per_s=-0.15,
+        on_track_speed_per_m=0.35,
+        airborne_speed_per_m=0.10,
+        airborne_brake_bonus_per_s=0.10,
+        takeoff_target_speed_mps=35.0,
+        takeoff_speed_reward_per_mps=0.25,
+        takeoff_speed_reward_limit=5.0,
+        imitation_bonus_per_s=10.0,
+        unsafe_speed_penalty_per_m=-0.50,
+        barrier_contact_penalty=-150.0,
+        off_track_landing_penalty=-100.0,
+        airborne_spin_penalty_per_rad=-2.0,
+        airborne_tilt_penalty_per_s=-2.0,
+        airborne_roll_penalty_per_s=-2.0,
+        airborne_roll_failure_penalty=-150.0,
+        ground_slip_penalty_per_rad_s=-30.0,
+        checkpoint_bonus=100.0,
+        checkpoint_fast_bonus=100.0,
+        checkpoint_target_s=30.0,
+        finish_bonus=1200.0,
+        finish_fast_bonus=1800.0,
+        finish_target_s=22.0,
+        finish_pace_decay_per_s=0.35,
+        curriculum_section_bonus=150.0,
+        crash_penalty=-300.0,
+        stall_penalty=-200.0,
+        off_track_penalty=-250.0,
+        early_off_track_penalty=-350.0,
+        action_change_penalty=-0.01,
+    )
+
+
+def summer_1_pace_reward_config() -> RewardConfig:
+    """Second-stage Summer 1 profile for a safe policy that needs more pace."""
+
+    return dataclass_replace(
+        summer_1_reward_config(),
+        progress_per_m=0.85,
+        elapsed_cost_per_s=-2.5,
+        on_track_speed_per_m=0.50,
+        takeoff_target_speed_mps=40.0,
+        takeoff_speed_reward_per_mps=0.40,
+        takeoff_speed_reward_limit=8.0,
+        imitation_bonus_per_s=4.0,
+        unsafe_speed_penalty_per_m=-0.40,
+        checkpoint_bonus=75.0,
+        checkpoint_fast_bonus=250.0,
+        checkpoint_target_s=8.0,
+        checkpoint_speed_bonus_per_mps=4.0,
+        checkpoint_speed_bonus_limit_mps=45.0,
+        finish_bonus=1000.0,
+        finish_fast_bonus=2200.0,
+        finish_pace_decay_per_s=0.50,
+        action_change_penalty=-0.005,
+    )
 
 
 def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
@@ -111,7 +176,11 @@ def _checkpoint_reward(telemetry: Telemetry, config: RewardConfig) -> float:
     checkpoint_number = max(1, telemetry.checkpoint_index)
     target_elapsed_s = config.checkpoint_target_s * checkpoint_number
     pace_factor = float(np.clip(1.0 - telemetry.elapsed_s / target_elapsed_s, 0.0, 1.0))
-    return config.checkpoint_bonus + config.checkpoint_fast_bonus * pace_factor
+    forward_speed = max(0.0, telemetry.local_velocity_mps[2])
+    speed_bonus = config.checkpoint_speed_bonus_per_mps * min(
+        forward_speed, config.checkpoint_speed_bonus_limit_mps
+    )
+    return config.checkpoint_bonus + config.checkpoint_fast_bonus * pace_factor + speed_bonus
 
 
 def _finish_reward(telemetry: Telemetry, config: RewardConfig) -> float:
