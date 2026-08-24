@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
@@ -24,6 +25,28 @@ from polybot.training.models import (
 from polybot.transport import WebSocketServerTransport
 
 StatusCallback = Callable[[dict[str, Any]], None]
+
+
+class RollingStepRate:
+    """Measure recent environment throughput without counting resumed history."""
+
+    def __init__(self, window_s: float = 5.0) -> None:
+        if window_s <= 0:
+            raise ValueError("rate window must be positive")
+        self.window_s = window_s
+        self.samples: deque[tuple[float, int]] = deque()
+
+    def update(self, timesteps: int, now: float | None = None) -> float:
+        timestamp = time.monotonic() if now is None else now
+        self.samples.append((timestamp, timesteps))
+        cutoff = timestamp - self.window_s
+        while len(self.samples) > 1 and self.samples[1][0] <= cutoff:
+            self.samples.popleft()
+        started_at, started_steps = self.samples[0]
+        elapsed = timestamp - started_at
+        if elapsed <= 0:
+            return 0.0
+        return max(0, timesteps - started_steps) / elapsed
 
 
 class TrainingService:
@@ -73,8 +96,6 @@ class TrainingService:
             if archived:
                 self.status({"type": "archived", "path": str(archived)})
         service = self
-        started_at = time.monotonic()
-
         class Callback(BaseCallback):
             def __init__(self) -> None:
                 super().__init__()
@@ -86,6 +107,10 @@ class TrainingService:
                 self.finishes = 0
                 self.crashes = 0
                 self.best_lap_s: float | None = None
+                self.step_rate = RollingStepRate(5.0)
+
+            def _on_training_start(self) -> None:
+                self.step_rate.update(self.num_timesteps)
 
             def _on_step(self) -> bool:
                 infos = self.locals.get("infos")
@@ -104,12 +129,13 @@ class TrainingService:
                 simulator_info = info.get("simulator_info", {})
                 speed_kmh = float(simulator_info.get("speed_kmh", 0.0))
                 now = time.monotonic()
+                steps_per_second = self.step_rate.update(self.num_timesteps, now)
                 if now - self.last_ui_update >= 0.25 or done:
                     service.status(
                         {
                             "type": "progress",
                             "timesteps": self.num_timesteps,
-                            "steps_per_second": self.num_timesteps / max(now - started_at, 1e-9),
+                            "steps_per_second": steps_per_second,
                             "episode": self.episode,
                             "episode_reward": self.episode_reward,
                             "episode_steps": self.episode_steps,

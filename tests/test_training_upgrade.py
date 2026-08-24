@@ -18,6 +18,7 @@ from polybot.training.config import TrainingConfig, architecture, estimate_ppo_p
 from polybot.training.devices import resolve_device
 from polybot.training.manager import TrainingManager
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry, track_slug
+from polybot.training.trainer import RollingStepRate
 
 
 def test_xl_parameter_count() -> None:
@@ -143,6 +144,15 @@ def test_xl_training_schedule_reduces_optimizer_batches() -> None:
     assert config.rollout_steps // config.batch_size * config.ppo_epochs == 40
     with pytest.raises(ValueError, match="divide"):
         TrainingConfig(rollout_steps=2048, batch_size=300)
+
+
+def test_step_rate_uses_recent_deltas_not_resumed_model_total() -> None:
+    rate = RollingStepRate(window_s=5.0)
+
+    assert rate.update(439_202, now=10.0) == 0.0
+    assert rate.update(439_302, now=11.0) == pytest.approx(100.0)
+    assert rate.update(439_802, now=16.0) == pytest.approx(100.0)
+    assert rate.update(439_803, now=26.0) < 1.0
 
 
 def test_randomised_quarters_choose_seeded_episode_sections() -> None:
