@@ -4,15 +4,16 @@ from __future__ import annotations
 
 import sys
 import threading
-from dataclasses import replace
+from dataclasses import fields
 from pathlib import Path
 
-from polybot.env import summer_1_pace_reward_config, summer_1_reward_config
+from polybot.env import RewardConfig
 from polybot.protocol import Telemetry
 from polybot.training.config import TrainingConfig, estimate_ppo_parameters
 from polybot.training.devices import resolve_device
 from polybot.training.manager import TrainingManager
 from polybot.training.models import ModelRegistry
+from polybot.training.reward_profiles import RewardProfileStore
 
 
 def main() -> int:
@@ -34,6 +35,8 @@ def main() -> int:
             QPushButton,
             QScrollArea,
             QSpinBox,
+            QTableWidget,
+            QTableWidgetItem,
             QVBoxLayout,
             QWidget,
         )
@@ -105,35 +108,30 @@ def main() -> int:
             self.ppo_epochs = QSpinBox()
             self.ppo_epochs.setRange(1, 100)
             self.ppo_epochs.setValue(5)
+            self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
-            self.reward_profile.addItems(["Summer 1 - balanced", "Summer 1 - pace"])
-            self.ghost_reward = QDoubleSpinBox()
-            self.ghost_reward.setRange(0, 1_000_000)
-            self.ghost_reward.setValue(10)
-            self.barrier_penalty = QDoubleSpinBox()
-            self.barrier_penalty.setRange(-1_000_000, 0)
-            self.barrier_penalty.setValue(-150)
-            self.finish_bonus = QDoubleSpinBox()
-            self.finish_bonus.setRange(0, 1_000_000)
-            self.finish_bonus.setValue(1200)
-            self.finish_fast_bonus = QDoubleSpinBox()
-            self.finish_fast_bonus.setRange(0, 1_000_000)
-            self.finish_fast_bonus.setValue(1800)
-            self.finish_target = QDoubleSpinBox()
-            self.finish_target.setRange(0.001, 100_000)
-            self.finish_target.setValue(22)
-            self.finish_decay = QDoubleSpinBox()
-            self.finish_decay.setRange(0.001, 1000)
-            self.finish_decay.setValue(0.35)
-            self.slip_penalty = QDoubleSpinBox()
-            self.slip_penalty.setRange(-1_000_000, 0)
-            self.slip_penalty.setValue(-30)
-            self.ground_brake_penalty = QDoubleSpinBox()
-            self.ground_brake_penalty.setRange(-1000, 0)
-            self.ground_brake_penalty.setValue(-2)
-            self.speed_carry = QDoubleSpinBox()
-            self.speed_carry.setRange(0, 1000)
-            self.speed_carry.setValue(0)
+            self.reward_profile.setEditable(True)
+            self.reward_profile.addItems(self.reward_profiles.names())
+            self.reward_table = QTableWidget(len(fields(RewardConfig)), 2)
+            self.reward_table.setHorizontalHeaderLabels(["Reward parameter", "Value"])
+            self.reward_table.verticalHeader().setVisible(False)
+            self.reward_table.horizontalHeader().setStretchLastSection(True)
+            self.reward_table.setMinimumHeight(420)
+            self.reward_inputs = {}
+            defaults = RewardConfig()
+            for row, reward_field in enumerate(fields(RewardConfig)):
+                name = reward_field.name
+                self.reward_table.setItem(row, 0, QTableWidgetItem(name))
+                default_value = getattr(defaults, name)
+                if isinstance(default_value, int):
+                    editor = QSpinBox()
+                    editor.setRange(-1_000_000_000, 1_000_000_000)
+                else:
+                    editor = QDoubleSpinBox()
+                    editor.setDecimals(6)
+                    editor.setRange(-1_000_000_000, 1_000_000_000)
+                self.reward_table.setCellWidget(row, 1, editor)
+                self.reward_inputs[name] = editor
             self.curriculum = QComboBox()
             self.curriculum.addItems(["full", "quarters", "quarters-randomised", "timed"])
             self.checkpoint = QSpinBox()
@@ -148,7 +146,7 @@ def main() -> int:
                 "font-family: Consolas, monospace; padding: 8px; "
                 "background: palette(alternate-base); border: 1px solid palette(mid);"
             )
-            fields = [
+            form_fields = [
                 ("Track/profile", self.track),
                 ("Simulator backend", self.backend),
                 ("Model", self.model),
@@ -168,32 +166,25 @@ def main() -> int:
                 ("Batch size", self.batch_size),
                 ("PPO epochs", self.ppo_epochs),
                 ("Reward profile", self.reward_profile),
-                ("Ghost pose reward/s", self.ghost_reward),
-                ("Barrier penalty", self.barrier_penalty),
-                ("Finish bonus", self.finish_bonus),
-                ("Fast finish bonus", self.finish_fast_bonus),
-                ("Finish target (s)", self.finish_target),
-                ("Finish pace decay", self.finish_decay),
-                ("Ground slip penalty", self.slip_penalty),
-                ("Ground braking penalty / s", self.ground_brake_penalty),
-                ("Checkpoint speed carry / m/s", self.speed_carry),
+                ("All reward parameters", self.reward_table),
                 ("Curriculum", self.curriculum),
                 ("Checkpoint interval", self.checkpoint),
                 ("Model location", self.output),
                 ("Training status", self.runtime),
             ]
-            for label, widget in fields:
+            for label, widget in form_fields:
                 form.addRow(label, widget)
             self.log = QPlainTextEdit()
             self.log.setReadOnly(True)
             self.log.document().setMaximumBlockCount(500)
-            start, stop, resume, browse = (
+            start, stop, resume, save_profile, browse = (
                 QPushButton("Start training"),
                 QPushButton("Stop cleanly"),
                 QPushButton("Resume selected"),
+                QPushButton("Save reward profile"),
                 QPushButton("Browse…"),
             )
-            for button in (start, stop, resume, browse):
+            for button in (start, stop, resume, save_profile, browse):
                 buttons.addWidget(button)
             layout = QVBoxLayout(root)
             layout.addLayout(form)
@@ -208,6 +199,7 @@ def main() -> int:
             start.clicked.connect(lambda: self.start(False))
             resume.clicked.connect(lambda: self.start(True))
             stop.clicked.connect(self.stop)
+            save_profile.clicked.connect(self.save_reward_profile)
             browse.clicked.connect(self.browse)
             self.track.currentTextChanged.connect(self.refresh_models)
             self.arch.currentTextChanged.connect(self.refresh_parameters)
@@ -216,23 +208,37 @@ def main() -> int:
             self.reward_profile.currentTextChanged.connect(self.apply_reward_profile)
             self.refresh_models()
             self.refresh_parameters()
-
-        def selected_reward_profile(self):
-            if self.reward_profile.currentText() == "Summer 1 - pace":
-                return summer_1_pace_reward_config()
-            return summer_1_reward_config()
+            self.apply_reward_profile()
 
         def apply_reward_profile(self) -> None:
-            rewards = self.selected_reward_profile()
-            self.ghost_reward.setValue(rewards.imitation_bonus_per_s)
-            self.barrier_penalty.setValue(rewards.barrier_contact_penalty)
-            self.finish_bonus.setValue(rewards.finish_bonus)
-            self.finish_fast_bonus.setValue(rewards.finish_fast_bonus)
-            self.finish_target.setValue(rewards.finish_target_s)
-            self.finish_decay.setValue(rewards.finish_pace_decay_per_s)
-            self.slip_penalty.setValue(rewards.ground_slip_penalty_per_rad_s)
-            self.ground_brake_penalty.setValue(rewards.ground_brake_penalty_per_s)
-            self.speed_carry.setValue(rewards.checkpoint_speed_bonus_per_mps)
+            try:
+                rewards = self.reward_profiles.load(self.reward_profile.currentText())
+            except (FileNotFoundError, ValueError):
+                return
+            for reward_field in fields(RewardConfig):
+                self.reward_inputs[reward_field.name].setValue(getattr(rewards, reward_field.name))
+
+        def reward_config_from_table(self) -> RewardConfig:
+            values = {
+                reward_field.name: self.reward_inputs[reward_field.name].value()
+                for reward_field in fields(RewardConfig)
+            }
+            return RewardConfig(**values)
+
+        def save_reward_profile(self) -> None:
+            name = self.reward_profile.currentText().strip()
+            try:
+                path = self.reward_profiles.save(name, self.reward_config_from_table())
+            except (OSError, ValueError) as exc:
+                QMessageBox.critical(self, "Could not save profile", str(exc))
+                return
+            current = name
+            self.reward_profile.blockSignals(True)
+            self.reward_profile.clear()
+            self.reward_profile.addItems(self.reward_profiles.names())
+            self.reward_profile.setCurrentText(current)
+            self.reward_profile.blockSignals(False)
+            self.log.appendPlainText(f"Saved reward profile: {path}")
 
         def refresh_parameters(self) -> None:
             dims = (self.levels.value() if self.pwm.isChecked() else 3, 2, 2)
@@ -280,18 +286,7 @@ def main() -> int:
                 ppo_epochs=self.ppo_epochs.value(),
                 checkpoint_interval=self.checkpoint.value(),
                 output_root=Path(self.output.text()),
-                rewards=replace(
-                    self.selected_reward_profile(),
-                    imitation_bonus_per_s=self.ghost_reward.value(),
-                    barrier_contact_penalty=self.barrier_penalty.value(),
-                    finish_bonus=self.finish_bonus.value(),
-                    finish_fast_bonus=self.finish_fast_bonus.value(),
-                    finish_target_s=self.finish_target.value(),
-                    finish_pace_decay_per_s=self.finish_decay.value(),
-                    ground_slip_penalty_per_rad_s=self.slip_penalty.value(),
-                    ground_brake_penalty_per_s=self.ground_brake_penalty.value(),
-                    checkpoint_speed_bonus_per_mps=self.speed_carry.value(),
-                ),
+                rewards=self.reward_config_from_table(),
             )
 
         def start(self, resume: bool) -> None:

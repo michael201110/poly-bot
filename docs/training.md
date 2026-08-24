@@ -51,3 +51,10 @@ best time. Promotion is deliberate: `ModelRegistry.promote(candidate, metadata)`
 archive to the track's `best.zip` and updates metadata. A newer checkpoint never replaces best by
 itself, and the trainer never pushes to GitHub. If best archives exceed normal GitHub limits, track
 `models/**/best.zip` with Git LFS.
+
+## Reward profiles
+
+The GUI reward table is generated from `RewardConfig` and exposes every coefficient and threshold.
+Selecting a profile loads all values into the editable table. Type a new name (or select an existing
+custom name), edit values, and choose **Save reward profile**. Custom profiles are stored as readable
+JSON files under `profiles/rewards/` and can be edited, copied, or version-controlled.
