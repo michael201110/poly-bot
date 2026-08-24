@@ -30,6 +30,8 @@ class TrainingManager:
             return [CurriculumConfig("section", i / 4, (i + 1) / 4) for i in range(4)] + [
                 CurriculumConfig()
             ]
+        if self.config.curriculum.mode == "quarters-randomised":
+            return [CurriculumConfig("quarters-randomised")]
         return [self.config.curriculum]
 
     def run(

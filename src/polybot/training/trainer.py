@@ -63,6 +63,7 @@ class TrainingService:
             curriculum_end_ratio=cfg.curriculum.end_ratio,
             curriculum_start_s=cfg.curriculum.start_s,
             curriculum_end_s=cfg.curriculum.end_s,
+            curriculum_random_quarters=cfg.curriculum.mode == "quarters-randomised",
         )
         registry = ModelRegistry(cfg.output_root)
         directory = registry.initialise_track(cfg.track_name)
@@ -118,6 +119,7 @@ class TrainingService:
                             "finishes": self.finishes,
                             "crashes": self.crashes,
                             "best_lap_s": self.best_lap_s,
+                            "quarter": info.get("curriculum_quarter"),
                         }
                     )
                     self.last_ui_update = now
@@ -155,6 +157,7 @@ class TrainingService:
                             "finishes": self.finishes,
                             "crashes": self.crashes,
                             "best_lap_s": self.best_lap_s,
+                            "quarter": info.get("curriculum_quarter"),
                         }
                     )
                     self.episode += 1

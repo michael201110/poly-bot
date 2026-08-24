@@ -15,6 +15,7 @@ from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
 from polybot.training.config import TrainingConfig, architecture, estimate_ppo_parameters
 from polybot.training.devices import resolve_device
+from polybot.training.manager import TrainingManager
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry, track_slug
 
 
@@ -103,8 +104,10 @@ def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:
     assert pace.elapsed_cost_per_s < balanced.elapsed_cost_per_s
     assert pace.checkpoint_fast_bonus > balanced.checkpoint_fast_bonus
     assert pace.checkpoint_target_s < balanced.checkpoint_target_s
+    assert pace.checkpoint_target_s == 8.0
     assert pace.checkpoint_speed_bonus_per_mps > 0
-    assert pace.imitation_bonus_per_s < balanced.imitation_bonus_per_s
+    assert pace.imitation_bonus_per_s == 20.0
+    assert pace.checkpoint_speed_bonus_per_mps == 10.0
     assert pace.crash_penalty == balanced.crash_penalty
     assert pace.off_track_penalty == balanced.off_track_penalty
 
@@ -117,3 +120,32 @@ def test_xl_training_schedule_reduces_optimizer_batches() -> None:
     assert config.rollout_steps // config.batch_size * config.ppo_epochs == 40
     with pytest.raises(ValueError, match="divide"):
         TrainingConfig(rollout_steps=2048, batch_size=300)
+
+
+def test_randomised_quarters_choose_seeded_episode_sections() -> None:
+    transport = MockSimulatorTransport()
+    env = PolyTrackEnv(
+        transport,
+        track_id="mock/gentle-s",
+        curriculum_random_quarters=True,
+    )
+    _, first = env.reset(seed=123)
+    _, repeated = env.reset(seed=123)
+    assert first["curriculum_quarter"] == repeated["curriculum_quarter"]
+    assert first["curriculum_quarter"] in {1, 2, 3, 4}
+    assert first["curriculum_end_ratio"] - first["curriculum_start_ratio"] == 0.25
+    env.close()
+
+
+def test_randomised_quarters_are_one_mixed_manager_phase() -> None:
+    config = TrainingConfig()
+    config.curriculum.mode = "quarters-randomised"
+    assert [phase.mode for phase in TrainingManager(config).phases()] == ["quarters-randomised"]
+
+
+def test_summer_profiles_penalise_ground_braking() -> None:
+    assert summer_1_reward_config().ground_brake_penalty_per_s < 0
+    assert (
+        summer_1_pace_reward_config().ground_brake_penalty_per_s
+        < summer_1_reward_config().ground_brake_penalty_per_s
+    )

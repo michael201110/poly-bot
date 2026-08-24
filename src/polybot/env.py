@@ -36,6 +36,7 @@ class RewardConfig:
     on_track_speed_per_m: float = 0.0
     airborne_speed_per_m: float = 0.0
     airborne_brake_bonus_per_s: float = 0.0
+    ground_brake_penalty_per_s: float = 0.0
     takeoff_target_speed_mps: float = 45.0
     takeoff_speed_reward_per_mps: float = 0.0
     takeoff_speed_reward_limit: float = 0.0
@@ -96,6 +97,7 @@ def summer_1_reward_config() -> RewardConfig:
         on_track_speed_per_m=0.35,
         airborne_speed_per_m=0.10,
         airborne_brake_bonus_per_s=0.10,
+        ground_brake_penalty_per_s=-2.0,
         takeoff_target_speed_mps=35.0,
         takeoff_speed_reward_per_mps=0.25,
         takeoff_speed_reward_limit=5.0,
@@ -135,12 +137,13 @@ def summer_1_pace_reward_config() -> RewardConfig:
         takeoff_target_speed_mps=40.0,
         takeoff_speed_reward_per_mps=0.40,
         takeoff_speed_reward_limit=8.0,
-        imitation_bonus_per_s=4.0,
+        imitation_bonus_per_s=20.0,
+        ground_brake_penalty_per_s=-4.0,
         unsafe_speed_penalty_per_m=-0.40,
         checkpoint_bonus=75.0,
         checkpoint_fast_bonus=250.0,
         checkpoint_target_s=8.0,
-        checkpoint_speed_bonus_per_mps=4.0,
+        checkpoint_speed_bonus_per_mps=10.0,
         checkpoint_speed_bonus_limit_mps=45.0,
         finish_bonus=1000.0,
         finish_fast_bonus=2200.0,
@@ -280,6 +283,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         curriculum_end_ratio: float | None = None,
         curriculum_start_s: float | None = None,
         curriculum_end_s: float | None = None,
+        curriculum_random_quarters: bool = False,
         pwm_enabled: bool = False,
         pwm_levels: int = 41,
     ) -> None:
@@ -308,6 +312,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("timed curriculum must satisfy 0 <= start < end")
         if curriculum_start_ratio is not None and curriculum_start_s is not None:
             raise ValueError("progress and timed curriculum cannot be combined")
+        if curriculum_random_quarters and (
+            curriculum_start_ratio is not None or curriculum_start_s is not None
+        ):
+            raise ValueError("random quarters cannot be combined with another curriculum")
 
         self.transport = transport
         self.track_id = track_id
@@ -322,6 +330,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.curriculum_end_ratio = curriculum_end_ratio
         self.curriculum_start_s = curriculum_start_s
         self.curriculum_end_s = curriculum_end_s
+        self.curriculum_random_quarters = curriculum_random_quarters
+        self._episode_curriculum_end_ratio: float | None = None
+        self._episode_curriculum_quarter: int | None = None
         if pwm_levels < 3 or pwm_levels % 2 == 0:
             raise ValueError("pwm_levels must be an odd integer >= 3")
         self.pwm_enabled = pwm_enabled
@@ -423,7 +434,14 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             else int(self.np_random.integers(0, np.iinfo(np.int32).max))
         )
         start_progress_ratio = 0.0
-        if self.curriculum_start_ratio is not None:
+        self._episode_curriculum_end_ratio = self.curriculum_end_ratio
+        self._episode_curriculum_quarter = None
+        if self.curriculum_random_quarters:
+            quarter = int(self.np_random.integers(0, 4))
+            start_progress_ratio = quarter / 4.0
+            self._episode_curriculum_end_ratio = (quarter + 1) / 4.0
+            self._episode_curriculum_quarter = quarter + 1
+        elif self.curriculum_start_ratio is not None:
             start_progress_ratio = self.curriculum_start_ratio
         elif (
             self.curriculum_last_fraction > 0.0
@@ -461,6 +479,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._pwm.reset()
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
+        if self._episode_curriculum_quarter is not None:
+            info["curriculum_quarter"] = self._episode_curriculum_quarter
+            info["curriculum_start_ratio"] = start_progress_ratio
+            info["curriculum_end_ratio"] = self._episode_curriculum_end_ratio
         return observation, info
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
@@ -594,9 +616,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         airborne_roll_failure = self._airborne_roll_s >= self.reward_config.airborne_roll_timeout_s
         curriculum_section_complete = bool(
             (
-                self.curriculum_end_ratio is not None
+                self._episode_curriculum_end_ratio is not None
                 and telemetry.route_progress_m
-                >= telemetry.track_length_m * self.curriculum_end_ratio
+                >= telemetry.track_length_m * self._episode_curriculum_end_ratio
             )
             or (
                 self.curriculum_end_s is not None
@@ -730,6 +752,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             if airborne
             else 0.0,
             "airborne_brake": _airborne_brake_reward(telemetry, action, config, dt),
+            "ground_brake": (
+                config.ground_brake_penalty_per_s * dt if action.brake and not airborne else 0.0
+            ),
             "takeoff_speed": takeoff_speed_reward,
             "ghost_imitation": imitation_reward,
             "unsafe_speed": config.unsafe_speed_penalty_per_m
@@ -787,6 +812,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["reward_terms"] = dict(reward_terms)
         if simulator_seed is not None:
             info["simulator_seed"] = simulator_seed
+        if self._episode_curriculum_quarter is not None:
+            info["curriculum_quarter"] = self._episode_curriculum_quarter
         return info
 
     def close(self) -> None:

@@ -128,11 +128,14 @@ def main() -> int:
             self.slip_penalty = QDoubleSpinBox()
             self.slip_penalty.setRange(-1_000_000, 0)
             self.slip_penalty.setValue(-30)
+            self.ground_brake_penalty = QDoubleSpinBox()
+            self.ground_brake_penalty.setRange(-1000, 0)
+            self.ground_brake_penalty.setValue(-2)
             self.speed_carry = QDoubleSpinBox()
             self.speed_carry.setRange(0, 1000)
             self.speed_carry.setValue(0)
             self.curriculum = QComboBox()
-            self.curriculum.addItems(["full", "quarters", "timed"])
+            self.curriculum.addItems(["full", "quarters", "quarters-randomised", "timed"])
             self.checkpoint = QSpinBox()
             self.checkpoint.setRange(0, 100_000_000)
             self.checkpoint.setValue(10_000)
@@ -172,6 +175,7 @@ def main() -> int:
                 ("Finish target (s)", self.finish_target),
                 ("Finish pace decay", self.finish_decay),
                 ("Ground slip penalty", self.slip_penalty),
+                ("Ground braking penalty / s", self.ground_brake_penalty),
                 ("Checkpoint speed carry / m/s", self.speed_carry),
                 ("Curriculum", self.curriculum),
                 ("Checkpoint interval", self.checkpoint),
@@ -227,6 +231,7 @@ def main() -> int:
             self.finish_target.setValue(rewards.finish_target_s)
             self.finish_decay.setValue(rewards.finish_pace_decay_per_s)
             self.slip_penalty.setValue(rewards.ground_slip_penalty_per_rad_s)
+            self.ground_brake_penalty.setValue(rewards.ground_brake_penalty_per_s)
             self.speed_carry.setValue(rewards.checkpoint_speed_bonus_per_mps)
 
         def refresh_parameters(self) -> None:
@@ -284,6 +289,7 @@ def main() -> int:
                     finish_target_s=self.finish_target.value(),
                     finish_pace_decay_per_s=self.finish_decay.value(),
                     ground_slip_penalty_per_rad_s=self.slip_penalty.value(),
+                    ground_brake_penalty_per_s=self.ground_brake_penalty.value(),
                     checkpoint_speed_bonus_per_mps=self.speed_carry.value(),
                 ),
             )
@@ -337,11 +343,14 @@ def main() -> int:
                 )
                 best = event.get("best_lap_s")
                 best_text = f"{best:.3f}s" if best is not None else "--"
+                quarter = event.get("quarter")
+                section_text = f"    Quarter: {quarter}" if quarter else ""
                 self.overview.setText(
                     f"CURRENT EPISODE {event['episode']}\n"
                     f"Reward: {event['episode_reward']:+.1f}    "
                     f"Progress: {event['max_progress']:.1%}    "
-                    f"Time: {elapsed:.2f}s    Speed: {event['speed_kmh']:.1f} km/h\n"
+                    f"Time: {elapsed:.2f}s    Speed: {event['speed_kmh']:.1f} km/h"
+                    f"{section_text}\n"
                     f"Steps: {event['episode_steps']:,}    "
                     f"Finishes: {event['finishes']}    Crashes: {event['crashes']}    "
                     f"Best lap: {best_text}"
@@ -349,8 +358,9 @@ def main() -> int:
             elif event_type == "episode":
                 best = event.get("best_lap_s")
                 best_text = f"{best:.3f}s" if best is not None else "--"
+                quarter = f" Q{event['quarter']}" if event.get("quarter") else ""
                 self.log.appendPlainText(
-                    f"Episode {event['episode']:>4}: {event['result']:<16} "
+                    f"Episode {event['episode']:>4}{quarter}: {event['result']:<16} "
                     f"reward={event['reward']:+9.1f}  progress={event['progress']:>6.1%}  "
                     f"time={event['elapsed_s']:>7.2f}s  steps={event['steps']:>5}  "
                     f"best={best_text}"
