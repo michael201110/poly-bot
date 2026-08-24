@@ -13,7 +13,7 @@ from polybot.env import (
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
-from polybot.training.config import architecture, estimate_ppo_parameters
+from polybot.training.config import TrainingConfig, architecture, estimate_ppo_parameters
 from polybot.training.devices import resolve_device
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry, track_slug
 
@@ -107,3 +107,13 @@ def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:
     assert pace.imitation_bonus_per_s < balanced.imitation_bonus_per_s
     assert pace.crash_penalty == balanced.crash_penalty
     assert pace.off_track_penalty == balanced.off_track_penalty
+
+
+def test_xl_training_schedule_reduces_optimizer_batches() -> None:
+    config = TrainingConfig()
+    assert config.rollout_steps == 2048
+    assert config.batch_size == 256
+    assert config.ppo_epochs == 5
+    assert config.rollout_steps // config.batch_size * config.ppo_epochs == 40
+    with pytest.raises(ValueError, match="divide"):
+        TrainingConfig(rollout_steps=2048, batch_size=300)

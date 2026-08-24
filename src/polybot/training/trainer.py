@@ -189,7 +189,20 @@ class TrainingService:
                         ),
                         architecture=cfg.architecture,
                     )
-                self.model = load_ppo(resume, env=env, device=self.device.resolved)
+                self.model = load_ppo(
+                    resume,
+                    env=env,
+                    device=self.device.resolved,
+                    custom_objects={
+                        "n_steps": cfg.rollout_steps,
+                        "batch_size": cfg.batch_size,
+                        "n_epochs": cfg.ppo_epochs,
+                        "learning_rate": cfg.learning_rate,
+                        "gamma": cfg.gamma,
+                        "gae_lambda": cfg.gae_lambda,
+                        "ent_coef": cfg.entropy_coefficient,
+                    },
+                )
             else:
                 self.model = PPO(
                     "MlpPolicy",
@@ -201,8 +214,9 @@ class TrainingService:
                     gae_lambda=cfg.gae_lambda,
                     ent_coef=cfg.entropy_coefficient,
                     policy_kwargs=policy_kwargs(cfg.architecture),
-                    n_steps=max(2, min(2048, cfg.timesteps)),
-                    batch_size=max(2, min(64, cfg.timesteps)),
+                    n_steps=max(2, min(cfg.rollout_steps, cfg.timesteps)),
+                    batch_size=max(2, min(cfg.batch_size, cfg.timesteps)),
+                    n_epochs=cfg.ppo_epochs,
                     verbose=0,
                 )
                 apply_forward_bias(self.model)
@@ -239,6 +253,9 @@ class TrainingService:
                     "gamma": cfg.gamma,
                     "gae_lambda": cfg.gae_lambda,
                     "entropy_coefficient": cfg.entropy_coefficient,
+                    "rollout_steps": cfg.rollout_steps,
+                    "batch_size": cfg.batch_size,
+                    "ppo_epochs": cfg.ppo_epochs,
                 },
                 polybot_version="0.1.0",
                 git_commit=git_commit(),

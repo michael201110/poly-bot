@@ -32,6 +32,7 @@ def main() -> int:
             QMessageBox,
             QPlainTextEdit,
             QPushButton,
+            QScrollArea,
             QSpinBox,
             QVBoxLayout,
             QWidget,
@@ -95,6 +96,15 @@ def main() -> int:
             self.entropy = QDoubleSpinBox()
             self.entropy.setDecimals(5)
             self.entropy.setRange(-0.1, 0.1)
+            self.rollout_steps = QSpinBox()
+            self.rollout_steps.setRange(2, 1_000_000)
+            self.rollout_steps.setValue(2048)
+            self.batch_size = QSpinBox()
+            self.batch_size.setRange(2, 1_000_000)
+            self.batch_size.setValue(256)
+            self.ppo_epochs = QSpinBox()
+            self.ppo_epochs.setRange(1, 100)
+            self.ppo_epochs.setValue(5)
             self.reward_profile = QComboBox()
             self.reward_profile.addItems(["Summer 1 - balanced", "Summer 1 - pace"])
             self.ghost_reward = QDoubleSpinBox()
@@ -151,6 +161,9 @@ def main() -> int:
                 ("Gamma", self.gamma),
                 ("GAE lambda", self.gae),
                 ("Entropy coefficient", self.entropy),
+                ("Rollout steps", self.rollout_steps),
+                ("Batch size", self.batch_size),
+                ("PPO epochs", self.ppo_epochs),
                 ("Reward profile", self.reward_profile),
                 ("Ghost pose reward/s", self.ghost_reward),
                 ("Barrier penalty", self.barrier_penalty),
@@ -183,8 +196,11 @@ def main() -> int:
             layout.addLayout(buttons)
             layout.addWidget(self.overview)
             layout.addWidget(self.log)
-            self.setCentralWidget(root)
-            self.resize(760, 760)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setWidget(root)
+            self.setCentralWidget(scroll)
+            self.resize(780, 800)
             start.clicked.connect(lambda: self.start(False))
             resume.clicked.connect(lambda: self.start(True))
             stop.clicked.connect(self.stop)
@@ -254,6 +270,9 @@ def main() -> int:
                 gamma=self.gamma.value(),
                 gae_lambda=self.gae.value(),
                 entropy_coefficient=self.entropy.value(),
+                rollout_steps=self.rollout_steps.value(),
+                batch_size=self.batch_size.value(),
+                ppo_epochs=self.ppo_epochs.value(),
                 checkpoint_interval=self.checkpoint.value(),
                 output_root=Path(self.output.text()),
                 rewards=replace(

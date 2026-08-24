@@ -146,8 +146,14 @@ def git_commit(cwd: Path | None = None) -> str:
         return "unknown"
 
 
-def load_ppo(path: str | Path, *, env: Any = None, device: str = "auto") -> Any:
+def load_ppo(
+    path: str | Path,
+    *,
+    env: Any = None,
+    device: str = "auto",
+    custom_objects: dict[str, Any] | None = None,
+) -> Any:
     """Load portably; SB3 remaps tensors to the explicitly selected device."""
     from stable_baselines3 import PPO
 
-    return PPO.load(str(path), env=env, device=device)
+    return PPO.load(str(path), env=env, device=device, custom_objects=custom_objects or {})

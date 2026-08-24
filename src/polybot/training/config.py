@@ -65,6 +65,9 @@ class TrainingConfig:
     gamma: float = 0.999
     gae_lambda: float = 0.98
     entropy_coefficient: float = 0.0
+    rollout_steps: int = 2048
+    batch_size: int = 256
+    ppo_epochs: int = 5
     checkpoint_interval: int = 10_000
     output_root: Path = Path("models")
     seed: int = 0
@@ -83,6 +86,14 @@ class TrainingConfig:
             raise ValueError("pwm_levels must be an odd integer >= 3")
         if self.frame_skip < 1 or self.timesteps < 1:
             raise ValueError("frame_skip and timesteps must be positive")
+        if self.rollout_steps < 2:
+            raise ValueError("rollout_steps must be at least 2")
+        if not 2 <= self.batch_size <= self.rollout_steps:
+            raise ValueError("batch_size must be between 2 and rollout_steps")
+        if self.rollout_steps % self.batch_size:
+            raise ValueError("batch_size must divide rollout_steps evenly")
+        if self.ppo_epochs < 1:
+            raise ValueError("ppo_epochs must be positive")
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
