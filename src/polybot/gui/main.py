@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import sys
 import threading
 from dataclasses import fields
@@ -26,8 +27,13 @@ def preferred_model(models: list[Path], current: str = "") -> Path | None:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--track-name")
+    parser.add_argument("--model")
+    parser.add_argument("--resume", action="store_true")
+    launch, qt_arguments = parser.parse_known_args(sys.argv[1:])
     try:
-        from PySide6.QtCore import QObject, Signal
+        from PySide6.QtCore import QObject, QTimer, Signal
         from PySide6.QtWidgets import (
             QApplication,
             QCheckBox,
@@ -69,7 +75,9 @@ def main() -> int:
             root, form, buttons = QWidget(), QFormLayout(), QHBoxLayout()
             self.track = QComboBox()
             self.track.setEditable(True)
-            self.track.addItems(["Summer 1"])
+            self.track.addItems(["Summer 1", "Winter 4"])
+            if launch.track_name:
+                self.track.setCurrentText(launch.track_name)
             self.backend = QComboBox()
             self.backend.addItems(["websocket", "mock"])
             self.model = QComboBox()
@@ -218,6 +226,8 @@ def main() -> int:
             self.levels.valueChanged.connect(self.refresh_parameters)
             self.reward_profile.currentTextChanged.connect(self.apply_reward_profile)
             self.refresh_models()
+            if launch.model:
+                self.model.setCurrentText(launch.model)
             self.refresh_parameters()
             self.apply_reward_profile()
 
@@ -402,7 +412,9 @@ def main() -> int:
                 self.runtime.setText("Idle")
                 self.refresh_models()
 
-    app = QApplication(sys.argv)
+    app = QApplication([sys.argv[0], *qt_arguments])
     window = Window()
     window.show()
+    if launch.resume:
+        QTimer.singleShot(0, window.resume_selected)
     return app.exec()
