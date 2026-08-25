@@ -92,8 +92,8 @@ def summer_1_reward_config() -> RewardConfig:
     """Balanced dense-to-sparse curriculum for a fresh Summer 1 policy."""
 
     return RewardConfig(
-        progress_per_m=2.0,
-        elapsed_cost_per_s=-0.20,
+        progress_per_m=2.5,
+        elapsed_cost_per_s=-0.25,
         on_track_speed_per_m=0.50,
         airborne_speed_per_m=0.20,
         airborne_brake_bonus_per_s=0.10,
@@ -103,7 +103,10 @@ def summer_1_reward_config() -> RewardConfig:
         takeoff_speed_reward_limit=6.0,
         imitation_bonus_per_s=15.0,
         unsafe_speed_penalty_per_m=-0.50,
-        barrier_contact_penalty=-150.0,
+        barrier_contact_penalty=-500.0,
+        # Explore through ordinary wall brushes instead of treating every
+        # non-zero native impulse as an immediate episode-ending collision.
+        barrier_collision_impulse_threshold=1_000_000_000.0,
         off_track_landing_penalty=-100.0,
         airborne_spin_penalty_per_rad=-2.0,
         airborne_tilt_penalty_per_s=-2.0,
@@ -115,15 +118,15 @@ def summer_1_reward_config() -> RewardConfig:
         checkpoint_target_s=12.0,
         checkpoint_speed_bonus_per_mps=1.0,
         checkpoint_speed_bonus_limit_mps=45.0,
-        finish_bonus=1200.0,
-        finish_fast_bonus=1800.0,
+        finish_bonus=2500.0,
+        finish_fast_bonus=2500.0,
         finish_target_s=22.0,
         finish_pace_decay_per_s=0.35,
-        curriculum_section_bonus=250.0,
-        crash_penalty=-300.0,
-        stall_penalty=-200.0,
-        off_track_penalty=-250.0,
-        early_off_track_penalty=-350.0,
+        curriculum_section_bonus=300.0,
+        crash_penalty=-600.0,
+        stall_penalty=-500.0,
+        off_track_penalty=-450.0,
+        early_off_track_penalty=-600.0,
         action_change_penalty=-0.005,
     )
 
