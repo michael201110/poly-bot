@@ -47,6 +47,7 @@ class RewardConfig:
     barrier_contact_penalty: float = -50.0
     barrier_early_penalty: float = 0.0
     barrier_collision_impulse_threshold: float = 0.0
+    failure_progress_clawback_per_m: float = 0.0
     off_track_landing_penalty: float = 0.0
     airborne_spin_penalty_per_rad: float = 0.0
     airborne_spin_deadzone_radps: float = 0.0349066  # 2 degrees per second
@@ -107,11 +108,12 @@ def summer_1_reward_config() -> RewardConfig:
         barrier_contact_penalty=-750.0,
         barrier_early_penalty=-2500.0,
         barrier_collision_impulse_threshold=0.0,
+        failure_progress_clawback_per_m=-3.0,
         off_track_landing_penalty=-100.0,
         airborne_spin_penalty_per_rad=-2.0,
         airborne_tilt_penalty_per_s=-2.0,
         airborne_roll_penalty_per_s=-2.0,
-        airborne_roll_failure_penalty=-150.0,
+        airborne_roll_failure_penalty=-750.0,
         ground_slip_penalty_per_rad_s=-20.0,
         checkpoint_bonus=100.0,
         checkpoint_fast_bonus=75.0,
@@ -208,6 +210,12 @@ def _barrier_contact_reward(telemetry: Telemetry, config: RewardConfig) -> float
     return config.barrier_contact_penalty + config.barrier_early_penalty * (
         1.0 - progress_ratio
     )
+
+
+def _failure_progress_clawback(telemetry: Telemetry, config: RewardConfig) -> float:
+    """Cancel dense progress profit when an episode deliberately terminates incomplete."""
+
+    return config.failure_progress_clawback_per_m * max(0.0, telemetry.route_progress_m)
 
 
 def _ghost_pose_reward(simulator_info: Mapping[str, Any], config: RewardConfig, dt: float) -> float:
@@ -768,6 +776,13 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 )
             )
         imitation_reward = _ghost_pose_reward(transition.simulator_info, config, dt)
+        incomplete_failure = bool(
+            barrier_contact
+            or airborne_roll_failure
+            or stalled
+            or off_track
+            or "crash" in events
+        )
         terms = {
             "progress": config.progress_per_m * progress_delta,
             "elapsed": config.elapsed_cost_per_s * dt,
@@ -789,6 +804,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "ground_slip": _ground_slip_penalty(telemetry, config, dt),
             "barrier_contact": (
                 _barrier_contact_reward(telemetry, config) if barrier_contact else 0.0
+            ),
+            "failure_progress_clawback": (
+                _failure_progress_clawback(telemetry, config) if incomplete_failure else 0.0
             ),
             "off_track_landing": (config.off_track_landing_penalty if off_track_landing else 0.0),
             "airborne_roll_failure": (

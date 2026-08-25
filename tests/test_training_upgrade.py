@@ -96,6 +96,8 @@ def test_summer_1_reward_profile_is_dense_and_balanced() -> None:
     assert rewards.barrier_contact_penalty == -750.0
     assert rewards.barrier_early_penalty == -2500.0
     assert rewards.barrier_collision_impulse_threshold == 0.0
+    assert rewards.failure_progress_clawback_per_m == -3.0
+    assert rewards.airborne_roll_failure_penalty == -750.0
     assert rewards.finish_bonus + rewards.finish_fast_bonus == 3000.0
     assert rewards.curriculum_section_bonus == 250.0
     assert (
