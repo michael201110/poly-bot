@@ -254,25 +254,25 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--learning-rate",
         type=float,
-        default=3e-4,
+        default=1e-4,
         help="PPO learning rate; use a smaller value for late-stage fine-tuning",
     )
     parser.add_argument(
         "--gamma",
         type=float,
-        default=0.99,
+        default=0.9995,
         help="PPO reward discount; values near 1 carry lap-time rewards farther back",
     )
     parser.add_argument(
         "--gae-lambda",
         type=float,
-        default=0.95,
+        default=0.995,
         help="PPO generalized-advantage smoothing factor",
     )
     parser.add_argument(
         "--entropy-coef",
         type=float,
-        default=0.0,
+        default=0.001,
         help=(
             "PPO entropy coefficient: positive explores more, while a small negative "
             "value favors a more decisive policy"

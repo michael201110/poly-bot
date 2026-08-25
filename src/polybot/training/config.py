@@ -62,10 +62,10 @@ class TrainingConfig:
     max_episode_seconds: float = 60.0
     timesteps: int = 100_000
     max_episodes: int | None = None
-    learning_rate: float = 5e-4
-    gamma: float = 0.999
-    gae_lambda: float = 0.98
-    entropy_coefficient: float = 0.0
+    learning_rate: float = 1e-4
+    gamma: float = 0.9995
+    gae_lambda: float = 0.995
+    entropy_coefficient: float = 0.001
     rollout_steps: int = 8192
     batch_size: int = 1024
     ppo_epochs: int = 3
