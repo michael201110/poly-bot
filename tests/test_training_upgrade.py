@@ -10,7 +10,7 @@ from polybot.env import (
     summer_1_pace_reward_config,
     summer_1_reward_config,
 )
-from polybot.gui.main import preferred_model, timed_curriculum_bounds
+from polybot.gui.main import preferred_model, reward_breakdown, timed_curriculum_bounds
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
@@ -93,11 +93,12 @@ def test_summer_1_reward_profile_is_dense_and_balanced() -> None:
     assert rewards.imitation_bonus_per_s == 15.0
     assert rewards.checkpoint_speed_bonus_per_mps == 1.0
     assert rewards.checkpoint_speed_bonus_limit_mps == 45.0
-    assert rewards.barrier_contact_penalty == -750.0
-    assert rewards.barrier_early_penalty == -2500.0
+    assert rewards.barrier_contact_penalty == -1000.0
+    assert rewards.barrier_early_penalty == 0.0
     assert rewards.barrier_collision_impulse_threshold == 0.0
-    assert rewards.failure_progress_clawback_per_m == -3.0
-    assert rewards.airborne_roll_failure_penalty == -750.0
+    assert rewards.failure_progress_clawback_per_m == 0.0
+    assert rewards.failure_early_penalty == -2500.0
+    assert rewards.airborne_roll_failure_penalty == -1000.0
     assert rewards.finish_bonus + rewards.finish_fast_bonus == 3000.0
     assert rewards.curriculum_section_bonus == 250.0
     assert (
@@ -133,6 +134,25 @@ def test_gui_validates_timed_curriculum_bounds() -> None:
     assert timed_curriculum_bounds("timed", 5.0, 12.5) == (5.0, 12.5)
     with pytest.raises(ValueError, match="start < end"):
         timed_curriculum_bounds("timed", 12.5, 5.0)
+
+
+def test_gui_groups_episode_reward_terms() -> None:
+    text = reward_breakdown(
+        {
+            "progress": 1200.0,
+            "ghost_imitation": 50.0,
+            "checkpoint": 100.0,
+            "elapsed": -5.0,
+            "ground_slip": -20.0,
+            "barrier_contact": -1000.0,
+            "failure_early": -500.0,
+        }
+    )
+
+    assert "drive=+1200.0" in text
+    assert "ghost=+50.0" in text
+    assert "milestone=+100.0" in text
+    assert "terminal=-1500.0" in text
 
 
 def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:

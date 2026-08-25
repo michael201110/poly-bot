@@ -15,6 +15,7 @@ from polybot.env import (
     _airborne_tilt_penalty,
     _barrier_contact_reward,
     _checkpoint_reward,
+    _failure_early_reward,
     _failure_progress_clawback,
     _finish_reward,
     _ghost_pose_reward,
@@ -500,6 +501,29 @@ def test_incomplete_failure_claws_back_accumulated_progress() -> None:
         config = replace(env.reward_config, failure_progress_clawback_per_m=-3.0)
 
         assert _failure_progress_clawback(telemetry, config) == pytest.approx(-2133.0)
+    finally:
+        env.close()
+
+
+def test_incomplete_failure_penalty_relaxes_with_progress() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        config = replace(env.reward_config, failure_early_penalty=-2500.0)
+        early = replace(env.latest_telemetry, route_progress_m=0.0)
+        middle = replace(
+            env.latest_telemetry,
+            route_progress_m=env.latest_telemetry.track_length_m * 0.541,
+        )
+        late = replace(
+            env.latest_telemetry,
+            route_progress_m=env.latest_telemetry.track_length_m * 0.8,
+        )
+
+        assert _failure_early_reward(early, config) == pytest.approx(-2500.0)
+        assert _failure_early_reward(middle, config) == pytest.approx(-1147.5)
+        assert _failure_early_reward(late, config) == pytest.approx(-500.0)
     finally:
         env.close()
 

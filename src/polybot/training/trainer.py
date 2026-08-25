@@ -104,6 +104,7 @@ class TrainingService:
                 self.last_ui_update = 0.0
                 self.episode = 1
                 self.episode_reward = 0.0
+                self.episode_reward_terms: dict[str, float] = {}
                 self.episode_steps = 0
                 self.max_progress = 0.0
                 self.finishes = 0
@@ -122,6 +123,9 @@ class TrainingService:
                 dones = self.locals.get("dones")
                 done = bool(dones[-1]) if dones is not None and len(dones) else False
                 self.episode_reward += reward
+                for name, value in info.get("reward_terms", {}).items():
+                    previous = self.episode_reward_terms.get(name, 0.0)
+                    self.episode_reward_terms[name] = previous + float(value)
                 self.episode_steps += 1
                 track_length = max(1.0, float(info.get("track_length_m", 1.0)))
                 progress = float(info.get("route_progress_m", 0.0)) / track_length
@@ -178,6 +182,7 @@ class TrainingService:
                             "type": "episode",
                             "episode": self.episode,
                             "reward": self.episode_reward,
+                            "reward_terms": dict(self.episode_reward_terms),
                             "steps": self.episode_steps,
                             "progress": self.max_progress,
                             "elapsed_s": elapsed_s,
@@ -190,6 +195,7 @@ class TrainingService:
                     )
                     self.episode += 1
                     self.episode_reward = 0.0
+                    self.episode_reward_terms = {}
                     self.episode_steps = 0
                     self.max_progress = 0.0
                 if cfg.checkpoint_interval and self.num_timesteps % cfg.checkpoint_interval == 0:

@@ -36,6 +36,38 @@ def timed_curriculum_bounds(mode: str, start_s: float, end_s: float) -> tuple[fl
     return start_s, end_s
 
 
+def reward_breakdown(terms: dict[str, float]) -> str:
+    """Group detailed reward terms into a compact episode summary."""
+
+    groups = {
+        "drive": {"progress", "on_track_speed", "airborne_speed", "takeoff_speed"},
+        "ghost": {"ghost_imitation"},
+        "milestone": {"checkpoint", "finish", "curriculum_section"},
+        "control": {"elapsed", "action_change", "ground_brake", "airborne_brake"},
+        "handling": {
+            "unsafe_speed",
+            "airborne_spin",
+            "airborne_tilt",
+            "ground_slip",
+            "off_track_landing",
+        },
+        "terminal": {
+            "barrier_contact",
+            "failure_progress_clawback",
+            "failure_early",
+            "airborne_roll_failure",
+            "crash",
+            "stall",
+            "off_track",
+        },
+    }
+    totals = {
+        label: sum(float(terms.get(name, 0.0)) for name in names)
+        for label, names in groups.items()
+    }
+    return "  ".join(f"{label}={value:+.1f}" for label, value in totals.items())
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--track-name")
@@ -457,6 +489,9 @@ def main() -> int:
                     f"time={event['elapsed_s']:>7.2f}s  steps={event['steps']:>5}  "
                     f"best={best_text}"
                 )
+                terms = event.get("reward_terms")
+                if terms:
+                    self.log.appendPlainText(f"             {reward_breakdown(terms)}")
             elif event_type == "checkpoint":
                 self.log.appendPlainText(f"Checkpoint saved at timestep {event['timesteps']:,}")
             elif event_type == "error":
