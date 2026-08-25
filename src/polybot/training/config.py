@@ -65,9 +65,9 @@ class TrainingConfig:
     gamma: float = 0.999
     gae_lambda: float = 0.98
     entropy_coefficient: float = 0.0
-    rollout_steps: int = 2048
-    batch_size: int = 256
-    ppo_epochs: int = 5
+    rollout_steps: int = 8192
+    batch_size: int = 1024
+    ppo_epochs: int = 3
     checkpoint_interval: int = 10_000
     output_root: Path = Path("models")
     seed: int = 0

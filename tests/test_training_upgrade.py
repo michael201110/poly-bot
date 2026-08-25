@@ -149,12 +149,12 @@ def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:
 
 def test_xl_training_schedule_reduces_optimizer_batches() -> None:
     config = TrainingConfig()
-    assert config.rollout_steps == 2048
-    assert config.batch_size == 256
-    assert config.ppo_epochs == 5
-    assert config.rollout_steps // config.batch_size * config.ppo_epochs == 40
+    assert config.rollout_steps == 8192
+    assert config.batch_size == 1024
+    assert config.ppo_epochs == 3
+    assert config.rollout_steps // config.batch_size * config.ppo_epochs == 24
     with pytest.raises(ValueError, match="divide"):
-        TrainingConfig(rollout_steps=2048, batch_size=300)
+        TrainingConfig(rollout_steps=8192, batch_size=300)
 
 
 def test_step_rate_uses_recent_deltas_not_resumed_model_total() -> None:
