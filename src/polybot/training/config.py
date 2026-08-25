@@ -59,6 +59,7 @@ class TrainingConfig:
     pwm_enabled: bool = True
     pwm_levels: int = 41
     frame_skip: int = 30
+    max_episode_seconds: float = 60.0
     timesteps: int = 100_000
     max_episodes: int | None = None
     learning_rate: float = 5e-4
@@ -86,6 +87,8 @@ class TrainingConfig:
             raise ValueError("pwm_levels must be an odd integer >= 3")
         if self.frame_skip < 1 or self.timesteps < 1:
             raise ValueError("frame_skip and timesteps must be positive")
+        if self.max_episode_seconds <= 0:
+            raise ValueError("max_episode_seconds must be positive")
         if self.rollout_steps < 2:
             raise ValueError("rollout_steps must be at least 2")
         if not 2 <= self.batch_size <= self.rollout_steps:

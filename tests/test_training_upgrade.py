@@ -149,6 +149,7 @@ def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:
 
 def test_xl_training_schedule_reduces_optimizer_batches() -> None:
     config = TrainingConfig()
+    assert config.max_episode_seconds == 60.0
     assert config.rollout_steps == 8192
     assert config.batch_size == 1024
     assert config.ppo_epochs == 3

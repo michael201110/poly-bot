@@ -109,6 +109,10 @@ def main() -> int:
             self.frame_skip = QSpinBox()
             self.frame_skip.setRange(1, 1000)
             self.frame_skip.setValue(30)
+            self.max_episode_seconds = QDoubleSpinBox()
+            self.max_episode_seconds.setRange(1.0, 3600.0)
+            self.max_episode_seconds.setValue(60.0)
+            self.max_episode_seconds.setSuffix(" s")
             self.timesteps = QSpinBox()
             self.timesteps.setRange(1, 2_000_000_000)
             self.timesteps.setValue(100_000)
@@ -196,6 +200,7 @@ def main() -> int:
                 ("PWM steering", self.pwm),
                 ("PWM levels", self.levels),
                 ("Frame skip", self.frame_skip),
+                ("Maximum episode time", self.max_episode_seconds),
                 ("Timesteps", self.timesteps),
                 ("Episodes (0=unlimited)", self.episodes),
                 ("Learning rate", self.lr),
@@ -335,6 +340,7 @@ def main() -> int:
                 pwm_enabled=self.pwm.isChecked(),
                 pwm_levels=self.levels.value(),
                 frame_skip=self.frame_skip.value(),
+                max_episode_seconds=self.max_episode_seconds.value(),
                 timesteps=self.timesteps.value(),
                 max_episodes=self.episodes.value() or None,
                 learning_rate=self.lr.value(),

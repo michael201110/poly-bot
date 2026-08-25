@@ -444,6 +444,25 @@ def test_native_chassis_collision_terminates_episode() -> None:
         env.close()
 
 
+def test_simulated_time_limit_is_independent_of_decision_limit() -> None:
+    env = make_env(
+        track_id="mock/straight",
+        frame_skip=4,
+        max_episode_steps=1_000_000,
+        max_episode_s=0.05,
+    )
+    try:
+        env.reset(seed=0)
+        _, _, terminated, truncated, info = env.step(
+            np.asarray([1, 1, 0], dtype=np.int64)
+        )
+        assert not terminated
+        assert truncated
+        assert info["wrapper_time_limit"] is True
+    finally:
+        env.close()
+
+
 def test_barrier_contact_penalty_is_stronger_earlier_in_the_run() -> None:
     env = make_env(track_id="mock/straight")
     try:

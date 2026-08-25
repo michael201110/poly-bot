@@ -291,6 +291,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         lookahead_count: int = 12,
         frame_skip: int = 4,
         max_episode_steps: int = 2_000,
+        max_episode_s: float | None = None,
         reward_config: RewardConfig | None = None,
         request_timeout_s: float = 10.0,
         curriculum_last_fraction: float = 0.0,
@@ -310,6 +311,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("frame_skip must be positive")
         if max_episode_steps < 1:
             raise ValueError("max_episode_steps must be positive")
+        if max_episode_s is not None and max_episode_s <= 0:
+            raise ValueError("max_episode_s must be positive when provided")
         if not track_id:
             raise ValueError("track_id cannot be empty")
         if not 0.0 <= curriculum_last_fraction <= 1.0:
@@ -338,6 +341,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.lookahead_count = lookahead_count
         self.frame_skip = frame_skip
         self.max_episode_steps = max_episode_steps
+        self.max_episode_s = max_episode_s
         self.reward_config = reward_config or RewardConfig()
         self.request_timeout_s = request_timeout_s
         self.curriculum_last_fraction = curriculum_last_fraction
@@ -668,7 +672,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             or airborne_roll_failure
             or curriculum_section_complete
         )
-        truncated = "time_limit" in events or self._episode_steps >= self.max_episode_steps
+        truncated = (
+            "time_limit" in events
+            or self._episode_steps >= self.max_episode_steps
+            or (self.max_episode_s is not None and telemetry.elapsed_s >= self.max_episode_s)
+        )
         self._episode_done = terminated or truncated
         self._previous_progress_m = transition.telemetry.route_progress_m
         self._previous_action = decoded_action

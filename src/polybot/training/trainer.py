@@ -79,6 +79,8 @@ class TrainingService:
             track_id=cfg.track_id,
             lookahead_count=cfg.lookahead_count,
             frame_skip=cfg.frame_skip,
+            max_episode_steps=2_000_000_000,
+            max_episode_s=cfg.max_episode_seconds,
             reward_config=cfg.rewards,
             pwm_enabled=cfg.pwm_enabled,
             pwm_levels=cfg.pwm_levels,
@@ -156,7 +158,7 @@ class TrainingService:
                     self.crashes += int(crashed)
                     if finished:
                         self.best_lap_s = min(self.best_lap_s or elapsed_s, elapsed_s)
-                    result = next(
+                    result = "time_limit" if info.get("wrapper_time_limit") else next(
                         (
                             name
                             for name in (
