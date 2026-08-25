@@ -13,6 +13,7 @@ from polybot.env import (
     _airborne_brake_reward,
     _airborne_spin_penalty,
     _airborne_tilt_penalty,
+    _barrier_contact_reward,
     _checkpoint_reward,
     _finish_reward,
     _ghost_pose_reward,
@@ -439,6 +440,33 @@ def test_native_chassis_collision_terminates_episode() -> None:
         assert not truncated
         assert "barrier_contact" in info["events"]
         assert info["reward_terms"]["barrier_contact"] == -50.0
+    finally:
+        env.close()
+
+
+def test_barrier_contact_penalty_is_stronger_earlier_in_the_run() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        config = replace(
+            env.reward_config,
+            barrier_contact_penalty=-750.0,
+            barrier_early_penalty=-2500.0,
+        )
+        early = replace(env.latest_telemetry, route_progress_m=0.0)
+        middle = replace(
+            env.latest_telemetry,
+            route_progress_m=env.latest_telemetry.track_length_m * 0.541,
+        )
+        late = replace(
+            env.latest_telemetry,
+            route_progress_m=env.latest_telemetry.track_length_m * 0.8,
+        )
+
+        assert _barrier_contact_reward(early, config) == pytest.approx(-3250.0)
+        assert _barrier_contact_reward(middle, config) == pytest.approx(-1897.5)
+        assert _barrier_contact_reward(late, config) == pytest.approx(-1250.0)
     finally:
         env.close()
 

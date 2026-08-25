@@ -45,6 +45,7 @@ class RewardConfig:
     imitation_rotation_scale_rad: float = 0.349066  # 20 degrees
     unsafe_speed_penalty_per_m: float = 0.0
     barrier_contact_penalty: float = -50.0
+    barrier_early_penalty: float = 0.0
     barrier_collision_impulse_threshold: float = 0.0
     off_track_landing_penalty: float = 0.0
     airborne_spin_penalty_per_rad: float = 0.0
@@ -92,8 +93,8 @@ def summer_1_reward_config() -> RewardConfig:
     """Balanced dense-to-sparse curriculum for a fresh Summer 1 policy."""
 
     return RewardConfig(
-        progress_per_m=2.5,
-        elapsed_cost_per_s=-0.25,
+        progress_per_m=2.0,
+        elapsed_cost_per_s=-0.20,
         on_track_speed_per_m=0.50,
         airborne_speed_per_m=0.20,
         airborne_brake_bonus_per_s=0.10,
@@ -103,10 +104,9 @@ def summer_1_reward_config() -> RewardConfig:
         takeoff_speed_reward_limit=6.0,
         imitation_bonus_per_s=15.0,
         unsafe_speed_penalty_per_m=-0.50,
-        barrier_contact_penalty=-500.0,
-        # Explore through ordinary wall brushes instead of treating every
-        # non-zero native impulse as an immediate episode-ending collision.
-        barrier_collision_impulse_threshold=1_000_000_000.0,
+        barrier_contact_penalty=-750.0,
+        barrier_early_penalty=-2500.0,
+        barrier_collision_impulse_threshold=0.0,
         off_track_landing_penalty=-100.0,
         airborne_spin_penalty_per_rad=-2.0,
         airborne_tilt_penalty_per_s=-2.0,
@@ -118,15 +118,15 @@ def summer_1_reward_config() -> RewardConfig:
         checkpoint_target_s=12.0,
         checkpoint_speed_bonus_per_mps=1.0,
         checkpoint_speed_bonus_limit_mps=45.0,
-        finish_bonus=2500.0,
-        finish_fast_bonus=2500.0,
+        finish_bonus=1200.0,
+        finish_fast_bonus=1800.0,
         finish_target_s=22.0,
         finish_pace_decay_per_s=0.35,
-        curriculum_section_bonus=300.0,
-        crash_penalty=-600.0,
-        stall_penalty=-500.0,
-        off_track_penalty=-450.0,
-        early_off_track_penalty=-600.0,
+        curriculum_section_bonus=250.0,
+        crash_penalty=-300.0,
+        stall_penalty=-200.0,
+        off_track_penalty=-250.0,
+        early_off_track_penalty=-350.0,
         action_change_penalty=-0.005,
     )
 
@@ -197,6 +197,17 @@ def _finish_reward(telemetry: Telemetry, config: RewardConfig) -> float:
     seconds_over_target = max(0.0, telemetry.elapsed_s - config.finish_target_s)
     pace_factor = float(np.exp(-config.finish_pace_decay_per_s * seconds_over_target))
     return config.finish_bonus + config.finish_fast_bonus * pace_factor
+
+
+def _barrier_contact_reward(telemetry: Telemetry, config: RewardConfig) -> float:
+    """Penalize early termination more heavily than a late-run collision."""
+
+    progress_ratio = float(
+        np.clip(telemetry.route_progress_m / telemetry.track_length_m, 0.0, 1.0)
+    )
+    return config.barrier_contact_penalty + config.barrier_early_penalty * (
+        1.0 - progress_ratio
+    )
 
 
 def _ghost_pose_reward(simulator_info: Mapping[str, Any], config: RewardConfig, dt: float) -> float:
@@ -768,7 +779,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "airborne_spin": _airborne_spin_penalty(telemetry, config, dt),
             "airborne_tilt": _airborne_tilt_penalty(telemetry, config, dt),
             "ground_slip": _ground_slip_penalty(telemetry, config, dt),
-            "barrier_contact": (config.barrier_contact_penalty if barrier_contact else 0.0),
+            "barrier_contact": (
+                _barrier_contact_reward(telemetry, config) if barrier_contact else 0.0
+            ),
             "off_track_landing": (config.off_track_landing_penalty if off_track_landing else 0.0),
             "airborne_roll_failure": (
                 config.airborne_roll_failure_penalty if airborne_roll_failure else 0.0

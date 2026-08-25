@@ -40,6 +40,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--track-name")
     parser.add_argument("--model")
+    parser.add_argument("--frame-skip", type=int)
+    parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--entropy-coefficient", type=float)
     parser.add_argument("--resume", action="store_true")
     launch, qt_arguments = parser.parse_known_args(sys.argv[1:])
     try:
@@ -254,6 +257,12 @@ def main() -> int:
             self.refresh_parameters()
             self.refresh_curriculum_controls()
             self.apply_reward_profile()
+            if launch.frame_skip is not None:
+                self.frame_skip.setValue(launch.frame_skip)
+            if launch.learning_rate is not None:
+                self.lr.setValue(launch.learning_rate)
+            if launch.entropy_coefficient is not None:
+                self.entropy.setValue(launch.entropy_coefficient)
 
         def apply_reward_profile(self) -> None:
             try:

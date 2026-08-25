@@ -86,17 +86,18 @@ def test_summer_1_reward_profile_is_dense_and_balanced() -> None:
     assert rewards.crash_penalty < 0
     assert rewards.off_track_penalty < 0
     assert -100 < rewards.ground_slip_penalty_per_rad_s < 0
-    assert rewards.progress_per_m == 2.5
-    assert rewards.elapsed_cost_per_s == -0.25
+    assert rewards.progress_per_m == 2.0
+    assert rewards.elapsed_cost_per_s == -0.2
     assert rewards.ground_brake_penalty_per_s == -3.0
     assert rewards.takeoff_target_speed_mps == 35.0
     assert rewards.imitation_bonus_per_s == 15.0
     assert rewards.checkpoint_speed_bonus_per_mps == 1.0
     assert rewards.checkpoint_speed_bonus_limit_mps == 45.0
-    assert rewards.barrier_collision_impulse_threshold == 1_000_000_000.0
-    assert rewards.finish_bonus + rewards.finish_fast_bonus == 5000.0
-    assert rewards.curriculum_section_bonus == 300.0
-    assert rewards.stall_penalty == -500.0
+    assert rewards.barrier_contact_penalty == -750.0
+    assert rewards.barrier_early_penalty == -2500.0
+    assert rewards.barrier_collision_impulse_threshold == 0.0
+    assert rewards.finish_bonus + rewards.finish_fast_bonus == 3000.0
+    assert rewards.curriculum_section_bonus == 250.0
     assert (
         rewards.checkpoint_speed_bonus_per_mps * rewards.checkpoint_speed_bonus_limit_mps
         <= rewards.checkpoint_bonus
