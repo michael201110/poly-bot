@@ -16,7 +16,7 @@ from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
 from polybot.training.config import TrainingConfig, architecture, estimate_ppo_parameters
 from polybot.training.devices import resolve_device
-from polybot.training.manager import TrainingManager
+from polybot.training.manager import TrainingManager, is_retryable_simulator_error
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry, track_slug
 from polybot.training.trainer import RollingStepRate
 
@@ -212,6 +212,13 @@ def test_randomised_quarters_are_one_mixed_manager_phase() -> None:
     config = TrainingConfig()
     config.curriculum.mode = "quarters-randomised"
     assert [phase.mode for phase in TrainingManager(config).phases()] == ["quarters-randomised"]
+
+
+def test_simulator_retry_only_accepts_transient_connection_errors() -> None:
+    assert is_retryable_simulator_error(TimeoutError("simulator request timed out"))
+    assert is_retryable_simulator_error(RuntimeError("adapter disconnected"))
+    assert is_retryable_simulator_error(RuntimeError("stale_episode"))
+    assert not is_retryable_simulator_error(ValueError("invalid batch size"))
 
 
 def test_summer_profiles_penalise_ground_braking() -> None:

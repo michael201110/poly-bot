@@ -439,7 +439,7 @@ def main() -> int:
 
         def _run(self, selected: str | None) -> None:
             try:
-                self.manager.run(resume=selected)
+                self.manager.run(resume=selected, repeat=True)
             except Exception as exc:
                 self.events.update.emit({"type": "error", "message": str(exc)})
             finally:
@@ -494,6 +494,17 @@ def main() -> int:
                     self.log.appendPlainText(f"             {reward_breakdown(terms)}")
             elif event_type == "checkpoint":
                 self.log.appendPlainText(f"Checkpoint saved at timestep {event['timesteps']:,}")
+            elif event_type == "recovery_checkpoint":
+                self.log.appendPlainText(
+                    f"Recovery saved at timestep {event['timesteps']:,}: {event['path']}"
+                )
+            elif event_type == "retrying":
+                delay = event.get("delay_s", 0)
+                attempt = event.get("attempt", 1)
+                self.runtime.setText(f"Simulator disconnected — retrying in {delay:g}s")
+                self.log.appendPlainText(
+                    f"Retrying simulator connection in {delay:g}s (attempt {attempt})"
+                )
             elif event_type == "error":
                 self.log.appendPlainText(f"ERROR: {event.get('message', 'unknown error')}")
             elif event_type in {"archived", "completed", "stopped"}:

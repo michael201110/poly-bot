@@ -62,6 +62,46 @@ class TrainingService:
     def stop(self) -> None:
         self._stop.set()
 
+    def save_latest(self) -> Path:
+        """Persist the current in-memory policy and its resume metadata."""
+
+        if self.model is None:
+            raise RuntimeError("training model has not been initialised")
+        cfg = self.config
+        registry = ModelRegistry(cfg.output_root)
+        output = registry.initialise_track(cfg.track_name) / "latest"
+        self.model.save(str(output))
+        parameters = sum(p.numel() for p in self.model.policy.parameters())
+        metadata = ModelMetadata(
+            track_name=cfg.track_name,
+            track_id=cfg.track_id,
+            architecture=cfg.architecture,
+            parameter_count=parameters,
+            lookahead_count=cfg.lookahead_count,
+            action_schema=(
+                "pwm-multidiscrete-v1" if cfg.pwm_enabled else "digital-multidiscrete-v1"
+            ),
+            pwm_enabled=cfg.pwm_enabled,
+            pwm_resolution=cfg.pwm_levels,
+            frame_skip=cfg.frame_skip,
+            training_timesteps=int(self.model.num_timesteps),
+            seed=cfg.seed,
+            reward_settings=asdict(cfg.rewards),
+            ppo_hyperparameters={
+                "learning_rate": cfg.learning_rate,
+                "gamma": cfg.gamma,
+                "gae_lambda": cfg.gae_lambda,
+                "entropy_coefficient": cfg.entropy_coefficient,
+                "rollout_steps": cfg.rollout_steps,
+                "batch_size": cfg.batch_size,
+                "ppo_epochs": cfg.ppo_epochs,
+            },
+            polybot_version="0.1.0",
+            git_commit=git_commit(),
+        )
+        registry.write_metadata(metadata, "latest")
+        return output.with_suffix(".zip")
+
     def run(self, *, resume: str | Path | None = None, transport: Any | None = None) -> Path:
         from stable_baselines3 import PPO
         from stable_baselines3.common.callbacks import BaseCallback
@@ -92,7 +132,6 @@ class TrainingService:
         )
         registry = ModelRegistry(cfg.output_root)
         directory = registry.initialise_track(cfg.track_name)
-        output = directory / "latest"
         if not resume:
             archived = registry.archive_latest(cfg.track_name)
             if archived:
@@ -269,41 +308,13 @@ class TrainingService:
             self.model.learn(
                 cfg.timesteps, callback=Callback(), reset_num_timesteps=not bool(resume)
             )
-            self.model.save(str(output))
-            metadata = ModelMetadata(
-                track_name=cfg.track_name,
-                track_id=cfg.track_id,
-                architecture=cfg.architecture,
-                parameter_count=parameters,
-                lookahead_count=cfg.lookahead_count,
-                action_schema="pwm-multidiscrete-v1"
-                if cfg.pwm_enabled
-                else "digital-multidiscrete-v1",
-                pwm_enabled=cfg.pwm_enabled,
-                pwm_resolution=cfg.pwm_levels,
-                frame_skip=cfg.frame_skip,
-                training_timesteps=int(self.model.num_timesteps),
-                seed=cfg.seed,
-                reward_settings=asdict(cfg.rewards),
-                ppo_hyperparameters={
-                    "learning_rate": cfg.learning_rate,
-                    "gamma": cfg.gamma,
-                    "gae_lambda": cfg.gae_lambda,
-                    "entropy_coefficient": cfg.entropy_coefficient,
-                    "rollout_steps": cfg.rollout_steps,
-                    "batch_size": cfg.batch_size,
-                    "ppo_epochs": cfg.ppo_epochs,
-                },
-                polybot_version="0.1.0",
-                git_commit=git_commit(),
-            )
-            registry.write_metadata(metadata, "latest")
+            output = self.save_latest()
             self.status(
                 {
                     "type": "stopped" if self._stop.is_set() else "completed",
-                    "path": str(output.with_suffix(".zip")),
+                    "path": str(output),
                 }
             )
-            return output.with_suffix(".zip")
+            return output
         finally:
             env.close()
