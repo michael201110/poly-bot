@@ -10,6 +10,7 @@ build/
 models/**/checkpoints/
 models/**/latest.zip
 models/**/*.tmp
+!models/**/latest.zip
 !models/**/best.zip
 !models/**/metadata.json
 !models/**/README.md
