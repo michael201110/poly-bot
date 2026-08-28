@@ -33,6 +33,7 @@ class _MockState:
     curvature_phase: float
     tick: int = 0
     speed_mps: float = 0.0
+    acceleration_mps2: float = 0.0
     progress_m: float = 0.0
     lateral_offset_m: float = 0.0
     heading_error_rad: float = 0.0
@@ -218,6 +219,7 @@ class MockSimulatorTransport:
         acceleration = 11.0 * int(action.throttle) - 18.0 * int(action.brake)
         if state.speed_mps > 0:
             acceleration -= 0.18 + 0.012 * state.speed_mps**2
+        state.acceleration_mps2 = acceleration
         state.speed_mps = max(0.0, min(45.0, state.speed_mps + acceleration * dt))
 
         curvature = self._curvature(state.progress_m)
@@ -293,15 +295,30 @@ class MockSimulatorTransport:
                 mask.append(0)
 
         yaw = state.heading_error_rad
+        curvature = self._curvature(state.progress_m)
+        expert_steer = (curvature > 0.002) - (curvature < -0.002)
         return {
             "position_m": [state.lateral_offset_m, 0.0, state.progress_m],
             "quaternion_xyzw": [0.0, math.sin(yaw / 2.0), 0.0, math.cos(yaw / 2.0)],
             "local_velocity_mps": [0.0, 0.0, state.speed_mps],
+            "local_acceleration_mps2": [0.0, 0.0, state.acceleration_mps2],
             "angular_velocity_radps": [0.0, state.yaw_rate_radps, 0.0],
             "up_vector": [0.0, 1.0, 0.0],
             "pitch_rad": 0.0,
             "roll_rad": 0.0,
             "wheel_contacts": [1, 1, 1, 1] if not state.crashed else [0, 0, 0, 0],
+            "suspension_lengths_m": [0.3, 0.3, 0.3, 0.3],
+            "suspension_velocities_mps": [0.0, 0.0, 0.0, 0.0],
+            "wheel_skids": [0.0, 0.0, 0.0, 0.0],
+            "actual_steering": float(state.previous_action.steer),
+            "ghost_relative_position_m": [-state.lateral_offset_m, 0.0, 0.0],
+            "ghost_heading_error_rad": -state.heading_error_rad,
+            "ghost_target_speed_mps": 30.0,
+            "expert_action": {
+                "steer": expert_steer,
+                "throttle": 1,
+                "brake": 0,
+            },
             "checkpoint_index": state.checkpoint_index,
             "elapsed_s": state.tick * self.fixed_dt_s,
             "previous_action": state.previous_action.to_wire(),

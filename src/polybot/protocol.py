@@ -14,7 +14,7 @@ from typing import Any
 import numpy as np
 
 PROTOCOL_NAME = "polybot.sim"
-PROTOCOL_VERSION = 1
+PROTOCOL_VERSION = 2
 
 
 class ProtocolViolation(RuntimeError):
@@ -111,6 +111,7 @@ class Telemetry:
     position_m: tuple[float, float, float]
     quaternion_xyzw: tuple[float, float, float, float]
     local_velocity_mps: tuple[float, float, float]
+    local_acceleration_mps2: tuple[float, float, float]
     angular_velocity_radps: tuple[float, float, float]
     up_vector: tuple[float, float, float]
     route_progress_m: float
@@ -121,6 +122,14 @@ class Telemetry:
     pitch_rad: float
     roll_rad: float
     wheel_contacts: tuple[float, float, float, float]
+    suspension_lengths_m: tuple[float, float, float, float]
+    suspension_velocities_mps: tuple[float, float, float, float]
+    wheel_skids: tuple[float, float, float, float]
+    actual_steering: float
+    ghost_relative_position_m: tuple[float, float, float]
+    ghost_heading_error_rad: float
+    ghost_target_speed_mps: float
+    expert_action: Action
     checkpoint_index: int
     elapsed_s: float
     previous_action: Action
@@ -162,6 +171,9 @@ class Telemetry:
             local_velocity_mps=_vector(
                 state.get("local_velocity_mps"), "state.local_velocity_mps", 3
             ),
+            local_acceleration_mps2=_vector(
+                state.get("local_acceleration_mps2"), "state.local_acceleration_mps2", 3
+            ),
             angular_velocity_radps=_vector(
                 state.get("angular_velocity_radps"), "state.angular_velocity_radps", 3
             ),
@@ -176,6 +188,24 @@ class Telemetry:
             pitch_rad=_finite(state.get("pitch_rad"), "state.pitch_rad"),
             roll_rad=_finite(state.get("roll_rad"), "state.roll_rad"),
             wheel_contacts=contacts,
+            suspension_lengths_m=_vector(
+                state.get("suspension_lengths_m"), "state.suspension_lengths_m", 4
+            ),
+            suspension_velocities_mps=_vector(
+                state.get("suspension_velocities_mps"), "state.suspension_velocities_mps", 4
+            ),
+            wheel_skids=_vector(state.get("wheel_skids"), "state.wheel_skids", 4),
+            actual_steering=_finite(state.get("actual_steering"), "state.actual_steering"),
+            ghost_relative_position_m=_vector(
+                state.get("ghost_relative_position_m"), "state.ghost_relative_position_m", 3
+            ),
+            ghost_heading_error_rad=_finite(
+                state.get("ghost_heading_error_rad"), "state.ghost_heading_error_rad"
+            ),
+            ghost_target_speed_mps=_finite(
+                state.get("ghost_target_speed_mps"), "state.ghost_target_speed_mps"
+            ),
+            expert_action=Action.from_wire(state.get("expert_action")),
             checkpoint_index=_integer(state.get("checkpoint_index"), "state.checkpoint_index"),
             elapsed_s=_finite(state.get("elapsed_s"), "state.elapsed_s"),
             previous_action=Action.from_wire(state.get("previous_action")),
@@ -185,9 +215,9 @@ class Telemetry:
 
     @staticmethod
     def vector_size(lookahead_count: int) -> int:
-        # Motion/orientation (9), route relationship (5), contacts (4),
-        # previous action (3), lookahead points (4N), lookahead mask (N).
-        return 21 + 5 * lookahead_count
+        # Existing v1 features (21), vehicle dynamics and ghost guidance (24),
+        # lookahead points (4N), and lookahead mask (N).
+        return 45 + 5 * lookahead_count
 
     def to_vector(self) -> np.ndarray:
         """Return a normalized, track-invariant feature vector for the policy."""
@@ -195,6 +225,7 @@ class Telemetry:
         width = max(self.track_half_width_m, 0.01)
         base = [
             *(np.clip(self.local_velocity_mps, -200.0, 200.0) / 100.0),
+            *(np.clip(self.local_acceleration_mps2, -100.0, 100.0) / 50.0),
             *(np.clip(self.angular_velocity_radps, -50.0, 50.0) / 10.0),
             *np.clip(self.up_vector, -1.0, 1.0),
             float(np.clip(self.route_progress_m / self.track_length_m, -1.0, 2.0)),
@@ -203,6 +234,18 @@ class Telemetry:
             float(np.clip(self.pitch_rad / math.pi, -1.0, 1.0)),
             float(np.clip(self.roll_rad / math.pi, -1.0, 1.0)),
             *(np.asarray(self.wheel_contacts, dtype=np.float64)),
+            *(np.clip(self.suspension_lengths_m, -2.0, 2.0) / 2.0),
+            *(np.clip(self.suspension_velocities_mps, -20.0, 20.0) / 10.0),
+            *(np.clip(self.wheel_skids, -100.0, 100.0) / 50.0),
+            float(np.clip(self.actual_steering, -1.0, 1.0)),
+            float(np.clip(self.ghost_relative_position_m[0] / 50.0, -5.0, 5.0)),
+            float(np.clip(self.ghost_relative_position_m[1] / 50.0, -5.0, 5.0)),
+            float(np.clip(self.ghost_relative_position_m[2] / 100.0, -5.0, 5.0)),
+            float(np.clip(self.ghost_heading_error_rad / math.pi, -1.0, 1.0)),
+            float(np.clip(self.ghost_target_speed_mps / 100.0, 0.0, 2.0)),
+            float(self.expert_action.steer),
+            float(self.expert_action.throttle),
+            float(self.expert_action.brake),
             float(self.previous_action.steer),
             float(self.previous_action.throttle),
             float(self.previous_action.brake),
@@ -233,6 +276,9 @@ class Telemetry:
             "track_length_m": self.track_length_m,
             "checkpoint_index": self.checkpoint_index,
             "elapsed_s": self.elapsed_s,
+            "actual_steering": self.actual_steering,
+            "ghost_target_speed_mps": self.ghost_target_speed_mps,
+            "expert_action": self.expert_action.to_wire(),
             "lateral_offset_m": self.lateral_offset_m,
             "heading_error_rad": self.heading_error_rad,
         }

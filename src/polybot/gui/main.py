@@ -91,7 +91,7 @@ def reward_breakdown(terms: dict[str, float]) -> str:
             "airborne_speed",
             "takeoff_speed",
         },
-        "ghost": {"ghost_imitation"},
+        "ghost": {"ghost_imitation", "expert_action_imitation", "ghost_speed"},
         "milestone": {"checkpoint", "finish", "curriculum_section"},
         "control": {"elapsed", "action_change", "ground_brake", "airborne_brake"},
         "handling": {

@@ -45,6 +45,9 @@ class RewardConfig:
     imitation_bonus_per_s: float = 18.0
     imitation_position_scale_m: float = 2.0
     imitation_rotation_scale_rad: float = 0.349066  # 20 degrees
+    expert_action_bonus_per_s: float = 0.0
+    ghost_speed_bonus_per_s: float = 0.0
+    ghost_speed_scale_mps: float = 5.0
     unsafe_speed_penalty_per_m: float = 0.0
     barrier_contact_penalty: float = -50.0
     barrier_early_penalty: float = 0.0
@@ -208,6 +211,29 @@ def summer_1_bootstrap_pace_reward_config() -> RewardConfig:
     )
 
 
+def summer_1_ghost_learning_reward_config() -> RewardConfig:
+    """Dense full-track shaping centered on copying the loaded ghost lap."""
+
+    return dataclass_replace(
+        summer_1_bootstrap_reward_config(),
+        progress_per_m=3.0,
+        elapsed_cost_per_s=-0.25,
+        on_track_speed_per_m=1.0,
+        speed_pace_reward_per_m_per_mps=0.03,
+        imitation_bonus_per_s=100.0,
+        expert_action_bonus_per_s=60.0,
+        ghost_speed_bonus_per_s=30.0,
+        ghost_speed_scale_mps=5.0,
+        barrier_contact_penalty=-600.0,
+        failure_early_penalty=-300.0,
+        checkpoint_bonus=500.0,
+        checkpoint_fast_bonus=250.0,
+        finish_bonus=4000.0,
+        finish_fast_bonus=4000.0,
+        stall_penalty=-400.0,
+    )
+
+
 def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
     """Reject geometric off-track evidence while the car is airborne."""
 
@@ -289,6 +315,25 @@ def _ghost_pose_reward(simulator_info: Mapping[str, Any], config: RewardConfig, 
     position_similarity = np.exp(-max(0.0, position_error) / config.imitation_position_scale_m)
     rotation_similarity = np.exp(-max(0.0, rotation_error) / config.imitation_rotation_scale_rad)
     return float(config.imitation_bonus_per_s * dt * position_similarity * rotation_similarity)
+
+
+def _expert_action_reward(
+    action: Action, telemetry: Telemetry, config: RewardConfig, dt: float
+) -> float:
+    matches = (
+        int(action.steer == telemetry.expert_action.steer)
+        + int(action.throttle == telemetry.expert_action.throttle)
+        + int(action.brake == telemetry.expert_action.brake)
+    )
+    return config.expert_action_bonus_per_s * (matches / 3.0) * dt
+
+
+def _ghost_speed_reward(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
+    speed_error = abs(
+        max(0.0, telemetry.local_velocity_mps[2]) - telemetry.ghost_target_speed_mps
+    )
+    scale = max(0.1, config.ghost_speed_scale_mps)
+    return config.ghost_speed_bonus_per_s * float(np.exp(-speed_error / scale)) * dt
 
 
 def _airborne_spin_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
@@ -858,6 +903,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             ),
             "takeoff_speed": takeoff_speed_reward,
             "ghost_imitation": imitation_reward,
+            "expert_action_imitation": _expert_action_reward(action, telemetry, config, dt),
+            "ghost_speed": _ghost_speed_reward(telemetry, config, dt),
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),

@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-OBSERVATION_SCHEMA = "polybot.telemetry.v1"
+OBSERVATION_SCHEMA = "polybot.telemetry.v2"
 
 
 def track_slug(name: str) -> str:
