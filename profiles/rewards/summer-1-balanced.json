@@ -30,7 +30,7 @@
     "airborne_roll_timeout_s": 0.1,
     "airborne_roll_failure_penalty": -1000.0,
     "ground_slip_tolerance_rad": 0.087266,
-    "ground_slip_penalty_per_rad_s": -20.0,
+    "ground_slip_penalty_per_rad_s": -300.0,
     "checkpoint_bonus": 100.0,
     "checkpoint_fast_bonus": 75.0,
     "checkpoint_target_s": 12.0,
