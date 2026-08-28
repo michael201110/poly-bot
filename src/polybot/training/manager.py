@@ -49,6 +49,8 @@ class TrainingManager:
             return [CurriculumConfig("section", i / 4, (i + 1) / 4) for i in range(4)] + [
                 CurriculumConfig()
             ]
+        if self.config.curriculum.mode == "quarters-from-q4":
+            return [CurriculumConfig("section", 0.75, 1.0), CurriculumConfig()]
         if self.config.curriculum.mode == "quarters-randomised":
             return [CurriculumConfig("quarters-randomised")]
         return [self.config.curriculum]

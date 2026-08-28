@@ -72,9 +72,17 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--track-name")
     parser.add_argument("--model")
+    parser.add_argument("--architecture", choices=["legacy", "medium", "large", "xl"])
+    parser.add_argument("--device", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--frame-skip", type=int)
+    parser.add_argument("--timesteps", type=int)
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--entropy-coefficient", type=float)
+    parser.add_argument("--reward-profile")
+    parser.add_argument(
+        "--curriculum",
+        choices=["full", "quarters", "quarters-from-q4", "quarters-randomised", "timed"],
+    )
     parser.add_argument("--resume", action="store_true")
     launch, qt_arguments = parser.parse_known_args(sys.argv[1:])
     try:
@@ -130,8 +138,12 @@ def main() -> int:
             self.model.lineEdit().setPlaceholderText("No saved model found")
             self.arch = QComboBox()
             self.arch.addItems(["xl", "large", "medium", "legacy"])
+            if launch.architecture:
+                self.arch.setCurrentText(launch.architecture)
             self.device = QComboBox()
             self.device.addItems(["auto", "cpu", "cuda"])
+            if launch.device:
+                self.device.setCurrentText(launch.device)
             self.pwm = QCheckBox()
             self.pwm.setChecked(True)
             self.levels = QSpinBox()
@@ -148,6 +160,8 @@ def main() -> int:
             self.timesteps = QSpinBox()
             self.timesteps.setRange(1, 2_000_000_000)
             self.timesteps.setValue(100_000)
+            if launch.timesteps is not None:
+                self.timesteps.setValue(launch.timesteps)
             self.episodes = QSpinBox()
             self.episodes.setRange(0, 10_000_000)
             self.lr = QDoubleSpinBox()
@@ -179,6 +193,8 @@ def main() -> int:
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
             self.reward_profile.addItems(self.reward_profiles.names())
+            if launch.reward_profile:
+                self.reward_profile.setCurrentText(launch.reward_profile)
             self.reward_table = QTableWidget(len(fields(RewardConfig)), 2)
             self.reward_table.setHorizontalHeaderLabels(["Reward parameter", "Value"])
             self.reward_table.verticalHeader().setVisible(False)
@@ -200,7 +216,11 @@ def main() -> int:
                 self.reward_table.setCellWidget(row, 1, editor)
                 self.reward_inputs[name] = editor
             self.curriculum = QComboBox()
-            self.curriculum.addItems(["full", "quarters", "quarters-randomised", "timed"])
+            self.curriculum.addItems(
+                ["full", "quarters", "quarters-from-q4", "quarters-randomised", "timed"]
+            )
+            if launch.curriculum:
+                self.curriculum.setCurrentText(launch.curriculum)
             self.curriculum_start_s = QDoubleSpinBox()
             self.curriculum_start_s.setDecimals(2)
             self.curriculum_start_s.setRange(0.0, 3600.0)

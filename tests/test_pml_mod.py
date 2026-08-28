@@ -133,8 +133,11 @@ def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
     )
 
     assert "polybotAbortRestart: true" in worker_source
-    assert "setTimeout(resolve, finishDisplayDelayMs + 100)" in worker_source
+    assert "aborted run does not need the finish-only display pause." in worker_source
+    assert "await new Promise((resolve) => setTimeout(resolve, 0));" in worker_source
     assert "event.data?.polybotAbortRestart !== true" in main_source
+    assert "const restartDelayMs = playerFinished ? 500 : 0;" in main_source
+    assert "}, restartDelayMs);" in main_source
     assert "pressBackspace();" in main_source
     assert "restartScheduled" in main_source
 

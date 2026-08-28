@@ -807,9 +807,9 @@ export function polybotWorkerInjection() {
               carStateBuffers: [],
               polybotAbortRestart: true,
             });
-            // Let the main thread process native Backspace before frame numbers
-            // regress during deterministic car recreation.
-            await new Promise((resolve) => setTimeout(resolve, finishDisplayDelayMs + 100));
+            // Yield once so the main thread can process native Backspace. An
+            // aborted run does not need the finish-only display pause.
+            await new Promise((resolve) => setTimeout(resolve, 0));
           }
           if (params.track_id !== "current") {
             throw new BridgeError(

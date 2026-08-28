@@ -14,7 +14,12 @@ from polybot.gui.main import preferred_model, reward_breakdown, timed_curriculum
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
-from polybot.training.config import TrainingConfig, architecture, estimate_ppo_parameters
+from polybot.training.config import (
+    CurriculumConfig,
+    TrainingConfig,
+    architecture,
+    estimate_ppo_parameters,
+)
 from polybot.training.devices import resolve_device
 from polybot.training.manager import TrainingManager, is_retryable_simulator_error
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry, track_slug
@@ -212,6 +217,17 @@ def test_randomised_quarters_are_one_mixed_manager_phase() -> None:
     config = TrainingConfig()
     config.curriculum.mode = "quarters-randomised"
     assert [phase.mode for phase in TrainingManager(config).phases()] == ["quarters-randomised"]
+
+
+def test_quarters_can_resume_from_q4_then_transition_to_full() -> None:
+    config = TrainingConfig()
+    config.curriculum.mode = "quarters-from-q4"
+
+    phases = TrainingManager(config).phases()
+
+    assert len(phases) == 2
+    assert phases[0] == CurriculumConfig("section", 0.75, 1.0)
+    assert phases[1] == CurriculumConfig()
 
 
 def test_simulator_retry_only_accepts_transient_connection_errors() -> None:
