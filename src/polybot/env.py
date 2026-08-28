@@ -34,6 +34,8 @@ class RewardConfig:
     progress_per_m: float = 0.0
     elapsed_cost_per_s: float = 0.0
     on_track_speed_per_m: float = 0.0
+    speed_pace_reward_per_m_per_mps: float = 0.0
+    speed_pace_limit_mps: float = 50.0
     airborne_speed_per_m: float = 0.0
     airborne_brake_bonus_per_s: float = 0.0
     ground_brake_penalty_per_s: float = 0.0
@@ -199,6 +201,7 @@ def summer_1_bootstrap_pace_reward_config() -> RewardConfig:
     return dataclass_replace(
         summer_1_bootstrap_reward_config(),
         elapsed_cost_per_s=-0.75,
+        speed_pace_reward_per_m_per_mps=0.15,
         ground_brake_penalty_per_s=-3.0,
         stall_penalty=-350.0,
     )
@@ -841,6 +844,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "progress": config.progress_per_m * progress_delta,
             "elapsed": config.elapsed_cost_per_s * dt,
             "on_track_speed": config.on_track_speed_per_m * distance_at_speed * on_track_factor,
+            "speed_pace": config.speed_pace_reward_per_m_per_mps
+            * distance_at_speed
+            * min(forward_speed, config.speed_pace_limit_mps)
+            * on_track_factor,
             "airborne_speed": config.airborne_speed_per_m * distance_at_speed * airborne_stability
             if airborne
             else 0.0,

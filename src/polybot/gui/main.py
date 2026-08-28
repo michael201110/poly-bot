@@ -73,7 +73,13 @@ def reward_breakdown(terms: dict[str, float]) -> str:
     """Group detailed reward terms into a compact episode summary."""
 
     groups = {
-        "drive": {"progress", "on_track_speed", "airborne_speed", "takeoff_speed"},
+        "drive": {
+            "progress",
+            "on_track_speed",
+            "speed_pace",
+            "airborne_speed",
+            "takeoff_speed",
+        },
         "ghost": {"ghost_imitation"},
         "milestone": {"checkpoint", "finish", "curriculum_section"},
         "control": {"elapsed", "action_change", "ground_brake", "airborne_brake"},
