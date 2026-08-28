@@ -151,6 +151,13 @@ def test_v2_worker_exports_vehicle_dynamics_and_ghost_guidance() -> None:
         assert field in source
 
 
+def test_latest_ghost_guidance_is_position_aligned() -> None:
+    source = (MOD_ROOT / "0.1.28" / "worker_runtime.js").read_text(encoding="utf-8")
+    assert "const timedGuide = guide;" in source
+    assert "const timedIndex = referenceIndex;" in source
+    assert "const timedGuide = reference.points[session.timedReferenceIndex];" not in source
+
+
 def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
     worker_source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))

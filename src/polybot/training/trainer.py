@@ -100,6 +100,7 @@ class TrainingService:
                 "ppo_epochs": cfg.ppo_epochs,
                 "teacher_model": None if cfg.teacher_model is None else str(cfg.teacher_model),
                 "teacher_kl_coefficient": cfg.teacher_kl_coefficient,
+                "expert_imitation_coefficient": cfg.expert_imitation_coefficient,
             },
             polybot_version="0.1.0",
             git_commit=git_commit(),
@@ -328,6 +329,11 @@ class TrainingService:
                     raise FileNotFoundError(f"teacher model not found: {cfg.teacher_model}")
                 teacher = PPO.load(str(cfg.teacher_model), device=self.device.resolved)
             self.model.set_teacher(teacher, cfg.teacher_kl_coefficient)
+            self.model.set_expert_imitation(
+                cfg.expert_imitation_coefficient
+                if cfg.rewards.expert_action_bonus_per_s > 0
+                else 0.0
+            )
             parameters = sum(p.numel() for p in self.model.policy.parameters())
             self.status(
                 {

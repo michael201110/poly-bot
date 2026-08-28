@@ -72,6 +72,7 @@ class TrainingConfig:
     ppo_epochs: int = 3
     teacher_model: Path | None = None
     teacher_kl_coefficient: float = 0.0
+    expert_imitation_coefficient: float = 1.0
     checkpoint_interval: int = 10_000
     output_root: Path = Path("models")
     seed: int = 0
@@ -102,6 +103,8 @@ class TrainingConfig:
             raise ValueError("ppo_epochs must be positive")
         if self.teacher_kl_coefficient < 0:
             raise ValueError("teacher KL coefficient cannot be negative")
+        if self.expert_imitation_coefficient < 0:
+            raise ValueError("expert imitation coefficient cannot be negative")
         if self.teacher_kl_coefficient and self.teacher_model is None:
             raise ValueError("teacher_model is required when teacher KL is enabled")
 
