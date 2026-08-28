@@ -7,10 +7,16 @@ import re
 from dataclasses import asdict
 from pathlib import Path
 
-from polybot.env import RewardConfig, summer_1_pace_reward_config, summer_1_reward_config
+from polybot.env import (
+    RewardConfig,
+    summer_1_bootstrap_reward_config,
+    summer_1_pace_reward_config,
+    summer_1_reward_config,
+)
 
 BUILTIN_REWARD_PROFILES = {
     "Summer 1 - balanced": summer_1_reward_config,
+    "Summer 1 - full bootstrap": summer_1_bootstrap_reward_config,
     "Summer 1 - pace": summer_1_pace_reward_config,
 }
 

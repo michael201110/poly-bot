@@ -161,6 +161,38 @@ def summer_1_pace_reward_config() -> RewardConfig:
     )
 
 
+def summer_1_bootstrap_reward_config() -> RewardConfig:
+    """Full-track shaping that lets a fresh policy distinguish early attempts."""
+
+    return dataclass_replace(
+        summer_1_reward_config(),
+        progress_per_m=4.0,
+        elapsed_cost_per_s=-0.05,
+        on_track_speed_per_m=0.75,
+        airborne_speed_per_m=0.25,
+        ground_brake_penalty_per_s=-1.0,
+        imitation_bonus_per_s=20.0,
+        unsafe_speed_penalty_per_m=-0.10,
+        barrier_contact_penalty=-150.0,
+        failure_early_penalty=-200.0,
+        off_track_landing_penalty=-50.0,
+        airborne_spin_penalty_per_rad=-0.5,
+        airborne_tilt_penalty_per_s=-0.5,
+        airborne_roll_penalty_per_s=-0.5,
+        airborne_roll_failure_penalty=-150.0,
+        ground_slip_penalty_per_rad_s=-5.0,
+        checkpoint_bonus=250.0,
+        checkpoint_fast_bonus=100.0,
+        finish_bonus=2000.0,
+        finish_fast_bonus=2000.0,
+        crash_penalty=-100.0,
+        stall_penalty=-100.0,
+        off_track_penalty=-100.0,
+        early_off_track_penalty=-150.0,
+        action_change_penalty=-0.001,
+    )
+
+
 def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
     """Reject geometric off-track evidence while the car is airborne."""
 
