@@ -10,6 +10,7 @@ from polybot.env import RewardConfig, summer_1_reward_config
 
 ARCHITECTURE_PRESETS: dict[str, tuple[int, ...]] = {
     "legacy": (64, 64),
+    "small": (128, 128),
     "medium": (256, 256, 256),
     "large": (512, 512, 512),
     "xl": (1024, 1024, 512),

@@ -105,7 +105,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--track-name")
     parser.add_argument("--model")
-    parser.add_argument("--architecture", choices=["legacy", "medium", "large", "xl"])
+    parser.add_argument("--architecture", choices=["legacy", "small", "medium", "large", "xl"])
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--frame-skip", type=int)
     parser.add_argument("--timesteps", type=int)
@@ -183,7 +183,7 @@ def main() -> int:
             self.model.setEditable(True)
             self.model.lineEdit().setPlaceholderText("No saved model found")
             self.arch = QComboBox()
-            self.arch.addItems(["xl", "large", "medium", "legacy"])
+            self.arch.addItems(["xl", "large", "medium", "small", "legacy"])
             if launch.architecture:
                 self.arch.setCurrentText(launch.architecture)
             self.device = QComboBox()

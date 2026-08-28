@@ -39,6 +39,11 @@ def test_xl_parameter_count() -> None:
     assert estimate_ppo_parameters(Telemetry.vector_size(12), (41, 2, 2), "xl") == 3_340_334
 
 
+def test_small_parameter_count() -> None:
+    assert architecture("small") == (128, 128)
+    assert estimate_ppo_parameters(Telemetry.vector_size(12), (41, 2, 2), "small") == 59_950
+
+
 def test_pwm_is_digital_distributed_deterministic_and_resets() -> None:
     pwm = PwmSteering()
     output = pwm.generate(0.5, 30)

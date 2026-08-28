@@ -235,7 +235,9 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
     _websocket_arguments(parser)
     parser.add_argument("--timesteps", type=int, default=100_000)
-    parser.add_argument("--architecture", choices=("legacy", "medium", "large", "xl"), default="xl")
+    parser.add_argument(
+        "--architecture", choices=("legacy", "small", "medium", "large", "xl"), default="xl"
+    )
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--pwm", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pwm-levels", type=int, default=41)

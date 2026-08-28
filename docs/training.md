@@ -16,7 +16,7 @@ repeat, recovery, and graceful-stop behavior without shell-specific executables 
 
 New models default to separate actor and critic networks of `1024, 1024, 512` (`xl`). With the
 81-value observation and the default 41 PWM steering levels this is 3,340,334 trainable
-parameters. `legacy`, `medium`, and `large` remain available.
+parameters. `legacy`, `small` (59,950 parameters), `medium`, and `large` remain available.
 
 `auto` selects CUDA when `torch.cuda.is_available()` and otherwise CPU. `cpu` always forces CPU.
 `cuda` fails early with a useful message when unavailable. SB3 receives the resolved device for
