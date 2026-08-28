@@ -202,6 +202,7 @@ def summer_1_bootstrap_pace_reward_config() -> RewardConfig:
         summer_1_bootstrap_reward_config(),
         elapsed_cost_per_s=-0.75,
         speed_pace_reward_per_m_per_mps=0.15,
+        barrier_contact_penalty=-500.0,
         ground_brake_penalty_per_s=-3.0,
         stall_penalty=-350.0,
     )

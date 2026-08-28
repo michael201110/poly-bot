@@ -336,5 +336,6 @@ def test_summer_bootstrap_pace_profile_discourages_slow_survival() -> None:
     assert pace.elapsed_cost_per_s < bootstrap.elapsed_cost_per_s
     assert pace.ground_brake_penalty_per_s < bootstrap.ground_brake_penalty_per_s
     assert pace.stall_penalty < bootstrap.stall_penalty
+    assert pace.barrier_contact_penalty < bootstrap.barrier_contact_penalty
     assert pace.progress_per_m == bootstrap.progress_per_m
     assert pace.speed_pace_reward_per_m_per_mps > 0
