@@ -790,7 +790,7 @@ export function polybotWorkerInjection() {
           return result;
         }
 
-        async function resetEpisode(params, requestToken) {
+        async function resetEpisode(params) {
           if (lookaheadCount === null) {
             throw new BridgeError("invalid_state", "hello must be called before reset");
           }
@@ -929,7 +929,6 @@ export function polybotWorkerInjection() {
               }
               replayCar.isPaused = true;
               const finalBuffers = new Map();
-              let replayTicks = 0;
               try {
                 while (player.frames < targetFrame) {
                   const replayControls = replayCar.controls.getControls(replayCar.frames);
@@ -948,18 +947,6 @@ export function polybotWorkerInjection() {
                     finalBuffers.set(car.id, buffer);
                     if (car.id === playerCarId) {
                       initialBuffer = buffer;
-                    }
-                  }
-                  replayTicks += 1;
-                  if (replayTicks % 250 === 0) {
-                    // Keep the worker event loop responsive during long native
-                    // fast-forwards to a timed curriculum start.
-                    await new Promise((resolve) => setTimeout(resolve, 0));
-                    if (activeRequestToken !== requestToken) {
-                      throw new BridgeError(
-                        "request_cancelled",
-                        "trainer disconnected during timed reset",
-                      );
                     }
                   }
                 }
@@ -1200,7 +1187,7 @@ export function polybotWorkerInjection() {
                 ],
               };
             case "reset":
-              return resetEpisode(params, requestToken);
+              return resetEpisode(params);
             case "step":
               return await stepEpisode(params);
             case "close":
