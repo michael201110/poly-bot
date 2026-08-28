@@ -114,6 +114,8 @@ def main() -> int:
     parser.add_argument("--rollout-steps", type=int)
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--ppo-epochs", type=int)
+    parser.add_argument("--teacher-model")
+    parser.add_argument("--teacher-kl-coefficient", type=float)
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -238,6 +240,14 @@ def main() -> int:
             self.ppo_epochs.setValue(3)
             if launch.ppo_epochs is not None:
                 self.ppo_epochs.setValue(launch.ppo_epochs)
+            self.teacher_model = QLineEdit(launch.teacher_model or "")
+            self.teacher_model.setPlaceholderText("Optional fixed teacher .zip")
+            self.teacher_kl = QDoubleSpinBox()
+            self.teacher_kl.setDecimals(4)
+            self.teacher_kl.setRange(0.0, 100.0)
+            self.teacher_kl.setValue(
+                0.0 if launch.teacher_kl_coefficient is None else launch.teacher_kl_coefficient
+            )
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -312,6 +322,8 @@ def main() -> int:
                 ("Rollout steps", self.rollout_steps),
                 ("Batch size", self.batch_size),
                 ("PPO epochs", self.ppo_epochs),
+                ("Teacher model", self.teacher_model),
+                ("Teacher KL coefficient", self.teacher_kl),
                 ("Reward profile", self.reward_profile),
                 ("All reward parameters", self.reward_table),
                 ("Curriculum", self.curriculum),
@@ -461,6 +473,12 @@ def main() -> int:
                 rollout_steps=self.rollout_steps.value(),
                 batch_size=self.batch_size.value(),
                 ppo_epochs=self.ppo_epochs.value(),
+                teacher_model=(
+                    Path(self.teacher_model.text().strip())
+                    if self.teacher_model.text().strip()
+                    else None
+                ),
+                teacher_kl_coefficient=self.teacher_kl.value(),
                 checkpoint_interval=self.checkpoint.value(),
                 output_root=Path(self.output.text()),
                 rewards=self.reward_config_from_table(),

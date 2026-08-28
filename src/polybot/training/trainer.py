@@ -12,6 +12,7 @@ from typing import Any
 
 from polybot.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
+from polybot.training.anchored_ppo import TeacherAnchoredPPO
 from polybot.training.config import TrainingConfig, policy_kwargs
 from polybot.training.devices import DeviceInfo, resolve_device
 from polybot.training.initialization import apply_forward_bias
@@ -20,7 +21,6 @@ from polybot.training.models import (
     ModelMetadata,
     ModelRegistry,
     git_commit,
-    load_ppo,
 )
 from polybot.transport import WebSocketServerTransport
 
@@ -98,6 +98,8 @@ class TrainingService:
                 "rollout_steps": cfg.rollout_steps,
                 "batch_size": cfg.batch_size,
                 "ppo_epochs": cfg.ppo_epochs,
+                "teacher_model": None if cfg.teacher_model is None else str(cfg.teacher_model),
+                "teacher_kl_coefficient": cfg.teacher_kl_coefficient,
             },
             polybot_version="0.1.0",
             git_commit=git_commit(),
@@ -289,8 +291,8 @@ class TrainingService:
                         ),
                         architecture=cfg.architecture,
                     )
-                self.model = load_ppo(
-                    resume,
+                self.model = TeacherAnchoredPPO.load(
+                    str(resume),
                     env=env,
                     device=self.device.resolved,
                     custom_objects={
@@ -304,7 +306,7 @@ class TrainingService:
                     },
                 )
             else:
-                self.model = PPO(
+                self.model = TeacherAnchoredPPO(
                     "MlpPolicy",
                     env,
                     seed=cfg.seed,
@@ -320,6 +322,12 @@ class TrainingService:
                     verbose=0,
                 )
                 apply_forward_bias(self.model)
+            teacher = None
+            if cfg.teacher_model is not None:
+                if not cfg.teacher_model.is_file():
+                    raise FileNotFoundError(f"teacher model not found: {cfg.teacher_model}")
+                teacher = PPO.load(str(cfg.teacher_model), device=self.device.resolved)
+            self.model.set_teacher(teacher, cfg.teacher_kl_coefficient)
             parameters = sum(p.numel() for p in self.model.policy.parameters())
             self.status(
                 {

@@ -69,6 +69,8 @@ class TrainingConfig:
     rollout_steps: int = 8192
     batch_size: int = 1024
     ppo_epochs: int = 3
+    teacher_model: Path | None = None
+    teacher_kl_coefficient: float = 0.0
     checkpoint_interval: int = 10_000
     output_root: Path = Path("models")
     seed: int = 0
@@ -97,8 +99,15 @@ class TrainingConfig:
             raise ValueError("batch_size must divide rollout_steps evenly")
         if self.ppo_epochs < 1:
             raise ValueError("ppo_epochs must be positive")
+        if self.teacher_kl_coefficient < 0:
+            raise ValueError("teacher KL coefficient cannot be negative")
+        if self.teacher_kl_coefficient and self.teacher_model is None:
+            raise ValueError("teacher_model is required when teacher KL is enabled")
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
         result["output_root"] = str(self.output_root)
+        result["teacher_model"] = (
+            None if self.teacher_model is None else str(self.teacher_model)
+        )
         return result
