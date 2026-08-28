@@ -117,9 +117,10 @@ the requested number of ticks; 10 ticks gives a 100 Hz control rate. A true epis
 worker's original delete/create/start path rather than the game's checkpoint-respawn control.
 
 The authoritative 0.6.2 state packet supplies transform, speed, checkpoint/finish state, wheel
-contacts, suspension values, steering, and applied controls. Linear and angular velocities are
-derived from consecutive transforms. The route reference supplies progress, lateral/heading error,
-and policy lookahead points.
+contacts, suspension values and velocities, wheel skid, steering, and applied controls. Linear and
+angular velocities and acceleration are derived from consecutive transforms. The route reference
+supplies progress, lateral/heading error, policy lookahead points, signed timed-ghost pose, target
+speed, and the recorded expert controls.
 
 The token-based mixin is intentionally fail-closed. Updating to another PolyTrack version requires
 checking the worker tokens, state decoder, one-tick helper, and reset path before changing the

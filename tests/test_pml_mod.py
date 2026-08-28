@@ -29,14 +29,14 @@ def test_pml_manifest_resolves_versioned_entry_point() -> None:
         "main": "main.mod.js",
     }
     assert (MOD_ROOT / version / version_manifest["main"]).is_file()
-    runtime_version = "0.1.0"
+    runtime_version = version
     assert (MOD_ROOT / runtime_version / "worker_runtime.js").is_file()
 
     main_source = (MOD_ROOT / version / version_manifest["main"]).read_text(encoding="utf-8")
     assert 'from "./worker_runtime.js"' not in main_source
     expected = (
         "https://cdn.polymodloader.com/gh/michael201110/poly-bot/"
-        f"6fe516802f4f30134d31826f3bb761edd903d669/pml-mod/{runtime_version}/"
+        f"767c4555b72d2c408e56c03ad683f454b929814d/pml-mod/{runtime_version}/"
         "worker_runtime.js"
     )
     assert f'from "{expected}"' in main_source
@@ -131,8 +131,24 @@ def test_latest_mod_imports_worker_from_an_immutable_resolvable_ref() -> None:
         encoding="utf-8"
     )
 
-    assert "/6fe516802f4f30134d31826f3bb761edd903d669/" in source
+    assert "/767c4555b72d2c408e56c03ad683f454b929814d/" in source
     assert "/v0.1.23/pml-mod/0.1.0/worker_runtime.js" not in source
+
+
+def test_v2_worker_exports_vehicle_dynamics_and_ghost_guidance() -> None:
+    source = (MOD_ROOT / "0.1.27" / "worker_runtime.js").read_text(encoding="utf-8")
+    for field in (
+        "local_acceleration_mps2",
+        "suspension_lengths_m",
+        "suspension_velocities_mps",
+        "wheel_skids",
+        "actual_steering",
+        "ghost_relative_position_m",
+        "ghost_heading_error_rad",
+        "ghost_target_speed_mps",
+        "expert_action",
+    ):
+        assert field in source
 
 
 def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:

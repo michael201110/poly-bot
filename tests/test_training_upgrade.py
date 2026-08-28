@@ -11,6 +11,7 @@ from polybot.env import (
     PolyTrackEnv,
     summer_1_bootstrap_pace_reward_config,
     summer_1_bootstrap_reward_config,
+    summer_1_ghost_learning_reward_config,
     summer_1_pace_reward_config,
     summer_1_reward_config,
 )
@@ -39,12 +40,12 @@ from polybot.training.trainer import RollingStepRate, TrainingService
 
 def test_xl_parameter_count() -> None:
     assert architecture("xl") == (1024, 1024, 512)
-    assert estimate_ppo_parameters(Telemetry.vector_size(12), (41, 2, 2), "xl") == 3_340_334
+    assert estimate_ppo_parameters(Telemetry.vector_size(12), (41, 2, 2), "xl") == 3_389_486
 
 
 def test_small_parameter_count() -> None:
     assert architecture("small") == (128, 128)
-    assert estimate_ppo_parameters(Telemetry.vector_size(12), (41, 2, 2), "small") == 59_950
+    assert estimate_ppo_parameters(Telemetry.vector_size(12), (41, 2, 2), "small") == 66_094
 
 
 def test_pwm_is_digital_distributed_deterministic_and_resets() -> None:
@@ -348,3 +349,11 @@ def test_summer_bootstrap_pace_profile_discourages_slow_survival() -> None:
     assert pace.barrier_contact_penalty < bootstrap.barrier_contact_penalty
     assert pace.progress_per_m == bootstrap.progress_per_m
     assert pace.speed_pace_reward_per_m_per_mps > 0
+
+
+def test_summer_ghost_learning_profile_prioritises_reference_imitation() -> None:
+    rewards = summer_1_ghost_learning_reward_config()
+    assert rewards.imitation_bonus_per_s == 100.0
+    assert rewards.expert_action_bonus_per_s == 60.0
+    assert rewards.ghost_speed_bonus_per_s == 30.0
+    assert rewards.finish_bonus + rewards.finish_fast_bonus == 8000.0

@@ -1,4 +1,4 @@
-# PolyBot simulator protocol v1
+# PolyBot simulator protocol v2
 
 The protocol is a synchronous request/response API transported as JSON over a local WebSocket.
 Exactly one request may be in flight. A future transport may reuse the same message schema.
@@ -8,7 +8,7 @@ All messages contain:
 ```json
 {
   "protocol": "polybot.sim",
-  "v": 1,
+  "v": 2,
   "id": 7
 }
 ```
@@ -18,7 +18,7 @@ Requests add `op` and `params`:
 ```json
 {
   "protocol": "polybot.sim",
-  "v": 1,
+  "v": 2,
   "id": 7,
   "op": "step",
   "params": {
@@ -32,13 +32,13 @@ Requests add `op` and `params`:
 Successful and failed responses have one of these forms:
 
 ```json
-{"protocol":"polybot.sim","v":1,"id":7,"ok":true,"result":{}}
+{"protocol":"polybot.sim","v":2,"id":7,"ok":true,"result":{}}
 ```
 
 ```json
 {
   "protocol": "polybot.sim",
-  "v": 1,
+  "v": 2,
   "id": 7,
   "ok": false,
   "error": { "code": "stale_episode", "message": "episode_id is stale or unknown" }
@@ -58,7 +58,7 @@ Negotiates a fixed lookahead size and reports stepping capabilities.
   "op": "hello",
   "params": {
     "protocol": "polybot.sim",
-    "protocol_version": 1,
+    "protocol_version": 2,
     "lookahead_count": 12
   }
 }
@@ -69,7 +69,7 @@ Result:
 ```json
 {
   "protocol": "polybot.sim",
-  "protocol_version": 1,
+  "protocol_version": 2,
   "simulator": "polytrack-local",
   "game_version": "0.6.2",
   "fixed_dt_s": 0.0166666667,
@@ -162,4 +162,3 @@ for readability. Invalid tail entries are zero-padded and have mask value `0`.
 Core event strings are `checkpoint`, `off_track`, `finish`, `crash`, and `time_limit`. Repeated
 `checkpoint` entries represent multiple checkpoints crossed within one action. The simulator emits
 facts only; Python owns shaped rewards and the wrapper episode limit.
-
