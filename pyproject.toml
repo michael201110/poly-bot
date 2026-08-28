@@ -33,6 +33,7 @@ polybot-smoke = "polybot.cli:smoke_main"
 polybot-train = "polybot.cli:train_main"
 polybot-eval = "polybot.cli:evaluate_main"
 polybot-drive = "polybot.cli:drive_main"
+polybot-distill = "polybot.distillation:main"
 polybot-gui = "polybot.gui.main:main"
 
 [tool.setuptools.packages.find]
