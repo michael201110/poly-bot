@@ -108,6 +108,7 @@ def main() -> int:
     parser.add_argument("--architecture", choices=["legacy", "small", "medium", "large", "xl"])
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--frame-skip", type=int)
+    parser.add_argument("--pwm-levels", type=int)
     parser.add_argument("--timesteps", type=int)
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--entropy-coefficient", type=float)
@@ -196,6 +197,8 @@ def main() -> int:
             self.levels.setRange(3, 201)
             self.levels.setSingleStep(2)
             self.levels.setValue(41)
+            if launch.pwm_levels is not None:
+                self.levels.setValue(launch.pwm_levels)
             self.frame_skip = QSpinBox()
             self.frame_skip.setRange(1, 1000)
             self.frame_skip.setValue(30)
