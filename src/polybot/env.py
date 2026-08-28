@@ -193,6 +193,17 @@ def summer_1_bootstrap_reward_config() -> RewardConfig:
     )
 
 
+def summer_1_bootstrap_pace_reward_config() -> RewardConfig:
+    """Move a bootstrapped full-track policy from survival toward forward pace."""
+
+    return dataclass_replace(
+        summer_1_bootstrap_reward_config(),
+        elapsed_cost_per_s=-0.75,
+        ground_brake_penalty_per_s=-3.0,
+        stall_penalty=-350.0,
+    )
+
+
 def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
     """Reject geometric off-track evidence while the car is airborne."""
 

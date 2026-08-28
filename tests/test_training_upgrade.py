@@ -8,6 +8,7 @@ import pytest
 
 from polybot.env import (
     PolyTrackEnv,
+    summer_1_bootstrap_pace_reward_config,
     summer_1_bootstrap_reward_config,
     summer_1_pace_reward_config,
     summer_1_reward_config,
@@ -327,3 +328,12 @@ def test_summer_bootstrap_profile_values_early_progress_over_failure_scale() -> 
     assert rewards.finish_bonus + rewards.finish_fast_bonus > 10 * abs(
         rewards.failure_early_penalty + rewards.barrier_contact_penalty
     )
+
+
+def test_summer_bootstrap_pace_profile_discourages_slow_survival() -> None:
+    bootstrap = summer_1_bootstrap_reward_config()
+    pace = summer_1_bootstrap_pace_reward_config()
+    assert pace.elapsed_cost_per_s < bootstrap.elapsed_cost_per_s
+    assert pace.ground_brake_penalty_per_s < bootstrap.ground_brake_penalty_per_s
+    assert pace.stall_penalty < bootstrap.stall_penalty
+    assert pace.progress_per_m == bootstrap.progress_per_m
