@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -10,7 +11,13 @@ from polybot.env import (
     summer_1_pace_reward_config,
     summer_1_reward_config,
 )
-from polybot.gui.main import preferred_model, reward_breakdown, timed_curriculum_bounds
+from polybot.gui.main import (
+    playback_model_path,
+    preferred_model,
+    realtime_drive_arguments,
+    reward_breakdown,
+    timed_curriculum_bounds,
+)
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
 from polybot.pwm import PwmSteering
@@ -23,7 +30,7 @@ from polybot.training.config import (
 from polybot.training.devices import resolve_device
 from polybot.training.manager import TrainingManager, is_retryable_simulator_error
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry, track_slug
-from polybot.training.trainer import RollingStepRate
+from polybot.training.trainer import RollingStepRate, TrainingService
 
 
 def test_xl_parameter_count() -> None:
@@ -132,6 +139,66 @@ def test_gui_prefers_latest_model_unless_current_selection_is_valid(tmp_path) ->
     assert preferred_model(models) == latest
     assert preferred_model(models, str(best)) == best
     assert preferred_model(models, "New model") == latest
+
+
+def test_gui_resolves_best_and_latest_playback_slots(tmp_path) -> None:
+    assert playback_model_path(tmp_path, "Winter 4", "latest") == (
+        tmp_path / "winter-4" / "latest.zip"
+    )
+    assert playback_model_path(tmp_path, "Winter 4", "best") == (
+        tmp_path / "winter-4" / "best.zip"
+    )
+    with pytest.raises(ValueError, match="latest or best"):
+        playback_model_path(tmp_path, "Winter 4", "checkpoint")
+
+
+def test_gui_builds_deterministic_realtime_pwm_playback_arguments(tmp_path) -> None:
+    model = tmp_path / "latest.zip"
+    assert realtime_drive_arguments(
+        model,
+        frame_skip=30,
+        pwm_enabled=True,
+        pwm_levels=41,
+        device="cuda",
+    ) == [
+        "--model",
+        str(model),
+        "--episodes",
+        "1",
+        "--frame-skip",
+        "30",
+        "--pwm",
+        "--pwm-levels",
+        "41",
+        "--device",
+        "cuda",
+    ]
+
+
+def test_training_service_can_snapshot_a_best_lap(tmp_path) -> None:
+    class FakePolicy:
+        @staticmethod
+        def parameters() -> list[object]:
+            return []
+
+    class FakeModel:
+        policy = FakePolicy()
+        num_timesteps = 123
+
+        @staticmethod
+        def save(path: str) -> None:
+            Path(f"{path}.zip").write_bytes(b"best model")
+
+    config = TrainingConfig(track_name="Winter 4", output_root=tmp_path)
+    service = TrainingService(config)
+    service.model = FakeModel()
+
+    saved = service.save_model("best", best_lap_time_s=19.75)
+
+    assert saved == tmp_path / "winter-4" / "best.zip"
+    assert saved.read_bytes() == b"best model"
+    metadata = ModelRegistry(tmp_path).read_metadata("Winter 4", "best")
+    assert metadata.best_lap_time_s == 19.75
 
 
 def test_gui_validates_timed_curriculum_bounds() -> None:

@@ -708,6 +708,14 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="sample PPO actions instead of using deterministic predictions",
     )
+    parser.add_argument(
+        "--pwm",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="use PWM steering action levels expected by PWM-trained models",
+    )
+    parser.add_argument("--pwm-levels", type=int, default=41)
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     args = parser.parse_args(argv)
 
     if args.episodes < 1:
@@ -716,6 +724,8 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--stochastic requires --model")
     if args.target_speed <= 0:
         parser.error("--target-speed must be positive")
+    if args.pwm_levels < 3 or args.pwm_levels % 2 == 0:
+        parser.error("--pwm-levels must be an odd integer >= 3")
     _validate_websocket_arguments(parser, args)
 
     ppo_type = None
@@ -736,6 +746,8 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
             frame_skip=args.frame_skip,
             max_episode_steps=args.max_steps,
             request_timeout_s=args.request_timeout,
+            pwm_enabled=args.pwm,
+            pwm_levels=args.pwm_levels,
         )
     except BaseException:
         transport.close()
@@ -746,7 +758,11 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     )
     summaries: list[dict[str, object]] = []
     try:
-        model = ppo_type.load(str(args.model), env=env) if ppo_type is not None else None
+        model = (
+            ppo_type.load(str(args.model), env=env, device=args.device)
+            if ppo_type is not None
+            else None
+        )
         print("Press R in this terminal to restart the current run.", flush=True)
         for episode in range(args.episodes):
             episode_seed = args.seed + episode

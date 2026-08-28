@@ -26,6 +26,39 @@ def preferred_model(models: list[Path], current: str = "") -> Path | None:
     return next((path for path in models if path.name.casefold() == "latest.zip"), None)
 
 
+def playback_model_path(output_root: str | Path, track_name: str, name: str) -> Path:
+    """Resolve one of the two GUI playback slots for a track."""
+
+    if name not in {"latest", "best"}:
+        raise ValueError("playback model name must be latest or best")
+    return ModelRegistry(output_root).track_dir(track_name) / f"{name}.zip"
+
+
+def realtime_drive_arguments(
+    model: str | Path,
+    *,
+    frame_skip: int,
+    pwm_enabled: bool,
+    pwm_levels: int,
+    device: str,
+) -> list[str]:
+    """Build deterministic one-lap playback arguments paced at simulation time."""
+
+    return [
+        "--model",
+        str(model),
+        "--episodes",
+        "1",
+        "--frame-skip",
+        str(frame_skip),
+        "--pwm" if pwm_enabled else "--no-pwm",
+        "--pwm-levels",
+        str(pwm_levels),
+        "--device",
+        device,
+    ]
+
+
 def timed_curriculum_bounds(mode: str, start_s: float, end_s: float) -> tuple[float, float] | None:
     """Return validated timed bounds, or no bounds for another curriculum mode."""
 
@@ -78,6 +111,9 @@ def main() -> int:
     parser.add_argument("--timesteps", type=int)
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--entropy-coefficient", type=float)
+    parser.add_argument("--rollout-steps", type=int)
+    parser.add_argument("--batch-size", type=int)
+    parser.add_argument("--ppo-epochs", type=int)
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -86,7 +122,7 @@ def main() -> int:
     parser.add_argument("--resume", action="store_true")
     launch, qt_arguments = parser.parse_known_args(sys.argv[1:])
     try:
-        from PySide6.QtCore import QObject, QTimer, Signal
+        from PySide6.QtCore import QObject, QProcess, QTimer, Signal
         from PySide6.QtWidgets import (
             QApplication,
             QCheckBox,
@@ -125,7 +161,14 @@ def main() -> int:
             self.events = Events()
             self.events.update.connect(self.on_status)
             self.manager = None
-            root, form, buttons = QWidget(), QFormLayout(), QHBoxLayout()
+            self.playback = None
+            self.pending_playback: Path | None = None
+            root, form, buttons, playback_buttons = (
+                QWidget(),
+                QFormLayout(),
+                QHBoxLayout(),
+                QHBoxLayout(),
+            )
             self.track = QComboBox()
             self.track.setEditable(True)
             self.track.addItems(["Summer 1", "Winter 4"])
@@ -183,12 +226,18 @@ def main() -> int:
             self.rollout_steps = QSpinBox()
             self.rollout_steps.setRange(2, 1_000_000)
             self.rollout_steps.setValue(8192)
+            if launch.rollout_steps is not None:
+                self.rollout_steps.setValue(launch.rollout_steps)
             self.batch_size = QSpinBox()
             self.batch_size.setRange(2, 1_000_000)
             self.batch_size.setValue(1024)
+            if launch.batch_size is not None:
+                self.batch_size.setValue(launch.batch_size)
             self.ppo_epochs = QSpinBox()
             self.ppo_epochs.setRange(1, 100)
             self.ppo_epochs.setValue(3)
+            if launch.ppo_epochs is not None:
+                self.ppo_epochs.setValue(launch.ppo_epochs)
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -288,9 +337,16 @@ def main() -> int:
             fresh.setToolTip("Create a fresh policy instead of loading the selected model")
             for button in (resume, stop, fresh, save_profile, browse):
                 buttons.addWidget(button)
+            play_latest = QPushButton("Play Latest (1×)")
+            play_best = QPushButton("Play Best (1×)")
+            play_latest.setToolTip("Stop training cleanly, then drive one deterministic lap")
+            play_best.setToolTip("Replay the policy snapshot that set the fastest logged lap")
+            playback_buttons.addWidget(play_latest)
+            playback_buttons.addWidget(play_best)
             layout = QVBoxLayout(root)
             layout.addLayout(form)
             layout.addLayout(buttons)
+            layout.addLayout(playback_buttons)
             layout.addWidget(self.overview)
             layout.addWidget(self.log)
             scroll = QScrollArea()
@@ -303,6 +359,8 @@ def main() -> int:
             stop.clicked.connect(self.stop)
             save_profile.clicked.connect(self.save_reward_profile)
             browse.clicked.connect(self.browse)
+            play_latest.clicked.connect(lambda: self.play_named_model("latest"))
+            play_best.clicked.connect(lambda: self.play_named_model("best"))
             self.track.currentTextChanged.connect(self.refresh_models)
             self.arch.currentTextChanged.connect(self.refresh_parameters)
             self.pwm.toggled.connect(self.refresh_parameters)
@@ -432,6 +490,80 @@ def main() -> int:
             if answer == QMessageBox.StandardButton.Yes:
                 self.start(None)
 
+        def play_named_model(self, name: str) -> None:
+            target = playback_model_path(
+                self.output.text() or "models", self.track.currentText(), name
+            ).resolve()
+            if not target.is_file():
+                QMessageBox.critical(
+                    self,
+                    f"No {name} model",
+                    f"No {name}.zip exists for {self.track.currentText()} yet.",
+                )
+                return
+            if (
+                self.playback is not None
+                and self.playback.state() != QProcess.ProcessState.NotRunning
+            ):
+                QMessageBox.information(self, "Playback active", "A model is already driving.")
+                return
+            self.pending_playback = target
+            if self.manager:
+                self.log.appendPlainText(
+                    f"Stopping training cleanly before realtime playback: {target.name}"
+                )
+                self.manager.stop()
+                self.runtime.setText("Stopping training before playback…")
+                return
+            self._start_pending_playback()
+
+        def _start_pending_playback(self) -> None:
+            target = self.pending_playback
+            if target is None or self.manager:
+                return
+            self.pending_playback = None
+            try:
+                device = resolve_device(self.device.currentText()).resolved
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Device unavailable", str(exc))
+                return
+            arguments = realtime_drive_arguments(
+                target,
+                frame_skip=self.frame_skip.value(),
+                pwm_enabled=self.pwm.isChecked(),
+                pwm_levels=self.levels.value(),
+                device=device,
+            )
+            process = QProcess(self)
+            process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+            process.readyReadStandardOutput.connect(self._read_playback_output)
+            process.finished.connect(self._playback_finished)
+            process.errorOccurred.connect(self._playback_error)
+            self.playback = process
+            self.runtime.setText(f"Playing {target.name} at 1× realtime…")
+            self.log.appendPlainText(f"Realtime playback started: {target}")
+            command = "from polybot.cli import drive_main; raise SystemExit(drive_main())"
+            process.start(sys.executable, ["-c", command, *arguments])
+
+        def _read_playback_output(self) -> None:
+            if self.playback is None:
+                return
+            text = bytes(self.playback.readAllStandardOutput()).decode(errors="replace").rstrip()
+            if text:
+                self.log.appendPlainText(text)
+
+        def _playback_finished(self, exit_code: int, _exit_status: object) -> None:
+            self._read_playback_output()
+            self.log.appendPlainText(f"Realtime playback ended with exit code {exit_code}")
+            if self.playback is not None:
+                self.playback.deleteLater()
+            self.playback = None
+            self.runtime.setText("Idle")
+            self.refresh_models()
+
+        def _playback_error(self, error: object) -> None:
+            self.log.appendPlainText(f"PLAYBACK ERROR: {error}")
+
         def start(self, selected: str | None) -> None:
             if self.manager:
                 return
@@ -469,6 +601,12 @@ def main() -> int:
             if self.manager:
                 self.manager.stop()
                 self.runtime.setText("Stopping after current PPO step…")
+            elif (
+                self.playback is not None
+                and self.playback.state() != QProcess.ProcessState.NotRunning
+            ):
+                self.playback.terminate()
+                self.runtime.setText("Stopping playback…")
 
         def on_status(self, event: dict) -> None:
             event_type = event.get("type")
@@ -514,6 +652,10 @@ def main() -> int:
                     self.log.appendPlainText(f"             {reward_breakdown(terms)}")
             elif event_type == "checkpoint":
                 self.log.appendPlainText(f"Checkpoint saved at timestep {event['timesteps']:,}")
+            elif event_type == "best_model":
+                self.log.appendPlainText(
+                    f"New best model saved: {event['lap_s']:.3f}s — {event['path']}"
+                )
             elif event_type == "recovery_checkpoint":
                 self.log.appendPlainText(
                     f"Recovery saved at timestep {event['timesteps']:,}: {event['path']}"
@@ -533,6 +675,8 @@ def main() -> int:
                 self.manager = None
                 self.runtime.setText("Idle")
                 self.refresh_models()
+                if self.pending_playback is not None:
+                    QTimer.singleShot(0, self._start_pending_playback)
 
     app = QApplication([sys.argv[0], *qt_arguments])
     window = Window()

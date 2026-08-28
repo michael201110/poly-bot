@@ -62,14 +62,16 @@ class TrainingService:
     def stop(self) -> None:
         self._stop.set()
 
-    def save_latest(self) -> Path:
-        """Persist the current in-memory policy and its resume metadata."""
+    def save_model(self, name: str, *, best_lap_time_s: float | None = None) -> Path:
+        """Persist the current in-memory policy and its compatibility metadata."""
 
         if self.model is None:
             raise RuntimeError("training model has not been initialised")
+        if name not in {"latest", "best"}:
+            raise ValueError("model name must be latest or best")
         cfg = self.config
         registry = ModelRegistry(cfg.output_root)
-        output = registry.initialise_track(cfg.track_name) / "latest"
+        output = registry.initialise_track(cfg.track_name) / name
         self.model.save(str(output))
         parameters = sum(p.numel() for p in self.model.policy.parameters())
         metadata = ModelMetadata(
@@ -85,6 +87,7 @@ class TrainingService:
             pwm_resolution=cfg.pwm_levels,
             frame_skip=cfg.frame_skip,
             training_timesteps=int(self.model.num_timesteps),
+            best_lap_time_s=best_lap_time_s,
             seed=cfg.seed,
             reward_settings=asdict(cfg.rewards),
             ppo_hyperparameters={
@@ -99,8 +102,13 @@ class TrainingService:
             polybot_version="0.1.0",
             git_commit=git_commit(),
         )
-        registry.write_metadata(metadata, "latest")
+        registry.write_metadata(metadata, name)
         return output.with_suffix(".zip")
+
+    def save_latest(self) -> Path:
+        """Persist the current in-memory policy and its resume metadata."""
+
+        return self.save_model("latest")
 
     def run(self, *, resume: str | Path | None = None, transport: Any | None = None) -> Path:
         from stable_baselines3 import PPO
@@ -132,6 +140,12 @@ class TrainingService:
         )
         registry = ModelRegistry(cfg.output_root)
         directory = registry.initialise_track(cfg.track_name)
+        try:
+            persisted_best_lap_s = registry.read_metadata(
+                cfg.track_name, "best"
+            ).best_lap_time_s
+        except (FileNotFoundError, TypeError, ValueError):
+            persisted_best_lap_s = None
         if not resume:
             archived = registry.archive_latest(cfg.track_name)
             if archived:
@@ -148,7 +162,7 @@ class TrainingService:
                 self.max_progress = 0.0
                 self.finishes = 0
                 self.crashes = 0
-                self.best_lap_s: float | None = None
+                self.best_lap_s = persisted_best_lap_s
                 self.step_rate = RollingStepRate(5.0)
 
             def _on_training_start(self) -> None:
@@ -199,8 +213,18 @@ class TrainingService:
                     crashed = "crash" in events
                     self.finishes += int(finished)
                     self.crashes += int(crashed)
-                    if finished:
-                        self.best_lap_s = min(self.best_lap_s or elapsed_s, elapsed_s)
+                    if finished and (self.best_lap_s is None or elapsed_s < self.best_lap_s):
+                        self.best_lap_s = elapsed_s
+                        best_path = service.save_model(
+                            "best", best_lap_time_s=self.best_lap_s
+                        )
+                        service.status(
+                            {
+                                "type": "best_model",
+                                "path": str(best_path),
+                                "lap_s": self.best_lap_s,
+                            }
+                        )
                     result = "time_limit" if info.get("wrapper_time_limit") else next(
                         (
                             name

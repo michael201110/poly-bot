@@ -117,6 +117,8 @@ def test_drive_uses_real_game_defaults(
         "frame_skip": 10,
         "max_episode_steps": 30_000,
         "request_timeout_s": 60.0,
+        "pwm_enabled": False,
+        "pwm_levels": 41,
     }
     assert created["seed"] == 0
     assert created["steering_sign"] == 1
