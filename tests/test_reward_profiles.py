@@ -60,3 +60,16 @@ def test_winter_4_19s_pace_profile_targets_fast_complete_laps() -> None:
     assert config.checkpoint_fast_bonus == 250.0
     assert config.failure_progress_clawback_per_m == -2.0
     assert config.failure_early_penalty == -1000.0
+
+
+def test_winter_4_conservative_pace_changes_only_finish_shaping() -> None:
+    store = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards")
+    baseline = store.load("Winter 4 - learning")
+    conservative = store.load("Winter 4 - 19s conservative")
+
+    assert "Winter 4 - 19s conservative" in store.names()
+    assert conservative.finish_target_s == 19.0
+    assert conservative.finish_fast_bonus == 3000.0
+    for field in fields(RewardConfig):
+        if field.name not in {"finish_target_s", "finish_fast_bonus"}:
+            assert getattr(conservative, field.name) == getattr(baseline, field.name)
