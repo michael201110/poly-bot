@@ -35,8 +35,9 @@ def test_pml_manifest_resolves_versioned_entry_point() -> None:
     main_source = (MOD_ROOT / version / version_manifest["main"]).read_text(encoding="utf-8")
     assert 'from "./worker_runtime.js"' not in main_source
     expected = (
-        "https://cdn.polymodloader.com/gh/michael201110/"
-        f"poly-bot/v{version}/pml-mod/{runtime_version}/worker_runtime.js"
+        "https://cdn.polymodloader.com/gh/michael201110/poly-bot/"
+        f"03d16a05bfbead84aa494ffaf999f86903f4cf92/pml-mod/{runtime_version}/"
+        "worker_runtime.js"
     )
     assert f'from "{expected}"' in main_source
 
@@ -123,6 +124,16 @@ def test_latest_mod_uses_native_backspace_after_finish() -> None:
     assert 'new KeyboardEvent("keydown", eventOptions)' in source
     assert 'new KeyboardEvent("keyup", eventOptions)' in source
     assert 'code: "Backspace"' in source
+
+
+def test_latest_mod_imports_worker_from_an_immutable_resolvable_ref() -> None:
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "/03d16a05bfbead84aa494ffaf999f86903f4cf92/" in source
+    assert "/v0.1.23/pml-mod/0.1.0/worker_runtime.js" not in source
 
 
 def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
