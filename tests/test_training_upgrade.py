@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,6 +20,7 @@ from polybot.gui.main import (
     realtime_drive_arguments,
     reward_breakdown,
     timed_curriculum_bounds,
+    training_log_path,
 )
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Telemetry
@@ -213,6 +215,13 @@ def test_gui_validates_timed_curriculum_bounds() -> None:
     assert timed_curriculum_bounds("timed", 5.0, 12.5) == (5.0, 12.5)
     with pytest.raises(ValueError, match="start < end"):
         timed_curriculum_bounds("timed", 12.5, 5.0)
+
+
+def test_gui_training_log_is_track_scoped_and_timestamped(tmp_path) -> None:
+    timestamp = datetime(2026, 8, 28, 13, 45, tzinfo=UTC)
+    assert training_log_path(tmp_path, "Summer 1", timestamp) == (
+        tmp_path / "summer-1-20260828T134500Z.jsonl"
+    )
 
 
 def test_gui_groups_episode_reward_terms() -> None:

@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import threading
 from dataclasses import fields
+from datetime import UTC, datetime
 from pathlib import Path
 
 from polybot.env import RewardConfig
@@ -13,7 +15,7 @@ from polybot.protocol import Telemetry
 from polybot.training.config import TrainingConfig, estimate_ppo_parameters
 from polybot.training.devices import resolve_device
 from polybot.training.manager import TrainingManager
-from polybot.training.models import ModelRegistry
+from polybot.training.models import ModelRegistry, track_slug
 from polybot.training.reward_profiles import RewardProfileStore
 
 
@@ -32,6 +34,15 @@ def playback_model_path(output_root: str | Path, track_name: str, name: str) -> 
     if name not in {"latest", "best"}:
         raise ValueError("playback model name must be latest or best")
     return ModelRegistry(output_root).track_dir(track_name) / f"{name}.zip"
+
+
+def training_log_path(
+    log_root: str | Path, track_name: str, timestamp: datetime | None = None
+) -> Path:
+    """Return a unique, track-scoped JSONL path for one GUI training session."""
+
+    stamp = (timestamp or datetime.now(UTC)).strftime("%Y%m%dT%H%M%SZ")
+    return Path(log_root) / f"{track_slug(track_name)}-{stamp}.jsonl"
 
 
 def realtime_drive_arguments(
@@ -173,6 +184,7 @@ def main() -> int:
             self.manager = None
             self.playback = None
             self.pending_playback: Path | None = None
+            self.training_log: Path | None = None
             root, form, buttons, playback_buttons = (
                 QWidget(),
                 QFormLayout(),
@@ -613,17 +625,32 @@ def main() -> int:
                 return
             if bounds is not None:
                 cfg.curriculum.start_s, cfg.curriculum.end_s = bounds
-            self.manager = TrainingManager(cfg, self.events.update.emit)
+            self.training_log = training_log_path("logs", cfg.track_name)
+            self.training_log.parent.mkdir(parents=True, exist_ok=True)
+            self._record_status(
+                {
+                    "type": "session",
+                    "resume": selected,
+                    "config": cfg.to_dict(),
+                }
+            )
+            self.manager = TrainingManager(cfg, self._record_status)
             threading.Thread(target=self._run, args=(selected,), daemon=True).start()
             self.runtime.setText("Starting…")
+
+        def _record_status(self, event: dict) -> None:
+            if self.training_log is not None:
+                with self.training_log.open("a", encoding="utf-8") as stream:
+                    stream.write(json.dumps(event, default=str, separators=(",", ":")) + "\n")
+            self.events.update.emit(event)
 
         def _run(self, selected: str | None) -> None:
             try:
                 self.manager.run(resume=selected, repeat=True)
             except Exception as exc:
-                self.events.update.emit({"type": "error", "message": str(exc)})
+                self._record_status({"type": "error", "message": str(exc)})
             finally:
-                self.events.update.emit({"type": "idle"})
+                self._record_status({"type": "idle"})
 
         def stop(self) -> None:
             if self.manager:
@@ -644,6 +671,8 @@ def main() -> int:
                 self.log.appendPlainText(
                     f"Started on {device_label}: {event['parameter_count']:,} parameters"
                 )
+                if self.training_log is not None:
+                    self.log.appendPlainText(f"Persistent log: {self.training_log}")
             elif event_type == "progress":
                 steps = event.get("timesteps", 0)
                 elapsed = event.get("elapsed_s", 0)
