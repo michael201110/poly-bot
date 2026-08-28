@@ -122,6 +122,7 @@ def main() -> int:
         choices=["full", "quarters", "quarters-from-q4", "quarters-randomised", "timed"],
     )
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--fresh", action="store_true")
     launch, qt_arguments = parser.parse_known_args(sys.argv[1:])
     try:
         from PySide6.QtCore import QObject, QProcess, QTimer, Signal
@@ -699,6 +700,10 @@ def main() -> int:
     app = QApplication([sys.argv[0], *qt_arguments])
     window = Window()
     window.show()
+    if launch.resume and launch.fresh:
+        parser.error("--resume and --fresh cannot be used together")
     if launch.resume:
         QTimer.singleShot(0, window.resume_selected)
+    elif launch.fresh:
+        QTimer.singleShot(0, lambda: window.start(None))
     return app.exec()
