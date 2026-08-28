@@ -46,3 +46,17 @@ def test_winter_4_failed_episode_score_increases_decisively_with_progress() -> N
 
     assert middle_score > 0.0
     assert late_score >= middle_score + 700.0
+
+
+def test_winter_4_19s_pace_profile_targets_fast_complete_laps() -> None:
+    store = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards")
+    config = store.load("Winter 4 - 19s pace")
+
+    assert "Winter 4 - 19s pace" in store.names()
+    assert config.finish_target_s == 19.0
+    assert config.finish_fast_bonus == 5000.0
+    assert config.finish_pace_decay_per_s == 0.4
+    assert config.checkpoint_target_s == 5.0
+    assert config.checkpoint_fast_bonus == 250.0
+    assert config.failure_progress_clawback_per_m == -2.0
+    assert config.failure_early_penalty == -1000.0
