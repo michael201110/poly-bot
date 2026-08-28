@@ -108,8 +108,8 @@ def test_worker_coasts_in_realtime_before_resetting_a_finish() -> None:
     assert "const finishDisplayDelayMs = 500;" in source
     assert "async function stepEpisode(params)" in source
     assert "car.isPaused = false;" in source
-    assert "setTimeout(resolve, finishDisplayDelayMs + 100)" in source
-    assert "pauseManualCars();" in source
+    assert "setTimeout(pauseManualCars, finishDisplayDelayMs + 100);" in source
+    assert "setTimeout(resolve, finishDisplayDelayMs + 100)" not in source
     assert "polybotPlayerFinished: playerFinished" in source
     assert "visibleBytes[11] &= ~2" not in source
 

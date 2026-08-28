@@ -1130,13 +1130,12 @@ export function polybotWorkerInjection() {
           if (decoded.hasFinished) {
             // Let PolyTrack's native realtime loop animate the completed car
             // briefly instead of freezing the last fixed-step state onscreen.
+            // Do not await this display pause: the successful step response must
+            // reach Python before the main thread replaces the finished worker.
             for (const car of cars) {
               car.isPaused = false;
             }
-            await new Promise((resolve) =>
-              setTimeout(resolve, finishDisplayDelayMs + 100),
-            );
-            pauseManualCars();
+            setTimeout(pauseManualCars, finishDisplayDelayMs + 100);
           }
           return result;
         }
