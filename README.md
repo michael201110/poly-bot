@@ -111,4 +111,4 @@ PolyTrack's current terms before distributing a modified build.
 
 ## Contributor Hall of Fame
 
-Gotchaaaaaa - First ever contributor, added support for PolyTrack 0.6.3
+- **[Gotchaaaaaa](https://github.com/Gotchaaaaaa)** — first external contributor; added PolyTrack 0.6.3 support.
