@@ -108,3 +108,7 @@ tests/                  Protocol, determinism, reward, and controller tests
 This project is intended for local research and clearly labelled AI demonstrations. The mod blocks
 the game's write and multiplayer entry points and hides AI finish state from the UI; still review
 PolyTrack's current terms before distributing a modified build.
+
+## Contributor Hall of Fame
+
+Gotchaaaaaa - First ever contributor, added support for PolyTrack 0.6.3
