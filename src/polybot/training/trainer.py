@@ -229,6 +229,8 @@ class TrainingService:
                 self.tqc_actions: deque[tuple[float, float]] = deque(maxlen=256)
                 self.tqc_probe: dict[str, Any] = {}
                 self.last_tqc_probe_step = -1_000
+                self.episode_observations: list[np.ndarray] = []
+                self.episode_actions: list[np.ndarray] = []
 
             def _on_training_start(self) -> None:
                 self.step_rate.update(self.num_timesteps)
@@ -244,6 +246,10 @@ class TrainingService:
                 )
                 dones = self.locals.get("dones")
                 done = bool(dones[-1]) if dones is not None and len(dones) else False
+                if cfg.algorithm == "tqc":
+                    collector = self.locals["self"]
+                    self.episode_observations.append(collector._last_obs[-1].copy())
+                    self.episode_actions.append(self.locals["buffer_actions"][-1].copy())
                 self.episode_reward += reward
                 for name, value in info.get("reward_terms", {}).items():
                     previous = self.episode_reward_terms.get(name, 0.0)
@@ -344,6 +350,18 @@ class TrainingService:
                     self.last_ui_update = now
                 if done:
                     finished = "finish" in events
+                    if finished and cfg.algorithm == "tqc":
+                        service.model.remember_successful_trajectory(
+                            np.asarray(self.episode_observations),
+                            np.asarray(self.episode_actions),
+                        )
+                        service.status({
+                            "type": "successful_trajectory_saved",
+                            "steps": len(self.episode_actions),
+                            "timesteps": self.num_timesteps,
+                        })
+                    self.episode_observations.clear()
+                    self.episode_actions.clear()
                     crashed = "crash" in events
                     self.finishes += int(finished)
                     if finished and service.first_finish_timestep is None:

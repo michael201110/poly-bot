@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import torch
 from sb3_contrib import TQC
+from torch.nn import functional as F
 
 
 class ForwardWarmupTQC(TQC):
@@ -22,7 +23,37 @@ class ForwardWarmupTQC(TQC):
         self.forward_prior_steps = forward_prior_steps
         self.actor_anchor_strength = 0.0
         self.actor_anchor_state = None
+        self.successful_trajectories: list[tuple[np.ndarray, np.ndarray]] = []
+        self._success_rng = np.random.default_rng(kwargs.get("seed"))
         super().__init__(*args, **kwargs)
+
+    def remember_successful_trajectory(
+        self, observations: np.ndarray, actions: np.ndarray
+    ) -> None:
+        """Keep completed-lap state/actions for actor rehearsal after the finish."""
+        observations = np.asarray(observations, dtype=np.float32)
+        actions = np.asarray(actions, dtype=np.float32)
+        if observations.ndim != 2 or actions.shape != (len(observations), 2):
+            raise ValueError("successful trajectory has invalid observation/action shape")
+        if not len(observations):
+            raise ValueError("successful trajectory must not be empty")
+        self.successful_trajectories.append((observations.copy(), actions.copy()))
+        self.successful_trajectories = self.successful_trajectories[-3:]
+
+    def _rehearse_success(self, batch_size: int) -> None:
+        observations, actions = self.successful_trajectories[
+            int(self._success_rng.integers(len(self.successful_trajectories)))
+        ]
+        indices = self._success_rng.integers(len(observations), size=min(batch_size, 64))
+        obs = torch.as_tensor(observations[indices], device=self.device)
+        target = torch.as_tensor(actions[indices], device=self.device)
+        prediction = self.actor(obs, deterministic=True)
+        loss = F.mse_loss(prediction, target)
+        self.actor.optimizer.zero_grad()
+        loss.backward()
+        self.actor.optimizer.step()
+        if hasattr(self, "_logger"):
+            self.logger.record("train/success_imitation_loss", loss.item())
 
     def anchor_actor(self, strength: float) -> None:
         """Keep fine-tuning close to a proven policy without freezing the actor."""
@@ -32,16 +63,21 @@ class ForwardWarmupTQC(TQC):
         self.actor_anchor_state = [p.detach().cpu().clone() for p in self.actor.parameters()]
 
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
-        if self.actor_anchor_strength <= 0 or self.actor_anchor_state is None:
+        has_anchor = self.actor_anchor_strength > 0 and self.actor_anchor_state is not None
+        has_success = bool(self.successful_trajectories)
+        if not has_anchor and not has_success:
             return super().train(gradient_steps, batch_size)
-        # One update at a time so the proximal pull applies after every actor step.
+        # Retain completed laps as the off-policy critic continues to change.
         for _ in range(gradient_steps):
             super().train(1, batch_size)
-            with torch.no_grad():
-                for parameter, anchor in zip(
-                    self.actor.parameters(), self.actor_anchor_state, strict=True
-                ):
-                    parameter.lerp_(anchor.to(parameter.device), self.actor_anchor_strength)
+            if has_anchor:
+                with torch.no_grad():
+                    for parameter, anchor in zip(
+                        self.actor.parameters(), self.actor_anchor_state, strict=True
+                    ):
+                        parameter.lerp_(anchor.to(parameter.device), self.actor_anchor_strength)
+            if has_success and self._n_updates % 4 == 0:
+                self._rehearse_success(batch_size)
 
     def forward_prior_strength(self, learning_starts: int) -> float:
         """Exploration-only longitudinal shift, zero after the configured decay."""

@@ -8,7 +8,7 @@ if (-not (Test-Path -LiteralPath $guiPath)) {
 $targetTimesteps = 4000000 # About 24 hours at the observed 45-50 steps/second.
 $remainingTimesteps = $targetTimesteps
 $settings = @{
-    architecture = 'tiny'; learning_rate = 0.00015; buffer_size = 500000
+    architecture = 'tiny'; learning_rate = 0.0003; buffer_size = 250000
     learning_starts = 5000; batch_size = 256; gamma = 0.999; tau = 0.005
     train_freq = 2; gradient_steps = 1; ent_coef = 'auto_0.01'
     forward_warmup_fraction = 0.8; forward_warmup_steering_std = 0.45
@@ -46,7 +46,7 @@ $launchArguments = @(
     '--frame-skip', '30',
     '--max-episode-seconds', '60',
     '--timesteps', [string]$remainingTimesteps,
-    '--reward-profile', '"Summer 1 - TQC stable"',
+    '--reward-profile', '"Summer 1 - full bootstrap"',
     '--reward-scale', '0.01',
     '--curriculum', 'full',
     '--checkpoint-interval', '250000',

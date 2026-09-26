@@ -350,3 +350,41 @@ def test_tqc_model_is_on_cuda_when_available() -> None:
         assert next(model.policy.parameters()).is_cuda
     finally:
         env.close()
+
+
+def test_successful_lap_rehearsal_updates_actor_and_survives_save(tmp_path) -> None:
+    import torch
+
+    from polybot.training.algorithms import create_model
+    from polybot.training.forward_tqc import ForwardWarmupTQC
+
+    env = PolyTrackEnv(MockSimulatorTransport(), action_mode="continuous_pwm")
+    try:
+        model = create_model(
+            TrainingConfig(algorithm="tqc", tqc=TqcConfig(architecture="tiny", buffer_size=64)),
+            env, "cpu",
+        )
+        observation, _ = env.reset(seed=4)
+        observations = np.repeat(observation[None], 32, axis=0)
+        actions = np.repeat(np.array([[-0.5, -0.5]], dtype=np.float32), 32, axis=0)
+        model.remember_successful_trajectory(observations, actions)
+        with torch.no_grad():
+            before = torch.nn.functional.mse_loss(
+                model.actor(torch.as_tensor(observations), deterministic=True),
+                torch.as_tensor(actions),
+            ).item()
+        for _ in range(20):
+            model._rehearse_success(32)
+        with torch.no_grad():
+            after = torch.nn.functional.mse_loss(
+                model.actor(torch.as_tensor(observations), deterministic=True),
+                torch.as_tensor(actions),
+            ).item()
+        assert after < before
+        archive = tmp_path / "rehearsal.zip"
+        model.save(str(archive))
+        restored = ForwardWarmupTQC.load(str(archive), device="cpu")
+        assert len(restored.successful_trajectories) == 1
+        np.testing.assert_array_equal(restored.successful_trajectories[0][1], actions)
+    finally:
+        env.close()
