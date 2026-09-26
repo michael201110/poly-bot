@@ -10,10 +10,10 @@ $remainingTimesteps = $targetTimesteps
 $settings = @{
     architecture = 'tiny'; learning_rate = 0.00015; buffer_size = 500000
     learning_starts = 5000; batch_size = 256; gamma = 0.999; tau = 0.005
-    train_freq = 2; gradient_steps = 1; ent_coef = 'auto_0.005'
+    train_freq = 2; gradient_steps = 1; ent_coef = 'auto_0.01'
     forward_warmup_fraction = 0.8; forward_warmup_steering_std = 0.45
-    initial_throttle_bias = 1.0; forward_prior_initial = 0.2
-    forward_prior_steps = 4000000
+    initial_throttle_bias = 1.0; forward_prior_initial = 0.7
+    forward_prior_steps = 25000
 }
 if ($Resume -or $ModelPath) {
     if (-not $ModelPath) {
