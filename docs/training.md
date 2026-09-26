@@ -84,6 +84,7 @@ Create a fresh virtual environment and install the CPU-compatible training depen
 ```powershell
 py -3.11 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 .\.venv\Scripts\python.exe -m pip install -e ".[train,gui,dev]"
 .\.venv\Scripts\polybot-doctor.exe
 ```
