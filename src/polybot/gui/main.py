@@ -572,7 +572,7 @@ def main() -> int:
             scroll.setWidget(root)
             self.setCentralWidget(scroll)
             self.resize(780, 800)
-            fresh.clicked.connect(self.start_fresh)
+            fresh.clicked.connect(lambda: self.start_fresh())
             resume.clicked.connect(self.resume_selected)
             stop.clicked.connect(self.stop)
             save_profile.clicked.connect(self.save_reward_profile)
@@ -765,16 +765,15 @@ def main() -> int:
                 return
             self.start(selected)
 
-        def start_fresh(self) -> None:
-            answer = QMessageBox.question(
+        def start_fresh(self, *, confirm: bool = True) -> None:
+            if not confirm or QMessageBox.question(
                 self,
                 "Start a fresh model?",
                 "This creates a brand-new policy and does not load the selected model.\n\n"
                 "The existing latest model will be archived first. Continue?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
-            )
-            if answer == QMessageBox.StandardButton.Yes:
+            ) == QMessageBox.StandardButton.Yes:
                 self.start(None)
 
         def play_named_model(self, name: str) -> None:
@@ -1057,5 +1056,5 @@ def main() -> int:
     if launch.resume:
         QTimer.singleShot(0, window.resume_selected)
     elif launch.fresh:
-        QTimer.singleShot(0, lambda: window.start(None))
+        QTimer.singleShot(0, lambda: window.start_fresh(confirm=False))
     return app.exec()
