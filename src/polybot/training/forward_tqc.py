@@ -26,12 +26,14 @@ class ForwardWarmupTQC(TQC):
         self.successful_trajectories: list[tuple[np.ndarray, np.ndarray]] = []
         self._success_rng = np.random.default_rng(kwargs.get("seed"))
         self.safe_actor_state: list[torch.Tensor] | None = None
+        self.safe_actor_progress = 0.0
         super().__init__(*args, **kwargs)
 
-    def mark_safe_actor(self) -> None:
+    def mark_safe_actor(self, progress: float = 0.0) -> None:
         """Remember a demonstrated or finishing policy for collapse recovery."""
         self.safe_actor_state = [parameter.detach().cpu().clone()
                                  for parameter in self.actor.parameters()]
+        self.safe_actor_progress = progress
 
     def restore_safe_actor(self) -> bool:
         if self.safe_actor_state is None:

@@ -232,6 +232,7 @@ class TrainingService:
                 self.episode_observations: list[np.ndarray] = []
                 self.episode_actions: list[np.ndarray] = []
                 self.collapsed_episodes = 0
+                self.safe_progress = float(getattr(service.model, "safe_actor_progress", 0.0))
 
             def _on_training_start(self) -> None:
                 self.step_rate.update(self.num_timesteps)
@@ -351,12 +352,22 @@ class TrainingService:
                     self.last_ui_update = now
                 if done:
                     finished = "finish" in events
+                    if (cfg.algorithm == "tqc" and self.max_progress >= 0.5
+                            and self.max_progress > self.safe_progress + 0.02):
+                        service.model.mark_safe_actor(self.max_progress)
+                        self.safe_progress = self.max_progress
+                        service.status({
+                            "type": "safe_actor_saved",
+                            "timesteps": self.num_timesteps,
+                            "progress": self.safe_progress,
+                        })
                     if finished and cfg.algorithm == "tqc":
                         service.model.remember_successful_trajectory(
                             np.asarray(self.episode_observations),
                             np.asarray(self.episode_actions),
                         )
-                        service.model.mark_safe_actor()
+                        service.model.mark_safe_actor(1.0)
+                        self.safe_progress = 1.0
                         service.status({
                             "type": "successful_trajectory_saved",
                             "steps": len(self.episode_actions),
@@ -365,18 +376,19 @@ class TrainingService:
                     self.episode_observations.clear()
                     self.episode_actions.clear()
                     if cfg.algorithm == "tqc":
-                        collapse_threshold = max(0.05, service.max_progress * 0.25)
+                        reference_progress = max(service.max_progress, self.safe_progress)
+                        collapse_threshold = max(0.05, reference_progress * 0.25)
                         if self.max_progress < collapse_threshold:
                             self.collapsed_episodes += 1
                         else:
                             self.collapsed_episodes = 0
-                        if self.collapsed_episodes >= 12 and service.max_progress >= 0.5:
+                        if self.collapsed_episodes >= 12 and reference_progress >= 0.5:
                             if service.model.restore_safe_actor():
                                 service.status({
                                     "type": "policy_recovery",
                                     "timesteps": self.num_timesteps,
                                     "recent_episode_progress": self.max_progress,
-                                    "previous_best_progress": service.max_progress,
+                                    "previous_best_progress": reference_progress,
                                 })
                             self.collapsed_episodes = 0
                     crashed = "crash" in events
