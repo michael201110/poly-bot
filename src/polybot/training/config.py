@@ -82,6 +82,8 @@ class TqcConfig:
     forward_warmup_fraction: float = 0.8
     forward_warmup_steering_std: float = 0.45
     initial_throttle_bias: float = 1.0
+    forward_prior_initial: float = 0.0
+    forward_prior_steps: int = 0
 
     def __post_init__(self) -> None:
         if self.architecture not in TQC_ARCHITECTURES:
@@ -120,6 +122,12 @@ class TqcConfig:
             raise ValueError("TQC warmup steering standard deviation must be nonnegative")
         if not math.isfinite(self.initial_throttle_bias) or self.initial_throttle_bias < 0:
             raise ValueError("TQC initial throttle bias must be nonnegative")
+        if not math.isfinite(self.forward_prior_initial) or not (
+            0 <= self.forward_prior_initial <= 1
+        ):
+            raise ValueError("TQC forward prior must be in [0, 1]")
+        if self.forward_prior_steps < 0:
+            raise ValueError("TQC forward prior steps must be nonnegative")
 
 
 @dataclass(slots=True)

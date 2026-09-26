@@ -20,10 +20,11 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
         "--tqc-learning-rate", "0.0003", "--tqc-buffer-size", "250000",
         "--tqc-learning-starts", "5000", "--tqc-batch-size", "256",
         "--tqc-gamma", "0.999", "--tqc-tau", "0.005",
-        "--tqc-train-freq", "1", "--tqc-gradient-steps", "1", "--tqc-ent-coef", "auto_0.01",
+        "--tqc-train-freq", "2", "--tqc-gradient-steps", "1", "--tqc-ent-coef", "auto_0.01",
         "--tqc-forward-warmup-fraction", "0.8",
         "--tqc-forward-warmup-steering-std", "0.45",
         "--tqc-initial-throttle-bias", "1.0",
+        "--tqc-forward-prior-initial", "0.7", "--tqc-forward-prior-steps", "25000",
     ])
     observed = {}
 
@@ -61,6 +62,8 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
             "forward_fraction": fields["TQC forward warmup fraction"].value(),
             "steering_std": fields["TQC warmup steering std"].value(),
             "throttle_bias": fields["TQC initial throttle bias"].value(),
+            "prior_initial": fields["TQC forward prior initial"].value(),
+            "prior_steps": fields["TQC forward prior steps"].value(),
             "tqc_enabled": fields["TQC replay buffer"].isEnabled(),
             "ppo_disabled": not fields["PPO epochs"].isEnabled(),
             "teacher_disabled": not fields["Teacher model"].isEnabled(),
@@ -80,9 +83,10 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
         "reward_profile": "Summer 1 - full bootstrap",
         "checkpoint": 25_000, "learning_rate": 0.0003,
         "replay_buffer": 250_000, "learning_starts": 5_000, "batch_size": 256,
-        "gamma": 0.999, "tau": 0.005, "train_frequency": 1,
+        "gamma": 0.999, "tau": 0.005, "train_frequency": 2,
         "gradient_steps": 1, "entropy": "auto_0.01",
         "forward_fraction": 0.8, "steering_std": 0.45, "throttle_bias": 1.0,
+        "prior_initial": 0.7, "prior_steps": 25_000,
         "tqc_enabled": True, "ppo_disabled": True,
         "teacher_disabled": True, "kl_disabled": True,
     }

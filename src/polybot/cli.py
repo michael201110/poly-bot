@@ -299,6 +299,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--tqc-train-freq", type=int, default=1)
     parser.add_argument("--tqc-gradient-steps", type=int, default=1)
     parser.add_argument("--tqc-ent-coef", default="auto_0.01")
+    parser.add_argument("--tqc-forward-prior-initial", type=float, default=0.0)
+    parser.add_argument("--tqc-forward-prior-steps", type=int, default=0)
     parser.add_argument(
         "--max-episodes",
         type=int,
@@ -499,6 +501,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     batch_size=args.tqc_batch_size, gamma=args.tqc_gamma,
                     tau=args.tqc_tau, train_freq=args.tqc_train_freq,
                     gradient_steps=args.tqc_gradient_steps, ent_coef=args.tqc_ent_coef,
+                    forward_prior_initial=args.tqc_forward_prior_initial,
+                    forward_prior_steps=args.tqc_forward_prior_steps,
                 ),
             )
             output = TrainingService(config, lambda event: print(json.dumps(event))).run(
@@ -520,6 +524,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         "--tqc-train-freq": args.tqc_train_freq != 1,
         "--tqc-gradient-steps": args.tqc_gradient_steps != 1,
         "--tqc-ent-coef": args.tqc_ent_coef != "auto_0.01",
+        "--tqc-forward-prior-initial": args.tqc_forward_prior_initial != 0.0,
+        "--tqc-forward-prior-steps": args.tqc_forward_prior_steps != 0,
     }
     if any(tqc_overrides.values()):
         names = ", ".join(k for k, enabled in tqc_overrides.items() if enabled)

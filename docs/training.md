@@ -80,7 +80,7 @@ PolyTrack mod is connected and its ghost reference is loaded. This reproducible 
 the `tiny` actor, 30-tick frame skip, 60-second episode cap, 100,000 environment timesteps,
 seed 0, full-track curriculum, `Summer 1 - full bootstrap`, and reward scale `0.01`. TQC uses
 learning rate `0.0003`, a 250,000-transition replay buffer, 5,000 learning-start steps, batch
-256, gamma `0.999`, tau `0.005`, one training update per step, and automatic entropy tuning
+256, gamma `0.999`, tau `0.005`, one training update per two steps, and automatic entropy tuning
 initialized at `0.01` (`auto_0.01`). The launch selects CUDA and fails loudly if it is unavailable.
 It checkpoints every 25,000 steps. The buffer holds the full 100,000-step first run with room
 for later resumption, while using less CPU memory and disk than the general 1,000,000-transition
@@ -111,6 +111,15 @@ TQC throughput drops when replay warmup ends because every new transition then t
 actor/critic update. A small 64x64 MLP can be limited by GPU launch overhead: the T500 is
 usable, but it is not necessarily faster than a CPU with a few PyTorch threads. The live
 policy probes are batched and cached for 500 steps to keep diagnostic overhead small.
+
+The next Summer 1 diagnostic uses one update per two environment steps to reduce load on the
+ThinkPad. It also shifts sampled longitudinal actions toward throttle by up to 0.7 after
+warmup, decaying linearly to zero over 25,000 steps. The shifted action is both executed and
+stored in replay, so the critic sees the action that caused each transition. This is a
+temporary exploration prior; it does not alter the actor's weights or force throttle after
+the schedule expires. It addresses observed premature braking before the first jump, where
+the corrected-reward run braked in about half of sampled actions at 10-15% progress versus
+about 14% in the earlier run.
 
 Summer 1 runs around 50,000 steps exposed another reward failure: repeated episodes ended at
 the same 23.4% barrier while collecting about twice the one-way progress reward. The route

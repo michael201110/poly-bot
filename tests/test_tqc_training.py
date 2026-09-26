@@ -181,6 +181,43 @@ def test_tqc_warmup_seed_and_replay_action_match_execution() -> None:
     np.testing.assert_array_equal(samples[0], samples[1])
 
 
+def test_tqc_forward_prior_is_annealed_and_buffered_action_is_executed() -> None:
+    import torch
+
+    from polybot.training.algorithms import create_model
+
+    env = PolyTrackEnv(MockSimulatorTransport(), action_mode="continuous_pwm")
+    try:
+        cfg = TrainingConfig(
+            algorithm="tqc", tqc=TqcConfig(
+                architecture="tiny", buffer_size=64,
+                forward_prior_initial=0.7, forward_prior_steps=100,
+            ),
+        )
+        model = create_model(cfg, env, "cpu")
+        model._last_obs = np.zeros((1, 105), dtype=np.float32)
+        model.num_timesteps = 5_000
+        assert model.forward_prior_strength(5_000) == pytest.approx(0.7)
+        torch.manual_seed(5)
+        model.forward_prior_initial = 0.0
+        baseline, _ = model._sample_action(5_000)
+        model.forward_prior_initial = 0.7
+        torch.manual_seed(5)
+        executed, buffered = model._sample_action(5_000)
+        assert executed[0, 1] == pytest.approx(min(1.0, baseline[0, 1] + 0.7))
+        np.testing.assert_allclose(model.policy.unscale_action(buffered), executed)
+        model.num_timesteps = 5_050
+        assert model.forward_prior_strength(5_000) == pytest.approx(0.35)
+        model.num_timesteps = 5_100
+        assert model.forward_prior_strength(5_000) == 0.0
+        with torch.no_grad():
+            model.policy.actor.mu.bias[1] = -2.0
+        actions = [model._sample_action(5_000)[0][0, 1] for _ in range(20)]
+        assert any(value < 0 for value in actions)
+    finally:
+        env.close()
+
+
 def test_ppo_brake_reward_keeps_binary_behavior() -> None:
     rewards = RewardConfig(
         ground_brake_penalty_per_s=-100.0, action_change_penalty=-10.0

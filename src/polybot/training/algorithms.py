@@ -49,6 +49,8 @@ def create_model(config: TrainingConfig, env: Any, device: str) -> Any:
         gradient_steps=settings.gradient_steps, ent_coef=settings.ent_coef,
         forward_warmup_fraction=settings.forward_warmup_fraction,
         forward_warmup_steering_std=settings.forward_warmup_steering_std,
+        forward_prior_initial=settings.forward_prior_initial,
+        forward_prior_steps=settings.forward_prior_steps,
         policy_kwargs={"net_arch": {
             "pi": list(TQC_ARCHITECTURES[settings.architecture]),
             "qf": list(TQC_ARCHITECTURES[settings.architecture]),

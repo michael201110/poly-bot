@@ -41,12 +41,14 @@ $launchArguments = @(
     '--tqc-batch-size', '256',
     '--tqc-gamma', '0.999',
     '--tqc-tau', '0.005',
-    '--tqc-train-freq', '1',
+    '--tqc-train-freq', '2',
     '--tqc-gradient-steps', '1',
     '--tqc-ent-coef', 'auto_0.01',
     '--tqc-forward-warmup-fraction', '0.8',
     '--tqc-forward-warmup-steering-std', '0.45',
-    '--tqc-initial-throttle-bias', '1.0'
+    '--tqc-initial-throttle-bias', '1.0',
+    '--tqc-forward-prior-initial', '0.7',
+    '--tqc-forward-prior-steps', '25000'
 )
 if ($Resume) {
     $launchArguments += @('--model', ('"' + $modelPath + '"'), '--resume')
