@@ -84,6 +84,7 @@ class TqcConfig:
     initial_throttle_bias: float = 1.0
     forward_prior_initial: float = 0.0
     forward_prior_steps: int = 0
+    success_demo_path: str = ""
 
     def __post_init__(self) -> None:
         if self.architecture not in TQC_ARCHITECTURES:

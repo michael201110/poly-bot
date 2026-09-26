@@ -60,6 +60,15 @@ def create_model(config: TrainingConfig, env: Any, device: str) -> Any:
 
     with torch.no_grad():
         model.policy.actor.mu.bias[1] += settings.initial_throttle_bias
+    if settings.success_demo_path:
+        import numpy as np
+
+        with np.load(settings.success_demo_path) as demo:
+            model.remember_successful_trajectory(
+                demo["observations"], demo["actions"]
+            )
+        for _ in range(500):
+            model._rehearse_success(settings.batch_size)
     return model
 
 

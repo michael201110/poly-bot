@@ -388,3 +388,30 @@ def test_successful_lap_rehearsal_updates_actor_and_survives_save(tmp_path) -> N
         np.testing.assert_array_equal(restored.successful_trajectories[0][1], actions)
     finally:
         env.close()
+
+
+def test_fresh_tqc_can_pretrain_from_successful_lap(tmp_path) -> None:
+    from polybot.training.algorithms import create_model
+
+    env = PolyTrackEnv(MockSimulatorTransport(), action_mode="continuous_pwm")
+    try:
+        observation, _ = env.reset(seed=1)
+        observations = np.repeat(observation[None], 16, axis=0)
+        actions = np.repeat(np.array([[0.2, 0.8]], dtype=np.float32), 16, axis=0)
+        demo_path = tmp_path / "finish.npz"
+        np.savez_compressed(demo_path, observations=observations, actions=actions)
+        model = create_model(
+            TrainingConfig(
+                algorithm="tqc",
+                tqc=TqcConfig(
+                    architecture="tiny", buffer_size=64,
+                    success_demo_path=str(demo_path),
+                ),
+            ),
+            env, "cpu",
+        )
+        assert len(model.successful_trajectories) == 1
+        predicted, _ = model.predict(observation, deterministic=True)
+        assert np.linalg.norm(predicted - actions[0]) < 0.5
+    finally:
+        env.close()

@@ -181,6 +181,7 @@ def main() -> int:
     parser.add_argument("--tqc-initial-throttle-bias", type=float)
     parser.add_argument("--tqc-forward-prior-initial", type=float)
     parser.add_argument("--tqc-forward-prior-steps", type=int)
+    parser.add_argument("--tqc-success-demo-path")
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -432,6 +433,7 @@ def main() -> int:
                 0 if launch.tqc_forward_prior_steps is None
                 else launch.tqc_forward_prior_steps
             )
+            self.tqc_success_demo = QLineEdit(launch.tqc_success_demo_path or "")
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -526,6 +528,7 @@ def main() -> int:
                 ("TQC initial throttle bias", self.tqc_throttle_bias),
                 ("TQC forward prior initial", self.tqc_prior_initial),
                 ("TQC forward prior steps", self.tqc_prior_steps),
+                ("TQC successful lap demo", self.tqc_success_demo),
                 ("Teacher model", self.teacher_model),
                 ("Teacher KL coefficient", self.teacher_kl),
                 ("Expert imitation coefficient", self.expert_imitation),
@@ -662,7 +665,7 @@ def main() -> int:
                 self.tqc_batch, self.tqc_gamma, self.tqc_tau,
                 self.tqc_frequency, self.tqc_gradients, self.tqc_entropy,
                 self.tqc_forward_fraction, self.tqc_steering_std, self.tqc_throttle_bias,
-                self.tqc_prior_initial, self.tqc_prior_steps,
+                self.tqc_prior_initial, self.tqc_prior_steps, self.tqc_success_demo,
             ):
                 widget.setEnabled(not is_ppo)
             self.action_description.setText(
@@ -746,6 +749,7 @@ def main() -> int:
                     initial_throttle_bias=self.tqc_throttle_bias.value(),
                     forward_prior_initial=self.tqc_prior_initial.value(),
                     forward_prior_steps=self.tqc_prior_steps.value(),
+                    success_demo_path=self.tqc_success_demo.text().strip(),
                 ),
                 reward_scale=self.reward_scale.value(),
                 checkpoint_interval=self.checkpoint.value(),
