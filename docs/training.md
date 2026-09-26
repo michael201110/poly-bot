@@ -112,6 +112,14 @@ actor/critic update. A small 64x64 MLP can be limited by GPU launch overhead: th
 usable, but it is not necessarily faster than a CPU with a few PyTorch threads. The live
 policy probes are batched and cached for 500 steps to keep diagnostic overhead small.
 
+Summer 1 runs around 50,000 steps exposed another reward failure: repeated episodes ended at
+the same 23.4% barrier while collecting about twice the one-way progress reward. The route
+projection can move backward by more than the per-step reverse cap, then credit that same
+distance again on the way forward. Dense progress is now credited only when an episode sets
+a new route-progress high-water mark; backward movement can still incur its capped penalty.
+This reward-accounting change applies to PPO and TQC. A fresh TQC replay buffer is required
+to evaluate it because saved transitions retain their old rewards.
+
 ## Devices and network presets
 
 New models default to separate actor and critic networks of `1024, 1024, 512` (`xl`). With the

@@ -337,6 +337,16 @@ def _failure_early_reward(telemetry: Telemetry, config: RewardConfig) -> float:
     return config.failure_early_penalty * (1.0 - progress_ratio)
 
 
+def _credited_progress_delta(
+    current_m: float, previous_m: float, highest_m: float, config: RewardConfig
+) -> float:
+    """Credit new route distance once, even after a backward projection jump."""
+
+    if current_m < previous_m:
+        return max(current_m - previous_m, -config.max_reverse_progress_per_step_m)
+    return min(max(0.0, current_m - highest_m), config.max_forward_progress_per_step_m)
+
+
 def _ghost_pose_reward(simulator_info: Mapping[str, Any], config: RewardConfig, dt: float) -> float:
     """Reward proximity and full 3D orientation agreement with the ghost pose."""
 
@@ -566,6 +576,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_id: str | None = None
         self._episode_steps = 0
         self._previous_progress_m = 0.0
+        self._highest_progress_m = 0.0
         self._previous_action = Action()
         self._previous_control = ControlDuty.from_action(self._previous_action)
         self._episode_done = True
@@ -678,6 +689,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_id = transition.episode_id
         self._episode_steps = 0
         self._previous_progress_m = transition.telemetry.route_progress_m
+        self._highest_progress_m = self._previous_progress_m
         self._previous_action = transition.telemetry.previous_action
         self._previous_control = ControlDuty.from_action(self._previous_action)
         self._episode_done = False
@@ -951,14 +963,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         curriculum_section_complete: bool = False,
     ) -> tuple[float, dict[str, float]]:
         config = self.reward_config
-        raw_delta = transition.telemetry.route_progress_m - self._previous_progress_m
-        progress_delta = float(
-            np.clip(
-                raw_delta,
-                -config.max_reverse_progress_per_step_m,
-                config.max_forward_progress_per_step_m,
-            )
+        current_progress_m = transition.telemetry.route_progress_m
+        progress_delta = _credited_progress_delta(
+            current_progress_m, self._previous_progress_m, self._highest_progress_m, config
         )
+        self._highest_progress_m = max(self._highest_progress_m, current_progress_m)
         events = transition.events
         telemetry = transition.telemetry
         dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])

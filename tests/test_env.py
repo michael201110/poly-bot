@@ -15,6 +15,7 @@ from polybot.env import (
     _airborne_tilt_penalty,
     _barrier_contact_reward,
     _checkpoint_reward,
+    _credited_progress_delta,
     _failure_early_reward,
     _failure_progress_clawback,
     _finish_reward,
@@ -47,6 +48,19 @@ def test_reset_is_deterministic_for_same_seed() -> None:
         np.testing.assert_array_equal(first, second)
     finally:
         env.close()
+
+
+def test_progress_reward_cannot_be_farmed_by_backward_projection() -> None:
+    config = RewardConfig(progress_per_m=4.0)
+    peak = 0.0
+    previous = 0.0
+    credited = []
+    for current in (10.0, 20.0, 5.0, 10.0, 20.0, 24.0):
+        credited.append(_credited_progress_delta(current, previous, peak, config))
+        peak = max(peak, current)
+        previous = current
+    assert credited == [10.0, 10.0, -3.0, 0.0, 0.0, 4.0]
+    assert sum(value for value in credited if value > 0) == 24.0
 
 
 def test_curriculum_reset_starts_within_requested_final_section() -> None:
