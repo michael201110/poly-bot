@@ -144,7 +144,10 @@ def main() -> int:
         "--architecture", choices=["legacy", "compact", "small", "medium", "large", "xl"]
     )
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"])
+    parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--frame-skip", type=int)
+    parser.add_argument("--max-episode-seconds", type=float)
+    parser.add_argument("--checkpoint-interval", type=int)
     parser.add_argument("--pwm-levels", type=int)
     parser.add_argument("--timesteps", type=int)
     parser.add_argument("--learning-rate", type=float)
@@ -161,6 +164,15 @@ def main() -> int:
     parser.add_argument(
         "--tqc-architecture", choices=["tiny", "compact", "standard"], default="standard"
     )
+    parser.add_argument("--tqc-learning-rate", type=float)
+    parser.add_argument("--tqc-buffer-size", type=int)
+    parser.add_argument("--tqc-learning-starts", type=int)
+    parser.add_argument("--tqc-batch-size", type=int)
+    parser.add_argument("--tqc-gamma", type=float)
+    parser.add_argument("--tqc-tau", type=float)
+    parser.add_argument("--tqc-train-freq", type=int)
+    parser.add_argument("--tqc-gradient-steps", type=int)
+    parser.add_argument("--tqc-ent-coef")
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -239,6 +251,9 @@ def main() -> int:
             self.device.addItems(["auto", "cpu", "cuda"])
             if launch.device:
                 self.device.setCurrentText(launch.device)
+            self.seed = QSpinBox()
+            self.seed.setRange(0, 2_000_000_000)
+            self.seed.setValue(launch.seed)
             self.pwm = QCheckBox()
             self.pwm.setChecked(True)
             self.levels = QSpinBox()
@@ -253,6 +268,8 @@ def main() -> int:
             self.max_episode_seconds = QDoubleSpinBox()
             self.max_episode_seconds.setRange(1.0, 3600.0)
             self.max_episode_seconds.setValue(60.0)
+            if launch.max_episode_seconds is not None:
+                self.max_episode_seconds.setValue(launch.max_episode_seconds)
             self.max_episode_seconds.setSuffix(" s")
             self.timesteps = QSpinBox()
             self.timesteps.setRange(1, 2_000_000_000)
@@ -331,30 +348,48 @@ def main() -> int:
             self.tqc_lr.setDecimals(7)
             self.tqc_lr.setRange(0.0000001, 1.0)
             self.tqc_lr.setValue(0.0003)
+            if launch.tqc_learning_rate is not None:
+                self.tqc_lr.setValue(launch.tqc_learning_rate)
             self.tqc_buffer = QSpinBox()
             self.tqc_buffer.setRange(1, 10_000_000)
             self.tqc_buffer.setValue(1_000_000)
+            if launch.tqc_buffer_size is not None:
+                self.tqc_buffer.setValue(launch.tqc_buffer_size)
             self.tqc_starts = QSpinBox()
             self.tqc_starts.setRange(0, 10_000_000)
             self.tqc_starts.setValue(10_000)
+            if launch.tqc_learning_starts is not None:
+                self.tqc_starts.setValue(launch.tqc_learning_starts)
             self.tqc_batch = QSpinBox()
             self.tqc_batch.setRange(1, 100_000)
             self.tqc_batch.setValue(256)
+            if launch.tqc_batch_size is not None:
+                self.tqc_batch.setValue(launch.tqc_batch_size)
             self.tqc_gamma = QDoubleSpinBox()
             self.tqc_gamma.setDecimals(5)
             self.tqc_gamma.setRange(0.00001, 1.0)
             self.tqc_gamma.setValue(0.999)
+            if launch.tqc_gamma is not None:
+                self.tqc_gamma.setValue(launch.tqc_gamma)
             self.tqc_tau = QDoubleSpinBox()
             self.tqc_tau.setDecimals(5)
             self.tqc_tau.setRange(0.00001, 1.0)
             self.tqc_tau.setValue(0.005)
+            if launch.tqc_tau is not None:
+                self.tqc_tau.setValue(launch.tqc_tau)
             self.tqc_frequency = QSpinBox()
             self.tqc_frequency.setRange(1, 100_000)
             self.tqc_frequency.setValue(1)
+            if launch.tqc_train_freq is not None:
+                self.tqc_frequency.setValue(launch.tqc_train_freq)
             self.tqc_gradients = QSpinBox()
             self.tqc_gradients.setRange(1, 100_000)
             self.tqc_gradients.setValue(1)
+            if launch.tqc_gradient_steps is not None:
+                self.tqc_gradients.setValue(launch.tqc_gradient_steps)
             self.tqc_entropy = QLineEdit("auto")
+            if launch.tqc_ent_coef is not None:
+                self.tqc_entropy.setText(launch.tqc_ent_coef)
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -400,6 +435,8 @@ def main() -> int:
             self.checkpoint = QSpinBox()
             self.checkpoint.setRange(0, 100_000_000)
             self.checkpoint.setValue(10_000)
+            if launch.checkpoint_interval is not None:
+                self.checkpoint.setValue(launch.checkpoint_interval)
             self.output = QLineEdit("models")
             self.parameters = QLabel()
             self.runtime = QLabel("Idle")
@@ -419,6 +456,7 @@ def main() -> int:
                 ("TQC architecture", self.tqc_arch),
                 ("Parameters", self.parameters),
                 ("Device", self.device),
+                ("Seed", self.seed),
                 ("PWM steering", self.pwm),
                 ("PWM levels", self.levels),
                 ("Frame skip", self.frame_skip),
@@ -618,6 +656,7 @@ def main() -> int:
                 track_name=self.track.currentText(),
                 architecture=self.arch.currentText(),
                 device=self.device.currentText(),
+                seed=self.seed.value(),
                 pwm_enabled=self.pwm.isChecked(),
                 pwm_levels=self.levels.value(),
                 frame_skip=self.frame_skip.value(),

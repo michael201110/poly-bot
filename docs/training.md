@@ -75,6 +75,18 @@ totals are not directly comparable to PPO's actor/value network counts. Select t
 the first 100,000-step diagnostic run. The replay buffer is saved alongside each TQC archive,
 so a non-converged run can be resumed.
 
+For the first CPU Summer 1 run, use `powershell -File tools/launch_summer1_tqc.ps1` after the
+PolyTrack mod is connected and its ghost reference is loaded. This reproducible GUI launch uses
+the `tiny` actor, 30-tick frame skip, 60-second episode cap, 100,000 environment timesteps,
+seed 0, full-track curriculum, `Summer 1 - full bootstrap`, and reward scale `0.01`. TQC uses
+learning rate `0.0003`, a 250,000-transition replay buffer, 5,000 learning-start steps, batch
+256, gamma `0.999`, tau `0.005`, one training update per step, and automatic entropy tuning.
+It checkpoints every 25,000 steps. The buffer holds the full 100,000-step first run with room
+for later resumption, while using less CPU memory and disk than the general 1,000,000-transition
+default. Starting updates after 5,000 steps gives the diagnostic run more learning time; the
+remaining TQC defaults stay at the library-aligned baseline because there is no real-game TQC
+learning curve yet to justify stronger tuning.
+
 ## Devices and network presets
 
 New models default to separate actor and critic networks of `1024, 1024, 512` (`xl`). With the
