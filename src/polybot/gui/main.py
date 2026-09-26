@@ -12,7 +12,12 @@ from pathlib import Path
 
 from polybot.env import RewardConfig
 from polybot.protocol import Telemetry
-from polybot.training.config import TrainingConfig, estimate_ppo_parameters
+from polybot.training.config import (
+    TqcConfig,
+    TrainingConfig,
+    estimate_ppo_parameters,
+    estimate_tqc_parameters,
+)
 from polybot.training.devices import resolve_device
 from polybot.training.manager import TrainingManager
 from polybot.training.models import ModelRegistry, track_slug
@@ -28,12 +33,19 @@ def preferred_model(models: list[Path], current: str = "") -> Path | None:
     return next((path for path in models if path.name.casefold() == "latest.zip"), None)
 
 
-def playback_model_path(output_root: str | Path, track_name: str, name: str) -> Path:
+def playback_model_path(
+    output_root: str | Path, track_name: str, name: str, algorithm: str | None = None
+) -> Path:
     """Resolve one of the two GUI playback slots for a track."""
 
     if name not in {"latest", "best"}:
         raise ValueError("playback model name must be latest or best")
-    return ModelRegistry(output_root).track_dir(track_name) / f"{name}.zip"
+    registry = ModelRegistry(output_root)
+    if algorithm is None:
+        return registry.track_dir(track_name) / f"{name}.zip"
+    scoped = registry.model_dir(track_name, algorithm) / f"{name}.zip"
+    legacy = registry.track_dir(track_name) / f"{name}.zip"
+    return legacy if algorithm == "ppo" and not scoped.exists() else scoped
 
 
 def training_log_path(
@@ -52,10 +64,11 @@ def realtime_drive_arguments(
     pwm_enabled: bool,
     pwm_levels: int,
     device: str,
+    algorithm: str | None = None,
 ) -> list[str]:
     """Build deterministic one-lap playback arguments paced at simulation time."""
 
-    return [
+    args = [
         "--model",
         str(model),
         "--episodes",
@@ -68,6 +81,9 @@ def realtime_drive_arguments(
         "--device",
         device,
     ]
+    if algorithm is not None:
+        args.extend(["--algorithm", algorithm])
+    return args
 
 
 def timed_curriculum_bounds(mode: str, start_s: float, end_s: float) -> tuple[float, float] | None:
@@ -121,6 +137,7 @@ def reward_breakdown(terms: dict[str, float]) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--track-name")
+    parser.add_argument("--algorithm", choices=["ppo", "tqc"], default="ppo")
     parser.add_argument("--model")
     parser.add_argument(
         "--architecture", choices=["legacy", "compact", "small", "medium", "large", "xl"]
@@ -140,6 +157,7 @@ def main() -> int:
     parser.add_argument("--teacher-kl-coefficient", type=float)
     parser.add_argument("--expert-imitation-coefficient", type=float)
     parser.add_argument("--reward-scale", type=float, default=0.01)
+    parser.add_argument("--tqc-architecture", choices=["standard", "compact"], default="standard")
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -204,6 +222,9 @@ def main() -> int:
                 self.track.setCurrentText(launch.track_name)
             self.backend = QComboBox()
             self.backend.addItems(["websocket", "mock"])
+            self.algorithm = QComboBox()
+            self.algorithm.addItems(["PPO", "TQC"])
+            self.algorithm.setCurrentText(launch.algorithm.upper())
             self.model = QComboBox()
             self.model.setEditable(True)
             self.model.lineEdit().setPlaceholderText("No saved model found")
@@ -297,8 +318,40 @@ def main() -> int:
             self.reward_scale.setRange(0.0001, 10.0)
             self.reward_scale.setValue(launch.reward_scale)
             self.reward_scale.setToolTip(
-                "Scale rewards for PPO; displayed episode scores stay unscaled."
+                "Scale rewards for training; displayed episode scores stay unscaled."
             )
+            self.action_description = QLabel()
+            self.tqc_arch = QComboBox()
+            self.tqc_arch.addItems(["standard", "compact"])
+            self.tqc_arch.setCurrentText(launch.tqc_architecture)
+            self.tqc_lr = QDoubleSpinBox()
+            self.tqc_lr.setDecimals(7)
+            self.tqc_lr.setRange(0.0000001, 1.0)
+            self.tqc_lr.setValue(0.0003)
+            self.tqc_buffer = QSpinBox()
+            self.tqc_buffer.setRange(1, 10_000_000)
+            self.tqc_buffer.setValue(1_000_000)
+            self.tqc_starts = QSpinBox()
+            self.tqc_starts.setRange(0, 10_000_000)
+            self.tqc_starts.setValue(10_000)
+            self.tqc_batch = QSpinBox()
+            self.tqc_batch.setRange(1, 100_000)
+            self.tqc_batch.setValue(256)
+            self.tqc_gamma = QDoubleSpinBox()
+            self.tqc_gamma.setDecimals(5)
+            self.tqc_gamma.setRange(0.00001, 1.0)
+            self.tqc_gamma.setValue(0.999)
+            self.tqc_tau = QDoubleSpinBox()
+            self.tqc_tau.setDecimals(5)
+            self.tqc_tau.setRange(0.00001, 1.0)
+            self.tqc_tau.setValue(0.005)
+            self.tqc_frequency = QSpinBox()
+            self.tqc_frequency.setRange(1, 100_000)
+            self.tqc_frequency.setValue(1)
+            self.tqc_gradients = QSpinBox()
+            self.tqc_gradients.setRange(1, 100_000)
+            self.tqc_gradients.setValue(1)
+            self.tqc_entropy = QLineEdit("auto")
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -356,8 +409,11 @@ def main() -> int:
             form_fields = [
                 ("Track/profile", self.track),
                 ("Simulator backend", self.backend),
+                ("Algorithm", self.algorithm),
+                ("Action mode", self.action_description),
                 ("Model", self.model),
                 ("Architecture", self.arch),
+                ("TQC architecture", self.tqc_arch),
                 ("Parameters", self.parameters),
                 ("Device", self.device),
                 ("PWM steering", self.pwm),
@@ -373,6 +429,15 @@ def main() -> int:
                 ("Rollout steps", self.rollout_steps),
                 ("Batch size", self.batch_size),
                 ("PPO epochs", self.ppo_epochs),
+                ("TQC learning rate", self.tqc_lr),
+                ("TQC replay buffer", self.tqc_buffer),
+                ("TQC learning starts", self.tqc_starts),
+                ("TQC batch size", self.tqc_batch),
+                ("TQC gamma", self.tqc_gamma),
+                ("TQC tau", self.tqc_tau),
+                ("TQC train frequency", self.tqc_frequency),
+                ("TQC gradient steps", self.tqc_gradients),
+                ("TQC entropy", self.tqc_entropy),
                 ("Teacher model", self.teacher_model),
                 ("Teacher KL coefficient", self.teacher_kl),
                 ("Expert imitation coefficient", self.expert_imitation),
@@ -427,6 +492,8 @@ def main() -> int:
             play_latest.clicked.connect(lambda: self.play_named_model("latest"))
             play_best.clicked.connect(lambda: self.play_named_model("best"))
             self.track.currentTextChanged.connect(self.refresh_models)
+            self.algorithm.currentTextChanged.connect(self.refresh_algorithm)
+            self.tqc_arch.currentTextChanged.connect(self.refresh_parameters)
             self.output.editingFinished.connect(self.refresh_models)
             self.arch.currentTextChanged.connect(self.refresh_parameters)
             self.pwm.toggled.connect(self.refresh_parameters)
@@ -434,6 +501,7 @@ def main() -> int:
             self.reward_profile.currentTextChanged.connect(self.apply_reward_profile)
             self.curriculum.currentTextChanged.connect(self.refresh_curriculum_controls)
             self.refresh_models()
+            self.refresh_algorithm()
             if launch.model:
                 self.model.setCurrentText(launch.model)
             self.refresh_parameters()
@@ -477,11 +545,40 @@ def main() -> int:
             self.log.appendPlainText(f"Saved reward profile: {path}")
 
         def refresh_parameters(self) -> None:
+            if self.algorithm.currentText() == "TQC":
+                count = estimate_tqc_parameters(
+                    Telemetry.vector_size(12), 2, self.tqc_arch.currentText()
+                )
+                self.parameters.setText(f"{count:,} including target critics (estimate)")
+                return
             dims = (self.levels.value() if self.pwm.isChecked() else 3, 2, 2)
             count = estimate_ppo_parameters(
                 Telemetry.vector_size(12), dims, self.arch.currentText()
             )
             self.parameters.setText(f"{count:,} (pre-creation estimate)")
+
+        def refresh_algorithm(self) -> None:
+            is_ppo = self.algorithm.currentText() == "PPO"
+            if self.checkpoint.value() in {10_000, 100_000}:
+                self.checkpoint.setValue(10_000 if is_ppo else 100_000)
+            for widget in (
+                self.arch, self.pwm, self.levels, self.lr, self.gamma, self.gae,
+                self.entropy, self.rollout_steps, self.batch_size, self.ppo_epochs,
+                self.teacher_model, self.teacher_kl, self.expert_imitation,
+            ):
+                widget.setEnabled(is_ppo)
+            for widget in (
+                self.tqc_arch, self.tqc_lr, self.tqc_buffer, self.tqc_starts,
+                self.tqc_batch, self.tqc_gamma, self.tqc_tau,
+                self.tqc_frequency, self.tqc_gradients, self.tqc_entropy,
+            ):
+                widget.setEnabled(not is_ppo)
+            self.action_description.setText(
+                "PWM MultiDiscrete" if is_ppo else
+                "Continuous PWM: steering [-1, 1], longitudinal [-1, 1]"
+            )
+            self.refresh_parameters()
+            self.refresh_models()
 
         def refresh_curriculum_controls(self) -> None:
             enabled = self.curriculum.currentText() == "timed"
@@ -491,7 +588,7 @@ def main() -> int:
         def refresh_models(self) -> None:
             current = self.model.currentText()
             models = ModelRegistry(self.output.text() or "models").list_models(
-                self.track.currentText()
+                self.track.currentText(), self.algorithm.currentText().lower()
             )
             selected = preferred_model(models, current)
             self.model.clear()
@@ -510,6 +607,8 @@ def main() -> int:
 
         def config(self) -> TrainingConfig:
             return TrainingConfig(
+                algorithm=self.algorithm.currentText().lower(),
+                reward_profile=self.reward_profile.currentText(),
                 backend=self.backend.currentText(),
                 track_name=self.track.currentText(),
                 architecture=self.arch.currentText(),
@@ -529,11 +628,27 @@ def main() -> int:
                 ppo_epochs=self.ppo_epochs.value(),
                 teacher_model=(
                     Path(self.teacher_model.text().strip())
-                    if self.teacher_model.text().strip()
+                    if self.algorithm.currentText() == "PPO" and self.teacher_model.text().strip()
                     else None
                 ),
-                teacher_kl_coefficient=self.teacher_kl.value(),
-                expert_imitation_coefficient=self.expert_imitation.value(),
+                teacher_kl_coefficient=(
+                    self.teacher_kl.value() if self.algorithm.currentText() == "PPO" else 0.0
+                ),
+                expert_imitation_coefficient=(
+                    self.expert_imitation.value() if self.algorithm.currentText() == "PPO" else 0.0
+                ),
+                tqc=TqcConfig(
+                    architecture=self.tqc_arch.currentText(),
+                    learning_rate=self.tqc_lr.value(),
+                    buffer_size=self.tqc_buffer.value(),
+                    learning_starts=self.tqc_starts.value(),
+                    batch_size=self.tqc_batch.value(),
+                    gamma=self.tqc_gamma.value(),
+                    tau=self.tqc_tau.value(),
+                    train_freq=self.tqc_frequency.value(),
+                    gradient_steps=self.tqc_gradients.value(),
+                    ent_coef=self.tqc_entropy.text().strip(),
+                ),
                 reward_scale=self.reward_scale.value(),
                 checkpoint_interval=self.checkpoint.value(),
                 output_root=Path(self.output.text()),
@@ -566,7 +681,8 @@ def main() -> int:
 
         def play_named_model(self, name: str) -> None:
             target = playback_model_path(
-                self.output.text() or "models", self.track.currentText(), name
+                self.output.text() or "models", self.track.currentText(), name,
+                self.algorithm.currentText().lower(),
             ).resolve()
             if not target.is_file():
                 QMessageBox.critical(
@@ -607,6 +723,7 @@ def main() -> int:
                 pwm_enabled=self.pwm.isChecked(),
                 pwm_levels=self.levels.value(),
                 device=device,
+                algorithm=self.algorithm.currentText().lower(),
             )
             process = QProcess(self)
             process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
@@ -646,7 +763,11 @@ def main() -> int:
             except RuntimeError as exc:
                 QMessageBox.critical(self, "Device unavailable", str(exc))
                 return
-            cfg = self.config()
+            try:
+                cfg = self.config()
+            except ValueError as exc:
+                QMessageBox.critical(self, "Invalid training settings", str(exc))
+                return
             cfg.curriculum.mode = self.curriculum.currentText()
             try:
                 bounds = timed_curriculum_bounds(
@@ -689,7 +810,7 @@ def main() -> int:
         def stop(self) -> None:
             if self.manager:
                 self.manager.stop()
-                self.runtime.setText("Stopping after current PPO step…")
+                self.runtime.setText("Stopping after current environment step…")
             elif (
                 self.playback is not None
                 and self.playback.state() != QProcess.ProcessState.NotRunning
@@ -701,9 +822,16 @@ def main() -> int:
             event_type = event.get("type")
             if event_type == "started":
                 device_label = f"{event['device']} {event.get('gpu_name') or ''}".strip()
-                self.runtime.setText(f"{device_label} — {event['parameter_count']:,} parameters")
+                self.runtime.setText(
+                    f"{event['algorithm'].upper()} on {device_label}: "
+                    f"{event['parameter_count']:,} parameters"
+                )
                 self.log.appendPlainText(
-                    f"Started on {device_label}: {event['parameter_count']:,} parameters"
+                    f"Started {event['algorithm'].upper()} on {device_label}: "
+                    f"{event['parameter_count']:,} parameters, {event['action_schema']}"
+                )
+                self.log.appendPlainText(
+                    f"CUDA: {event.get('cuda_diagnostics', {}).get('selection_reason', 'unknown')}"
                 )
                 if self.training_log is not None:
                     self.log.appendPlainText(f"Persistent log: {self.training_log}")
@@ -711,6 +839,17 @@ def main() -> int:
                 steps = event.get("timesteps", 0)
                 elapsed = event.get("elapsed_s", 0)
                 sps = event.get("steps_per_second", 0)
+                steering_text = ""
+                if event.get("policy_steering") is not None:
+                    actual_steering = event.get("actual_steering")
+                    actual_text = (
+                        f"{actual_steering:+.2f}"
+                        if actual_steering is not None
+                        else "--"
+                    )
+                    steering_text = (
+                        f"    Steer cmd {event['policy_steering']:+.2f} / applied {actual_text}"
+                    )
                 self.runtime.setText(
                     f"Step {steps:,} | {sps:,.0f} steps/sec | Episode {event['episode']}"
                 )
@@ -723,7 +862,7 @@ def main() -> int:
                     f"Reward: {event['episode_reward']:+.1f}    "
                     f"Progress: {event['max_progress']:.1%}    "
                     f"Time: {elapsed:.2f}s    Speed: {event['speed_kmh']:.1f} km/h"
-                    f"{section_text}\n"
+                    f"{steering_text}{section_text}\n"
                     f"Steps: {event['episode_steps']:,}    "
                     f"Finishes: {event['finishes']}    Crashes: {event['crashes']}    "
                     f"Best lap: {best_text}"

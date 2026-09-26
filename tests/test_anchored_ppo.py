@@ -41,6 +41,17 @@ def test_expert_guidance_fades_when_far_from_reference() -> None:
     assert torch.isfinite(logits.grad).all()
 
 
+def test_expert_guidance_teaches_throttle_from_standstill() -> None:
+    observations = torch.zeros((1, 105))
+    observations[:, 40] = 1.0
+    logits = torch.zeros((1, 7))
+    aligned_at_rest = expert_action_loss(logits, observations, (3, 2, 2))
+    observations[:, 38] = 0.4
+    slower_than_ghost = expert_action_loss(logits, observations, (3, 2, 2))
+
+    torch.testing.assert_close(slower_than_ghost, aligned_at_rest)
+
+
 def test_guidance_confidence_weights_each_sample_independently() -> None:
     observations = torch.zeros((2, 105))
     observations[1, 34] = 1  # only this example should be suppressed

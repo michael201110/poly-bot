@@ -40,3 +40,25 @@ def decode_pwm_level(level: int, levels: int) -> float:
     if levels < 3 or levels % 2 == 0 or not 0 <= level < levels:
         raise ValueError("invalid PWM level or resolution")
     return -1.0 + 2.0 * level / (levels - 1)
+
+
+class ContinuousPwmControls:
+    """Independent, deterministic steering and signed-longitudinal pulse streams."""
+
+    def __init__(self) -> None:
+        self.steering = PwmSteering()
+        self.longitudinal = PwmSteering()
+
+    def reset(self) -> None:
+        self.steering.reset()
+        self.longitudinal.reset()
+
+    def generate(
+        self, steering: float, longitudinal: float, ticks: int
+    ) -> list[tuple[int, bool, bool]]:
+        steer_ticks = self.steering.generate(steering, ticks)
+        drive_ticks = self.longitudinal.generate(longitudinal, ticks)
+        return [
+            (steer, drive > 0, drive < 0)
+            for steer, drive in zip(steer_ticks, drive_ticks, strict=True)
+        ]

@@ -22,3 +22,25 @@ def test_pwm_forward_bias_targets_centre_throttle_and_no_brake() -> None:
     expected[43] = 1.5
     np.testing.assert_allclose(delta, expected)
     env.close()
+
+
+def test_safe_startup_prior_concentrates_steering_and_throttle() -> None:
+    torch = pytest.importorskip("torch")
+    pytest.importorskip("stable_baselines3")
+    from stable_baselines3 import PPO
+
+    env = make_mock_env(pwm_enabled=True, pwm_levels=41)
+    model = PPO("MlpPolicy", env, n_steps=2, batch_size=2)
+    before = model.policy.action_net.bias.detach().clone()
+    apply_forward_bias(model, strength=4.0, steering_strength=1.0)
+    delta = model.policy.action_net.bias.detach() - before
+    steering_probabilities = torch.softmax(delta[:41], dim=0)
+    throttle_probabilities = torch.softmax(delta[41:43], dim=0)
+    brake_probabilities = torch.softmax(delta[43:45], dim=0)
+
+    assert steering_probabilities[20] > 0.1
+    assert steering_probabilities[0] + steering_probabilities[-1] > 0.01
+    assert steering_probabilities[0] + steering_probabilities[-1] < 0.2
+    assert throttle_probabilities[1] > 0.8
+    assert brake_probabilities[0] > 0.8
+    env.close()

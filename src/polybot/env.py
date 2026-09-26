@@ -23,7 +23,7 @@ from polybot.protocol import (
     request_message,
     response_result,
 )
-from polybot.pwm import PwmSteering, decode_pwm_level
+from polybot.pwm import ContinuousPwmControls, PwmSteering, decode_pwm_level
 from polybot.transport import SimulatorTransport
 
 
@@ -48,6 +48,11 @@ class RewardConfig:
     expert_action_bonus_per_s: float = 0.0
     ghost_speed_bonus_per_s: float = 0.0
     ghost_speed_scale_mps: float = 5.0
+    guidance_reward_scale: float = 0.05
+    guidance_min_forward_speed_mps: float = 5.0
+    guidance_min_on_track_factor: float = 0.5
+    low_speed_penalty_per_s: float = -5.0
+    low_speed_grace_s: float = 1.0
     unsafe_speed_penalty_per_m: float = 0.0
     barrier_contact_penalty: float = -50.0
     barrier_early_penalty: float = 0.0
@@ -234,6 +239,19 @@ def summer_1_ghost_learning_reward_config() -> RewardConfig:
     )
 
 
+def summer_1_recovery_reward_config() -> RewardConfig:
+    """Keep the ghost shaping, but only reward it during safe forward progress."""
+
+    return dataclass_replace(
+        summer_1_ghost_learning_reward_config(),
+        guidance_reward_scale=0.05,
+        guidance_min_forward_speed_mps=5.0,
+        guidance_min_on_track_factor=0.5,
+        low_speed_penalty_per_s=-5.0,
+        low_speed_grace_s=1.0,
+    )
+
+
 def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
     """Reject geometric off-track evidence while the car is airborne."""
 
@@ -343,6 +361,24 @@ def _ghost_speed_reward(telemetry: Telemetry, config: RewardConfig, dt: float) -
     return config.ghost_speed_bonus_per_s * float(np.exp(-speed_error / scale)) * dt
 
 
+def _ghost_guidance_weight(
+    progress_delta: float,
+    forward_speed: float,
+    on_track_factor: float,
+    config: RewardConfig,
+    *,
+    incomplete_failure: bool,
+) -> float:
+    if (
+        incomplete_failure
+        or progress_delta <= 0.0
+        or forward_speed < config.guidance_min_forward_speed_mps
+        or on_track_factor < config.guidance_min_on_track_factor
+    ):
+        return 0.0
+    return config.guidance_reward_scale * on_track_factor
+
+
 def _airborne_spin_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
     """Penalize strong rotation in the air while tolerating normal jump pitch."""
 
@@ -421,6 +457,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         curriculum_random_quarters: bool = False,
         pwm_enabled: bool = False,
         pwm_levels: int = 41,
+        action_mode: str | None = None,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -473,14 +510,23 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_curriculum_quarter: int | None = None
         if pwm_levels < 3 or pwm_levels % 2 == 0:
             raise ValueError("pwm_levels must be an odd integer >= 3")
-        self.pwm_enabled = pwm_enabled
+        self.action_mode = action_mode or ("ppo_pwm" if pwm_enabled else "digital")
+        if self.action_mode not in {"ppo_pwm", "digital", "continuous_pwm"}:
+            raise ValueError("unknown action mode")
+        if action_mode is not None and pwm_enabled and action_mode != "ppo_pwm":
+            raise ValueError("pwm_enabled conflicts with action_mode")
+        self.pwm_enabled = self.action_mode == "ppo_pwm"
         self.pwm_levels = pwm_levels
         self._pwm = PwmSteering()
+        self._continuous_pwm = ContinuousPwmControls()
 
-        steering_actions = pwm_levels if pwm_enabled else 3
-        self.action_space = spaces.MultiDiscrete(
-            np.asarray([steering_actions, 2, 2], dtype=np.int64)
-        )
+        if self.action_mode == "continuous_pwm":
+            self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
+        else:
+            steering_actions = pwm_levels if self.pwm_enabled else 3
+            self.action_space = spaces.MultiDiscrete(
+                np.asarray([steering_actions, 2, 2], dtype=np.int64)
+            )
         self.observation_space = spaces.Box(
             low=-5.0,
             high=5.0,
@@ -543,7 +589,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if (
             isinstance(max_ticks, bool)
             or not isinstance(max_ticks, int)
-            or max_ticks < (1 if self.pwm_enabled else self.frame_skip)
+            or max_ticks < (1 if self.action_mode != "digital" else self.frame_skip)
         ):
             raise ProtocolViolation("simulator cannot advance the requested frame_skip")
         self.simulator_capabilities = dict(result)
@@ -615,6 +661,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._was_airborne = False
         self.latest_telemetry = transition.telemetry
         self._pwm.reset()
+        self._continuous_pwm.reset()
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
         if self._episode_curriculum_quarter is not None:
@@ -628,11 +675,24 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise RuntimeError("reset() must be called before step() or after an episode ends")
         if not self.action_space.contains(action):
             raise ValueError(f"action {action!r} is outside {self.action_space}")
-        values = np.asarray(action, dtype=np.int64)
-        throttle, brake = bool(values[1]), bool(values[2])
-        if self.pwm_enabled:
-            steering = decode_pwm_level(int(values[0]), self.pwm_levels)
-            tick_steering = self._pwm.generate(steering, self.frame_skip)
+        if self.action_mode != "digital":
+            if self.action_mode == "continuous_pwm":
+                steering, longitudinal = (float(value) for value in action)
+                tick_controls = self._continuous_pwm.generate(
+                    steering, longitudinal, self.frame_skip
+                )
+                decoded_action = Action(
+                    (steering > 0) - (steering < 0), longitudinal > 0, longitudinal < 0
+                )
+            else:
+                values = np.asarray(action, dtype=np.int64)
+                steering = decode_pwm_level(int(values[0]), self.pwm_levels)
+                throttle, brake = bool(values[1]), bool(values[2])
+                tick_controls = [
+                    (steer, throttle, brake)
+                    for steer in self._pwm.generate(steering, self.frame_skip)
+                ]
+                decoded_action = Action((steering > 0) - (steering < 0), throttle, brake)
             transitions: list[Transition] = []
             features = self.simulator_capabilities.get("features", ())
             if "action_sequence" in features:
@@ -641,9 +701,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                     {
                         "episode_id": self._episode_id,
                         "actions": [
-                            Action(steer, throttle, brake).to_wire() for steer in tick_steering
+                            Action(*control).to_wire() for control in tick_controls
                         ],
-                        "ticks": len(tick_steering),
+                        "ticks": len(tick_controls),
                     },
                 )
                 transitions.append(
@@ -651,7 +711,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 )
             else:
                 max_ticks = int(self.simulator_capabilities["max_ticks_per_step"])
-                for steer, values_in_run in groupby(tick_steering):
+                for control, values_in_run in groupby(tick_controls):
                     remaining = sum(1 for _ in values_in_run)
                     while remaining:
                         run_ticks = min(remaining, max_ticks)
@@ -659,7 +719,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                             "step",
                             {
                                 "episode_id": self._episode_id,
-                                "action": Action(steer, throttle, brake).to_wire(),
+                                "action": Action(*control).to_wire(),
                                 "ticks": run_ticks,
                             },
                         )
@@ -681,7 +741,6 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 events=tuple(event for item in transitions for event in item.events),
                 simulator_info=last.simulator_info,
             )
-            decoded_action = Action((steering > 0) - (steering < 0), throttle, brake)
         else:
             decoded_action = Action.from_policy(action)
             result = self._exchange(
@@ -767,6 +826,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         reward, reward_terms = self._reward(
             transition,
             decoded_action,
+            stationary_s=self._stationary_s,
             stalled=stalled,
             off_track=off_track,
             early_off_track=early_off_track,
@@ -831,6 +891,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         transition: Transition,
         action: Action,
         *,
+        stationary_s: float = 0.0,
         stalled: bool = False,
         off_track: bool = False,
         early_off_track: bool = False,
@@ -885,7 +946,6 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                     config.takeoff_speed_reward_limit,
                 )
             )
-        imitation_reward = _ghost_pose_reward(transition.simulator_info, config, dt)
         incomplete_failure = bool(
             barrier_contact
             or airborne_roll_failure
@@ -893,6 +953,15 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             or off_track
             or "crash" in events
         )
+        guidance_weight = _ghost_guidance_weight(
+            progress_delta,
+            forward_speed,
+            on_track_factor,
+            config,
+            incomplete_failure=incomplete_failure,
+        )
+        imitation_reward = _ghost_pose_reward(transition.simulator_info, config, dt)
+        low_speed_duration_s = min(dt, max(0.0, stationary_s - config.low_speed_grace_s))
         terms = {
             "progress": config.progress_per_m * progress_delta,
             "elapsed": config.elapsed_cost_per_s * dt,
@@ -909,9 +978,12 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 config.ground_brake_penalty_per_s * dt if action.brake and not airborne else 0.0
             ),
             "takeoff_speed": takeoff_speed_reward,
-            "ghost_imitation": imitation_reward,
-            "expert_action_imitation": _expert_action_reward(action, telemetry, config, dt),
-            "ghost_speed": _ghost_speed_reward(telemetry, config, dt),
+            "ghost_imitation": imitation_reward * guidance_weight,
+            "expert_action_imitation": (
+                _expert_action_reward(action, telemetry, config, dt) * guidance_weight
+            ),
+            "ghost_speed": _ghost_speed_reward(telemetry, config, dt) * guidance_weight,
+            "low_speed": config.low_speed_penalty_per_s * low_speed_duration_s,
             "unsafe_speed": config.unsafe_speed_penalty_per_m
             * distance_at_speed
             * (1.0 - on_track_factor),

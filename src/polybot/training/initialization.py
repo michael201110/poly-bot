@@ -5,12 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 
-def apply_forward_bias(model: Any, strength: float = 1.5) -> None:
-    """Favor neutral steering, throttle on, and brake off in an SB3 policy."""
+def apply_forward_bias(
+    model: Any, strength: float = 1.5, *, steering_strength: float = 0.0
+) -> None:
+    """Favor low steering, throttle on, and brake off in an SB3 policy."""
 
-    if strength < 0:
-        raise ValueError("forward bias strength must be non-negative")
-    if strength == 0:
+    if strength < 0 or steering_strength < 0:
+        raise ValueError("forward and steering bias strengths must be non-negative")
+    if strength == 0 and steering_strength == 0:
         return
     import torch
 
@@ -26,6 +28,15 @@ def apply_forward_bias(model: Any, strength: float = 1.5) -> None:
     throttle_on = steering_levels + 1
     brake_off = steering_levels + 2
     with torch.no_grad():
+        if steering_strength:
+            steering_values = torch.linspace(
+                -1.0,
+                1.0,
+                steering_levels,
+                device=bias.device,
+                dtype=bias.dtype,
+            )
+            bias[:steering_levels] -= steering_strength * steering_values.abs()
         bias[centre] += strength * 0.5
         bias[throttle_on] += strength
         bias[brake_off] += strength

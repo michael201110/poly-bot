@@ -32,20 +32,36 @@ polybot-gui
 
 Activate the environment using the normal command for your shell, or invoke its Python directly.
 The graphical application is the primary training interface on Windows and Linux. It supports
-track-scoped models, resume/stop, CPU/CUDA selection, XL networks, PWM steering, curriculum, and
-rolling checkpoints. See [`docs/training.md`](docs/training.md).
+PPO and TQC, algorithm-scoped models, resume/stop, CPU/CUDA selection, curriculum, and rolling
+checkpoints. See [`docs/training.md`](docs/training.md).
 
 Train a first PPO policy in the mock environment:
 
 ```powershell
-polybot-train --backend mock --timesteps 100000
+polybot-train --algorithm ppo --backend mock --timesteps 100000
 ```
+
+Train a TQC policy with continuous steering and signed throttle/brake:
+
+```powershell
+polybot-train --algorithm tqc --backend mock --track mock/gentle-s --timesteps 100000
+```
+
+PPO remains the default for older `polybot-train` commands. PPO selects a MultiDiscrete action
+with 41-level PWM steering and learns on-policy. TQC selects a two-value continuous action,
+converts it to digital controls at 1 ms physics ticks, and learns off-policy from a replay buffer.
+TQC is an alternative for controlled benchmarking, not an established improvement over PPO.
 
 Evaluate a saved policy deterministically:
 
 ```powershell
-polybot-eval models/polybot-ppo --backend mock --episodes 5
+polybot-eval models/mock-gentle-s/tqc/latest.zip --backend mock --episodes 5
 ```
+
+Evaluation and playback read the algorithm from model metadata. For older archives without
+metadata, pass `--algorithm ppo` (or `tqc`) explicitly. New GUI models live in
+`models/<track>/ppo/` and `models/<track>/tqc/`; existing top-level PPO archives remain where they
+are and can still be selected.
 
 ## Drive the real game
 

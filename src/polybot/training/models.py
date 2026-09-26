@@ -41,6 +41,12 @@ class ModelMetadata:
     seed: int = 0
     reward_settings: dict[str, Any] = field(default_factory=dict)
     ppo_hyperparameters: dict[str, Any] = field(default_factory=dict)
+    tqc_hyperparameters: dict[str, Any] = field(default_factory=dict)
+    reward_profile: str | None = None
+    simulator_ticks: int = 0
+    wall_clock_seconds: float = 0.0
+    finishes: int = 0
+    crashes: int = 0
     polybot_version: str = "unknown"
     git_commit: str = "unknown"
 
@@ -60,29 +66,59 @@ class ModelRegistry:
     def track_dir(self, track_name: str) -> Path:
         return self.root / track_slug(track_name)
 
-    def initialise_track(self, track_name: str) -> Path:
-        directory = self.track_dir(track_name)
+    def model_dir(self, track_name: str, algorithm: str) -> Path:
+        if algorithm.lower() not in {"ppo", "tqc"}:
+            raise ValueError("algorithm must be ppo or tqc")
+        return self.track_dir(track_name) / algorithm.lower()
+
+    def initialise_track(self, track_name: str, algorithm: str | None = None) -> Path:
+        directory = (
+            self.model_dir(track_name, algorithm) if algorithm else self.track_dir(track_name)
+        )
         (directory / "checkpoints").mkdir(parents=True, exist_ok=True)
         return directory
 
-    def metadata_path(self, track_name: str, name: str = "best") -> Path:
-        directory = self.track_dir(track_name)
+    def metadata_path(
+        self, track_name: str, name: str = "best", algorithm: str | None = None
+    ) -> Path:
+        directory = (
+            self.model_dir(track_name, algorithm) if algorithm else self.track_dir(track_name)
+        )
         return directory / ("metadata.json" if name == "best" else f"{name}.metadata.json")
 
-    def write_metadata(self, metadata: ModelMetadata, name: str = "best") -> Path:
-        self.initialise_track(metadata.track_name)
-        path = self.metadata_path(metadata.track_name, name)
+    def write_metadata(
+        self, metadata: ModelMetadata, name: str = "best", algorithm: str | None = None
+    ) -> Path:
+        self.initialise_track(metadata.track_name, algorithm)
+        path = self.metadata_path(metadata.track_name, name, algorithm)
         path.write_text(json.dumps(asdict(metadata), indent=2) + "\n", encoding="utf-8")
         return path
 
-    def read_metadata(self, track_name: str, name: str = "best") -> ModelMetadata:
+    def read_metadata(
+        self, track_name: str, name: str = "best", algorithm: str | None = None
+    ) -> ModelMetadata:
         return ModelMetadata.from_dict(
-            json.loads(self.metadata_path(track_name, name).read_text(encoding="utf-8"))
+            json.loads(self.metadata_path(track_name, name, algorithm).read_text(encoding="utf-8"))
         )
 
-    def list_models(self, track_name: str) -> list[Path]:
+    def list_models(self, track_name: str, algorithm: str | None = None) -> list[Path]:
         directory = self.track_dir(track_name)
-        return sorted(directory.glob("*.zip")) if directory.exists() else []
+        if not directory.exists():
+            return []
+        legacy = list(directory.glob("*.zip")) if algorithm in {None, "ppo"} else []
+        if algorithm is None:
+            scoped = [*directory.glob("ppo/*.zip"), *directory.glob("tqc/*.zip")]
+        else:
+            scoped = list(self.model_dir(track_name, algorithm).glob("*.zip"))
+        return sorted(scoped) + sorted(legacy) if algorithm else sorted([*legacy, *scoped])
+
+    @staticmethod
+    def metadata_for_archive(path: str | Path) -> ModelMetadata:
+        archive = Path(path)
+        metadata = archive.with_name(
+            "metadata.json" if archive.stem == "best" else f"{archive.stem}.metadata.json"
+        )
+        return ModelMetadata.from_dict(json.loads(metadata.read_text(encoding="utf-8")))
 
     def assert_compatible(
         self,
@@ -91,6 +127,7 @@ class ModelRegistry:
         track_name: str,
         observation_schema: str = OBSERVATION_SCHEMA,
         action_schema: str,
+        algorithm: str = "ppo",
         architecture: str | None = None,
         allow_track_override: bool = False,
     ) -> None:
@@ -101,6 +138,8 @@ class ModelRegistry:
             )
             raise IncompatibleModelError(message)
         mismatches = []
+        if metadata.algorithm.lower() != algorithm.lower():
+            mismatches.append("algorithm")
         if metadata.observation_schema != observation_schema:
             mismatches.append("observation schema")
         if metadata.action_schema != action_schema:
@@ -114,26 +153,37 @@ class ModelRegistry:
         candidate = Path(candidate)
         if not candidate.is_file():
             raise FileNotFoundError(candidate)
-        directory = self.initialise_track(metadata.track_name)
+        directory = self.initialise_track(metadata.track_name, metadata.algorithm)
         target = directory / "best.zip"
+        if metadata.algorithm.lower() == "tqc":
+            replay = candidate.with_suffix(".replay.pkl")
+            if not replay.is_file():
+                raise FileNotFoundError(f"TQC replay buffer is missing: {replay}")
         shutil.copy2(candidate, target)
-        self.write_metadata(metadata)
+        if metadata.algorithm.lower() == "tqc":
+            shutil.copy2(replay, target.with_suffix(".replay.pkl"))
+        self.write_metadata(metadata, algorithm=metadata.algorithm)
         return target
 
-    def archive_latest(self, track_name: str) -> Path | None:
+    def archive_latest(self, track_name: str, algorithm: str | None = None) -> Path | None:
         """Preserve the current latest pair before intentionally starting fresh."""
 
-        directory = self.track_dir(track_name)
+        directory = (
+            self.model_dir(track_name, algorithm) if algorithm else self.track_dir(track_name)
+        )
         latest = directory / "latest.zip"
         if not latest.exists():
             return None
-        checkpoint_dir = self.initialise_track(track_name) / "checkpoints"
+        checkpoint_dir = self.initialise_track(track_name, algorithm) / "checkpoints"
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         target = checkpoint_dir / f"pre-fresh-{stamp}.zip"
         shutil.copy2(latest, target)
         metadata = directory / "latest.metadata.json"
         if metadata.exists():
             shutil.copy2(metadata, target.with_suffix(".metadata.json"))
+        replay = latest.with_suffix(".replay.pkl")
+        if replay.exists():
+            shutil.copy2(replay, target.with_suffix(".replay.pkl"))
         return target
 
 

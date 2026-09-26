@@ -1,7 +1,8 @@
-"""Headless PPO training service used by graphical and scripted front ends."""
+"""Headless training service shared by PPO and TQC."""
 
 from __future__ import annotations
 
+import shutil
 import threading
 import time
 from collections import deque
@@ -14,10 +15,9 @@ import gymnasium as gym
 
 from polybot.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
-from polybot.training.anchored_ppo import TeacherAnchoredPPO
-from polybot.training.config import TrainingConfig, policy_kwargs
+from polybot.training.algorithms import action_schema, configure_model, create_model, load_model
+from polybot.training.config import TrainingConfig
 from polybot.training.devices import DeviceInfo, resolve_device
-from polybot.training.initialization import apply_forward_bias
 from polybot.training.models import (
     IncompatibleModelError,
     ModelMetadata,
@@ -71,6 +71,12 @@ class TrainingService:
         self._stop = threading.Event()
         self.model: Any = None
         self.device: DeviceInfo | None = None
+        self.simulator_ticks = 0
+        self.episodes = 0
+        self.finishes = 0
+        self.crashes = 0
+        self.previous_wall_clock_seconds = 0.0
+        self.started_at = time.monotonic()
 
     def stop(self) -> None:
         self._stop.set()
@@ -84,23 +90,32 @@ class TrainingService:
             raise ValueError("model name must be latest or best")
         cfg = self.config
         registry = ModelRegistry(cfg.output_root)
-        output = registry.initialise_track(cfg.track_name) / name
+        output = registry.initialise_track(cfg.track_name, cfg.algorithm) / name
         self.model.save(str(output))
-        parameters = sum(p.numel() for p in self.model.policy.parameters())
+        if cfg.algorithm == "tqc":
+            self.model.save_replay_buffer(str(output.with_suffix(".replay.pkl")))
+        parameters = sum(p.numel() for p in self.model.policy.parameters() if p.requires_grad)
         metadata = ModelMetadata(
             track_name=cfg.track_name,
             track_id=cfg.track_id,
-            architecture=cfg.architecture,
+            architecture=(cfg.architecture if cfg.algorithm == "ppo" else cfg.tqc.architecture),
             parameter_count=parameters,
+            algorithm=cfg.algorithm.upper(),
             lookahead_count=cfg.lookahead_count,
-            action_schema=(
-                "pwm-multidiscrete-v1" if cfg.pwm_enabled else "digital-multidiscrete-v1"
-            ),
-            pwm_enabled=cfg.pwm_enabled,
+            action_schema=action_schema(cfg),
+            pwm_enabled=cfg.algorithm == "ppo" and cfg.pwm_enabled,
             pwm_resolution=cfg.pwm_levels,
             frame_skip=cfg.frame_skip,
             training_timesteps=int(self.model.num_timesteps),
+            training_episodes=self.episodes,
             best_lap_time_s=best_lap_time_s,
+            simulator_ticks=self.simulator_ticks,
+            wall_clock_seconds=(
+                self.previous_wall_clock_seconds + time.monotonic() - self.started_at
+            ),
+            finishes=self.finishes,
+            crashes=self.crashes,
+            reward_profile=cfg.reward_profile,
             seed=cfg.seed,
             reward_settings=asdict(cfg.rewards),
             ppo_hyperparameters={
@@ -115,11 +130,12 @@ class TrainingService:
                 "teacher_kl_coefficient": cfg.teacher_kl_coefficient,
                 "expert_imitation_coefficient": cfg.expert_imitation_coefficient,
                 "reward_scale": cfg.reward_scale,
-            },
+            } if cfg.algorithm == "ppo" else {},
+            tqc_hyperparameters=asdict(cfg.tqc) if cfg.algorithm == "tqc" else {},
             polybot_version="0.1.0",
             git_commit=git_commit(),
         )
-        registry.write_metadata(metadata, name)
+        registry.write_metadata(metadata, name, cfg.algorithm)
         return output.with_suffix(".zip")
 
     def save_latest(self) -> Path:
@@ -128,7 +144,6 @@ class TrainingService:
         return self.save_model("latest")
 
     def run(self, *, resume: str | Path | None = None, transport: Any | None = None) -> Path:
-        from stable_baselines3 import PPO
         from stable_baselines3.common.callbacks import BaseCallback
 
         cfg = self.config
@@ -144,11 +159,12 @@ class TrainingService:
             track_id=cfg.track_id,
             lookahead_count=cfg.lookahead_count,
             frame_skip=cfg.frame_skip,
-            max_episode_steps=2_000_000_000,
+            max_episode_steps=cfg.max_episode_steps,
             max_episode_s=cfg.max_episode_seconds,
             reward_config=cfg.rewards,
-            pwm_enabled=cfg.pwm_enabled,
+            pwm_enabled=cfg.algorithm == "ppo" and cfg.pwm_enabled,
             pwm_levels=cfg.pwm_levels,
+            action_mode="continuous_pwm" if cfg.algorithm == "tqc" else None,
             curriculum_start_ratio=cfg.curriculum.start_ratio,
             curriculum_end_ratio=cfg.curriculum.end_ratio,
             curriculum_start_s=cfg.curriculum.start_s,
@@ -157,15 +173,15 @@ class TrainingService:
         )
         env = ScaledTrainingReward(env, cfg.reward_scale)
         registry = ModelRegistry(cfg.output_root)
-        directory = registry.initialise_track(cfg.track_name)
+        directory = registry.initialise_track(cfg.track_name, cfg.algorithm)
         try:
             persisted_best_lap_s = registry.read_metadata(
-                cfg.track_name, "best"
+                cfg.track_name, "best", cfg.algorithm
             ).best_lap_time_s
         except (FileNotFoundError, TypeError, ValueError):
             persisted_best_lap_s = None
         if not resume:
-            archived = registry.archive_latest(cfg.track_name)
+            archived = registry.archive_latest(cfg.track_name, cfg.algorithm)
             if archived:
                 self.status({"type": "archived", "path": str(archived)})
         service = self
@@ -173,18 +189,19 @@ class TrainingService:
             def __init__(self) -> None:
                 super().__init__()
                 self.last_ui_update = 0.0
-                self.episode = 1
+                self.episode = service.episodes + 1
                 self.episode_reward = 0.0
                 self.episode_reward_terms: dict[str, float] = {}
                 self.episode_steps = 0
                 self.max_progress = 0.0
-                self.finishes = 0
-                self.crashes = 0
+                self.finishes = service.finishes
+                self.crashes = service.crashes
                 self.best_lap_s = persisted_best_lap_s
                 self.step_rate = RollingStepRate(5.0)
 
             def _on_training_start(self) -> None:
                 self.step_rate.update(self.num_timesteps)
+                service.started_at = time.monotonic()
 
             def _on_step(self) -> bool:
                 infos = self.locals.get("infos")
@@ -208,6 +225,26 @@ class TrainingService:
                 elapsed_s = float(info.get("elapsed_s", 0.0))
                 simulator_info = info.get("simulator_info", {})
                 speed_kmh = float(simulator_info.get("speed_kmh", 0.0))
+                service.simulator_ticks += int(info.get("ticks_advanced", cfg.frame_skip))
+                actions = self.locals.get("actions")
+                action = actions[-1] if actions is not None and len(actions) else None
+                if action is None:
+                    policy_steering = None
+                    policy_throttle = None
+                    policy_brake = None
+                else:
+                    if cfg.algorithm == "tqc":
+                        policy_steering = float(action[0])
+                        policy_throttle = float(action[1]) > 0
+                        policy_brake = float(action[1]) < 0
+                    else:
+                        steering_value = int(action[0])
+                        policy_steering = (
+                            -1.0 + 2.0 * steering_value / (cfg.pwm_levels - 1)
+                            if cfg.pwm_enabled else float(steering_value - 1)
+                        )
+                        policy_throttle = bool(action[1])
+                        policy_brake = bool(action[2])
                 now = time.monotonic()
                 steps_per_second = self.step_rate.update(self.num_timesteps, now)
                 if now - self.last_ui_update >= 0.25 or done:
@@ -222,6 +259,11 @@ class TrainingService:
                             "max_progress": self.max_progress,
                             "elapsed_s": elapsed_s,
                             "speed_kmh": speed_kmh,
+                            "policy_steering": policy_steering,
+                            "actual_steering": info.get("actual_steering"),
+                            "expert_steering": info.get("expert_action", {}).get("steer"),
+                            "policy_throttle": policy_throttle,
+                            "policy_brake": policy_brake,
                             "finishes": self.finishes,
                             "crashes": self.crashes,
                             "best_lap_s": self.best_lap_s,
@@ -234,6 +276,9 @@ class TrainingService:
                     crashed = "crash" in events
                     self.finishes += int(finished)
                     self.crashes += int(crashed)
+                    service.episodes += 1
+                    service.finishes += int(finished)
+                    service.crashes += int(crashed)
                     if finished and (self.best_lap_s is None or elapsed_s < self.best_lap_s):
                         self.best_lap_s = elapsed_s
                         best_path = service.save_model(
@@ -283,18 +328,30 @@ class TrainingService:
                     self.episode_steps = 0
                     self.max_progress = 0.0
                 if cfg.checkpoint_interval and self.num_timesteps % cfg.checkpoint_interval == 0:
-                    self.model.save(str(directory / "checkpoints" / f"step-{self.num_timesteps}"))
+                    checkpoint = directory / "checkpoints" / f"step-{self.num_timesteps}"
+                    latest = service.save_latest()
+                    shutil.copy2(latest, checkpoint.with_suffix(".zip"))
+                    shutil.copy2(
+                        latest.with_suffix(".metadata.json"),
+                        checkpoint.with_suffix(".metadata.json"),
+                    )
+                    if cfg.algorithm == "tqc":
+                        shutil.copy2(
+                            latest.with_suffix(".replay.pkl"),
+                            checkpoint.with_suffix(".replay.pkl"),
+                        )
                     service.status({"type": "checkpoint", "timesteps": self.num_timesteps})
-                return not service._stop.is_set()
+                return not service._stop.is_set() and not (
+                    cfg.max_episodes and service.episodes >= cfg.max_episodes
+                )
 
         try:
             if resume:
                 resume_path = Path(resume)
-                metadata_name = resume_path.stem
                 try:
-                    resume_metadata = registry.read_metadata(cfg.track_name, metadata_name)
+                    resume_metadata = registry.metadata_for_archive(resume_path)
                 except FileNotFoundError:
-                    if cfg.pwm_enabled:
+                    if cfg.algorithm != "ppo" or cfg.pwm_enabled:
                         raise IncompatibleModelError(
                             "model has no compatibility metadata; select legacy digital mode "
                             "or add verified metadata before resuming"
@@ -303,63 +360,36 @@ class TrainingService:
                     registry.assert_compatible(
                         resume_metadata,
                         track_name=cfg.track_name,
-                        action_schema=(
-                            "pwm-multidiscrete-v1"
-                            if cfg.pwm_enabled
-                            else "digital-multidiscrete-v1"
-                        ),
-                        architecture=cfg.architecture,
+                        action_schema=action_schema(cfg),
+                        algorithm=cfg.algorithm,
+                        architecture=(cfg.architecture if cfg.algorithm == "ppo"
+                                      else cfg.tqc.architecture),
                     )
-                self.model = TeacherAnchoredPPO.load(
-                    str(resume),
-                    env=env,
-                    device=self.device.resolved,
-                    custom_objects={
-                        "n_steps": cfg.rollout_steps,
-                        "batch_size": cfg.batch_size,
-                        "n_epochs": cfg.ppo_epochs,
-                        "learning_rate": cfg.learning_rate,
-                        "gamma": cfg.gamma,
-                        "gae_lambda": cfg.gae_lambda,
-                        "ent_coef": cfg.entropy_coefficient,
-                    },
-                )
+                    if cfg.algorithm == "tqc" and (
+                        resume_metadata.tqc_hyperparameters != asdict(cfg.tqc)
+                    ):
+                        raise IncompatibleModelError(
+                            "TQC resume settings differ from saved hyperparameters"
+                        )
+                    self.simulator_ticks = resume_metadata.simulator_ticks
+                    self.episodes = resume_metadata.training_episodes or 0
+                    self.finishes = resume_metadata.finishes
+                    self.crashes = resume_metadata.crashes
+                    self.previous_wall_clock_seconds = resume_metadata.wall_clock_seconds
+                self.model = load_model(cfg, resume_path, env, self.device.resolved)
             else:
-                self.model = TeacherAnchoredPPO(
-                    "MlpPolicy",
-                    env,
-                    seed=cfg.seed,
-                    device=self.device.resolved,
-                    learning_rate=cfg.learning_rate,
-                    gamma=cfg.gamma,
-                    gae_lambda=cfg.gae_lambda,
-                    ent_coef=cfg.entropy_coefficient,
-                    policy_kwargs=policy_kwargs(cfg.architecture),
-                    n_steps=max(2, min(cfg.rollout_steps, cfg.timesteps)),
-                    batch_size=max(2, min(cfg.batch_size, cfg.timesteps)),
-                    n_epochs=cfg.ppo_epochs,
-                    verbose=0,
-                )
-                apply_forward_bias(self.model)
-            teacher = None
-            if cfg.teacher_model is not None:
-                if not cfg.teacher_model.is_file():
-                    raise FileNotFoundError(f"teacher model not found: {cfg.teacher_model}")
-                teacher = PPO.load(str(cfg.teacher_model), device=self.device.resolved)
-            self.model.set_teacher(teacher, cfg.teacher_kl_coefficient)
-            self.model.set_expert_imitation(
-                cfg.expert_imitation_coefficient
-                if cfg.rewards.expert_action_bonus_per_s > 0
-                else 0.0
-            )
-            self.model.training_status = service.status
-            parameters = sum(p.numel() for p in self.model.policy.parameters())
+                self.model = create_model(cfg, env, self.device.resolved)
+            configure_model(self.model, cfg, self.device.resolved, service.status)
+            parameters = sum(p.numel() for p in self.model.policy.parameters() if p.requires_grad)
             self.status(
                 {
                     "type": "started",
+                    "algorithm": cfg.algorithm,
+                    "action_schema": action_schema(cfg),
                     "device": self.device.resolved,
                     "gpu_name": self.device.gpu_name,
                     "parameter_count": parameters,
+                    "cuda_diagnostics": self.device.diagnostics,
                 }
             )
             self.model.learn(

@@ -68,14 +68,13 @@ def expert_action_loss(
     for width, target in zip(action_widths, targets, strict=True):
         losses.append(F.cross_entropy(logits[:, offset : offset + width], target, reduction="none"))
         offset += width
-    # Reference controls are useful only near the demonstrated pose and speed.
+    # Reference controls can teach acceleration from rest; use pose and heading to
+    # decide whether the ghost action applies, not the speed the student has reached.
     position_m = observations[:, 34:37] * observations.new_tensor([50, 50, 100])
     heading_rad = observations[:, 37] * np.pi
-    speed_error = (observations[:, 2] - observations[:, 38]) * 100
     confidence = th.exp(
         -position_m.square().sum(1) / 8.0
         -heading_rad.square() / (2 * 0.35**2)
-        -speed_error.square() / (2 * 10.0**2)
     ).detach()
     return (th.stack(losses).mean(0) * confidence).mean()
 

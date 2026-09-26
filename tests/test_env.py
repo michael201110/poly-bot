@@ -18,6 +18,7 @@ from polybot.env import (
     _failure_early_reward,
     _failure_progress_clawback,
     _finish_reward,
+    _ghost_guidance_weight,
     _ghost_pose_reward,
     _ground_slip_penalty,
     _has_off_track_evidence,
@@ -131,20 +132,42 @@ def test_timed_curriculum_terminates_after_selected_duration() -> None:
         env.close()
 
 
-def test_only_ghost_pose_rewards_an_unfinished_step() -> None:
+def test_ghost_rewards_require_forward_on_track_progress() -> None:
     env = make_env(track_id="mock/straight", frame_skip=4)
     try:
         env.reset(seed=0)
         _, reward, terminated, truncated, info = env.step(np.asarray([1, 1, 0], dtype=np.int64))
         assert info["reward_terms"]["progress"] == 0
         assert info["reward_terms"]["on_track_speed"] == 0
-        assert info["reward_terms"]["ghost_imitation"] > 0
-        assert reward == pytest.approx(info["reward_terms"]["ghost_imitation"])
+        assert info["reward_terms"]["ghost_imitation"] == 0
+        assert info["reward_terms"]["expert_action_imitation"] == 0
+        assert info["reward_terms"]["ghost_speed"] == 0
+        assert reward == pytest.approx(sum(info["reward_terms"].values()))
         assert np.isfinite(reward)
         assert not terminated
         assert not truncated
     finally:
         env.close()
+
+
+def test_ghost_guidance_requires_progress_speed_and_track_position() -> None:
+    config = RewardConfig()
+
+    assert _ghost_guidance_weight(
+        1.0, 10.0, 0.8, config, incomplete_failure=False
+    ) == pytest.approx(0.04)
+    assert _ghost_guidance_weight(
+        0.0, 10.0, 0.8, config, incomplete_failure=False
+    ) == 0.0
+    assert _ghost_guidance_weight(
+        1.0, 4.9, 0.8, config, incomplete_failure=False
+    ) == 0.0
+    assert _ghost_guidance_weight(
+        1.0, 10.0, 0.4, config, incomplete_failure=False
+    ) == 0.0
+    assert _ghost_guidance_weight(
+        1.0, 10.0, 0.8, config, incomplete_failure=True
+    ) == 0.0
 
 
 def test_speed_and_checkpoint_shaping_are_disabled() -> None:
@@ -385,6 +408,7 @@ def test_stationary_car_terminates_after_five_simulated_seconds() -> None:
         assert "stalled" in info["events"]
         assert info["stationary_s"] >= 5.0
         assert info["reward_terms"]["stall"] == env.reward_config.stall_penalty
+        assert info["reward_terms"]["low_speed"] < 0
     finally:
         env.close()
 

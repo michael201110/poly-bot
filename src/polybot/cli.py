@@ -17,6 +17,48 @@ from polybot.protocol import ProtocolViolation
 from polybot.transport import SimulatorTransport, WebSocketServerTransport
 
 
+def _model_algorithm(path: Path, explicit: str | None) -> tuple[str, object | None]:
+    """Use archive metadata when present, otherwise demand an explicit choice."""
+    from polybot.training.models import ModelRegistry
+
+    archive = path if path.suffix == ".zip" else path.with_suffix(".zip")
+    try:
+        metadata = ModelRegistry.metadata_for_archive(archive)
+    except FileNotFoundError:
+        if explicit is None:
+            raise ValueError("model metadata is missing; pass --algorithm ppo or tqc") from None
+        return explicit, None
+    algorithm = metadata.algorithm.lower()
+    if explicit is not None and explicit != algorithm:
+        raise ValueError(f"model metadata says {algorithm}, not {explicit}")
+    return algorithm, metadata
+
+
+def _validate_playback_metadata(
+    metadata: object | None, algorithm: str, track_id: str, lookahead_count: int,
+    *, allow_track_override: bool = False,
+) -> None:
+    if metadata is None:
+        return
+    from polybot.training.models import OBSERVATION_SCHEMA, IncompatibleModelError
+
+    expected_actions = (
+        {"continuous-pwm-v1"} if algorithm == "tqc" else
+        {"pwm-multidiscrete-v1", "digital-multidiscrete-v1"}
+    )
+    mismatches = []
+    if metadata.observation_schema != OBSERVATION_SCHEMA:
+        mismatches.append("observation schema")
+    if metadata.action_schema not in expected_actions:
+        mismatches.append("action schema")
+    if metadata.lookahead_count != lookahead_count:
+        mismatches.append("lookahead count")
+    if metadata.track_id != track_id and not allow_track_override:
+        mismatches.append("track ID")
+    if mismatches:
+        raise IncompatibleModelError("incompatible " + ", ".join(mismatches))
+
+
 def _common_arguments(
     parser: argparse.ArgumentParser,
     *,
@@ -225,7 +267,7 @@ def smoke_main(argv: Sequence[str] | None = None) -> int:
 
 
 def train_main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Train PPO against a PolyBot simulator")
+    parser = argparse.ArgumentParser(description="Train PPO or TQC against a PolyBot simulator")
     _common_arguments(
         parser,
         track_default=None,
@@ -233,6 +275,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         max_steps_default=None,
     )
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
+    parser.add_argument("--algorithm", choices=("ppo", "tqc"), default="ppo")
     _websocket_arguments(parser)
     parser.add_argument("--timesteps", type=int, default=100_000)
     parser.add_argument(
@@ -242,6 +285,18 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument("--pwm", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--pwm-levels", type=int, default=41)
+    parser.add_argument("--reward-profile")
+    parser.add_argument("--reward-scale", type=float, default=0.01)
+    parser.add_argument("--tqc-architecture", choices=("standard", "compact"), default="standard")
+    parser.add_argument("--tqc-learning-rate", type=float, default=3e-4)
+    parser.add_argument("--tqc-buffer-size", type=int, default=1_000_000)
+    parser.add_argument("--tqc-learning-starts", type=int, default=10_000)
+    parser.add_argument("--tqc-batch-size", type=int, default=256)
+    parser.add_argument("--tqc-gamma", type=float, default=0.999)
+    parser.add_argument("--tqc-tau", type=float, default=0.005)
+    parser.add_argument("--tqc-train-freq", type=int, default=1)
+    parser.add_argument("--tqc-gradient-steps", type=int, default=1)
+    parser.add_argument("--tqc-ent-coef", default="auto")
     parser.add_argument(
         "--max-episodes",
         type=int,
@@ -296,6 +351,10 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         help="initial PPO logit bias toward straight throttle and no brake; 0 disables it",
     )
     parser.add_argument("--model-out", type=Path, default=Path("models/polybot-ppo"))
+    parser.add_argument(
+        "--output-root", type=Path,
+        help="TQC registry root; models are stored under <root>/<track>/tqc/",
+    )
     parser.add_argument(
         "--resume",
         type=Path,
@@ -369,6 +428,102 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     if args.checkpoint_episodes < 0:
         parser.error("--checkpoint-episodes must be non-negative")
     _validate_websocket_arguments(parser, args)
+
+    if args.algorithm == "tqc":
+        from polybot.training.config import TqcConfig, TrainingConfig
+        from polybot.training.reward_profiles import RewardProfileStore
+        from polybot.training.trainer import TrainingService
+
+        unsupported = {
+            "--model-out": args.model_out != Path("models/polybot-ppo"),
+            "--forward-bias": args.forward_bias != 1.5,
+            "--entropy-coef": args.entropy_coef != 0.001,
+            "--learning-rate": args.learning_rate != 1e-4,
+            "--gamma": args.gamma != 0.9995,
+            "--gae-lambda": args.gae_lambda != 0.995,
+            "--architecture": args.architecture != "xl",
+            "--pwm-levels": args.pwm_levels != 41,
+            "--no-pwm": not args.pwm,
+            "--curriculum-probability": args.curriculum_probability != 0,
+            "--curriculum-last-fraction": args.curriculum_last_fraction != 0,
+            "--checkpoint-episodes": args.checkpoint_episodes != 5,
+            "--tensorboard-log": args.tensorboard_log is not None,
+            "--progress-bar": args.progress_bar,
+        }
+        if any(unsupported.values()):
+            unsupported_names = ", ".join(k for k, enabled in unsupported.items() if enabled)
+            parser.error(
+                "unsupported TQC options: " + unsupported_names
+            )
+        reward_overrides = {
+            "--ghost-pose-reward": args.ghost_pose_reward != 18.0,
+            "--barrier-contact-penalty": args.barrier_contact_penalty != -50.0,
+            "--finish-bonus": args.finish_bonus != 1000.0,
+            "--finish-fast-bonus": args.finish_fast_bonus != 2000.0,
+            "--finish-target-s": args.finish_target_s != 22.0,
+            "--finish-pace-decay": args.finish_pace_decay != 1.5,
+            "--ground-slip-penalty": args.ground_slip_penalty != -1000.0,
+            "--ground-slip-tolerance-deg": args.ground_slip_tolerance_deg != 5.0,
+        }
+        if args.reward_profile and any(reward_overrides.values()):
+            parser.error("reward override flags cannot be combined with --reward-profile")
+        if args.reward_profile:
+            rewards = RewardProfileStore().load(args.reward_profile)
+        else:
+            rewards = RewardConfig(
+                imitation_bonus_per_s=args.ghost_pose_reward,
+                barrier_contact_penalty=args.barrier_contact_penalty,
+                finish_bonus=args.finish_bonus,
+                finish_fast_bonus=args.finish_fast_bonus,
+                finish_target_s=args.finish_target_s,
+                finish_pace_decay_per_s=args.finish_pace_decay,
+                ground_slip_penalty_per_rad_s=args.ground_slip_penalty,
+                ground_slip_tolerance_rad=math.radians(args.ground_slip_tolerance_deg),
+            )
+        try:
+            config = TrainingConfig(
+                algorithm="tqc", backend=args.backend, track_name=args.track,
+                track_id=args.track, device=args.device, seed=args.seed,
+                lookahead_count=args.lookahead, frame_skip=args.frame_skip,
+                timesteps=args.timesteps, output_root=args.output_root or Path("models"),
+                max_episode_steps=args.max_steps,
+                reward_scale=args.reward_scale, reward_profile=args.reward_profile,
+                max_episodes=args.max_episodes or None,
+                rewards=rewards, checkpoint_interval=100_000,
+                tqc=TqcConfig(
+                    architecture=args.tqc_architecture, learning_rate=args.tqc_learning_rate,
+                    buffer_size=args.tqc_buffer_size,
+                    learning_starts=args.tqc_learning_starts,
+                    batch_size=args.tqc_batch_size, gamma=args.tqc_gamma,
+                    tau=args.tqc_tau, train_freq=args.tqc_train_freq,
+                    gradient_steps=args.tqc_gradient_steps, ent_coef=args.tqc_ent_coef,
+                ),
+            )
+            output = TrainingService(config, lambda event: print(json.dumps(event))).run(
+                resume=args.resume, transport=_make_transport(args)
+            )
+        except (ValueError, RuntimeError) as exc:
+            parser.error(str(exc))
+        print(f"Saved TQC model to {output}")
+        return 0
+
+    tqc_overrides = {
+        "--tqc-architecture": args.tqc_architecture != "standard",
+        "--tqc-learning-rate": args.tqc_learning_rate != 3e-4,
+        "--tqc-buffer-size": args.tqc_buffer_size != 1_000_000,
+        "--tqc-learning-starts": args.tqc_learning_starts != 10_000,
+        "--tqc-batch-size": args.tqc_batch_size != 256,
+        "--tqc-gamma": args.tqc_gamma != 0.999,
+        "--tqc-tau": args.tqc_tau != 0.005,
+        "--tqc-train-freq": args.tqc_train_freq != 1,
+        "--tqc-gradient-steps": args.tqc_gradient_steps != 1,
+        "--tqc-ent-coef": args.tqc_ent_coef != "auto",
+    }
+    if any(tqc_overrides.values()):
+        names = ", ".join(k for k, enabled in tqc_overrides.items() if enabled)
+        parser.error(f"TQC-only options on PPO run: {names}")
+    if args.output_root is not None:
+        parser.error("--output-root is for TQC; PPO uses --model-out")
 
     try:
         from stable_baselines3 import PPO
@@ -602,7 +757,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
 
 
 def evaluate_main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Evaluate a saved PPO policy")
+    parser = argparse.ArgumentParser(description="Evaluate a saved PPO or TQC policy")
     _common_arguments(
         parser,
         track_default=None,
@@ -613,17 +768,36 @@ def evaluate_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
     _websocket_arguments(parser)
     parser.add_argument("--episodes", type=int, default=5)
+    parser.add_argument("--algorithm", choices=("ppo", "tqc"))
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--allow-track-override", action="store_true")
+    parser.add_argument("--pwm", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--pwm-levels", type=int, default=41)
     args = parser.parse_args(argv)
     _apply_backend_defaults(args)
 
     if args.episodes < 1:
         parser.error("--episodes must be positive")
     _validate_websocket_arguments(parser, args)
+    from polybot.training.algorithms import model_class
+    from polybot.training.devices import resolve_device
+
     try:
-        from stable_baselines3 import PPO
-    except ImportError as exc:
-        parser.error("training dependencies are missing; install with: pip install -e '.[train]'")
-        raise AssertionError("unreachable") from exc
+        algorithm, metadata = _model_algorithm(args.model, args.algorithm)
+        _validate_playback_metadata(
+            metadata, algorithm, args.track, args.lookahead,
+            allow_track_override=args.allow_track_override,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
+    if metadata is not None:
+        args.pwm = metadata.action_schema == "pwm-multidiscrete-v1"
+        args.pwm_levels = metadata.pwm_resolution
+    mode = "continuous_pwm" if algorithm == "tqc" else ("ppo_pwm" if args.pwm else "digital")
+    try:
+        selected_device = resolve_device(args.device)
+    except RuntimeError as exc:
+        parser.error(str(exc))
 
     transport = _make_transport(args)
     try:
@@ -634,13 +808,17 @@ def evaluate_main(argv: Sequence[str] | None = None) -> int:
             frame_skip=args.frame_skip,
             max_episode_steps=args.max_steps,
             request_timeout_s=args.request_timeout,
+            action_mode=mode,
+            pwm_levels=args.pwm_levels,
         )
     except BaseException:
         transport.close()
         raise
     summaries: list[dict[str, object]] = []
     try:
-        model = PPO.load(str(args.model), env=env)
+        model = model_class(algorithm).load(
+            str(args.model), env=env, device=selected_device.resolved
+        )
         for episode in range(args.episodes):
             observation, _ = env.reset(seed=args.seed + episode)
             total_reward = 0.0
@@ -719,6 +897,8 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--pwm-levels", type=int, default=41)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--algorithm", choices=("ppo", "tqc"))
+    parser.add_argument("--allow-track-override", action="store_true")
     args = parser.parse_args(argv)
 
     if args.episodes < 1:
@@ -731,19 +911,33 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
         parser.error("--pwm-levels must be an odd integer >= 3")
     _validate_websocket_arguments(parser, args)
 
-    ppo_type = None
+    policy_type = None
+    model_algorithm = None
     if args.model is not None:
         try:
-            from stable_baselines3 import PPO
-        except ImportError as exc:
-            parser.error("PPO dependencies are missing; install with: pip install -e '.[train]'")
-            raise AssertionError("unreachable") from exc
-        ppo_type = PPO
+            model_algorithm, metadata = _model_algorithm(args.model, args.algorithm)
+            _validate_playback_metadata(
+                metadata, model_algorithm, args.track, args.lookahead,
+                allow_track_override=args.allow_track_override,
+            )
+        except ValueError as exc:
+            parser.error(str(exc))
+        from polybot.training.algorithms import model_class
+
+        policy_type = model_class(model_algorithm)
+        if metadata is not None:
+            args.pwm = metadata.action_schema == "pwm-multidiscrete-v1"
+            args.pwm_levels = metadata.pwm_resolution
+        from polybot.training.devices import resolve_device
+
+        try:
+            selected_device = resolve_device(args.device).resolved
+        except RuntimeError as exc:
+            parser.error(str(exc))
 
     transport = _make_transport(args)
     try:
-        env = PolyTrackEnv(
-            transport,
+        env_kwargs = dict(
             track_id=args.track,
             lookahead_count=args.lookahead,
             frame_skip=args.frame_skip,
@@ -752,6 +946,10 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
             pwm_enabled=args.pwm,
             pwm_levels=args.pwm_levels,
         )
+        if model_algorithm == "tqc":
+            env_kwargs["pwm_enabled"] = False
+            env_kwargs["action_mode"] = "continuous_pwm"
+        env = PolyTrackEnv(transport, **env_kwargs)
     except BaseException:
         transport.close()
         raise
@@ -762,8 +960,8 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     summaries: list[dict[str, object]] = []
     try:
         model = (
-            ppo_type.load(str(args.model), env=env, device=args.device)
-            if ppo_type is not None
+            policy_type.load(str(args.model), env=env, device=selected_device)
+            if policy_type is not None
             else None
         )
         print("Press R in this terminal to restart the current run.", flush=True)
@@ -818,7 +1016,7 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
                                 f"speed={speed:5.2f}m/s "
                                 f"offset={telemetry.lateral_offset_m:+6.2f}m "
                                 f"heading={telemetry.heading_error_rad:+6.2f}rad "
-                                f"steer={int(action[0]):+d}",
+                                f"steer={float(action[0]):+.2f}",
                                 flush=True,
                             )
                             last_status = now

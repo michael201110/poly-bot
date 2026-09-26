@@ -13,6 +13,7 @@ from polybot.env import (
     summer_1_bootstrap_reward_config,
     summer_1_ghost_learning_reward_config,
     summer_1_pace_reward_config,
+    summer_1_recovery_reward_config,
     summer_1_reward_config,
 )
 from polybot.gui.main import (
@@ -75,7 +76,7 @@ def test_device_resolution_without_cuda() -> None:
     torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
     assert resolve_device("auto", torch).resolved == "cpu"
     assert resolve_device("cpu", torch).resolved == "cpu"
-    with pytest.raises(RuntimeError, match="unavailable|is_available"):
+    with pytest.raises(RuntimeError, match="CPU-only|CUDA|NVIDIA"):
         resolve_device("cuda", torch)
 
 
@@ -205,9 +206,9 @@ def test_training_service_can_snapshot_a_best_lap(tmp_path) -> None:
 
     saved = service.save_model("best", best_lap_time_s=19.75)
 
-    assert saved == tmp_path / "winter-4" / "best.zip"
+    assert saved == tmp_path / "winter-4" / "ppo" / "best.zip"
     assert saved.read_bytes() == b"best model"
-    metadata = ModelRegistry(tmp_path).read_metadata("Winter 4", "best")
+    metadata = ModelRegistry(tmp_path).read_metadata("Winter 4", "best", "ppo")
     assert metadata.best_lap_time_s == 19.75
 
 
@@ -357,3 +358,14 @@ def test_summer_ghost_learning_profile_prioritises_reference_imitation() -> None
     assert rewards.expert_action_bonus_per_s == 60.0
     assert rewards.ghost_speed_bonus_per_s == 30.0
     assert rewards.finish_bonus + rewards.finish_fast_bonus == 8000.0
+
+
+def test_summer_recovery_profile_gates_ghost_rewards_and_penalises_low_speed() -> None:
+    rewards = summer_1_recovery_reward_config()
+
+    assert rewards.imitation_bonus_per_s == 100.0
+    assert rewards.guidance_reward_scale == 0.05
+    assert rewards.guidance_min_forward_speed_mps == 5.0
+    assert rewards.guidance_min_on_track_factor == 0.5
+    assert rewards.low_speed_penalty_per_s == -5.0
+    assert rewards.low_speed_grace_s == 1.0

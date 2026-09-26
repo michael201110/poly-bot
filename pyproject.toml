@@ -17,8 +17,8 @@ dependencies = [
 
 [project.optional-dependencies]
 train = [
-  "stable-baselines3>=2.4,<3",
-  "torch>=2.2",
+  "stable-baselines3>=2.9,<2.10",
+  "sb3-contrib>=2.9,<2.10",
 ]
 gui = [
   "PySide6>=6.7,<7",
@@ -35,6 +35,7 @@ polybot-eval = "polybot.cli:evaluate_main"
 polybot-drive = "polybot.cli:drive_main"
 polybot-distill = "polybot.distillation:main"
 polybot-gui = "polybot.gui.main:main"
+polybot-doctor = "polybot.training.devices:doctor_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
