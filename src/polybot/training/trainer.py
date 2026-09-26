@@ -200,12 +200,14 @@ class TrainingService:
         env = ScaledTrainingReward(env, cfg.reward_scale)
         registry = ModelRegistry(cfg.output_root)
         directory = registry.initialise_track(cfg.track_name, cfg.algorithm)
-        try:
-            persisted_best_lap_s = registry.read_metadata(
-                cfg.track_name, "best", cfg.algorithm
-            ).best_lap_time_s
-        except (FileNotFoundError, TypeError, ValueError):
-            persisted_best_lap_s = None
+        persisted_best_lap_s = None
+        if resume:
+            try:
+                persisted_best_lap_s = registry.read_metadata(
+                    cfg.track_name, "best", cfg.algorithm
+                ).best_lap_time_s
+            except (FileNotFoundError, TypeError, ValueError):
+                pass
         if not resume:
             archived = registry.archive_latest(cfg.track_name, cfg.algorithm)
             if archived:
