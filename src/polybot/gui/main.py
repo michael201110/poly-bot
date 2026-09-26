@@ -138,6 +138,7 @@ def main() -> int:
     parser.add_argument("--ppo-epochs", type=int)
     parser.add_argument("--teacher-model")
     parser.add_argument("--teacher-kl-coefficient", type=float)
+    parser.add_argument("--expert-imitation-coefficient", type=float)
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -278,6 +279,18 @@ def main() -> int:
             self.teacher_kl.setValue(
                 0.0 if launch.teacher_kl_coefficient is None else launch.teacher_kl_coefficient
             )
+            self.expert_imitation = QDoubleSpinBox()
+            self.expert_imitation.setDecimals(3)
+            self.expert_imitation.setSingleStep(0.1)
+            self.expert_imitation.setRange(0.0, 100.0)
+            self.expert_imitation.setValue(
+                1.0
+                if launch.expert_imitation_coefficient is None
+                else launch.expert_imitation_coefficient
+            )
+            self.expert_imitation.setToolTip(
+                "Expert control loss from ghost steering, throttle and brake; 0 disables it."
+            )
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -354,6 +367,7 @@ def main() -> int:
                 ("PPO epochs", self.ppo_epochs),
                 ("Teacher model", self.teacher_model),
                 ("Teacher KL coefficient", self.teacher_kl),
+                ("Expert imitation coefficient", self.expert_imitation),
                 ("Reward profile", self.reward_profile),
                 ("All reward parameters", self.reward_table),
                 ("Curriculum", self.curriculum),
@@ -510,6 +524,7 @@ def main() -> int:
                     else None
                 ),
                 teacher_kl_coefficient=self.teacher_kl.value(),
+                expert_imitation_coefficient=self.expert_imitation.value(),
                 checkpoint_interval=self.checkpoint.value(),
                 output_root=Path(self.output.text()),
                 rewards=self.reward_config_from_table(),

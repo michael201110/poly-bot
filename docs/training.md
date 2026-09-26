@@ -63,3 +63,18 @@ The GUI reward table is generated from `RewardConfig` and exposes every coeffici
 Selecting a profile loads all values into the editable table. Type a new name (or select an existing
 custom name), edit values, and choose **Save reward profile**. Custom profiles are stored as readable
 JSON files under `profiles/rewards/` and can be edited, copied, or version-controlled.
+
+## Ghost control guidance
+
+With a reward profile that supplies an expert-action bonus, the trainer can also fit the
+ghost's recorded steering, throttle, and brake directly. The GUI's **Expert imitation
+coefficient** controls this extra policy loss: `1.0` is the default and `0.0` disables
+it. This setting is separate from **Teacher KL coefficient**, which requires a fixed
+teacher model archive.
+
+To compare guidance fairly, first stop training cleanly and copy `latest.zip` and
+`latest.metadata.json` to a named checkpoint. Resume two runs from that same checkpoint,
+using the same reward profile, track, seed, and training budget. Set the expert imitation
+coefficient to `1.0` for one run and `0.0` for the other, and use separate model output
+locations so their `latest.zip` files do not overwrite each other. Compare evaluation
+laps rather than training reward alone.
