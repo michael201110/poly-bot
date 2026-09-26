@@ -69,6 +69,7 @@ def create_model(config: TrainingConfig, env: Any, device: str) -> Any:
             )
         for _ in range(500):
             model._rehearse_success(settings.batch_size)
+        model.mark_safe_actor()
     return model
 
 

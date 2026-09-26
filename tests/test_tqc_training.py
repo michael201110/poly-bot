@@ -391,6 +391,8 @@ def test_successful_lap_rehearsal_updates_actor_and_survives_save(tmp_path) -> N
 
 
 def test_fresh_tqc_can_pretrain_from_successful_lap(tmp_path) -> None:
+    import torch
+
     from polybot.training.algorithms import create_model
 
     env = PolyTrackEnv(MockSimulatorTransport(), action_mode="continuous_pwm")
@@ -413,5 +415,12 @@ def test_fresh_tqc_can_pretrain_from_successful_lap(tmp_path) -> None:
         assert len(model.successful_trajectories) == 1
         predicted, _ = model.predict(observation, deterministic=True)
         assert np.linalg.norm(predicted - actions[0]) < 0.5
+        with torch.no_grad():
+            model.actor.mu.bias.add_(1.0)
+        drifted, _ = model.predict(observation, deterministic=True)
+        assert not np.allclose(drifted, predicted)
+        assert model.restore_safe_actor()
+        recovered, _ = model.predict(observation, deterministic=True)
+        np.testing.assert_allclose(recovered, predicted, atol=1e-6)
     finally:
         env.close()

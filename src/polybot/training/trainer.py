@@ -231,6 +231,7 @@ class TrainingService:
                 self.last_tqc_probe_step = -1_000
                 self.episode_observations: list[np.ndarray] = []
                 self.episode_actions: list[np.ndarray] = []
+                self.collapsed_episodes = 0
 
             def _on_training_start(self) -> None:
                 self.step_rate.update(self.num_timesteps)
@@ -355,6 +356,7 @@ class TrainingService:
                             np.asarray(self.episode_observations),
                             np.asarray(self.episode_actions),
                         )
+                        service.model.mark_safe_actor()
                         service.status({
                             "type": "successful_trajectory_saved",
                             "steps": len(self.episode_actions),
@@ -362,6 +364,21 @@ class TrainingService:
                         })
                     self.episode_observations.clear()
                     self.episode_actions.clear()
+                    if cfg.algorithm == "tqc":
+                        collapse_threshold = max(0.05, service.max_progress * 0.25)
+                        if self.max_progress < collapse_threshold:
+                            self.collapsed_episodes += 1
+                        else:
+                            self.collapsed_episodes = 0
+                        if self.collapsed_episodes >= 12 and service.max_progress >= 0.5:
+                            if service.model.restore_safe_actor():
+                                service.status({
+                                    "type": "policy_recovery",
+                                    "timesteps": self.num_timesteps,
+                                    "recent_episode_progress": self.max_progress,
+                                    "previous_best_progress": service.max_progress,
+                                })
+                            self.collapsed_episodes = 0
                     crashed = "crash" in events
                     self.finishes += int(finished)
                     if finished and service.first_finish_timestep is None:
