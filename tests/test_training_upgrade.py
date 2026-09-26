@@ -236,6 +236,8 @@ def test_gui_groups_episode_reward_terms() -> None:
             "ground_slip": -20.0,
             "barrier_contact": -1000.0,
             "failure_early": -500.0,
+            "low_speed": -7.0,
+            "future_reward_term": 3.0,
         }
     )
 
@@ -243,6 +245,9 @@ def test_gui_groups_episode_reward_terms() -> None:
     assert "ghost=+50.0" in text
     assert "milestone=+100.0" in text
     assert "terminal=-1500.0" in text
+    assert "control=-12.0" in text
+    assert "other=+3.0" in text
+    assert sum(float(group.split("=")[1]) for group in text.split()) == pytest.approx(-179.0)
 
 
 def test_pace_profile_increases_time_pressure_without_removing_safety() -> None:

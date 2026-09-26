@@ -132,8 +132,10 @@ def test_tqc_warmup_prefers_forward_actions_and_actor_starts_forward() -> None:
         model = create_model(cfg, env, "cpu")
         actions = np.array([model._sample_action(5_000)[0][0] for _ in range(200)])
         assert (actions[:, 1] >= 0.65).sum() >= 140
-        assert np.median(np.abs(actions[:, 0])) < 0.3
+        assert np.median(np.abs(actions[:, 0])) < 0.6
         assert model.policy.actor.mu.bias[1].item() > 0.8
+        deterministic, _ = model.predict(np.zeros(105, dtype=np.float32), deterministic=True)
+        assert deterministic[1] > 0.5
         model.num_timesteps = 5_000
         model._last_obs = np.zeros((1, 105), dtype=np.float32)
         # Once learning starts, the standard stochastic TQC actor samples actions.
@@ -141,6 +143,35 @@ def test_tqc_warmup_prefers_forward_actions_and_actor_starts_forward() -> None:
         assert action.shape == buffered.shape == (1, 2)
     finally:
         env.close()
+
+
+def test_tqc_warmup_seed_and_replay_action_match_execution() -> None:
+    from polybot.training.algorithms import create_model
+
+    samples = []
+    for _ in range(2):
+        env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight",
+                           frame_skip=16, action_mode="continuous_pwm")
+        try:
+            model = create_model(TrainingConfig(algorithm="tqc", seed=19,
+                                  tqc=TqcConfig(architecture="tiny", buffer_size=64)), env, "cpu")
+            env.reset(seed=19)
+            run = []
+            for _ in range(12):
+                executed, buffered = model._sample_action(5_000)
+                np.testing.assert_allclose(model.policy.unscale_action(buffered), executed)
+                _, _, terminated, truncated, info = env.step(executed[0])
+                requested = info["requested_control_duty"]
+                assert requested["throttle"] == pytest.approx(max(0, executed[0, 1]))
+                assert requested["brake"] == pytest.approx(max(0, -executed[0, 1]))
+                assert not (requested["throttle"] and requested["brake"])
+                run.append(executed[0].copy())
+                if terminated or truncated:
+                    env.reset(seed=19)
+            samples.append(run)
+        finally:
+            env.close()
+    np.testing.assert_array_equal(samples[0], samples[1])
 
 
 def test_ppo_brake_reward_keeps_binary_behavior() -> None:

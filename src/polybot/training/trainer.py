@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import gymnasium as gym
+import numpy as np
 
 from polybot.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
@@ -60,6 +61,28 @@ class RollingStepRate:
         if elapsed <= 0:
             return 0.0
         return max(0, timesteps - started_steps) / elapsed
+
+
+def tqc_policy_diagnostics(model: Any, observation: np.ndarray) -> dict[str, Any]:
+    """Small current-state probe; never changes the policy or replay actions."""
+    import torch
+
+    with torch.no_grad():
+        obs = torch.as_tensor(observation, dtype=torch.float32, device=model.device)
+        if obs.ndim == 1:
+            obs = obs.unsqueeze(0)
+        mean, log_std, _ = model.policy.actor.get_action_dist_params(obs)
+        deterministic = torch.tanh(mean)
+        critic_values = {}
+        for longitudinal in (1.0, 0.5, 0.0, -0.5):
+            action = torch.tensor([[0.0, longitudinal]], device=model.device)
+            critic_values[str(longitudinal)] = float(model.critic(obs, action).mean().item())
+    return {
+        "actor_longitudinal_mean": float(mean[0, 1].item()),
+        "actor_longitudinal_log_std": float(log_std[0, 1].item()),
+        "deterministic_longitudinal": float(deterministic[0, 1].item()),
+        "critic_longitudinal_q": critic_values,
+    }
 
 
 class TrainingService:
@@ -200,6 +223,7 @@ class TrainingService:
                 self.crashes = service.crashes
                 self.best_lap_s = persisted_best_lap_s
                 self.step_rate = RollingStepRate(5.0)
+                self.tqc_actions: deque[tuple[float, float]] = deque(maxlen=256)
 
             def _on_training_start(self) -> None:
                 self.step_rate.update(self.num_timesteps)
@@ -240,6 +264,7 @@ class TrainingService:
                         policy_steering = float(action[0])
                         policy_throttle = float(action[1]) > 0
                         policy_brake = float(action[1]) < 0
+                        self.tqc_actions.append((float(action[0]), float(action[1])))
                     else:
                         steering_value = int(action[0])
                         policy_steering = (
@@ -253,6 +278,23 @@ class TrainingService:
                 if now - self.last_ui_update >= 0.25 or done:
                     replay = getattr(service.model, "replay_buffer", None)
                     training_values = getattr(service.model.logger, "name_to_value", {})
+                    action_stats: dict[str, Any] = {}
+                    if cfg.algorithm == "tqc" and self.tqc_actions:
+                        recent = np.asarray(self.tqc_actions)
+                        longitudinal = recent[:, 1]
+                        action_stats = {
+                            "longitudinal_mean": float(longitudinal.mean()),
+                            "longitudinal_std": float(longitudinal.std()),
+                            "longitudinal_positive_fraction": float((longitudinal > 0.1).mean()),
+                            "longitudinal_near_zero_fraction": float(
+                                (abs(longitudinal) <= 0.1).mean()
+                            ),
+                            "longitudinal_negative_fraction": float((longitudinal < -0.1).mean()),
+                            "mean_absolute_steering": float(abs(recent[:, 0]).mean()),
+                        }
+                        new_obs = self.locals.get("new_obs")
+                        if new_obs is not None:
+                            action_stats.update(tqc_policy_diagnostics(service.model, new_obs[-1]))
                     service.status(
                         {
                             "type": "progress",
@@ -288,6 +330,7 @@ class TrainingService:
                             if cfg.algorithm == "tqc" else None,
                             "entropy_coefficient": training_values.get("train/ent_coef")
                             if cfg.algorithm == "tqc" else None,
+                            **action_stats,
                         }
                     )
                     self.last_ui_update = now

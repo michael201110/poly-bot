@@ -110,7 +110,7 @@ def reward_breakdown(terms: dict[str, float]) -> str:
         },
         "ghost": {"ghost_imitation", "expert_action_imitation", "ghost_speed"},
         "milestone": {"checkpoint", "finish", "curriculum_section"},
-        "control": {"elapsed", "action_change", "ground_brake", "airborne_brake"},
+        "control": {"elapsed", "action_change", "ground_brake", "airborne_brake", "low_speed"},
         "handling": {
             "unsafe_speed",
             "airborne_spin",
@@ -132,6 +132,9 @@ def reward_breakdown(terms: dict[str, float]) -> str:
         label: sum(float(terms.get(name, 0.0)) for name in names)
         for label, names in groups.items()
     }
+    ungrouped = set(terms) - set().union(*groups.values())
+    if ungrouped:
+        totals["other"] = sum(float(terms[name]) for name in ungrouped)
     return "  ".join(f"{label}={value:+.1f}" for label, value in totals.items())
 
 
@@ -390,7 +393,7 @@ def main() -> int:
             self.tqc_gradients.setValue(1)
             if launch.tqc_gradient_steps is not None:
                 self.tqc_gradients.setValue(launch.tqc_gradient_steps)
-            self.tqc_entropy = QLineEdit("auto")
+            self.tqc_entropy = QLineEdit("auto_0.01")
             if launch.tqc_ent_coef is not None:
                 self.tqc_entropy.setText(launch.tqc_ent_coef)
             self.tqc_forward_fraction = QDoubleSpinBox()
@@ -404,7 +407,7 @@ def main() -> int:
             self.tqc_steering_std.setDecimals(3)
             self.tqc_steering_std.setRange(0.0, 1.0)
             self.tqc_steering_std.setValue(
-                0.18 if launch.tqc_forward_warmup_steering_std is None
+                0.45 if launch.tqc_forward_warmup_steering_std is None
                 else launch.tqc_forward_warmup_steering_std
             )
             self.tqc_throttle_bias = QDoubleSpinBox()
@@ -961,6 +964,16 @@ def main() -> int:
                         self.overview.setText(
                             self.overview.text() + "    "
                             f"Actor loss: {actor_loss:.3f}    Critic loss: {critic_loss:.3f}"
+                        )
+                    if event.get("longitudinal_mean") is not None:
+                        self.overview.setText(
+                            self.overview.text() + "\n"
+                            f"Longitudinal: {event['longitudinal_mean']:+.2f} "
+                            f"(std {event['longitudinal_std']:.2f})    "
+                            f"forward {event['longitudinal_positive_fraction']:.0%}    "
+                            f"coast {event['longitudinal_near_zero_fraction']:.0%}    "
+                            f"brake {event['longitudinal_negative_fraction']:.0%}    "
+                            f"actor {event.get('deterministic_longitudinal', 0.0):+.2f}"
                         )
                 self.overview.setText(
                     self.overview.text() + "\n"

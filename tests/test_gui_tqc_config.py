@@ -14,15 +14,15 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
 
     monkeypatch.setattr(sys, "argv", [
         "polybot-gui", "--algorithm", "tqc", "--tqc-architecture", "tiny",
-        "--track-name", "Summer 1", "--device", "cpu", "--frame-skip", "30",
+        "--track-name", "Summer 1", "--device", "cuda", "--frame-skip", "30",
         "--timesteps", "100000", "--reward-profile", "Summer 1 - full bootstrap",
         "--seed", "0", "--max-episode-seconds", "60", "--checkpoint-interval", "25000",
         "--tqc-learning-rate", "0.0003", "--tqc-buffer-size", "250000",
         "--tqc-learning-starts", "5000", "--tqc-batch-size", "256",
         "--tqc-gamma", "0.999", "--tqc-tau", "0.005",
-        "--tqc-train-freq", "1", "--tqc-gradient-steps", "1", "--tqc-ent-coef", "auto",
+        "--tqc-train-freq", "1", "--tqc-gradient-steps", "1", "--tqc-ent-coef", "auto_0.01",
         "--tqc-forward-warmup-fraction", "0.8",
-        "--tqc-forward-warmup-steering-std", "0.18",
+        "--tqc-forward-warmup-steering-std", "0.45",
         "--tqc-initial-throttle-bias", "1.0",
     ])
     observed = {}
@@ -75,14 +75,14 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
         "algorithm": "TQC", "backend": "websocket", "architecture": "tiny",
         "parameters": "Actor: 11,204 | Training network total: 61,992",
         "action": "Continuous PWM: steering [-1, 1], longitudinal [-1, 1]",
-        "track": "Summer 1", "device": "cpu", "seed": 0, "frame_skip": 30,
+        "track": "Summer 1", "device": "cuda", "seed": 0, "frame_skip": 30,
         "episode_seconds": 60.0, "timesteps": 100_000,
         "reward_profile": "Summer 1 - full bootstrap",
         "checkpoint": 25_000, "learning_rate": 0.0003,
         "replay_buffer": 250_000, "learning_starts": 5_000, "batch_size": 256,
         "gamma": 0.999, "tau": 0.005, "train_frequency": 1,
-        "gradient_steps": 1, "entropy": "auto",
-        "forward_fraction": 0.8, "steering_std": 0.18, "throttle_bias": 1.0,
+        "gradient_steps": 1, "entropy": "auto_0.01",
+        "forward_fraction": 0.8, "steering_std": 0.45, "throttle_bias": 1.0,
         "tqc_enabled": True, "ppo_disabled": True,
         "teacher_disabled": True, "kl_disabled": True,
     }

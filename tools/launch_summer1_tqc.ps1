@@ -9,7 +9,7 @@ $launchArguments = @(
     '--algorithm', 'tqc',
     '--tqc-architecture', 'tiny',
     '--track-name', '"Summer 1"',
-    '--device', 'cpu',
+    '--device', 'cuda',
     '--seed', '0',
     '--frame-skip', '30',
     '--max-episode-seconds', '60',
@@ -26,9 +26,9 @@ $launchArguments = @(
     '--tqc-tau', '0.005',
     '--tqc-train-freq', '1',
     '--tqc-gradient-steps', '1',
-    '--tqc-ent-coef', 'auto',
+    '--tqc-ent-coef', 'auto_0.01',
     '--tqc-forward-warmup-fraction', '0.8',
-    '--tqc-forward-warmup-steering-std', '0.18',
+    '--tqc-forward-warmup-steering-std', '0.45',
     '--tqc-initial-throttle-bias', '1.0',
     '--fresh'
 )

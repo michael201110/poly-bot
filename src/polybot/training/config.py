@@ -78,9 +78,9 @@ class TqcConfig:
     tau: float = 0.005
     train_freq: int = 1
     gradient_steps: int = 1
-    ent_coef: str = "auto"
+    ent_coef: str = "auto_0.01"
     forward_warmup_fraction: float = 0.8
-    forward_warmup_steering_std: float = 0.18
+    forward_warmup_steering_std: float = 0.45
     initial_throttle_bias: float = 1.0
 
     def __post_init__(self) -> None:
@@ -96,13 +96,20 @@ class TqcConfig:
             raise ValueError("TQC gamma must be finite and in (0, 1]")
         if not (math.isfinite(self.tau) and 0 < self.tau <= 1):
             raise ValueError("TQC gamma and tau must be in (0, 1]")
-        if self.ent_coef != "auto":
+        if self.ent_coef != "auto" and not self.ent_coef.startswith("auto_"):
             try:
                 value = float(self.ent_coef)
                 if not math.isfinite(value) or value < 0:
                     raise ValueError
             except ValueError as exc:
                 raise ValueError("TQC entropy must be 'auto' or a nonnegative number") from exc
+        elif self.ent_coef.startswith("auto_"):
+            try:
+                initial = float(self.ent_coef.removeprefix("auto_"))
+                if not math.isfinite(initial) or initial <= 0:
+                    raise ValueError
+            except ValueError as exc:
+                raise ValueError("TQC automatic entropy initial value must be positive") from exc
         if not math.isfinite(self.forward_warmup_fraction) or not (
             0 <= self.forward_warmup_fraction <= 1
         ):

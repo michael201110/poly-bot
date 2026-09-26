@@ -75,25 +75,37 @@ totals are not directly comparable to PPO's actor/value network counts. Select t
 the first 100,000-step diagnostic run. The replay buffer is saved alongside each TQC archive,
 so a non-converged run can be resumed.
 
-For the first CPU Summer 1 run, use `powershell -File tools/launch_summer1_tqc.ps1` after the
+For the Summer 1 run, use `powershell -File tools/launch_summer1_tqc.ps1` after the
 PolyTrack mod is connected and its ghost reference is loaded. This reproducible GUI launch uses
 the `tiny` actor, 30-tick frame skip, 60-second episode cap, 100,000 environment timesteps,
 seed 0, full-track curriculum, `Summer 1 - full bootstrap`, and reward scale `0.01`. TQC uses
 learning rate `0.0003`, a 250,000-transition replay buffer, 5,000 learning-start steps, batch
-256, gamma `0.999`, tau `0.005`, one training update per step, and automatic entropy tuning.
+256, gamma `0.999`, tau `0.005`, one training update per step, and automatic entropy tuning
+initialized at `0.01` (`auto_0.01`). The launch selects CUDA and fails loudly if it is unavailable.
 It checkpoints every 25,000 steps. The buffer holds the full 100,000-step first run with room
 for later resumption, while using less CPU memory and disk than the general 1,000,000-transition
 default. Starting updates after 5,000 steps gives the diagnostic run more learning time; the
-remaining TQC defaults stay at the library-aligned baseline because there is no real-game TQC
-learning curve yet to justify stronger tuning.
+The GUI reports rolling longitudinal action fractions, deterministic actor output, and critic
+estimates in the JSONL log to expose a policy that stops driving after updates begin.
 
 The first live diagnostic exposed a startup difference: PPO began with a forward-driving prior,
 while TQC's initial uniform replay collection repeatedly stalled near the start. TQC now gives
-80% of warmup actions forward throttle duty between 0.65 and 1.0 with narrow steering noise
-(standard deviation 0.18); the other 20% remain uniform for broader exploration. A +1.0 bias
+80% of warmup actions forward throttle duty between 0.65 and 1.0 with steering noise
+(standard deviation 0.45); the other 20% remain uniform for broader exploration. A +1.0 bias
 on the initial actor longitudinal mean also favors forward motion after warmup. These values are
 recorded with TQC hyperparameters and can be changed in the GUI. They do not change the reward
 profile or the digital worker protocol.
+
+The first 15,189-step live run exposed a learning failure at the 5,000-step warmup boundary:
+warmup actions were 89% forward and reached about 2.2% progress per episode, but later actions
+were about half brake and nearly all episodes stalled below 0.2% progress. The actor's learned
+deterministic longitudinal action became negative, while the critic slightly preferred braking
+to throttle at sampled start observations. The original `auto` entropy setting starts at alpha
+1.0; with reward scale 0.01, this made the entropy bonus far larger than the dense driving
+reward at the start of learning. Initializing automatic entropy tuning at 0.01 keeps exploration
+adaptive without swamping the task reward. Broader warmup steering explores ways around the
+early barrier instead of filling replay with almost identical failed straight-line runs. The
+initial actor bias is applied only on model creation; no action is forced after warmup.
 
 ## Devices and network presets
 
