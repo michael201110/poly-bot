@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import numpy as np
+import torch
 from sb3_contrib import TQC
 
 
@@ -19,7 +20,28 @@ class ForwardWarmupTQC(TQC):
         self.forward_warmup_steering_std = forward_warmup_steering_std
         self.forward_prior_initial = forward_prior_initial
         self.forward_prior_steps = forward_prior_steps
+        self.actor_anchor_strength = 0.0
+        self.actor_anchor_state = None
         super().__init__(*args, **kwargs)
+
+    def anchor_actor(self, strength: float) -> None:
+        """Keep fine-tuning close to a proven policy without freezing the actor."""
+        if not 0.0 <= strength < 1.0:
+            raise ValueError("actor anchor strength must be in [0, 1)")
+        self.actor_anchor_strength = strength
+        self.actor_anchor_state = [p.detach().cpu().clone() for p in self.actor.parameters()]
+
+    def train(self, gradient_steps: int, batch_size: int = 64) -> None:
+        if self.actor_anchor_strength <= 0 or self.actor_anchor_state is None:
+            return super().train(gradient_steps, batch_size)
+        # One update at a time so the proximal pull applies after every actor step.
+        for _ in range(gradient_steps):
+            super().train(1, batch_size)
+            with torch.no_grad():
+                for parameter, anchor in zip(
+                    self.actor.parameters(), self.actor_anchor_state, strict=True
+                ):
+                    parameter.lerp_(anchor.to(parameter.device), self.actor_anchor_strength)
 
     def forward_prior_strength(self, learning_starts: int) -> float:
         """Exploration-only longitudinal shift, zero after the configured decay."""

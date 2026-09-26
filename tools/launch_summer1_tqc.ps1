@@ -5,7 +5,8 @@ $guiPath = Join-Path $repoRoot '.venv\Scripts\polybot-gui.exe'
 if (-not (Test-Path -LiteralPath $guiPath)) {
     throw "Install the GUI environment first: $guiPath is missing"
 }
-$remainingTimesteps = 100000
+$targetTimesteps = 4000000 # About 24 hours at the observed 45-50 steps/second.
+$remainingTimesteps = $targetTimesteps
 $settings = @{
     architecture = 'tiny'; learning_rate = 0.0003; buffer_size = 250000
     learning_starts = 5000; batch_size = 256; gamma = 0.999; tau = 0.005
@@ -30,9 +31,9 @@ if ($Resume -or $ModelPath) {
         $saved = $metadata.tqc_hyperparameters.PSObject.Properties[$key]
         if ($saved) { $settings[$key] = $saved.Value }
     }
-    $remainingTimesteps = 100000 - [int]$metadata.training_timesteps
+    $remainingTimesteps = $targetTimesteps - [int]$metadata.training_timesteps
     if ($remainingTimesteps -le 0) {
-        throw "The saved TQC model has already reached 100,000 timesteps"
+        throw "The saved TQC model has already reached $targetTimesteps timesteps"
     }
 }
 
