@@ -21,9 +21,9 @@ def model_class(algorithm: str) -> type:
 
         return TeacherAnchoredPPO
     if algorithm == "tqc":
-        from sb3_contrib import TQC
+        from polybot.training.forward_tqc import ForwardWarmupTQC
 
-        return TQC
+        return ForwardWarmupTQC
     raise ValueError(f"unsupported algorithm: {algorithm}")
 
 
@@ -41,17 +41,24 @@ def create_model(config: TrainingConfig, env: Any, device: str) -> Any:
         apply_forward_bias(model, strength=1.5, steering_strength=1.0)
         return model
     settings = config.tqc
-    return model_class("tqc")(
+    model = model_class("tqc")(
         "MlpPolicy", env, seed=config.seed, device=device,
         learning_rate=settings.learning_rate, buffer_size=settings.buffer_size,
         learning_starts=settings.learning_starts, batch_size=settings.batch_size,
         gamma=settings.gamma, tau=settings.tau, train_freq=settings.train_freq,
         gradient_steps=settings.gradient_steps, ent_coef=settings.ent_coef,
+        forward_warmup_fraction=settings.forward_warmup_fraction,
+        forward_warmup_steering_std=settings.forward_warmup_steering_std,
         policy_kwargs={"net_arch": {
             "pi": list(TQC_ARCHITECTURES[settings.architecture]),
             "qf": list(TQC_ARCHITECTURES[settings.architecture]),
         }}, verbose=0,
     )
+    import torch
+
+    with torch.no_grad():
+        model.policy.actor.mu.bias[1] += settings.initial_throttle_bias
+    return model
 
 
 def load_model(config: TrainingConfig, path: Path, env: Any, device: str) -> Any:

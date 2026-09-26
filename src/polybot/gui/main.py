@@ -173,6 +173,9 @@ def main() -> int:
     parser.add_argument("--tqc-train-freq", type=int)
     parser.add_argument("--tqc-gradient-steps", type=int)
     parser.add_argument("--tqc-ent-coef")
+    parser.add_argument("--tqc-forward-warmup-fraction", type=float)
+    parser.add_argument("--tqc-forward-warmup-steering-std", type=float)
+    parser.add_argument("--tqc-initial-throttle-bias", type=float)
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -390,6 +393,27 @@ def main() -> int:
             self.tqc_entropy = QLineEdit("auto")
             if launch.tqc_ent_coef is not None:
                 self.tqc_entropy.setText(launch.tqc_ent_coef)
+            self.tqc_forward_fraction = QDoubleSpinBox()
+            self.tqc_forward_fraction.setDecimals(2)
+            self.tqc_forward_fraction.setRange(0.0, 1.0)
+            self.tqc_forward_fraction.setValue(
+                0.8 if launch.tqc_forward_warmup_fraction is None
+                else launch.tqc_forward_warmup_fraction
+            )
+            self.tqc_steering_std = QDoubleSpinBox()
+            self.tqc_steering_std.setDecimals(3)
+            self.tqc_steering_std.setRange(0.0, 1.0)
+            self.tqc_steering_std.setValue(
+                0.18 if launch.tqc_forward_warmup_steering_std is None
+                else launch.tqc_forward_warmup_steering_std
+            )
+            self.tqc_throttle_bias = QDoubleSpinBox()
+            self.tqc_throttle_bias.setDecimals(2)
+            self.tqc_throttle_bias.setRange(0.0, 5.0)
+            self.tqc_throttle_bias.setValue(
+                1.0 if launch.tqc_initial_throttle_bias is None
+                else launch.tqc_initial_throttle_bias
+            )
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -479,6 +503,9 @@ def main() -> int:
                 ("TQC train frequency", self.tqc_frequency),
                 ("TQC gradient steps", self.tqc_gradients),
                 ("TQC entropy", self.tqc_entropy),
+                ("TQC forward warmup fraction", self.tqc_forward_fraction),
+                ("TQC warmup steering std", self.tqc_steering_std),
+                ("TQC initial throttle bias", self.tqc_throttle_bias),
                 ("Teacher model", self.teacher_model),
                 ("Teacher KL coefficient", self.teacher_kl),
                 ("Expert imitation coefficient", self.expert_imitation),
@@ -614,6 +641,7 @@ def main() -> int:
                 self.tqc_arch, self.tqc_lr, self.tqc_buffer, self.tqc_starts,
                 self.tqc_batch, self.tqc_gamma, self.tqc_tau,
                 self.tqc_frequency, self.tqc_gradients, self.tqc_entropy,
+                self.tqc_forward_fraction, self.tqc_steering_std, self.tqc_throttle_bias,
             ):
                 widget.setEnabled(not is_ppo)
             self.action_description.setText(
@@ -692,6 +720,9 @@ def main() -> int:
                     train_freq=self.tqc_frequency.value(),
                     gradient_steps=self.tqc_gradients.value(),
                     ent_coef=self.tqc_entropy.text().strip(),
+                    forward_warmup_fraction=self.tqc_forward_fraction.value(),
+                    forward_warmup_steering_std=self.tqc_steering_std.value(),
+                    initial_throttle_bias=self.tqc_throttle_bias.value(),
                 ),
                 reward_scale=self.reward_scale.value(),
                 checkpoint_interval=self.checkpoint.value(),

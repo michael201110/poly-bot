@@ -393,8 +393,9 @@ class TrainingService:
                         architecture=(cfg.architecture if cfg.algorithm == "ppo"
                                       else cfg.tqc.architecture),
                     )
-                    if cfg.algorithm == "tqc" and (
-                        resume_metadata.tqc_hyperparameters != asdict(cfg.tqc)
+                    if cfg.algorithm == "tqc" and any(
+                        asdict(cfg.tqc).get(key) != value
+                        for key, value in resume_metadata.tqc_hyperparameters.items()
                     ):
                         raise IncompatibleModelError(
                             "TQC resume settings differ from saved hyperparameters"

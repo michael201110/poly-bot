@@ -120,6 +120,29 @@ def test_tiny_tqc_parameter_counts_match_actual_model() -> None:
         env.close()
 
 
+def test_tqc_warmup_prefers_forward_actions_and_actor_starts_forward() -> None:
+    from polybot.training.algorithms import create_model
+
+    env = PolyTrackEnv(MockSimulatorTransport(), action_mode="continuous_pwm")
+    try:
+        cfg = TrainingConfig(
+            algorithm="tqc", seed=3,
+            tqc=TqcConfig(architecture="tiny", buffer_size=64),
+        )
+        model = create_model(cfg, env, "cpu")
+        actions = np.array([model._sample_action(5_000)[0][0] for _ in range(200)])
+        assert (actions[:, 1] >= 0.65).sum() >= 140
+        assert np.median(np.abs(actions[:, 0])) < 0.3
+        assert model.policy.actor.mu.bias[1].item() > 0.8
+        model.num_timesteps = 5_000
+        model._last_obs = np.zeros((1, 105), dtype=np.float32)
+        # Once learning starts, the standard stochastic TQC actor samples actions.
+        action, buffered = model._sample_action(5_000)
+        assert action.shape == buffered.shape == (1, 2)
+    finally:
+        env.close()
+
+
 def test_ppo_brake_reward_keeps_binary_behavior() -> None:
     rewards = RewardConfig(
         ground_brake_penalty_per_s=-100.0, action_change_penalty=-10.0

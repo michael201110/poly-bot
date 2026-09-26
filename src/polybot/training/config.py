@@ -79,6 +79,9 @@ class TqcConfig:
     train_freq: int = 1
     gradient_steps: int = 1
     ent_coef: str = "auto"
+    forward_warmup_fraction: float = 0.8
+    forward_warmup_steering_std: float = 0.18
+    initial_throttle_bias: float = 1.0
 
     def __post_init__(self) -> None:
         if self.architecture not in TQC_ARCHITECTURES:
@@ -100,6 +103,16 @@ class TqcConfig:
                     raise ValueError
             except ValueError as exc:
                 raise ValueError("TQC entropy must be 'auto' or a nonnegative number") from exc
+        if not math.isfinite(self.forward_warmup_fraction) or not (
+            0 <= self.forward_warmup_fraction <= 1
+        ):
+            raise ValueError("TQC forward warmup fraction must be in [0, 1]")
+        if not math.isfinite(self.forward_warmup_steering_std) or (
+            self.forward_warmup_steering_std < 0
+        ):
+            raise ValueError("TQC warmup steering standard deviation must be nonnegative")
+        if not math.isfinite(self.initial_throttle_bias) or self.initial_throttle_bias < 0:
+            raise ValueError("TQC initial throttle bias must be nonnegative")
 
 
 @dataclass(slots=True)

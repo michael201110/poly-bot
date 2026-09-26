@@ -27,6 +27,9 @@ $launchArguments = @(
     '--tqc-train-freq', '1',
     '--tqc-gradient-steps', '1',
     '--tqc-ent-coef', 'auto',
+    '--tqc-forward-warmup-fraction', '0.8',
+    '--tqc-forward-warmup-steering-std', '0.18',
+    '--tqc-initial-throttle-bias', '1.0',
     '--fresh'
 )
 Start-Process -FilePath $guiPath -ArgumentList $launchArguments `

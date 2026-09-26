@@ -21,6 +21,9 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
         "--tqc-learning-starts", "5000", "--tqc-batch-size", "256",
         "--tqc-gamma", "0.999", "--tqc-tau", "0.005",
         "--tqc-train-freq", "1", "--tqc-gradient-steps", "1", "--tqc-ent-coef", "auto",
+        "--tqc-forward-warmup-fraction", "0.8",
+        "--tqc-forward-warmup-steering-std", "0.18",
+        "--tqc-initial-throttle-bias", "1.0",
     ])
     observed = {}
 
@@ -55,6 +58,9 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
             "train_frequency": fields["TQC train frequency"].value(),
             "gradient_steps": fields["TQC gradient steps"].value(),
             "entropy": fields["TQC entropy"].text(),
+            "forward_fraction": fields["TQC forward warmup fraction"].value(),
+            "steering_std": fields["TQC warmup steering std"].value(),
+            "throttle_bias": fields["TQC initial throttle bias"].value(),
             "tqc_enabled": fields["TQC replay buffer"].isEnabled(),
             "ppo_disabled": not fields["PPO epochs"].isEnabled(),
             "teacher_disabled": not fields["Teacher model"].isEnabled(),
@@ -76,6 +82,7 @@ def test_tiny_tqc_gui_launch_configuration(monkeypatch: pytest.MonkeyPatch) -> N
         "replay_buffer": 250_000, "learning_starts": 5_000, "batch_size": 256,
         "gamma": 0.999, "tau": 0.005, "train_frequency": 1,
         "gradient_steps": 1, "entropy": "auto",
+        "forward_fraction": 0.8, "steering_std": 0.18, "throttle_bias": 1.0,
         "tqc_enabled": True, "ppo_disabled": True,
         "teacher_disabled": True, "kl_disabled": True,
     }

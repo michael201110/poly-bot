@@ -87,6 +87,14 @@ default. Starting updates after 5,000 steps gives the diagnostic run more learni
 remaining TQC defaults stay at the library-aligned baseline because there is no real-game TQC
 learning curve yet to justify stronger tuning.
 
+The first live diagnostic exposed a startup difference: PPO began with a forward-driving prior,
+while TQC's initial uniform replay collection repeatedly stalled near the start. TQC now gives
+80% of warmup actions forward throttle duty between 0.65 and 1.0 with narrow steering noise
+(standard deviation 0.18); the other 20% remain uniform for broader exploration. A +1.0 bias
+on the initial actor longitudinal mean also favors forward motion after warmup. These values are
+recorded with TQC hyperparameters and can be changed in the GUI. They do not change the reward
+profile or the digital worker protocol.
+
 ## Devices and network presets
 
 New models default to separate actor and critic networks of `1024, 1024, 512` (`xl`). With the
