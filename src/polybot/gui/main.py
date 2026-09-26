@@ -122,12 +122,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--track-name")
     parser.add_argument("--model")
-    parser.add_argument("--architecture", choices=["legacy", "small", "medium", "large", "xl"])
+    parser.add_argument(
+        "--architecture", choices=["legacy", "compact", "small", "medium", "large", "xl"]
+    )
     parser.add_argument("--device", choices=["auto", "cpu", "cuda"])
     parser.add_argument("--frame-skip", type=int)
     parser.add_argument("--pwm-levels", type=int)
     parser.add_argument("--timesteps", type=int)
     parser.add_argument("--learning-rate", type=float)
+    parser.add_argument("--gamma", type=float)
+    parser.add_argument("--gae-lambda", type=float)
     parser.add_argument("--entropy-coefficient", type=float)
     parser.add_argument("--rollout-steps", type=int)
     parser.add_argument("--batch-size", type=int)
@@ -202,7 +206,7 @@ def main() -> int:
             self.model.setEditable(True)
             self.model.lineEdit().setPlaceholderText("No saved model found")
             self.arch = QComboBox()
-            self.arch.addItems(["xl", "large", "medium", "small", "legacy"])
+            self.arch.addItems(["xl", "large", "medium", "small", "compact", "legacy"])
             if launch.architecture:
                 self.arch.setCurrentText(launch.architecture)
             self.device = QComboBox()
@@ -243,6 +247,10 @@ def main() -> int:
             self.gae.setDecimals(5)
             self.gae.setRange(0, 1)
             self.gae.setValue(0.995)
+            if launch.gamma is not None:
+                self.gamma.setValue(launch.gamma)
+            if launch.gae_lambda is not None:
+                self.gae.setValue(launch.gae_lambda)
             self.entropy = QDoubleSpinBox()
             self.entropy.setDecimals(5)
             self.entropy.setRange(-0.1, 0.1)
@@ -396,6 +404,7 @@ def main() -> int:
             play_latest.clicked.connect(lambda: self.play_named_model("latest"))
             play_best.clicked.connect(lambda: self.play_named_model("best"))
             self.track.currentTextChanged.connect(self.refresh_models)
+            self.output.editingFinished.connect(self.refresh_models)
             self.arch.currentTextChanged.connect(self.refresh_parameters)
             self.pwm.toggled.connect(self.refresh_parameters)
             self.levels.valueChanged.connect(self.refresh_parameters)

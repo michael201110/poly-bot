@@ -1,6 +1,6 @@
 # Running PolyBot in PolyTrack
 
-The real-game path targets PolyTrack 0.6.2 through PolyModLoader. It is for local training and
+The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. It is for local training and
 demonstrations, not leaderboard or multiplayer automation.
 
 ## One-time setup
@@ -9,14 +9,14 @@ demonstrations, not leaderboard or multiplayer automation.
 
    ```text
    python -m venv .venv
+   # Activate: .venv\Scripts\Activate.ps1 (PowerShell), source .venv/bin/activate (bash)
    python -m pip install -e ".[dev,train,gui]"
    ```
 
 2. Open the [PolyModLoader web build](https://web.polymodloader.com/). If your browser blocks its
    connection to localhost, follow the [PML user guide](https://github-wiki-see.page/m/polytrackmods/PolyModLoader/wiki/For-Users)
-   to install the desktop app. The adapter is checked against the exact
-   [v0.6.2-2 source](https://github.com/polytrackmods/PolyModLoader/tree/v0.6.2-2) and requires a
-   loader running PolyTrack 0.6.2.
+   to install the desktop app. Use a loader running PolyTrack 0.6.3 (or the supported 0.6.2 build).
+   See the pinned source revisions and limits of the compatibility checks below.
 
 3. Open **Mods**, choose **Add URL**, paste the PolyBot mod URL, select `latest`, then click
    **Load** and **Apply**:
@@ -94,8 +94,8 @@ polybot-eval models/polybot-real --backend websocket --episodes 5
 - **The browser blocks localhost access:** allow local-network access when prompted, or use the
   compatible PolyModLoader desktop build.
 - **`missing_reference`:** load a ghost for the selected track and restart the race.
-- **Version or mixin-token error:** the local game worker is not the supported 0.6.2 build. The mod
-  deliberately refuses to patch an unknown bundle.
+- **Version or mixin-token error:** check the loader game version and run the bundle validation below.
+  A manifest target alone does not prove that the required source hooks still match.
 - **Model observation-space error:** pass the same `--lookahead` value used during training.
 - **Reset or step timeout:** let the current operation finish, or increase
   `--request-timeout 120`. The connection wait can similarly be changed with
@@ -105,24 +105,24 @@ polybot-eval models/polybot-real --backend websocket --episodes 5
 
 The mod uses PolyModLoader's `registerSimWorkerMixin` extension point. It connects the simulation
 worker directly to the Python WebSocket server and implements the versioned `hello`, `reset`, and
-`step` operations in [`protocol.md`](protocol.md). No DOM scraping or synthetic keyboard events are
-involved.
+`step` operations in [`protocol.md`](protocol.md). Driving uses worker messages; native Backspace keyboard events synchronize the
+main-thread recorder on finish and aborted-run resets.
 
 Read-only leaderboard access remains available solely to load a reference ghost. The mod rejects
 leaderboard/profile writes, verification calls, multiplayer sockets, and ICE-server requests, and
-masks the AI car's finish state before the game UI receives it.
+allows local finish feedback before a native restart.
 
 One native `updateCarModel` call advances one millisecond of physics. A policy action is held for
 the requested number of ticks; 10 ticks gives a 100 Hz control rate. A true episode reset uses the
 worker's original delete/create/start path rather than the game's checkpoint-respawn control.
 
-The authoritative 0.6.2 state packet supplies transform, speed, checkpoint/finish state, wheel
+The authoritative 0.6.2/0.6.3 state packet supplies transform, speed, checkpoint/finish state, wheel
 contacts, suspension values and velocities, wheel skid, steering, and applied controls. Linear and
 angular velocities and acceleration are derived from consecutive transforms. The route reference
-supplies progress, lateral/heading error, policy lookahead points, signed timed-ghost pose, target
+supplies progress, lateral/heading error, policy lookahead points, position-aligned ghost pose, target
 speed, and the recorded expert controls.
 
-The token-based mixin is intentionally fail-closed. Updating to another PolyTrack version requires
+The token-based mixin depends on exact source anchors. Updating to another PolyTrack version requires
 checking the worker tokens, state decoder, one-tick helper, and reset path before changing the
 manifest target. Useful upstream references are:
 
@@ -135,3 +135,42 @@ Before treating a new adapter as training-ready, verify that it can reset a simp
 repeatably, advance an exact tick count, report ordered progress and checkpoints, replay the same
 action transcript without meaningful divergence, reject stale episode IDs, and keep public writes
 and multiplayer disabled.
+
+## Bundle validation
+
+The September 2026 maintenance check uses raw upstream bundles from these immutable revisions:
+
+| PolyTrack | PolyModLoader source revision | Mod | Imported worker runtime |
+| --- | --- | --- | --- |
+| 0.6.2 | [`c46423b`](https://github.com/polytrackmods/PolyModLoader/tree/c46423b1774939b97302c9f23ff4e3d86179156e) | 0.1.29 | 0.1.28 |
+| 0.6.3 | [`6ba4f09`](https://git.polymodloader.com/polytrackmods/PolyModLoader/src/commit/6ba4f099a7b9b11ba88c7152d2246240ba04a6d7) | 0.1.29 | 0.1.28 |
+
+The 0.1.29 entry point deliberately reuses the 0.1.28 worker at the immutable PolyBot commit
+`020ea536816934f307904b79fc51d2edb16cf789`. Its bundled worker copy is identical. The 0.6.2
+PolyTypes import is also intentional; it supplies the loader API used by both targets.
+The worker learns the actual game version from the game's initialization message.
+
+[Kodub's 0.6.3 release notes](https://kodub.itch.io/polytrack/devlog/1665945/polytrack-063-track-of-the-week)
+describe compatibility with earlier 0.6 releases. Source comparison additionally confirms that the
+worker message handler and physics stepping code are unchanged from the checked 0.6.2 revision;
+the worker adds a finish-detector helper and updates its version check. This is source validation,
+not a completed in-game driving or determinism test.
+
+Download `main.bundle.js` and `simulation_worker.bundle.js` from the appropriate revision above
+without changing their bytes or line endings, then run:
+
+```text
+python tools/validate_pml_mod.py --game-version 0.6.3 --worker /path/to/simulation_worker.bundle.js --main /path/to/main.bundle.js
+```
+
+The default game version is 0.6.3. Use `--game-version 0.6.2` for the retained target.
+The validator checks SHA-256 hashes of the raw files and exact source anchors, accounting for
+PolyModLoader's built-in worker URL replacement before our mixin runs. `--anchors-only` bypasses
+hash checks for investigation; matching anchors alone do not establish compatibility with a new
+game version. Running without bundle paths checks only the release manifests.
+
+After a game or loader update, also run `polybot-drive --centerline` with a reference ghost on a
+simple track. Check initial connection, reset, checkpoint progress, local finish feedback and
+restart, then perform the deterministic transcript checks described above. Inspect network traffic
+to verify that public writes and multiplayer remain blocked. These interactive checks require a
+running game and are not covered by the Python test suite.

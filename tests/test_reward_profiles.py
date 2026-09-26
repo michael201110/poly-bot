@@ -7,7 +7,6 @@ from pathlib import Path
 from polybot.env import RewardConfig, summer_1_pace_reward_config
 from polybot.training.reward_profiles import RewardProfileStore
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 

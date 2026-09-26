@@ -1,5 +1,6 @@
 /*
  * Version-specific integration template.
+ * Legacy protocol-v1 example; use pml-mod/ with the current Python client.
  *
  * Copy this file to `polytrack_game_api.js` and replace each method with hooks
  * for the local PolyTrack desktop build. Do not weaken ensureOffline().

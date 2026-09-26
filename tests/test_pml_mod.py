@@ -4,6 +4,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 REPOSITORY = Path(__file__).resolve().parents[1]
 MOD_ROOT = REPOSITORY / "pml-mod"
 
@@ -17,20 +19,24 @@ def _load_validator():
     return module
 
 
-def test_pml_manifest_resolves_versioned_entry_point() -> None:
+@pytest.mark.parametrize("game_version", ["0.6.2", "0.6.3"])
+def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    version = manifest["latest"]["0.6.2"]
+    version = manifest["latest"][game_version]
     version_manifest = json.loads((MOD_ROOT / version / "version.json").read_text(encoding="utf-8"))
 
     assert manifest["id"] == "polybot-bridge"
     assert version_manifest == {
-        "targets": ["0.6.2"],
+        "targets": ["0.6.2", "0.6.3"],
         "dependencies": [],
         "main": "main.mod.js",
     }
     assert (MOD_ROOT / version / version_manifest["main"]).is_file()
-    runtime_version = version
+    runtime_version = "0.1.28"
     assert (MOD_ROOT / runtime_version / "worker_runtime.js").is_file()
+    assert (MOD_ROOT / version / "worker_runtime.js").read_text(encoding="utf-8") == (
+        MOD_ROOT / runtime_version / "worker_runtime.js"
+    ).read_text(encoding="utf-8")
 
     main_source = (MOD_ROOT / version / version_manifest["main"]).read_text(encoding="utf-8")
     assert 'from "./worker_runtime.js"' not in main_source
@@ -45,7 +51,7 @@ def test_pml_manifest_resolves_versioned_entry_point() -> None:
 def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
     validator = _load_validator()
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(encoding="utf-8")
+    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(encoding="utf-8")
 
     for token in (*validator.WORKER_TOKENS, *validator.MAIN_TOKENS):
         assert token in source
@@ -116,7 +122,7 @@ def test_worker_coasts_in_realtime_before_resetting_a_finish() -> None:
 
 def test_latest_mod_uses_native_backspace_after_finish() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(encoding="utf-8")
+    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(encoding="utf-8")
 
     assert "__polybotWrapSimulationWorker" in source
     assert "polybotPlayerFinished" in source
@@ -127,7 +133,7 @@ def test_latest_mod_uses_native_backspace_after_finish() -> None:
 
 def test_latest_mod_imports_worker_from_an_immutable_resolvable_ref() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
+    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(
         encoding="utf-8"
     )
 
@@ -161,7 +167,7 @@ def test_latest_ghost_guidance_is_position_aligned() -> None:
 def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
     worker_source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    main_source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(
+    main_source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(
         encoding="utf-8"
     )
 
@@ -177,7 +183,7 @@ def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
 
 def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.2"] / "main.mod.js").read_text(encoding="utf-8")
+    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(encoding="utf-8")
 
     assert '(0, l.GG)(this, Ue, null, "f"),' in source
     assert '(0, l.GG)(this, re, new st.A(), "f"),' in source
@@ -194,3 +200,49 @@ def test_anchor_validator_rejects_missing_or_duplicate_tokens(tmp_path: Path) ->
 
     assert any("found 2" in failure for failure in failures)
     assert any("found 0" in failure for failure in failures)
+
+
+@pytest.mark.parametrize("game_version", ["0.6.2", "0.6.3"])
+def test_validator_checks_raw_bundles_and_version_specific_hashes(
+    tmp_path: Path, game_version: str, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    validator = _load_validator()
+    worker = tmp_path / "worker.js"
+    main = tmp_path / "main.js"
+    worker.write_text("\n".join(validator.WORKER_TOKENS), encoding="utf-8")
+    main.write_text(
+        "\n".join(validator.MAIN_TOKENS).replace(
+            validator.PML_WORKER_CONSTRUCTOR, validator.RAW_WORKER_CONSTRUCTOR
+        ), encoding="utf-8",
+    )
+    monkeypatch.setitem(
+        validator.PINNED_HASHES, game_version,
+        (validator._sha256(worker), validator._sha256(main)),
+    )
+    assert validator.validate(worker, main, game_version=game_version) == []
+    worker.write_text(worker.read_text() + "\n// changed bundle", encoding="utf-8")
+    failures = validator.validate(worker, main, game_version=game_version)
+    assert len(failures) == 1
+    assert f"pinned {game_version} worker hash" in failures[0]
+    assert validator.validate(
+        worker, main, game_version=game_version, require_pinned_hash=False
+    ) == []
+
+
+def test_manifests_cover_all_supported_games() -> None:
+    assert _load_validator()._validate_manifests(REPOSITORY) == []
+
+
+def test_manifest_validator_rejects_missing_target_and_entry_point(tmp_path: Path) -> None:
+    root = tmp_path / "pml-mod"
+    release = root / "test"
+    release.mkdir(parents=True)
+    (root / "manifest.json").write_text(
+        json.dumps({"latest": {"0.6.2": "test", "0.6.3": "test"}}), encoding="utf-8"
+    )
+    (release / "version.json").write_text(
+        json.dumps({"targets": ["0.6.2"], "main": "missing.js"}), encoding="utf-8"
+    )
+    failures = _load_validator()._validate_manifests(tmp_path)
+    assert any("does not target PolyTrack 0.6.3" in failure for failure in failures)
+    assert any("missing mod entry point" in failure for failure in failures)

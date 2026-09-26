@@ -1,6 +1,8 @@
 /*
  * Transport-only bridge between PolyTrackTrainingGameApi and the Python trainer.
  * This file intentionally contains no minified/version-specific game hooks.
+ * Legacy protocol-v1 template; the current Python client uses protocol v2.
+ * Use pml-mod/ for the supported PolyTrack integration.
  */
 (function installPolyTrackTrainingBridge(global) {
   "use strict";

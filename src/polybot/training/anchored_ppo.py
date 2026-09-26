@@ -128,7 +128,7 @@ class TeacherAnchoredPPO(PPO):
         continue_training = True
         loss = th.zeros((), device=self.device)
 
-        for epoch in range(self.n_epochs):
+        for _epoch in range(self.n_epochs):
             approx_kl_divs = []
             for rollout_data in self.rollout_buffer.get(self.batch_size):
                 actions = rollout_data.actions
@@ -209,7 +209,9 @@ class TeacherAnchoredPPO(PPO):
         self.logger.record("train/loss", loss.item())
         self.logger.record(
             "train/explained_variance",
-            explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten()),
+            explained_variance(
+                self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten()
+            ),
         )
         if hasattr(self.policy, "log_std"):
             self.logger.record("train/std", th.exp(self.policy.log_std).mean().item())

@@ -14,8 +14,8 @@ reward calculation, action encoding, and baseline controller without coupling th
 minified game internals.
 
 The deterministic mock remains useful for testing policy code without starting the game. The real
-adapter targets PolyTrack 0.6.2 through PolyModLoader; leaderboard submissions and multiplayer are
-disabled while the mod is loaded.
+adapter targets PolyTrack 0.6.3 (with 0.6.2 compatibility) through PolyModLoader; leaderboard
+submissions and multiplayer are disabled while the mod is loaded.
 
 ## Quick start
 
@@ -23,8 +23,10 @@ Python 3.11 or newer is required.
 
 ```text
 python -m venv .venv
+# Activate first: Windows PowerShell: .venv\Scripts\Activate.ps1
+# Linux/macOS: source .venv/bin/activate
 python -m pip install -e ".[dev,train,gui]"
-pytest
+python -m pytest
 polybot-gui
 ```
 
@@ -83,6 +85,21 @@ WebSocket training also selects `current` and a 10-tick action repeat automatica
 [`docs/game-integration.md`](docs/game-integration.md) for the integration seam and
 [`docs/protocol.md`](docs/protocol.md) for the wire format.
 
+## Maintenance checks
+
+```text
+python -m pip install -e ".[dev,train,gui]"
+python -m pytest
+python -m ruff check .
+python tools/validate_pml_mod.py
+```
+
+The manifest check covers both supported game versions; it does not launch the game or verify
+bundles unless `--worker` and `--main` are supplied. See the
+[bundle validation instructions](docs/game-integration.md#bundle-validation) for pinned 0.6.3
+checks and the manual in-game smoke test. The Python package version (`0.1.0`), mod release
+(`0.1.29`), game version (`0.6.3`), and wire protocol (`2`) are independent.
+
 ## Design principles
 
 - **Local automation only.** The agent must not submit leaderboard records or automate PolyTrack
@@ -96,9 +113,9 @@ WebSocket training also selects `current` and a 10-tick action repeat automatica
 ## Repository layout
 
 ```text
-bridge/                 JavaScript bridge and game-adapter template
+bridge/                 Legacy protocol-v1 bridge and game-adapter template
 docs/                   Protocol and integration notes
-pml-mod/                PolyModLoader package for the real 0.6.2 simulation worker
+pml-mod/                PolyModLoader package for the real 0.6.2/0.6.3 simulation worker
 src/polybot/            Environment, transport, training services, GUI, controller, CLI
 tests/                  Protocol, determinism, reward, and controller tests
 ```
@@ -106,7 +123,7 @@ tests/                  Protocol, determinism, reward, and controller tests
 ## Safety and fair play
 
 This project is intended for local research and clearly labelled AI demonstrations. The mod blocks
-the game's write and multiplayer entry points and hides AI finish state from the UI; still review
+the game's write and multiplayer entry points and allows local finish feedback before restarting; still review
 PolyTrack's current terms before distributing a modified build.
 
 ## Contributor Hall of Fame
