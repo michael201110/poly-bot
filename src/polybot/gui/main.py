@@ -16,6 +16,7 @@ from polybot.training.config import (
     TqcConfig,
     TrainingConfig,
     estimate_ppo_parameters,
+    estimate_tqc_actor_parameters,
     estimate_tqc_parameters,
 )
 from polybot.training.devices import resolve_device
@@ -157,7 +158,9 @@ def main() -> int:
     parser.add_argument("--teacher-kl-coefficient", type=float)
     parser.add_argument("--expert-imitation-coefficient", type=float)
     parser.add_argument("--reward-scale", type=float, default=0.01)
-    parser.add_argument("--tqc-architecture", choices=["standard", "compact"], default="standard")
+    parser.add_argument(
+        "--tqc-architecture", choices=["tiny", "compact", "standard"], default="standard"
+    )
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -322,7 +325,7 @@ def main() -> int:
             )
             self.action_description = QLabel()
             self.tqc_arch = QComboBox()
-            self.tqc_arch.addItems(["standard", "compact"])
+            self.tqc_arch.addItems(["tiny", "compact", "standard"])
             self.tqc_arch.setCurrentText(launch.tqc_architecture)
             self.tqc_lr = QDoubleSpinBox()
             self.tqc_lr.setDecimals(7)
@@ -546,10 +549,12 @@ def main() -> int:
 
         def refresh_parameters(self) -> None:
             if self.algorithm.currentText() == "TQC":
-                count = estimate_tqc_parameters(
-                    Telemetry.vector_size(12), 2, self.tqc_arch.currentText()
+                preset = self.tqc_arch.currentText()
+                actor = estimate_tqc_actor_parameters(Telemetry.vector_size(12), 2, preset)
+                total = estimate_tqc_parameters(Telemetry.vector_size(12), 2, preset)
+                self.parameters.setText(
+                    f"Actor: {actor:,} | Training network total: {total:,}"
                 )
-                self.parameters.setText(f"{count:,} including target critics (estimate)")
                 return
             dims = (self.levels.value() if self.pwm.isChecked() else 3, 2, 2)
             count = estimate_ppo_parameters(
@@ -828,8 +833,12 @@ def main() -> int:
                 )
                 self.log.appendPlainText(
                     f"Started {event['algorithm'].upper()} on {device_label}: "
-                    f"{event['parameter_count']:,} parameters, {event['action_schema']}"
+                    f"{event['parameter_count']:,} training parameters, {event['action_schema']}"
                 )
+                if event.get("actor_parameter_count") is not None:
+                    self.log.appendPlainText(
+                        f"Inference actor: {event['actor_parameter_count']:,} parameters"
+                    )
                 self.log.appendPlainText(
                     f"CUDA: {event.get('cuda_diagnostics', {}).get('selection_reason', 'unknown')}"
                 )
@@ -866,6 +875,28 @@ def main() -> int:
                     f"Steps: {event['episode_steps']:,}    "
                     f"Finishes: {event['finishes']}    Crashes: {event['crashes']}    "
                     f"Best lap: {best_text}"
+                )
+                if event.get("replay_size") is not None:
+                    replay = f"{event['replay_size']:,}/{event['replay_capacity']:,}"
+                    updates = event.get("updates") or 0
+                    alpha = event.get("entropy_coefficient")
+                    alpha_text = f"    Alpha: {alpha:.4f}" if alpha is not None else ""
+                    self.overview.setText(
+                        self.overview.text() + "\n"
+                        f"Replay: {replay}    Updates: {updates:,}{alpha_text}"
+                    )
+                    actor_loss = event.get("actor_loss")
+                    critic_loss = event.get("critic_loss")
+                    if actor_loss is not None and critic_loss is not None:
+                        self.overview.setText(
+                            self.overview.text() + "    "
+                            f"Actor loss: {actor_loss:.3f}    Critic loss: {critic_loss:.3f}"
+                        )
+                self.overview.setText(
+                    self.overview.text() + "\n"
+                    f"Simulator ticks: {event.get('simulator_ticks', 0):,}    "
+                    f"Wall time: {event.get('wall_clock_seconds', 0):.0f}s    "
+                    f"Run max progress: {event.get('overall_max_progress', 0):.1%}"
                 )
             elif event_type == "episode":
                 best = event.get("best_lap_s")

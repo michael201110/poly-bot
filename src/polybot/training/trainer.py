@@ -75,6 +75,8 @@ class TrainingService:
         self.episodes = 0
         self.finishes = 0
         self.crashes = 0
+        self.max_progress = 0.0
+        self.first_finish_timestep: int | None = None
         self.previous_wall_clock_seconds = 0.0
         self.started_at = time.monotonic()
 
@@ -221,6 +223,7 @@ class TrainingService:
                 track_length = max(1.0, float(info.get("track_length_m", 1.0)))
                 progress = float(info.get("route_progress_m", 0.0)) / track_length
                 self.max_progress = max(self.max_progress, progress)
+                service.max_progress = max(service.max_progress, progress)
                 events = tuple(info.get("events", ()))
                 elapsed_s = float(info.get("elapsed_s", 0.0))
                 simulator_info = info.get("simulator_info", {})
@@ -248,6 +251,8 @@ class TrainingService:
                 now = time.monotonic()
                 steps_per_second = self.step_rate.update(self.num_timesteps, now)
                 if now - self.last_ui_update >= 0.25 or done:
+                    replay = getattr(service.model, "replay_buffer", None)
+                    training_values = getattr(service.model.logger, "name_to_value", {})
                     service.status(
                         {
                             "type": "progress",
@@ -268,6 +273,21 @@ class TrainingService:
                             "crashes": self.crashes,
                             "best_lap_s": self.best_lap_s,
                             "quarter": info.get("curriculum_quarter"),
+                            "simulator_ticks": service.simulator_ticks,
+                            "wall_clock_seconds": (
+                                service.previous_wall_clock_seconds + now - service.started_at
+                            ),
+                            "overall_max_progress": service.max_progress,
+                            "replay_size": replay.size() if replay is not None else None,
+                            "replay_capacity": cfg.tqc.buffer_size if replay is not None else None,
+                            "updates": getattr(service.model, "_n_updates", None)
+                            if cfg.algorithm == "tqc" else None,
+                            "actor_loss": training_values.get("train/actor_loss")
+                            if cfg.algorithm == "tqc" else None,
+                            "critic_loss": training_values.get("train/critic_loss")
+                            if cfg.algorithm == "tqc" else None,
+                            "entropy_coefficient": training_values.get("train/ent_coef")
+                            if cfg.algorithm == "tqc" else None,
                         }
                     )
                     self.last_ui_update = now
@@ -275,6 +295,8 @@ class TrainingService:
                     finished = "finish" in events
                     crashed = "crash" in events
                     self.finishes += int(finished)
+                    if finished and service.first_finish_timestep is None:
+                        service.first_finish_timestep = self.num_timesteps
                     self.crashes += int(crashed)
                     service.episodes += 1
                     service.finishes += int(finished)
@@ -320,6 +342,12 @@ class TrainingService:
                             "crashes": self.crashes,
                             "best_lap_s": self.best_lap_s,
                             "quarter": info.get("curriculum_quarter"),
+                            "timesteps": self.num_timesteps,
+                            "simulator_ticks": service.simulator_ticks,
+                            "wall_clock_seconds": (
+                                service.previous_wall_clock_seconds + now - service.started_at
+                            ),
+                            "overall_max_progress": service.max_progress,
                         }
                     )
                     self.episode += 1
@@ -381,6 +409,10 @@ class TrainingService:
                 self.model = create_model(cfg, env, self.device.resolved)
             configure_model(self.model, cfg, self.device.resolved, service.status)
             parameters = sum(p.numel() for p in self.model.policy.parameters() if p.requires_grad)
+            actor_parameters = (
+                sum(p.numel() for p in self.model.policy.actor.parameters())
+                if cfg.algorithm == "tqc" else None
+            )
             self.status(
                 {
                     "type": "started",
@@ -389,6 +421,7 @@ class TrainingService:
                     "device": self.device.resolved,
                     "gpu_name": self.device.gpu_name,
                     "parameter_count": parameters,
+                    "actor_parameter_count": actor_parameters,
                     "cuda_diagnostics": self.device.diagnostics,
                 }
             )

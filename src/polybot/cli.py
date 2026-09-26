@@ -287,7 +287,9 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--pwm-levels", type=int, default=41)
     parser.add_argument("--reward-profile")
     parser.add_argument("--reward-scale", type=float, default=0.01)
-    parser.add_argument("--tqc-architecture", choices=("standard", "compact"), default="standard")
+    parser.add_argument(
+        "--tqc-architecture", choices=("tiny", "compact", "standard"), default="standard"
+    )
     parser.add_argument("--tqc-learning-rate", type=float, default=3e-4)
     parser.add_argument("--tqc-buffer-size", type=int, default=1_000_000)
     parser.add_argument("--tqc-learning-starts", type=int, default=10_000)

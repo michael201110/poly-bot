@@ -9,10 +9,15 @@ import numpy as np
 import pytest
 from gymnasium import spaces
 
-from polybot.env import PolyTrackEnv
+from polybot.env import ControlDuty, PolyTrackEnv, RewardConfig, _expert_action_reward
 from polybot.mock import MockSimulatorTransport
 from polybot.pwm import ContinuousPwmControls
-from polybot.training.config import TqcConfig, TrainingConfig, estimate_tqc_parameters
+from polybot.training.config import (
+    TqcConfig,
+    TrainingConfig,
+    estimate_tqc_actor_parameters,
+    estimate_tqc_parameters,
+)
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry
 from polybot.training.trainer import ScaledTrainingReward, TrainingService
 
@@ -63,6 +68,94 @@ def test_env_action_spaces_and_wire_sequence() -> None:
     assert ppo.observation_space.shape == continuous.observation_space.shape
     ppo.close()
     digital.close()
+
+
+def test_continuous_reward_uses_duty_and_tracks_applied_pulses() -> None:
+    rewards = RewardConfig(
+        ground_brake_penalty_per_s=-100.0,
+        action_change_penalty=-10.0,
+    )
+
+    def step(longitudinal: float):
+        env = PolyTrackEnv(
+            MockSimulatorTransport(), track_id="mock/straight", frame_skip=16,
+            action_mode="continuous_pwm", reward_config=rewards,
+        )
+        try:
+            env.reset(seed=3)
+            return env.step(np.array([0.0, longitudinal], dtype=np.float32))[4]
+        finally:
+            env.close()
+
+    tiny_brake = step(-0.01)
+    full_brake = step(-1.0)
+    assert tiny_brake["reward_terms"]["ground_brake"] == pytest.approx(
+        full_brake["reward_terms"]["ground_brake"] * 0.01, rel=1e-5
+    )
+    assert tiny_brake["reward_terms"]["action_change"] == pytest.approx(-0.1, rel=1e-5)
+    assert full_brake["reward_terms"]["action_change"] == pytest.approx(-10.0)
+    assert tiny_brake["requested_control_duty"]["brake"] == pytest.approx(0.01)
+    assert tiny_brake["applied_control_fraction"]["brake"] == 0.0
+    quarter_throttle = step(0.25)
+    full_throttle = step(1.0)
+    assert quarter_throttle["requested_control_duty"]["throttle"] == 0.25
+    assert quarter_throttle["applied_control_fraction"]["throttle"] == pytest.approx(0.25)
+    assert full_throttle["applied_control_fraction"]["throttle"] == 1.0
+    assert quarter_throttle["reward_terms"]["action_change"] == pytest.approx(-2.5)
+    assert full_throttle["reward_terms"]["action_change"] == pytest.approx(-10.0)
+
+
+def test_tiny_tqc_parameter_counts_match_actual_model() -> None:
+    from polybot.training.algorithms import create_model
+
+    env = PolyTrackEnv(MockSimulatorTransport(), action_mode="continuous_pwm")
+    try:
+        cfg = TrainingConfig(algorithm="tqc", tqc=TqcConfig(architecture="tiny", buffer_size=64))
+        model = create_model(cfg, env, "cpu")
+        assert estimate_tqc_actor_parameters(105, 2, "tiny") == 11_204
+        assert estimate_tqc_parameters(105, 2, "tiny") == 61_992
+        assert sum(p.numel() for p in model.policy.actor.parameters()) == 11_204
+        assert sum(p.numel() for p in model.policy.parameters()) == 61_992
+    finally:
+        env.close()
+
+
+def test_ppo_brake_reward_keeps_binary_behavior() -> None:
+    rewards = RewardConfig(
+        ground_brake_penalty_per_s=-100.0, action_change_penalty=-10.0
+    )
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight", frame_skip=16,
+        action_mode="ppo_pwm", reward_config=rewards,
+    )
+    try:
+        env.reset(seed=3)
+        info = env.step(np.array([20, 0, 1], dtype=np.int64))[4]
+        dt = info["ticks_advanced"] * env.simulator_capabilities["fixed_dt_s"]
+        assert info["reward_terms"]["ground_brake"] == pytest.approx(-100.0 * dt)
+        assert info["reward_terms"]["action_change"] == pytest.approx(-10.0)
+        assert "requested_control_duty" not in info
+    finally:
+        env.close()
+
+
+def test_continuous_expert_similarity_is_continuous_at_zero() -> None:
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight")
+    try:
+        env.reset(seed=3)
+        telemetry = env.latest_telemetry
+        assert telemetry is not None
+        rewards = RewardConfig(expert_action_bonus_per_s=90.0)
+        values = [
+            _expert_action_reward(
+                ControlDuty.from_continuous(0.0, longitudinal), telemetry, rewards, 0.1
+            )
+            for longitudinal in (-0.01, 0.0, 0.01)
+        ]
+        assert abs(values[0] - values[1]) < 0.1
+        assert abs(values[2] - values[1]) < 0.1
+    finally:
+        env.close()
 
 
 def test_tqc_creation_save_resume_and_raw_reward_logging(tmp_path) -> None:

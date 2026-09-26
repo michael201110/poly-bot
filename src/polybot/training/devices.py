@@ -145,6 +145,16 @@ def resolve_device(requested: str, torch_module: Any | None = None) -> DeviceInf
     return DeviceInfo(requested, "cpu", diagnostics=facts)
 
 
+def checked_parameter_device(parameter: Any, resolved: str) -> str:
+    """Preserve the device index for display but compare its device type."""
+    device = parameter.device
+    if device.type != resolved:
+        raise RuntimeError(
+            f"TQC parameters are on {device}, expected a {resolved} device"
+        )
+    return str(device)
+
+
 def doctor_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show PolyBot PyTorch/CUDA diagnostics")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -171,9 +181,9 @@ def doctor_main(argv: list[str] | None = None) -> int:
         )
         try:
             model = create_model(config, env, selected.resolved)
-            facts["tqc_parameter_device"] = str(next(model.policy.parameters()).device)
-            if facts["tqc_parameter_device"] != selected.resolved:
-                raise RuntimeError("TQC parameters were placed on the wrong device")
+            facts["tqc_parameter_device"] = checked_parameter_device(
+                next(model.policy.parameters()), selected.resolved
+            )
         finally:
             env.close()
     print(json.dumps(facts, indent=2))

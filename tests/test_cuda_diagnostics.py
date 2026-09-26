@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 import pytest
+import torch
 
 from polybot.training import devices
 
@@ -84,3 +85,12 @@ def test_torch_missing_diagnostic(monkeypatch: pytest.MonkeyPatch) -> None:
     assert devices.cuda_diagnostics()["torch_version"] is None
     with pytest.raises(RuntimeError, match="PyTorch is not installed"):
         devices.resolve_device("cuda")
+
+
+def test_smoke_device_check_accepts_cuda_index_and_rejects_wrong_type() -> None:
+    cuda_parameter = SimpleNamespace(device=torch.device("cuda:0"))
+    cpu_parameter = SimpleNamespace(device=torch.device("cpu"))
+    assert devices.checked_parameter_device(cuda_parameter, "cuda") == "cuda:0"
+    assert devices.checked_parameter_device(cpu_parameter, "cpu") == "cpu"
+    with pytest.raises(RuntimeError, match="expected a cuda device"):
+        devices.checked_parameter_device(cpu_parameter, "cuda")

@@ -25,6 +25,13 @@ Throttle and brake cannot be pressed together. The fractional pulse error carrie
 environment steps and resets at the next episode. The wire protocol is unchanged. TQC learns
 off-policy from a replay buffer with automatic entropy tuning by default.
 
+TQC reward accounting uses the requested duty, not merely its sign: a 5% brake duty incurs 5%
+of the per-second ground-brake penalty, and control-change cost varies continuously with duty.
+The digital expert action is compared to continuous control using a linear, bounded similarity:
+steering similarity falls with half the absolute steering difference, while throttle and brake
+similarity fall with their absolute duty differences. This avoids a reward jump at zero.
+PPO's binary reward comparisons are unchanged.
+
 TQC is offered for benchmarking and sample-efficiency experiments; it is not assumed to be
 better than PPO. For a fair comparison, choose the same track, Summer 1 reward profile, seed,
 frame skip, and environment-step budget. The model metadata records the algorithm, seed,
@@ -59,6 +66,14 @@ tau `0.005`; train frequency `1`; gradient steps `1`; entropy coefficient `auto`
 `compact` preset uses two 128-unit layers. The library defaults apply to TQC quantile count,
 quantiles dropped, and critic count. These settings are separate from PPO settings in config,
 metadata, and the GUI.
+
+For a small first Summer 1 experiment, `tiny` uses two 64-unit layers. With 105 observations and
+two continuous actions, the actual model has **11,204 actor parameters** for inference and
+**61,992 total policy parameters** across actor, quantile critics, and target critics. These
+totals are not directly comparable to PPO's actor/value network counts. Select the existing
+`Summer 1 - full bootstrap` profile for a fresh policy; keep that profile and seed fixed during
+the first 100,000-step diagnostic run. The replay buffer is saved alongside each TQC archive,
+so a non-converged run can be resumed.
 
 ## Devices and network presets
 

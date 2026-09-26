@@ -28,6 +28,23 @@ from polybot.transport import SimulatorTransport
 
 
 @dataclass(frozen=True, slots=True)
+class ControlDuty:
+    """Requested steering and mutually exclusive longitudinal duties for reward accounting."""
+
+    steer: float
+    throttle: float
+    brake: float
+
+    @classmethod
+    def from_action(cls, action: Action) -> ControlDuty:
+        return cls(float(action.steer), float(action.throttle), float(action.brake))
+
+    @classmethod
+    def from_continuous(cls, steering: float, longitudinal: float) -> ControlDuty:
+        return cls(steering, max(0.0, longitudinal), max(0.0, -longitudinal))
+
+
+@dataclass(frozen=True, slots=True)
 class RewardConfig:
     """Reward coefficients kept independent from the game adapter."""
 
@@ -336,13 +353,22 @@ def _ghost_pose_reward(simulator_info: Mapping[str, Any], config: RewardConfig, 
 
 
 def _expert_action_reward(
-    action: Action, telemetry: Telemetry, config: RewardConfig, dt: float
+    action: Action | ControlDuty, telemetry: Telemetry, config: RewardConfig, dt: float
 ) -> float:
-    matches = (
-        int(action.steer == telemetry.expert_action.steer)
-        + int(action.throttle == telemetry.expert_action.throttle)
-        + int(action.brake == telemetry.expert_action.brake)
-    )
+    expert = telemetry.expert_action
+    if isinstance(action, ControlDuty):
+        # Continuous similarity is linear in duty and continuous through zero.
+        matches = (
+            max(0.0, 1.0 - abs(action.steer - expert.steer) / 2.0)
+            + 1.0 - abs(action.throttle - float(expert.throttle))
+            + 1.0 - abs(action.brake - float(expert.brake))
+        )
+    else:
+        matches = (
+            int(action.steer == expert.steer)
+            + int(action.throttle == expert.throttle)
+            + int(action.brake == expert.brake)
+        )
     position_error_sq = float(np.square(telemetry.ghost_relative_position_m).sum())
     speed_error = telemetry.local_velocity_mps[2] - telemetry.ghost_target_speed_mps
     confidence = np.exp(
@@ -394,13 +420,13 @@ def _airborne_spin_penalty(telemetry: Telemetry, config: RewardConfig, dt: float
 
 
 def _airborne_brake_reward(
-    telemetry: Telemetry, action: Action, config: RewardConfig, dt: float
+    telemetry: Telemetry, action: Action | ControlDuty, config: RewardConfig, dt: float
 ) -> float:
     """Slightly reward braking only while every wheel is off the ground."""
 
     if not action.brake or any(contact >= 0.5 for contact in telemetry.wheel_contacts):
         return 0.0
-    return config.airborne_brake_bonus_per_s * dt
+    return config.airborne_brake_bonus_per_s * dt * float(action.brake)
 
 
 def _airborne_tilt_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
@@ -541,6 +567,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_steps = 0
         self._previous_progress_m = 0.0
         self._previous_action = Action()
+        self._previous_control = ControlDuty.from_action(self._previous_action)
         self._episode_done = True
         self._stationary_s = 0.0
         self._off_track_s = 0.0
@@ -652,6 +679,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_steps = 0
         self._previous_progress_m = transition.telemetry.route_progress_m
         self._previous_action = transition.telemetry.previous_action
+        self._previous_control = ControlDuty.from_action(self._previous_action)
         self._episode_done = False
         self._stationary_s = 0.0
         self._off_track_s = 0.0
@@ -684,6 +712,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 decoded_action = Action(
                     (steering > 0) - (steering < 0), longitudinal > 0, longitudinal < 0
                 )
+                reward_action: Action | ControlDuty = ControlDuty.from_continuous(
+                    steering, longitudinal
+                )
             else:
                 values = np.asarray(action, dtype=np.int64)
                 steering = decode_pwm_level(int(values[0]), self.pwm_levels)
@@ -693,6 +724,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                     for steer in self._pwm.generate(steering, self.frame_skip)
                 ]
                 decoded_action = Action((steering > 0) - (steering < 0), throttle, brake)
+                reward_action = decoded_action
             transitions: list[Transition] = []
             features = self.simulator_capabilities.get("features", ())
             if "action_sequence" in features:
@@ -743,6 +775,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             )
         else:
             decoded_action = Action.from_policy(action)
+            reward_action = decoded_action
             result = self._exchange(
                 "step",
                 {
@@ -825,7 +858,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
         reward, reward_terms = self._reward(
             transition,
-            decoded_action,
+            reward_action,
             stationary_s=self._stationary_s,
             stalled=stalled,
             off_track=off_track,
@@ -858,10 +891,26 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_done = terminated or truncated
         self._previous_progress_m = transition.telemetry.route_progress_m
         self._previous_action = decoded_action
+        self._previous_control = ControlDuty.from_action(decoded_action) if isinstance(
+            reward_action, Action
+        ) else reward_action
         self.latest_telemetry = transition.telemetry
 
         observation = transition.telemetry.to_vector()
         info = self._info(transition, reward_terms=reward_terms)
+        if isinstance(reward_action, ControlDuty):
+            info["requested_control_duty"] = {
+                "steer": reward_action.steer,
+                "throttle": reward_action.throttle,
+                "brake": reward_action.brake,
+            }
+            executed = tick_controls[:transition.ticks_advanced]
+            if executed:
+                info["applied_control_fraction"] = {
+                    "steer": sum(steer for steer, _, _ in executed) / len(executed),
+                    "throttle": sum(throttle for _, throttle, _ in executed) / len(executed),
+                    "brake": sum(brake for _, _, brake in executed) / len(executed),
+                }
         if stalled:
             info["events"] = (*transition.events, "stalled")
             info["stationary_s"] = self._stationary_s
@@ -889,7 +938,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
     def _reward(
         self,
         transition: Transition,
-        action: Action,
+        action: Action | ControlDuty,
         *,
         stationary_s: float = 0.0,
         stalled: bool = False,
@@ -975,7 +1024,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             else 0.0,
             "airborne_brake": _airborne_brake_reward(telemetry, action, config, dt),
             "ground_brake": (
-                config.ground_brake_penalty_per_s * dt if action.brake and not airborne else 0.0
+                config.ground_brake_penalty_per_s * dt * float(action.brake)
+                if not airborne else 0.0
             ),
             "takeoff_speed": takeoff_speed_reward,
             "ghost_imitation": imitation_reward * guidance_weight,
@@ -1019,9 +1069,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             ),
             "action_change": config.action_change_penalty
             * (
-                abs(action.steer - self._previous_action.steer)
-                + int(action.throttle != self._previous_action.throttle)
-                + int(action.brake != self._previous_action.brake)
+                abs(action.steer - self._previous_control.steer)
+                + abs(float(action.throttle) - self._previous_control.throttle)
+                + abs(float(action.brake) - self._previous_control.brake)
             ),
         }
         reward = float(sum(terms.values()))

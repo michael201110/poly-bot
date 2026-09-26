@@ -43,21 +43,28 @@ def estimate_ppo_parameters(
 
 
 TQC_ARCHITECTURES: dict[str, tuple[int, ...]] = {
+    "tiny": (64, 64),
     "standard": (256, 256),
     "compact": (128, 128),
 }
 
 
+def estimate_tqc_actor_parameters(observation_size: int, action_size: int, preset: str) -> int:
+    """Actor used for action selection, including mean and log-standard-deviation heads."""
+    layers = TQC_ARCHITECTURES[preset]
+    actor = (observation_size + 1) * layers[0]
+    actor += sum((a + 1) * b for a, b in zip(layers, layers[1:], strict=False))
+    actor += 2 * (layers[-1] + 1) * action_size
+    return actor
+
+
 def estimate_tqc_parameters(observation_size: int, action_size: int, preset: str) -> int:
     """Actor, two critics and their target copies (SB3-contrib defaults)."""
     layers = TQC_ARCHITECTURES[preset]
-    actor = (observation_size + 1) * layers[0]
     critic = (observation_size + action_size + 1) * layers[0]
-    actor += sum((a + 1) * b for a, b in zip(layers, layers[1:], strict=False))
     critic += sum((a + 1) * b for a, b in zip(layers, layers[1:], strict=False))
-    actor += 2 * (layers[-1] + 1) * action_size
     critic += (layers[-1] + 1) * 25
-    return actor + 4 * critic
+    return estimate_tqc_actor_parameters(observation_size, action_size, preset) + 4 * critic
 
 
 @dataclass(slots=True)
