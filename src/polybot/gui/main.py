@@ -139,6 +139,7 @@ def main() -> int:
     parser.add_argument("--teacher-model")
     parser.add_argument("--teacher-kl-coefficient", type=float)
     parser.add_argument("--expert-imitation-coefficient", type=float)
+    parser.add_argument("--reward-scale", type=float, default=0.01)
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -291,6 +292,13 @@ def main() -> int:
             self.expert_imitation.setToolTip(
                 "Expert control loss from ghost steering, throttle and brake; 0 disables it."
             )
+            self.reward_scale = QDoubleSpinBox()
+            self.reward_scale.setDecimals(4)
+            self.reward_scale.setRange(0.0001, 10.0)
+            self.reward_scale.setValue(launch.reward_scale)
+            self.reward_scale.setToolTip(
+                "Scale rewards for PPO; displayed episode scores stay unscaled."
+            )
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -368,6 +376,7 @@ def main() -> int:
                 ("Teacher model", self.teacher_model),
                 ("Teacher KL coefficient", self.teacher_kl),
                 ("Expert imitation coefficient", self.expert_imitation),
+                ("Training reward scale", self.reward_scale),
                 ("Reward profile", self.reward_profile),
                 ("All reward parameters", self.reward_table),
                 ("Curriculum", self.curriculum),
@@ -525,6 +534,7 @@ def main() -> int:
                 ),
                 teacher_kl_coefficient=self.teacher_kl.value(),
                 expert_imitation_coefficient=self.expert_imitation.value(),
+                reward_scale=self.reward_scale.value(),
                 checkpoint_interval=self.checkpoint.value(),
                 output_root=Path(self.output.text()),
                 rewards=self.reward_config_from_table(),
@@ -747,6 +757,13 @@ def main() -> int:
                 self.runtime.setText(f"Simulator disconnected — retrying in {delay:g}s")
                 self.log.appendPlainText(
                     f"Retrying simulator connection in {delay:g}s (attempt {attempt})"
+                )
+            elif event_type == "training_metrics":
+                self.log.appendPlainText(
+                    f"PPO step {event['timesteps']:,}: "
+                    f"value loss={event.get('train/value_loss', 0):.3f}, "
+                    f"explained variance={event.get('train/explained_variance', 0):.3f}, "
+                    f"critic saturation={event['value_saturation_fraction']:.1%}"
                 )
             elif event_type == "error":
                 self.log.appendPlainText(f"ERROR: {event.get('message', 'unknown error')}")

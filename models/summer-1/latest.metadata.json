@@ -10,10 +10,10 @@
   "pwm_enabled": true,
   "pwm_resolution": 41,
   "frame_skip": 30,
-  "training_timesteps": 154554,
+  "training_timesteps": 295072,
   "training_episodes": null,
   "best_lap_time_s": null,
-  "training_date": "2026-09-26T11:22:09.912125+00:00",
+  "training_date": "2026-09-26T11:45:28.459978+00:00",
   "seed": 0,
   "reward_settings": {
     "progress_per_m": 3.0,
@@ -93,5 +93,5 @@
     "expert_imitation_coefficient": 1.0
   },
   "polybot_version": "0.1.0",
-  "git_commit": "cd4de23a501fa4778d225575ae525dacdab0878b"
+  "git_commit": "acd34309a3d325aa8eec01ac46012f14d033cdd0"
 }

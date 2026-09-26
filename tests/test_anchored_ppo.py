@@ -27,3 +27,23 @@ def test_expert_action_loss_uses_protocol_v2_ghost_controls() -> None:
     logits[1, [10, 11, 14]] = 10.0
     loss = expert_action_loss(logits, observations, (11, 2, 2))
     assert loss.item() < 1e-6
+
+
+def test_expert_guidance_fades_when_far_from_reference() -> None:
+    observations = torch.zeros((1, 105))
+    observations[:, 40] = 1
+    logits = torch.zeros((1, 7), requires_grad=True)
+    near = expert_action_loss(logits, observations, (3, 2, 2))
+    observations[:, 34] = 0.2  # 10 metres from the reference line
+    far = expert_action_loss(logits, observations, (3, 2, 2))
+    assert far.item() < near.item() * 0.001
+    far.backward()
+    assert torch.isfinite(logits.grad).all()
+
+
+def test_guidance_confidence_weights_each_sample_independently() -> None:
+    observations = torch.zeros((2, 105))
+    observations[1, 34] = 1  # only this example should be suppressed
+    logits = torch.zeros((2, 7))
+    expected = expert_action_loss(logits[:1], observations[:1], (3, 2, 2)) / 2
+    torch.testing.assert_close(expert_action_loss(logits, observations, (3, 2, 2)), expected)

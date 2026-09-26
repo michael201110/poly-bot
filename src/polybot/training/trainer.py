@@ -10,6 +10,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+import gymnasium as gym
+
 from polybot.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
 from polybot.training.anchored_ppo import TeacherAnchoredPPO
@@ -25,6 +27,17 @@ from polybot.training.models import (
 from polybot.transport import WebSocketServerTransport
 
 StatusCallback = Callable[[dict[str, Any]], None]
+
+
+class ScaledTrainingReward(gym.RewardWrapper):
+    """Scale PPO targets while retaining raw game reward terms in info."""
+
+    def __init__(self, env: gym.Env, scale: float) -> None:
+        super().__init__(env)
+        self.scale = scale
+
+    def reward(self, reward: float) -> float:
+        return float(reward) * self.scale
 
 
 class RollingStepRate:
@@ -101,6 +114,7 @@ class TrainingService:
                 "teacher_model": None if cfg.teacher_model is None else str(cfg.teacher_model),
                 "teacher_kl_coefficient": cfg.teacher_kl_coefficient,
                 "expert_imitation_coefficient": cfg.expert_imitation_coefficient,
+                "reward_scale": cfg.reward_scale,
             },
             polybot_version="0.1.0",
             git_commit=git_commit(),
@@ -141,6 +155,7 @@ class TrainingService:
             curriculum_end_s=cfg.curriculum.end_s,
             curriculum_random_quarters=cfg.curriculum.mode == "quarters-randomised",
         )
+        env = ScaledTrainingReward(env, cfg.reward_scale)
         registry = ModelRegistry(cfg.output_root)
         directory = registry.initialise_track(cfg.track_name)
         try:
@@ -175,7 +190,10 @@ class TrainingService:
                 infos = self.locals.get("infos")
                 info = infos[-1] if infos is not None and len(infos) else {}
                 rewards = self.locals.get("rewards")
-                reward = float(rewards[-1]) if rewards is not None and len(rewards) else 0.0
+                reward = (
+                    float(rewards[-1]) / cfg.reward_scale
+                    if rewards is not None and len(rewards) else 0.0
+                )
                 dones = self.locals.get("dones")
                 done = bool(dones[-1]) if dones is not None and len(dones) else False
                 self.episode_reward += reward
@@ -334,6 +352,7 @@ class TrainingService:
                 if cfg.rewards.expert_action_bonus_per_s > 0
                 else 0.0
             )
+            self.model.training_status = service.status
             parameters = sum(p.numel() for p in self.model.policy.parameters())
             self.status(
                 {

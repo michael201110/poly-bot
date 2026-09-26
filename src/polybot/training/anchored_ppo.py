@@ -66,9 +66,18 @@ def expert_action_loss(
     losses = []
     offset = 0
     for width, target in zip(action_widths, targets, strict=True):
-        losses.append(F.cross_entropy(logits[:, offset : offset + width], target))
+        losses.append(F.cross_entropy(logits[:, offset : offset + width], target, reduction="none"))
         offset += width
-    return th.stack(losses).mean()
+    # Reference controls are useful only near the demonstrated pose and speed.
+    position_m = observations[:, 34:37] * observations.new_tensor([50, 50, 100])
+    heading_rad = observations[:, 37] * np.pi
+    speed_error = (observations[:, 2] - observations[:, 38]) * 100
+    confidence = th.exp(
+        -position_m.square().sum(1) / 8.0
+        -heading_rad.square() / (2 * 0.35**2)
+        -speed_error.square() / (2 * 10.0**2)
+    ).detach()
+    return (th.stack(losses).mean(0) * confidence).mean()
 
 
 class TeacherAnchoredPPO(PPO):
@@ -96,7 +105,7 @@ class TeacherAnchoredPPO(PPO):
         self.expert_imitation_coefficient = coefficient
 
     def _excluded_save_params(self) -> list[str]:
-        return [*super()._excluded_save_params(), "teacher_policy"]
+        return [*super()._excluded_save_params(), "teacher_policy", "training_status"]
 
     def _teacher_kl(self, observations: th.Tensor) -> th.Tensor:
         if self.teacher_policy is None or self.teacher_kl_coefficient <= 0:
@@ -192,7 +201,14 @@ class TeacherAnchoredPPO(PPO):
 
                 self.policy.optimizer.zero_grad()
                 loss.backward()
-                th.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+                # Actor and critic have separate networks; a large value error must
+                # not shrink the actor's otherwise healthy gradient.
+                actor_parameters = []
+                critic_parameters = []
+                for name, parameter in self.policy.named_parameters():
+                    (critic_parameters if "value" in name else actor_parameters).append(parameter)
+                th.nn.utils.clip_grad_norm_(actor_parameters, self.max_grad_norm)
+                th.nn.utils.clip_grad_norm_(critic_parameters, self.max_grad_norm)
                 self.policy.optimizer.step()
 
             self._n_updates += 1
@@ -219,3 +235,23 @@ class TeacherAnchoredPPO(PPO):
         self.logger.record("train/clip_range", clip_range)
         if self.clip_range_vf is not None:
             self.logger.record("train/clip_range_vf", clip_range_vf)
+        status = getattr(self, "training_status", None)
+        if status is not None:
+            with th.no_grad():
+                samples = th.as_tensor(
+                    self.rollout_buffer.observations.reshape(
+                        -1, self.observation_space.shape[0]
+                    )[:256],
+                    device=self.device,
+                )
+                features = self.policy.extract_features(samples)
+                latent = self.policy.mlp_extractor.forward_critic(features)
+                values = self.policy.value_net(latent)
+            status({
+                "type": "training_metrics",
+                "timesteps": self.num_timesteps,
+                "value_saturation_fraction": float((latent.abs() > 0.99).float().mean()),
+                "value_prediction_std": float(values.std(unbiased=False)),
+                **{key: float(value) for key, value in self.logger.name_to_value.items()
+                   if key.startswith("train/") and np.isscalar(value)},
+            })

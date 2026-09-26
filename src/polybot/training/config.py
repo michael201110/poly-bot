@@ -74,6 +74,7 @@ class TrainingConfig:
     teacher_model: Path | None = None
     teacher_kl_coefficient: float = 0.0
     expert_imitation_coefficient: float = 1.0
+    reward_scale: float = 0.01
     checkpoint_interval: int = 10_000
     output_root: Path = Path("models")
     seed: int = 0
@@ -82,6 +83,10 @@ class TrainingConfig:
     rewards: RewardConfig = field(default_factory=summer_1_reward_config)
 
     def __post_init__(self) -> None:
+        import math
+
+        if not math.isfinite(self.reward_scale) or self.reward_scale <= 0:
+            raise ValueError("reward_scale must be finite and positive")
         if self.backend not in {"websocket", "mock"}:
             raise ValueError("backend must be websocket or mock")
         architecture(self.architecture)

@@ -66,6 +66,20 @@ JSON files under `profiles/rewards/` and can be edited, copied, or version-contr
 
 ## Ghost control guidance
 
+PPO uses a training reward scale of `0.01` by default; episode scores and reward
+breakdowns remain in their original units. Actor and critic gradients are clipped
+separately. Each PPO update writes value loss, explained variance, policy statistics,
+and critic saturation to the session JSONL log. The GUI shows a short update summary.
+When changing the reward scale, start a fresh model: an older critic predicts values
+in the previous reward units.
+
+Ghost control imitation and its reward fade with position, heading, and speed error
+relative to the reference. This prevents full-strength copying when the learner
+needs a different action to recover. The falloff uses Gaussian scales of 2 metres,
+0.35 radians, and 10 m/s. A coefficient of `0.2` is the conservative fresh-run setting;
+the controls remain digital demonstration targets, so PWM intermediate levels must
+still be learned through PPO.
+
 With a reward profile that supplies an expert-action bonus, the trainer can also fit the
 ghost's recorded steering, throttle, and brake directly. The GUI's **Expert imitation
 coefficient** controls this extra policy loss: `1.0` is the default and `0.0` disables

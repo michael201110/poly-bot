@@ -325,7 +325,14 @@ def _expert_action_reward(
         + int(action.throttle == telemetry.expert_action.throttle)
         + int(action.brake == telemetry.expert_action.brake)
     )
-    return config.expert_action_bonus_per_s * (matches / 3.0) * dt
+    position_error_sq = float(np.square(telemetry.ghost_relative_position_m).sum())
+    speed_error = telemetry.local_velocity_mps[2] - telemetry.ghost_target_speed_mps
+    confidence = np.exp(
+        -position_error_sq / 8.0
+        -telemetry.ghost_heading_error_rad**2 / (2 * 0.35**2)
+        -speed_error**2 / (2 * 10.0**2)
+    )
+    return float(config.expert_action_bonus_per_s * (matches / 3.0) * dt * confidence)
 
 
 def _ghost_speed_reward(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
