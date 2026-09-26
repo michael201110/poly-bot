@@ -19,7 +19,11 @@ from polybot.training.config import (
     estimate_tqc_parameters,
 )
 from polybot.training.models import IncompatibleModelError, ModelMetadata, ModelRegistry
-from polybot.training.trainer import ScaledTrainingReward, TrainingService
+from polybot.training.trainer import (
+    ScaledTrainingReward,
+    TrainingService,
+    tqc_policy_diagnostics,
+)
 
 
 def test_continuous_pwm_duties_and_reset() -> None:
@@ -136,6 +140,9 @@ def test_tqc_warmup_prefers_forward_actions_and_actor_starts_forward() -> None:
         assert model.policy.actor.mu.bias[1].item() > 0.8
         deterministic, _ = model.predict(np.zeros(105, dtype=np.float32), deterministic=True)
         assert deterministic[1] > 0.5
+        probe = tqc_policy_diagnostics(model, np.zeros(105, dtype=np.float32))
+        assert probe["deterministic_longitudinal"] == pytest.approx(deterministic[1])
+        assert set(probe["critic_longitudinal_q"]) == {"1.0", "0.5", "0.0", "-0.5"}
         model.num_timesteps = 5_000
         model._last_obs = np.zeros((1, 105), dtype=np.float32)
         # Once learning starts, the standard stochastic TQC actor samples actions.

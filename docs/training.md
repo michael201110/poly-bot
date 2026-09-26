@@ -107,6 +107,11 @@ adaptive without swamping the task reward. Broader warmup steering explores ways
 early barrier instead of filling replay with almost identical failed straight-line runs. The
 initial actor bias is applied only on model creation; no action is forced after warmup.
 
+TQC throughput drops when replay warmup ends because every new transition then triggers an
+actor/critic update. A small 64x64 MLP can be limited by GPU launch overhead: the T500 is
+usable, but it is not necessarily faster than a CPU with a few PyTorch threads. The live
+policy probes are batched and cached for 500 steps to keep diagnostic overhead small.
+
 ## Devices and network presets
 
 New models default to separate actor and critic networks of `1024, 1024, 512` (`xl`). With the

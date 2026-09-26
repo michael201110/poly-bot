@@ -73,10 +73,11 @@ def tqc_policy_diagnostics(model: Any, observation: np.ndarray) -> dict[str, Any
             obs = obs.unsqueeze(0)
         mean, log_std, _ = model.policy.actor.get_action_dist_params(obs)
         deterministic = torch.tanh(mean)
-        critic_values = {}
-        for longitudinal in (1.0, 0.5, 0.0, -0.5):
-            action = torch.tensor([[0.0, longitudinal]], device=model.device)
-            critic_values[str(longitudinal)] = float(model.critic(obs, action).mean().item())
+        levels = (1.0, 0.5, 0.0, -0.5)
+        actions = torch.tensor([[0.0, value] for value in levels], device=model.device)
+        quantiles = model.critic(obs.expand(len(levels), -1), actions)
+        estimates = quantiles.mean(dim=(1, 2)).tolist()
+        critic_values = dict(zip((str(value) for value in levels), estimates, strict=True))
     return {
         "actor_longitudinal_mean": float(mean[0, 1].item()),
         "actor_longitudinal_log_std": float(log_std[0, 1].item()),
@@ -224,6 +225,8 @@ class TrainingService:
                 self.best_lap_s = persisted_best_lap_s
                 self.step_rate = RollingStepRate(5.0)
                 self.tqc_actions: deque[tuple[float, float]] = deque(maxlen=256)
+                self.tqc_probe: dict[str, Any] = {}
+                self.last_tqc_probe_step = -1_000
 
             def _on_training_start(self) -> None:
                 self.step_rate.update(self.num_timesteps)
@@ -293,8 +296,11 @@ class TrainingService:
                             "mean_absolute_steering": float(abs(recent[:, 0]).mean()),
                         }
                         new_obs = self.locals.get("new_obs")
-                        if new_obs is not None:
-                            action_stats.update(tqc_policy_diagnostics(service.model, new_obs[-1]))
+                        if (new_obs is not None and
+                                self.num_timesteps - self.last_tqc_probe_step >= 500):
+                            self.tqc_probe = tqc_policy_diagnostics(service.model, new_obs[-1])
+                            self.last_tqc_probe_step = self.num_timesteps
+                        action_stats.update(self.tqc_probe)
                     service.status(
                         {
                             "type": "progress",
