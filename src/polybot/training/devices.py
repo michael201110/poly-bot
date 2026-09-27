@@ -121,11 +121,18 @@ def _unavailable_reason(diagnostics: dict[str, Any]) -> str:
     return "No usable NVIDIA/CUDA device was found."
 
 
-def resolve_device(requested: str, torch_module: Any | None = None) -> DeviceInfo:
+def resolve_device(
+    requested: str, torch_module: Any | None = None, *, algorithm: str | None = None
+) -> DeviceInfo:
     requested = requested.lower()
     if requested not in {"auto", "cpu", "cuda"}:
         raise ValueError("device must be auto, cpu, or cuda")
     facts = cuda_diagnostics(torch_module)
+    if requested == "auto" and algorithm == "ppo":
+        facts["selection_reason"] = (
+            "PPO's small MLP updates usually run faster on CPU; choose cuda explicitly to override"
+        )
+        return DeviceInfo(requested, "cpu", diagnostics=facts)
     if requested == "cuda" and (
         not facts["cuda_available"] or facts["cuda_device_count"] < 1
     ):
@@ -158,10 +165,10 @@ def checked_parameter_device(parameter: Any, resolved: str) -> str:
 def doctor_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show PolyBot PyTorch/CUDA diagnostics")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--smoke-tqc", action="store_true")
+    parser.add_argument("--smoke", choices=("ppo", "tqc"))
     args = parser.parse_args(argv)
     try:
-        selected = resolve_device(args.device)
+        selected = resolve_device(args.device, algorithm=args.smoke)
     except RuntimeError as exc:
         facts = cuda_diagnostics()
         facts["error"] = str(exc)
@@ -169,21 +176,28 @@ def doctor_main(argv: list[str] | None = None) -> int:
         return 2
     facts = selected.diagnostics
     facts["selected_device"] = selected.resolved
-    if args.smoke_tqc:
-        from polybot.env import PolyTrackEnv
+    if args.smoke:
+        from polybot.algorithms.registry import backend_for
+        from polybot.environment.env import PolyTrackEnv
         from polybot.mock import MockSimulatorTransport
-        from polybot.training.algorithms import create_model
-        from polybot.training.config import TrainingConfig
+        from polybot.training.config import PPOConfig, TQCConfig, TrainingConfig
 
-        config = TrainingConfig(algorithm="tqc", backend="mock", device=selected.resolved)
+        config = TrainingConfig(
+            algorithm=args.smoke, backend="mock", device=selected.resolved,
+            **({"ppo": PPOConfig(architecture="tiny")} if args.smoke == "ppo"
+               else {"tqc": TQCConfig(architecture="tiny")}),
+        )
+        backend = backend_for(args.smoke)
         env = PolyTrackEnv(
-            MockSimulatorTransport(), track_id="mock/straight", action_mode="continuous_pwm"
+            MockSimulatorTransport(), track_id="mock/straight",
+            action_adapter=backend.action_adapter(config),
         )
         try:
-            model = create_model(config, env, selected.resolved)
-            facts["tqc_parameter_device"] = checked_parameter_device(
+            model = backend.create_model(config, env, selected.resolved)
+            facts["model_parameter_device"] = checked_parameter_device(
                 next(model.policy.parameters()), selected.resolved
             )
+            facts["model_parameters"] = backend.parameter_counts(model)
         finally:
             env.close()
     print(json.dumps(facts, indent=2))

@@ -28,78 +28,29 @@ demonstrations, not leaderboard or multiplayer automation.
 The repository ships only the source-level mixin under `pml-mod/`. It does not redistribute the
 game's JavaScript bundle, WASM binary, or assets.
 
-## Let the built-in controller drive
+## Train or play in the game
 
-Start the Python listener:
+Load a track and a ghost lap in PolyTrack, then enter the race. The ghost defines the reference route and lookahead; without it, reset reports `missing_reference`. If the mod was enabled after entering a race, restart that race.
 
-```text
-polybot-drive --centerline
-```
+Open the v2 GUI and keep **WebSocket** selected, or start an explicit algorithm from the CLI:
 
-The `Waiting for the local PolyTrack mod at ws://127.0.0.1:8765 ...` line is expected. In PolyTrack,
-choose a track, load a ghost lap, and enter the race. The game worker connects to Python and the
-controller's actions are applied to the visible car. If a race was already open when you enabled the
-mod, restart that race.
-
-The adapter uses the selected ghost trajectory as its route reference. Without one, reset
-fails with `missing_reference`. The centreline controller is mainly an end-to-end compatibility
-check; it has not learned the track and may fail on difficult sections.
-
-## Drive with a trained PPO policy
-
-Pass the model created by `polybot-train`; the `.zip` suffix is optional:
-
-```text
-polybot-drive --model models/polybot-real
-```
-
-Predictions are deterministic by default. Add `--stochastic` only when deliberately sampling PPO's
-action distribution. A model must use the same observation layout, especially `--lookahead`, that
-was used for training.
-
-The drive command defaults to the current game track, 12 lookahead samples, a 10-tick action repeat,
-a 30,000-step (300 simulated second) episode limit, one episode, and the fixed localhost endpoint:
-
-```text
-polybot-drive --track current --lookahead 12 --frame-skip 10
-```
-
-## Train against the real worker
-
-Start training before launching the race, just as for `polybot-drive`:
-
-```text
+```powershell
 polybot-gui
+polybot-train --algorithm tqc --backend websocket --track-name "Summer 1" --track-id current --frame-skip 30 --timesteps 100000 --reward-profile Balanced
 ```
 
-For the WebSocket backend, `polybot-train` automatically defaults to `--track current` and
-`--frame-skip 10`; these remain `mock/gentle-s` and `4` for the mock backend. Resetting an episode
-recreates the car at the race start. The game remains visible, but fixed-step training is controlled
-by Python rather than render timing.
+The Python listener waits at `ws://127.0.0.1:8765` for the mod. The GUI can train PPO or TQC, stop cleanly, evaluate, and play latest or champion. A model is only champion after deterministic full-track evaluation.
 
-You can evaluate a model against the currently selected race without changing it:
-
-```text
-polybot-eval models/polybot-real --backend websocket --episodes 5
+```powershell
+polybot-eval --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --episodes 5
+polybot-drive --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --realtime
 ```
+
+The training command defaults to `--track-id current` and frame skip 30 for WebSocket, and `mock/straight` and 4 for the mock. The simulator follows Python's fixed-step requests rather than render timing. Only one training, evaluation, or playback listener can use the fixed local port at once.
 
 ## Troubleshooting
 
-- **`polybot-drive` is not recognized:** activate `.venv`, then run
-  `python -m pip install -e ".[dev,train,gui]"` again. As a platform-neutral direct fallback,
-  run `python -c "from polybot.cli import drive_main; raise SystemExit(drive_main())" --centerline`.
-- **It stays on `Waiting ...`:** the listener is working but the mod has not connected. Confirm the
-  PolyBot mod is enabled, launch through PolyModLoader, and enter a race. Check that both sides use
-  port 8765.
-- **The browser blocks localhost access:** allow local-network access when prompted, or use the
-  compatible PolyModLoader desktop build.
-- **`missing_reference`:** load a ghost for the selected track and restart the race.
-- **Version or mixin-token error:** check the loader game version and run the bundle validation below.
-  A manifest target alone does not prove that the required source hooks still match.
-- **Model observation-space error:** pass the same `--lookahead` value used during training.
-- **Reset or step timeout:** let the current operation finish, or increase
-  `--request-timeout 120`. The connection wait can similarly be changed with
-  `--connect-timeout`.
+If the mod does not connect, confirm PolyModLoader is enabled in the active race, the loaded track has a ghost reference, and no other PolyBot process owns port 8765. Run `polybot-doctor --smoke tqc` to check the selected compute device independently of the game. Run `python tools/validate_pml_mod.py` for manifest validation; include raw pinned game bundles for the stronger source check described below.
 
 ## Integration details
 
@@ -169,7 +120,7 @@ PolyModLoader's built-in worker URL replacement before our mixin runs. `--anchor
 hash checks for investigation; matching anchors alone do not establish compatibility with a new
 game version. Running without bundle paths checks only the release manifests.
 
-After a game or loader update, also run `polybot-drive --centerline` with a reference ghost on a
+After a game or loader update, run `polybot-drive --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket` with a reference ghost on a
 simple track. Check initial connection, reset, checkpoint progress, local finish feedback and
 restart, then perform the deterministic transcript checks described above. Inspect network traffic
 to verify that public writes and multiplayer remain blocked. These interactive checks require a

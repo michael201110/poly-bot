@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "polytrack-ai"
-version = "0.1.0"
-description = "Offline reinforcement-learning environment for PolyTrack"
+version = "2.0.0"
+description = "PPO and TQC reinforcement-learning platform for PolyTrack"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -33,7 +33,6 @@ polybot-smoke = "polybot.cli:smoke_main"
 polybot-train = "polybot.cli:train_main"
 polybot-eval = "polybot.cli:evaluate_main"
 polybot-drive = "polybot.cli:drive_main"
-polybot-distill = "polybot.distillation:main"
 polybot-gui = "polybot.gui.main:main"
 polybot-doctor = "polybot.training.devices:doctor_main"
 
@@ -45,7 +44,7 @@ addopts = "-q"
 testpaths = ["tests"]
 
 [tool.ruff]
-line-length = 100
+line-length = 120
 target-version = "py311"
 
 [tool.ruff.lint]

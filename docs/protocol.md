@@ -71,7 +71,7 @@ Result:
   "protocol": "polybot.sim",
   "protocol_version": 2,
   "simulator": "polytrack-local",
-  "game_version": "0.6.2",
+  "game_version": "0.6.3",
   "fixed_dt_s": 0.0166666667,
   "max_ticks_per_step": 16,
   "lookahead_count": 12,

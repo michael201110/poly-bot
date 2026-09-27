@@ -1,7 +1,7 @@
 """Versioned, transport-independent simulator protocol.
 
 The game adapter reports physical facts. Reward shaping and Gymnasium episode
-limits intentionally live in :mod:`polybot.env`.
+limits intentionally live in :mod:`polybot.environment.env`.
 """
 
 from __future__ import annotations

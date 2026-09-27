@@ -1,0 +1,95 @@
+"""Explicit beginner and expert parameter presets with advisory warnings."""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, replace
+from pathlib import Path
+from typing import Any
+
+from polybot.training.config import PPOConfig, TQCConfig, TrainingConfig
+
+
+def algorithm_presets(algorithm: str) -> dict[str, PPOConfig | TQCConfig]:
+    if algorithm == "ppo":
+        balanced = PPOConfig()
+        return {
+            "Beginner": replace(balanced, architecture="tiny", rollout_steps=256,
+                                batch_size=64),
+            "Balanced": balanced,
+            "Fast training": replace(balanced, architecture="tiny", rollout_steps=256,
+                                     batch_size=64, epochs=3),
+            "Advanced": replace(balanced, architecture="standard"),
+        }
+    if algorithm == "tqc":
+        balanced = TQCConfig()
+        return {
+            "Beginner / Stable": replace(balanced, architecture="tiny", train_frequency=2),
+            "Balanced": balanced,
+            "Fast / Lightweight": replace(balanced, architecture="tiny", batch_size=128,
+                                          train_frequency=4),
+            "Advanced": replace(balanced, architecture="standard"),
+        }
+    raise ValueError("unknown algorithm")
+
+
+class PresetStore:
+    def __init__(self, root: Path = Path("profiles/algorithms")) -> None:
+        self.root = root
+
+    def save(self, algorithm: str, name: str, settings: PPOConfig | TQCConfig) -> Path:
+        from polybot.models.registry import track_slug
+
+        self.root.mkdir(parents=True, exist_ok=True)
+        path = self.root / f"{algorithm}-{track_slug(name)}.json"
+        path.write_text(json.dumps({
+            "schema": "polybot.algorithm-preset.v2", "algorithm": algorithm,
+            "name": name, "settings": asdict(settings),
+        }, indent=2) + "\n", encoding="utf-8")
+        return path
+
+    def load(self, path: Path) -> PPOConfig | TQCConfig:
+        value: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        if value["schema"] != "polybot.algorithm-preset.v2":
+            raise ValueError("only v2 presets are supported")
+        return PPOConfig(**value["settings"]) if value["algorithm"] == "ppo" else (
+            TQCConfig(**value["settings"])
+        )
+
+    def list(self, algorithm: str) -> dict[str, Path]:
+        result = {}
+        for path in self.root.glob(f"{algorithm}-*.json"):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+                if value["schema"] == "polybot.algorithm-preset.v2":
+                    result[value["name"]] = path
+            except (OSError, ValueError, KeyError):
+                continue
+        return result
+
+
+def configuration_warnings(config: TrainingConfig, gpu_name: str | None = None) -> list[str]:
+    settings = config.ppo if config.ppo is not None else config.tqc
+    assert settings is not None
+    warnings = []
+    if settings.learning_rate > 1e-3:
+        warnings.append("Learning rate above 0.001 can make policy updates unstable.")
+    if settings.gamma < 0.9 or settings.gamma > 0.9999:
+        warnings.append("Extreme gamma can make long-term credit assignment difficult.")
+    if config.evaluation.interval_steps < 500:
+        warnings.append("Very frequent evaluation may spend more time testing than training.")
+    if config.timesteps > 10_000_000:
+        warnings.append("This budget may run for many days; check expected TPS first.")
+    if config.tqc is not None:
+        p = config.tqc
+        if p.replay_capacity > 2_000_000:
+            warnings.append("A very large replay buffer can consume substantial RAM.")
+        if p.gradient_steps > 4:
+            warnings.append("Many gradient steps per collection can sharply reduce TPS.")
+        if p.architecture == "standard" and p.train_frequency == 1:
+            warnings.append("256×256 TQC with train frequency 1 can be slow on modest GPUs.")
+        if gpu_name and "T500" in gpu_name.upper() and p.architecture == "standard":
+            warnings.append("A T500 may train standard TQC slowly; consider frequency 2–4.")
+        if p.entropy.startswith("auto_") and float(p.entropy[5:]) > 1:
+            warnings.append("High initial entropy may keep driving unusually random.")
+    return warnings

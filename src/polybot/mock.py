@@ -340,6 +340,6 @@ class MockSimulatorTransport:
 def make_mock_env(**kwargs: Any) -> Any:
     """Convenience factory kept import-light for vectorized trainers."""
 
-    from polybot.env import PolyTrackEnv
+    from polybot.environment.env import PolyTrackEnv
 
     return PolyTrackEnv(MockSimulatorTransport(), **kwargs)

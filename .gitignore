@@ -7,14 +7,14 @@ __pycache__/
 *.egg-info/
 dist/
 build/
-models/**/checkpoints/
-old-models-pending-delete/
-models/**/latest.zip
-models/**/*.tmp
-models/**/*.replay.pkl
-!models/**/latest.zip
-!models/**/best.zip
-!models/**/metadata.json
-!models/**/README.md
+
+# Generated training state and obsolete local models.
+/models/
+/old-models-pending-delete/
 runs/
 logs/
+checkpoints/
+*.replay.pkl
+*.ckpt
+*.pth
+*.pt

@@ -1,257 +1,52 @@
-# Training and model management
+# Training with PolyBot v2
 
-Install Python 3.11+ on Windows or Linux, create and activate a normal virtual environment, then:
+PolyBot uses one typed `TrainingConfig` in the GUI, CLI, and saved model metadata. Choose PPO or TQC explicitly in the CLI. In the GUI, each algorithm has its own parameter panel; the other panel is hidden. Select a preset first, then expose advanced settings if needed. Saving a configuration writes the exact resolved JSON accepted by `polybot-train --config path.json`.
+
+## The two learners
+
+PPO is **on-policy**: it collects a fresh rollout, updates on it for several epochs, and discards that rollout. Its action is `MultiDiscrete([PWM levels, 2, 2])`: steering is a pulse duty, and throttle and brake are binary. The adapter resolves an overlapping throttle/brake request in favour of braking, so both are never sent together. A configurable initial bias helps a fresh PPO policy drive forward; learning can override it. An optional fixed PPO teacher and ghost-action imitation remain available.
+
+TQC is **off-policy**: it reuses past decisions from a replay buffer. Its `Box(2)` action contains steering in [-1, 1] and signed longitudinal demand in [-1, 1]. Positive longitudinal demand means throttle duty; negative means brake duty. Deterministic pulse scheduling turns that demand into digital physics-tick actions. The learner's replay action is the exact continuous action executed through this adapter. TQC uses automatic entropy tuning and a seeded, forward-biased replay warmup until `learning_starts`. The mature policy has no forward guard, actor recovery snapshot, rehearsal, or track-specific rule.
+
+The `tiny`, `compact`, and `standard` architecture choices use two hidden layers of 64, 128, or 256 units. The GUI shows actual actor, critic, and total parameter counts when training starts. PPO often has higher decisions per second; TQC can use fewer simulator experiences but performs frequent gradient updates. Hardware, architecture, and update frequency determine speed.
+
+## What a training step means
+
+One environment step is one policy decision. `frame_skip` is the number of fixed physics ticks for that decision. A tick is reported by the simulator (usually around 1/60 second); the PWM scheduler emits a digital action for each tick. Increasing frame skip often improves throughput but leaves the policy less time to correct a mistake. TPS is environment steps per wall-clock second, including neural-network updates and simulator communication.
+
+`timesteps` is the **total** planned budget across curriculum phases. Full track and fixed/timed sections use one phase; sequential quarters uses five phases (Q1–Q4 and full); Q4 then full uses two. Random quarters samples a seeded quarter each episode. Custom mode accepts an explicit JSON list of full, section, timed, or random-quarter phases. Their positive `steps` must sum exactly to `timesteps`. The GUI's Curriculum tab shows the resolved plan; CLI users can pass `--curriculum custom --custom-phases phases.json` or a full v2 config file. The section completion bonus is a reward coefficient.
+
+## Rewards
+
+Choose **Balanced**, **Learning**, or **Pace** without editing 69 numbers. Existing named track profiles remain available. The Rewards tab offers six simple controls and shows their affected parameters; Advanced reveals every numerical coefficient with an explanation of its unit and effect. Save, duplicate, reset, or compare profiles. The exact resolved values are serialized with every model. Training never silently changes them.
+
+The reward system calculates named components for Progress, Guidance, Driving quality, Airborne behaviour, Milestones, and Failure. Each step logs every raw term plus category totals; the totals must sum to the raw reward. Both algorithms use normalized `ControlDemand`. For example, brake duty 0.05 incurs 5% of a per-second ground-brake penalty; PPO's binary brake remains full duty. The `reward_scale` multiplies the score sent to the learner, while event diagnostics retain raw points.
+
+The reference ghost defines route progress and lookahead. Optional ghost guidance rewards are separately controlled by the profile. A high reward for touching a barrier or a false landing penalty can teach the wrong driving line; inspect the per-term diagnostics and deterministic evaluation before deciding a profile helps.
+
+## Evaluation and models
+
+At `evaluation.interval_steps`, the runner releases the training simulator and drives a frozen policy deterministically on full-track seeded episodes. It reports finish rate, median/mean progress, best and median finished lap, and crash/off-track/stall rates. Champion ranking uses those results. The latest policy can regress without replacing champion. A stochastic training finish alone never promotes a champion.
 
 ```text
-python -m pip install -e ".[train,gui]"
-polybot-gui
+models/<track>/<algorithm>/
+  latest/policy.zip, metadata.json, replay.pkl (TQC)
+  champion/policy.zip, metadata.json
+  checkpoints/step-<N>/policy.zip, metadata.json, replay.pkl (TQC)
 ```
 
-The GUI runs PPO or TQC training in a worker thread using `TrainingService` and
-`TrainingManager`. A stop request finishes the current environment step and saves `latest.zip`.
-The manager implements resume, checkpoints, curriculum, and graceful stop.
+Metadata includes the v2 app and schema versions, architecture, parameter counts, observation and action schemas, track, reward profile, curriculum, complete configuration, training steps, physics ticks, elapsed wall time, seed, device, finish/crash totals, evaluation, and Git commit. Resume requires compatible track, action and observation schemas, architecture, and rewards. TQC resume also requires replay. No v1 model is loadable through this path.
 
-## Algorithms and actions
+## Observation and protocol
 
-PPO remains the default. Its action space is `MultiDiscrete([41, 2, 2])` with 41 steering duties,
-digital throttle, and digital brake. The existing `TeacherAnchoredPPO`, teacher KL, and expert
-imitation features remain PPO-only. PPO collects on-policy rollouts.
+Both algorithms receive the same normalized `polybot.observation.v2` vector: 45 state features followed by four values and one validity mask for each lookahead point (`45 + 5N`, so 105 values at N=12). State order is local velocity (3), acceleration (3), angular velocity (3), up vector (3), route progress, lateral and heading errors, pitch, roll, wheel contacts (4), suspension lengths (4), suspension velocities (4), wheel skids (4), actual steering, ghost relative position (3), ghost heading, ghost target speed, ghost action (3), and previous digital action (3). Lookahead points contain forward, right, up and curvature values. See `Telemetry.to_vector()` for the exact scaling and clipping. No algorithm-specific observation slice is masked.
 
-TQC uses `sb3-contrib` and the same telemetry observations and reward profile as PPO. Its action
-space is `Box(low=[-1, -1], high=[1, 1], dtype=float32)`: the first component is signed steering
-duty, the second is signed longitudinal duty (positive throttle, negative brake). Separate
-accumulators convert these to digital left/right/throttle/brake pulses at 1 ms physics ticks.
-Throttle and brake cannot be pressed together. The fractional pulse error carries across
-environment steps and resets at the next episode. The wire protocol is unchanged. TQC learns
-off-policy from a replay buffer with automatic entropy tuning by default.
+The simulator protocol remains `polybot.sim` version 2. The wire action is always digital steering {-1,0,1} and binary throttle/brake. The mock implements the same handshake/reset/step contract as the PolyModLoader adapter. See [protocol](protocol.md).
 
-TQC reward accounting uses the requested duty, not merely its sign: a 5% brake duty incurs 5%
-of the per-second ground-brake penalty, and control-change cost varies continuously with duty.
-The digital expert action is compared to continuous control using a linear, bounded similarity:
-steering similarity falls with half the absolute steering difference, while throttle and brake
-similarity fall with their absolute duty differences. This avoids a reward jump at zero.
-PPO's binary reward comparisons are unchanged.
+## Devices and diagnosis
 
-TQC is offered for benchmarking and sample-efficiency experiments; it is not assumed to be
-better than PPO. For a fair comparison, choose the same track, Summer 1 reward profile, seed,
-frame skip, and environment-step budget. The model metadata records the algorithm, seed,
-action schema, timesteps, simulator ticks, elapsed wall time, reward profile, best lap,
-finish/crash counts, and algorithm-specific hyperparameters. Episode rewards in the GUI and logs
-are raw game reward; the default `0.01` reward scale only changes values sent to the learner.
+`device=auto` prefers CPU for PPO's small MLP updates and uses CUDA for TQC only if PyTorch can initialize it. The selection reason is logged. Explicit `cuda` fails when unavailable and overrides PPO's CPU preference. `polybot-doctor` reports PyTorch version, CUDA build, availability, GPU count/name, and NVIDIA driver visibility. `polybot-doctor --smoke ppo` or `--smoke tqc` builds a tiny policy on the selected device. A modest GPU may not increase TPS when the simulator or small updates dominate.
 
-Example GUI launches:
+For a fresh run, start with Balanced rewards, compact architecture, 2–4 TQC train frequency on modest hardware, and an evaluation interval long enough to avoid spending most of the run on testing. The GUI warns about unusual combinations but never silently changes them. For all exact meanings, hover over a field; the descriptions come from `training/parameters.py` and are checked by tests.
 
-```powershell
-polybot-gui --algorithm ppo --fresh
-polybot-gui --algorithm tqc --tqc-architecture standard --fresh
-```
-
-Example headless runs on the local mock simulator:
-
-```powershell
-polybot-train --algorithm ppo --backend mock --track mock/gentle-s --seed 7 --timesteps 100000
-polybot-train --algorithm tqc --backend mock --track mock/gentle-s --seed 7 --timesteps 100000
-```
-
-For TQC, `--output-root PATH` changes the root of the algorithm-scoped registry.
-The older PPO command keeps `--model-out PATH` for its original archive layout.
-
-For real PolyTrack training, select `--backend websocket --track current` after loading the mod
-and a ghost reference. The GUI offers the complete editable reward profile. The TQC command can
-also load a saved profile with `--reward-profile summer-1-balanced`.
-
-`Summer 1 - no teacher` disables ghost pose, action, and speed rewards. TQC still uses the
-selected ghost for route progress and lookahead. This profile doubles the reference corridor
-from the adapter's nominal 5 m to 10 m for speed shaping and geometric off-track checks, so
-early exploration is not judged against the ghost's exact racing line. The corridor is an
-approximation around the reference, not a measurement of the road edge.
-This profile also ignores the simulator's untyped collision impulse: a landing can produce
-the same signal as a wall hit. Off-track and stall detection still end failed episodes.
-When reward settings change on TQC resume, the trainer keeps the policy and starts a new
-replay buffer so old rewards and terminal flags do not keep training it.
-Failed episodes claw back 5.5 reward units per metre gained from their own start point;
-completed curriculum sections keep their progress and section bonus.
-
-TQC defaults: actor and critics each use two 256-unit hidden layers (`standard`); learning rate
-`0.0003`; replay buffer `1,000,000`; learning starts `10,000`; batch size `256`; gamma `0.999`;
-tau `0.005`; train frequency `1`; gradient steps `1`; entropy coefficient `auto`. The
-`compact` preset uses two 128-unit layers. The library defaults apply to TQC quantile count,
-quantiles dropped, and critic count. These settings are separate from PPO settings in config,
-metadata, and the GUI.
-
-For a small first Summer 1 experiment, `tiny` uses two 64-unit layers. With 105 observations and
-two continuous actions, the actual model has **11,204 actor parameters** for inference and
-**61,992 total policy parameters** across actor, quantile critics, and target critics. These
-totals are not directly comparable to PPO's actor/value network counts. Select the existing
-`Summer 1 - full bootstrap` profile for a fresh policy; keep that profile and seed fixed during
-the first 100,000-step diagnostic run. The replay buffer is saved alongside each TQC archive,
-so a non-converged run can be resumed.
-
-For the Summer 1 run, use `powershell -File tools/launch_summer1_tqc.ps1` after the
-PolyTrack mod is connected and its ghost reference is loaded. This reproducible GUI launch uses
-the `tiny` actor, 30-tick frame skip, 60-second episode cap, 100,000 environment timesteps,
-seed 0, full-track curriculum, `Summer 1 - full bootstrap`, and reward scale `0.01`. TQC uses
-learning rate `0.0003`, a 250,000-transition replay buffer, 5,000 learning-start steps, batch
-256, gamma `0.999`, tau `0.005`, one training update per two steps, and automatic entropy tuning
-initialized at `0.01` (`auto_0.01`). The launch selects CUDA and fails loudly if it is unavailable.
-It checkpoints every 25,000 steps. The buffer holds the full 100,000-step first run with room
-for later resumption, while using less CPU memory and disk than the general 1,000,000-transition
-default. Starting updates after 5,000 steps gives the diagnostic run more learning time; the
-The GUI reports rolling longitudinal action fractions, deterministic actor output, and critic
-estimates in the JSONL log to expose a policy that stops driving after updates begin.
-
-The first live diagnostic exposed a startup difference: PPO began with a forward-driving prior,
-while TQC's initial uniform replay collection repeatedly stalled near the start. TQC now gives
-80% of warmup actions forward throttle duty between 0.65 and 1.0 with steering noise
-(standard deviation 0.45); the other 20% remain uniform for broader exploration. A +1.0 bias
-on the initial actor longitudinal mean also favors forward motion after warmup. These values are
-recorded with TQC hyperparameters and can be changed in the GUI. They do not change the reward
-profile or the digital worker protocol.
-
-The first 15,189-step live run exposed a learning failure at the 5,000-step warmup boundary:
-warmup actions were 89% forward and reached about 2.2% progress per episode, but later actions
-were about half brake and nearly all episodes stalled below 0.2% progress. The actor's learned
-deterministic longitudinal action became negative, while the critic slightly preferred braking
-to throttle at sampled start observations. The original `auto` entropy setting starts at alpha
-1.0; with reward scale 0.01, this made the entropy bonus far larger than the dense driving
-reward at the start of learning. Initializing automatic entropy tuning at 0.01 keeps exploration
-adaptive without swamping the task reward. Broader warmup steering explores ways around the
-early barrier instead of filling replay with almost identical failed straight-line runs. The
-initial actor bias is applied only on model creation; no action is forced after warmup.
-
-TQC throughput drops when replay warmup ends because every new transition then triggers an
-actor/critic update. A small 64x64 MLP can be limited by GPU launch overhead: the T500 is
-usable, but it is not necessarily faster than a CPU with a few PyTorch threads. The live
-policy probes are batched and cached for 500 steps to keep diagnostic overhead small.
-
-The next Summer 1 diagnostic uses one update per two environment steps to reduce load on the
-ThinkPad. It also shifts sampled longitudinal actions toward throttle by up to 0.7 after
-warmup, decaying linearly to zero over 25,000 steps. The shifted action is both executed and
-stored in replay, so the critic sees the action that caused each transition. This is a
-temporary exploration prior; it does not alter the actor's weights or force throttle after
-the schedule expires. It addresses observed premature braking before the first jump, where
-the corrected-reward run braked in about half of sampled actions at 10-15% progress versus
-about 14% in the earlier run.
-
-Summer 1 runs around 50,000 steps exposed another reward failure: repeated episodes ended at
-the same 23.4% barrier while collecting about twice the one-way progress reward. The route
-projection can move backward by more than the per-step reverse cap, then credit that same
-distance again on the way forward. Dense progress is now credited only when an episode sets
-a new route-progress high-water mark; backward movement can still incur its capped penalty.
-This reward-accounting change applies to PPO and TQC. A fresh TQC replay buffer is required
-to evaluate it because saved transitions retain their old rewards.
-
-## Devices and network presets
-
-New models default to separate actor and critic networks of `1024, 1024, 512` (`xl`). With the
-105-value protocol-v2 observation (12 lookahead samples) and the default 41 PWM steering levels
-this is 3,389,486 trainable parameters. `legacy`, `small` (66,094 parameters), `medium`, and `large`
-remain available. Older protocol-v1 policies used 81 observations; they require migration before
-use with the current observation layout.
-
-For a lightweight policy, `compact` uses two 104-unit layers per branch: 48,718 parameters
-with 12 lookahead samples and 41 PWM steering levels.
-
-`auto` selects CUDA only when PyTorch can initialize a GPU and identify it; otherwise it uses CPU
-and logs why. `cpu` forces CPU. Explicit `cuda` fails before training when unusable. Run
-`polybot-doctor` for Python, PyTorch build, NVIDIA GPU, cuDNN, availability, device count, and
-selected-device diagnostics. `polybot-doctor --device cuda --smoke-tqc` also creates a small TQC
-policy and checks that its parameters are actually on CUDA.
-
-### Windows NVIDIA installation
-
-Create a fresh virtual environment and install the CPU-compatible training dependencies:
-
-```powershell
-py -3.11 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install --upgrade pip
-.\.venv\Scripts\python.exe -m pip install torch --index-url https://download.pytorch.org/whl/cpu
-.\.venv\Scripts\python.exe -m pip install -e ".[train,gui,dev]"
-.\.venv\Scripts\polybot-doctor.exe
-```
-
-For NVIDIA acceleration, select the current stable Windows/Pip/CUDA command on the
-[official PyTorch installer](https://pytorch.org/get-started/locally/). In the same virtual
-environment, replace a CPU-only wheel with the chosen CUDA-enabled distribution. For example,
-if the installer currently offers the CUDA 12.6 channel:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-.\.venv\Scripts\polybot-doctor.exe --device cuda --smoke-tqc
-```
-
-Use the index URL shown by the installer if it changes; this example is not a permanent version
-pin. The PyTorch wheel supplies its CUDA runtime. You do not need the full CUDA Toolkit just to
-train with the wheel. A compatible NVIDIA driver is still required. `.[train]` installs
-`stable-baselines3` and matching `sb3-contrib` versions, which pull in PyTorch; it cannot
-guarantee that the selected PyTorch wheel has CUDA support. If `nvidia-smi` sees a GPU but
-`polybot-doctor` reports a CPU-only build, install the CUDA wheel. If the build has CUDA but
-initialization fails, check the driver and Windows GPU availability rather than reinstalling
-the CUDA Toolkit.
-
-## Track registry and compatibility
-
-New models live under `models/<track-slug>/ppo/` or `models/<track-slug>/tqc/`. Each algorithm
-has its own `latest.zip`, `best.zip`, metadata, and checkpoints. TQC also saves matching
-`*.replay.pkl` buffers; keep the buffer alongside the archive to resume TQC. Existing PPO
-archives directly under `models/<track-slug>/` are recognized without moving or rewriting them.
-Metadata binds the
-track ID, observation/action schema, architecture, PWM settings, hyperparameters, reward settings,
-seed, training counters, version, and commit.
-
-Legacy archives without metadata are never assumed to use PWM. To evaluate or play one, pass
-`--algorithm ppo` explicitly and select the matching digital action mode. Registry resume checks
-reject algorithm, track, observation, action, and architecture mismatches. Fresh training only
-archives the selected algorithm's own latest model and never moves legacy PPO archives.
-
-## PWM
-
-The policy selects one of 41 evenly spaced steering duties from -1 through +1. A deterministic
-accumulator spreads pulses across every 1 ms physics tick within `frame_skip`; throttle and brake
-remain digital. Each simulator request still contains only steering -1, 0, or +1. Changing steering
-direction resets accumulated error, and resetting an episode resets the scheduler. Digital mode
-retains the original `MultiDiscrete([3,2,2])` action schema.
-
-## Evaluation and promotion
-
-Evaluate a candidate over multiple laps and retain lap times, finishes, crashes, mean, median, and
-best time. Promotion is deliberate: `ModelRegistry.promote(candidate, metadata)` copies the chosen
-archive to the track's `best.zip` and updates metadata. A newer checkpoint never replaces best by
-itself, and the trainer never pushes to GitHub. If best archives exceed normal GitHub limits, track
-`models/**/best.zip` with Git LFS.
-
-## Reward profiles
-
-The GUI reward table is generated from `RewardConfig` and exposes every coefficient and threshold.
-Selecting a profile loads all values into the editable table. Type a new name (or select an existing
-custom name), edit values, and choose **Save reward profile**. Custom profiles are stored as readable
-JSON files under `profiles/rewards/` and can be edited, copied, or version-controlled.
-
-## Ghost control guidance
-
-PPO uses a training reward scale of `0.01` by default; episode scores and reward
-breakdowns remain in their original units. Actor and critic gradients are clipped
-separately. Each PPO update writes value loss, explained variance, policy statistics,
-and critic saturation to the session JSONL log. The GUI shows a short update summary.
-When changing the reward scale, start a fresh model: an older critic predicts values
-in the previous reward units.
-
-Expert control imitation fades with position and heading error relative to the ghost,
-using Gaussian scales of 2 metres and 0.35 radians. This lets the policy learn
-acceleration even when it starts slower than the ghost. Guidance rewards require
-forward, on-track progress; the recovery profile also penalizes sustained low speed.
-The controls remain digital demonstration targets, so PPO must still learn PWM
-intermediate levels through exploration.
-
-With a reward profile that supplies an expert-action bonus, the trainer can also fit the
-ghost's recorded steering, throttle, and brake directly. The GUI's **Expert imitation
-coefficient** controls this extra policy loss: `1.0` is the default and `0.0` disables
-it. This setting is separate from **Teacher KL coefficient**, which requires a fixed
-teacher model archive.
-
-To compare guidance fairly, first stop training cleanly and copy `latest.zip` and
-`latest.metadata.json` to a named checkpoint. Resume two runs from that same checkpoint,
-using the same reward profile, track, seed, and training budget. Set the expert imitation
-coefficient to `1.0` for one run and `0.0` for the other, and use separate model output
-locations so their `latest.zip` files do not overwrite each other. Compare evaluation
-laps rather than training reward alone.
+The same central help is available without the GUI through `polybot-train --parameter-help`.

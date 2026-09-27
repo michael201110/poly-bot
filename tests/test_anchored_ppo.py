@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import torch
 
-from polybot.training.anchored_ppo import categorical_teacher_kl, expert_action_loss
+from polybot.algorithms.ppo_teacher import categorical_teacher_kl, expert_action_loss
 
 
 def test_teacher_kl_is_zero_for_identical_policy_logits() -> None:

@@ -1,1055 +1,308 @@
-"""Command-line entry points for smoke testing, training, and driving."""
+"""CLI entry points over the same v2 configuration and runner used by the GUI."""
 
 from __future__ import annotations
 
 import argparse
 import json
-import math
-import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
+from polybot.algorithms.registry import ALGORITHMS, backend_for
 from polybot.controller import CenterlineController
-from polybot.env import PolyTrackEnv, RewardConfig
 from polybot.mock import MockSimulatorTransport
-from polybot.protocol import ProtocolViolation
-from polybot.transport import SimulatorTransport, WebSocketServerTransport
+from polybot.models.registry import ModelRegistry
+from polybot.training.config import (
+    CurriculumConfig,
+    CurriculumPhaseConfig,
+    EvaluationConfig,
+    PPOConfig,
+    TQCConfig,
+    TrainingConfig,
+)
+from polybot.training.devices import resolve_device
+from polybot.training.evaluation import evaluate_model
+from polybot.training.reward_profiles import RewardProfileStore
+from polybot.training.runner import TrainingRunner
 
 
-def _model_algorithm(path: Path, explicit: str | None) -> tuple[str, object | None]:
-    """Use archive metadata when present, otherwise demand an explicit choice."""
-    from polybot.training.models import ModelRegistry
-
-    archive = path if path.suffix == ".zip" else path.with_suffix(".zip")
-    try:
-        metadata = ModelRegistry.metadata_for_archive(archive)
-    except FileNotFoundError:
-        if explicit is None:
-            raise ValueError("model metadata is missing; pass --algorithm ppo or tqc") from None
-        return explicit, None
-    algorithm = metadata.algorithm.lower()
-    if explicit is not None and explicit != algorithm:
-        raise ValueError(f"model metadata says {algorithm}, not {explicit}")
-    return algorithm, metadata
-
-
-def _validate_playback_metadata(
-    metadata: object | None, algorithm: str, track_id: str, lookahead_count: int,
-    *, allow_track_override: bool = False,
-) -> None:
-    if metadata is None:
-        return
-    from polybot.training.models import IncompatibleModelError, observation_schema_for_algorithm
-
-    expected_actions = (
-        {"continuous-pwm-v1"} if algorithm == "tqc" else
-        {"pwm-multidiscrete-v1", "digital-multidiscrete-v1"}
-    )
-    mismatches = []
-    if metadata.observation_schema != observation_schema_for_algorithm(algorithm):
-        mismatches.append("observation schema")
-    if metadata.action_schema not in expected_actions:
-        mismatches.append("action schema")
-    if metadata.lookahead_count != lookahead_count:
-        mismatches.append("lookahead count")
-    if metadata.track_id != track_id and not allow_track_override:
-        mismatches.append("track ID")
-    if mismatches:
-        raise IncompatibleModelError("incompatible " + ", ".join(mismatches))
+def _common(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--algorithm", choices=ALGORITHMS)
+    parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
+    parser.add_argument("--track-name")
+    parser.add_argument("--track-id")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--frame-skip", type=int)
+    parser.add_argument("--timesteps", type=int, default=100_000)
+    parser.add_argument("--episode-seconds", type=float, default=60)
+    parser.add_argument("--lookahead", type=int, default=12)
+    parser.add_argument("--reward-profile")
+    parser.add_argument("--reward-scale", type=float, default=0.01)
+    parser.add_argument("--curriculum", choices=(
+        "full", "section", "quarters", "quarters-randomised", "q4-full", "timed", "custom"
+    ), default="full")
+    parser.add_argument("--custom-phases", type=Path, help="JSON list of custom phases whose steps sum to --timesteps")
+    parser.add_argument("--section-start", type=float)
+    parser.add_argument("--section-end", type=float)
+    parser.add_argument("--time-start", type=float)
+    parser.add_argument("--time-end", type=float)
+    parser.add_argument("--eval-interval", type=int, default=10_000)
+    parser.add_argument("--eval-episodes", type=int, default=3)
+    parser.add_argument("--checkpoint-interval", type=int, default=10_000)
+    parser.add_argument("--output-root", type=Path, default=Path("models"))
+    parser.add_argument("--log-root", type=Path, default=Path("logs"))
 
 
-def _common_arguments(
-    parser: argparse.ArgumentParser,
-    *,
-    track_default: str | None = "mock/gentle-s",
-    frame_skip_default: int | None = 4,
-    max_steps_default: int | None = 2_000,
-) -> None:
-    track_help = "simulator track identifier"
-    frame_skip_help = "physics ticks held per action"
-    if track_default is None:
-        track_help += " (default: mock/gentle-s for mock, current for WebSocket)"
-    if frame_skip_default is None:
-        frame_skip_help += " (default: 4 for mock, 10 for WebSocket)"
-    max_steps_help = "Gymnasium episode limit"
-    if max_steps_default is None:
-        max_steps_help += " (default: 2000 for mock, 30000 for WebSocket)"
-    parser.add_argument("--track", default=track_default, help=track_help)
-    parser.add_argument("--seed", type=int, default=0, help="episode/trainer seed")
-    parser.add_argument("--lookahead", type=int, default=12, help="future track sample count")
-    parser.add_argument(
-        "--frame-skip",
-        type=int,
-        default=frame_skip_default,
-        help=frame_skip_help,
-    )
-    parser.add_argument(
-        "--max-steps",
-        type=int,
-        default=max_steps_default,
-        help=max_steps_help,
-    )
+def _algorithm_options(parser: argparse.ArgumentParser) -> None:
+    ppo = parser.add_argument_group("PPO")
+    ppo.add_argument("--ppo-architecture", choices=("tiny", "compact", "standard"))
+    ppo.add_argument("--ppo-lr", type=float)
+    ppo.add_argument("--ppo-rollout", type=int)
+    ppo.add_argument("--ppo-batch", type=int)
+    ppo.add_argument("--ppo-epochs", type=int)
+    ppo.add_argument("--ppo-gamma", type=float)
+    ppo.add_argument("--ppo-gae-lambda", type=float)
+    ppo.add_argument("--ppo-entropy", type=float)
+    ppo.add_argument("--ppo-pwm-levels", type=int)
+    ppo.add_argument("--teacher-model")
+    ppo.add_argument("--teacher-kl", type=float)
+    ppo.add_argument("--ppo-imitation", type=float)
+    ppo.add_argument("--ppo-initial-forward-bias", type=float)
+    ppo.add_argument("--ppo-initial-steering-bias", type=float)
+    tqc = parser.add_argument_group("TQC")
+    tqc.add_argument("--tqc-architecture", choices=("tiny", "compact", "standard"))
+    tqc.add_argument("--tqc-lr", type=float)
+    tqc.add_argument("--tqc-replay", type=int)
+    tqc.add_argument("--tqc-learning-starts", type=int)
+    tqc.add_argument("--tqc-batch", type=int)
+    tqc.add_argument("--tqc-gamma", type=float)
+    tqc.add_argument("--tqc-tau", type=float)
+    tqc.add_argument("--tqc-train-frequency", type=int)
+    tqc.add_argument("--tqc-gradient-steps", type=int)
+    tqc.add_argument("--tqc-entropy")
+    tqc.add_argument("--tqc-warmup-forward", type=float)
+    tqc.add_argument("--tqc-warmup-steering-std", type=float)
 
 
-def _websocket_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.set_defaults(host="127.0.0.1", port=8765)
-    parser.add_argument(
-        "--connect-timeout",
-        type=float,
-        default=300.0,
-        help="seconds to wait for the PolyTrack mod to connect",
-    )
-    parser.add_argument(
-        "--request-timeout",
-        type=float,
-        default=60.0,
-        help="seconds to wait for each simulator response",
-    )
-
-
-def _apply_backend_defaults(args: argparse.Namespace) -> None:
-    if args.track is None:
-        args.track = "current" if args.backend == "websocket" else "mock/gentle-s"
-    if args.frame_skip is None:
-        args.frame_skip = 10 if args.backend == "websocket" else 4
-    if args.max_steps is None:
-        args.max_steps = 30_000 if args.backend == "websocket" else 2_000
-
-
-def _validate_websocket_arguments(
-    parser: argparse.ArgumentParser, args: argparse.Namespace
-) -> None:
-    if args.connect_timeout <= 0:
-        parser.error("--connect-timeout must be positive")
-    if args.request_timeout <= 0:
-        parser.error("--request-timeout must be positive")
-    if args.host != "127.0.0.1" or args.port != 8765:
-        parser.error("the PolyTrack mod currently requires --host 127.0.0.1 --port 8765")
-
-
-def _make_transport(args: argparse.Namespace) -> SimulatorTransport:
-    if getattr(args, "backend", "websocket") == "mock":
-        return MockSimulatorTransport()
-
-    transport = WebSocketServerTransport(
-        args.host,
-        args.port,
-        connect_timeout_s=args.connect_timeout,
-        request_timeout_s=args.request_timeout,
-    )
-    print(f"Waiting for the local PolyTrack mod at {transport.endpoint} ...", flush=True)
-    return transport
-
-
-def _episode_summary(
-    episode: int,
-    seed: int,
-    info: dict[str, object],
-    total_reward: float,
-) -> dict[str, object]:
-    return {
-        "episode": episode,
-        "seed": seed,
-        "finished": "finish" in info["events"],
-        "crashed": "crash" in info["events"],
-        "elapsed_s": round(float(info["elapsed_s"]), 3),
-        "progress_m": round(float(info["route_progress_m"]), 3),
-        "reward": round(total_reward, 3),
+def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> TrainingConfig:
+    if args.algorithm is None:
+        parser.error("--algorithm is required when --config is not provided")
+    values = vars(args)
+    other_prefix = "tqc_" if args.algorithm == "ppo" else "ppo_"
+    if any(value is not None for key, value in values.items() if key.startswith(other_prefix)):
+        parser.error(f"{other_prefix.removesuffix('_').upper()} settings do not apply to {args.algorithm.upper()}")
+    if args.algorithm == "tqc" and (args.teacher_model or args.teacher_kl is not None):
+        parser.error("teacher settings only apply to PPO")
+    shared = {
+        "architecture": values[f"{args.algorithm}_architecture"],
+        "learning_rate": values[f"{args.algorithm}_lr"],
+        "batch_size": values[f"{args.algorithm}_batch"],
+        "gamma": values[f"{args.algorithm}_gamma"],
     }
-
-
-def _reset_drive_when_ready(
-    env: PolyTrackEnv,
-    *,
-    seed: int,
-    timeout_s: float,
-) -> tuple[object, dict[str, object]]:
-    """Wait through menu/reference states instead of terminating the driver."""
-
-    deadline = time.monotonic() + timeout_s
-    waiting_for: str | None = None
-    while True:
-        try:
-            return env.reset(seed=seed)
-        except ProtocolViolation as exc:
-            message = str(exc)
-            if not message.startswith(("game_not_ready:", "missing_reference:")):
-                raise
-            if time.monotonic() >= deadline:
-                raise
-            if message != waiting_for:
-                print(
-                    f"Waiting for PolyTrack: {message.split(':', 1)[1].strip()}",
-                    flush=True,
-                )
-                waiting_for = message
-            time.sleep(0.5)
-
-
-def _terminal_restart_requested() -> bool:
-    """Return true when R is waiting in an interactive Windows terminal."""
-
-    if sys.platform != "win32":
-        return False
-    import msvcrt
-
-    restart = False
-    while msvcrt.kbhit():
-        restart = msvcrt.getwch().lower() == "r" or restart
-    return restart
-
-
-def _bias_initial_policy_forward(model: object, strength: float) -> None:
-    """Bias PPO's initial MultiDiscrete logits toward straight throttle."""
-
-    if strength == 0:
-        return
-    import torch
-
-    action_net = getattr(getattr(model, "policy", None), "action_net", None)
-    bias = getattr(action_net, "bias", None)
-    if bias is None or bias.numel() != 7:
-        raise RuntimeError("forward bias requires a MultiDiscrete([3, 2, 2]) PPO policy")
-    with torch.no_grad():
-        # Logit layout: steer[-1,0,1], throttle[0,1], brake[0,1].
-        bias[1] += strength * 0.5
-        bias[4] += strength
-        bias[5] += strength
-
-
-def smoke_main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run the baseline against the mock simulator")
-    _common_arguments(parser)
-    parser.add_argument("--episodes", type=int, default=3)
-    args = parser.parse_args(argv)
-
-    if args.episodes < 1:
-        parser.error("--episodes must be positive")
-    env = PolyTrackEnv(
-        MockSimulatorTransport(),
-        track_id=args.track,
-        lookahead_count=args.lookahead,
-        frame_skip=args.frame_skip,
-        max_episode_steps=args.max_steps,
+    if args.algorithm == "ppo":
+        mapping = {
+            "rollout_steps": args.ppo_rollout, "epochs": args.ppo_epochs,
+            "gae_lambda": args.ppo_gae_lambda,
+            "entropy_coefficient": args.ppo_entropy,
+            "pwm_levels": args.ppo_pwm_levels,
+            "teacher_model": args.teacher_model,
+            "teacher_kl_coefficient": args.teacher_kl,
+            "imitation_coefficient": args.ppo_imitation,
+            "initial_forward_bias": args.ppo_initial_forward_bias,
+            "initial_steering_bias": args.ppo_initial_steering_bias,
+        }
+        mapping.update(shared)
+        specific: dict[str, Any] = {"ppo": PPOConfig(**{
+            key: value for key, value in mapping.items() if value is not None
+        })}
+    else:
+        mapping = {
+            "replay_capacity": args.tqc_replay,
+            "learning_starts": args.tqc_learning_starts,
+            "tau": args.tqc_tau,
+            "train_frequency": args.tqc_train_frequency,
+            "gradient_steps": args.tqc_gradient_steps,
+            "entropy": args.tqc_entropy,
+            "warmup_forward_fraction": args.tqc_warmup_forward,
+            "warmup_steering_std": args.tqc_warmup_steering_std,
+        }
+        mapping.update(shared)
+        specific = {"tqc": TQCConfig(**{
+            key: value for key, value in mapping.items() if value is not None
+        })}
+    backend = args.backend
+    track_name = args.track_name or ("Summer 1" if backend == "websocket" else "Mock straight")
+    track_id = args.track_id or ("current" if backend == "websocket" else "mock/straight")
+    profile = args.reward_profile or "Balanced"
+    rewards = RewardProfileStore().load(profile)
+    return TrainingConfig(
+        algorithm=args.algorithm, backend=backend, track_name=track_name, track_id=track_id,
+        device=args.device, seed=args.seed,
+        frame_skip=args.frame_skip or (30 if backend == "websocket" else 4),
+        timesteps=args.timesteps, max_episode_seconds=args.episode_seconds,
+        lookahead_count=args.lookahead, reward_profile=profile,
+        reward_scale=args.reward_scale, checkpoint_interval=args.checkpoint_interval,
+        output_root=args.output_root, log_root=args.log_root,
+        curriculum=CurriculumConfig(
+            args.curriculum, args.section_start, args.section_end,
+            args.time_start, args.time_end,
+            tuple(CurriculumPhaseConfig(**phase) for phase in json.loads(
+                args.custom_phases.read_text(encoding="utf-8")
+            )) if args.custom_phases else (),
+        ),
+        evaluation=EvaluationConfig(args.eval_interval, args.eval_episodes),
+        **({"rewards": rewards} if rewards is not None else {}), **specific,
     )
-    controller = CenterlineController()
-    summaries: list[dict[str, object]] = []
-    try:
-        for episode in range(args.episodes):
-            _, info = env.reset(seed=args.seed + episode)
-            total_reward = 0.0
-            terminated = truncated = False
-            while not (terminated or truncated):
-                telemetry = env.latest_telemetry
-                assert telemetry is not None
-                _, reward, terminated, truncated, info = env.step(
-                    controller.policy_action(telemetry)
-                )
-                total_reward += reward
-            summaries.append(
-                {
-                    "episode": episode,
-                    "seed": args.seed + episode,
-                    "finished": "finish" in info["events"],
-                    "crashed": "crash" in info["events"],
-                    "steps": info["tick"] // args.frame_skip,
-                    "elapsed_s": round(float(info["elapsed_s"]), 3),
-                    "progress_m": round(float(info["route_progress_m"]), 3),
-                    "reward": round(total_reward, 3),
-                }
-            )
-    finally:
-        env.close()
 
-    print(json.dumps(summaries, indent=2))
-    return 0 if all(bool(summary["finished"]) for summary in summaries) else 1
+
+def _event(event: dict[str, Any]) -> None:
+    if event["type"] in {"started", "phase", "episode", "evaluation", "champion", "completed", "stopped"}:
+        print(json.dumps(event, allow_nan=False), flush=True)
 
 
 def train_main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Train PPO or TQC against a PolyBot simulator")
-    _common_arguments(
-        parser,
-        track_default=None,
-        frame_skip_default=None,
-        max_steps_default=None,
-    )
-    parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
-    parser.add_argument("--algorithm", choices=("ppo", "tqc"), default="ppo")
-    _websocket_arguments(parser)
-    parser.add_argument("--timesteps", type=int, default=100_000)
-    parser.add_argument(
-        "--architecture", choices=("legacy", "compact", "small", "medium", "large", "xl"),
-        default="xl",
-    )
-    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--pwm", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--pwm-levels", type=int, default=41)
-    parser.add_argument("--reward-profile")
-    parser.add_argument("--reward-scale", type=float, default=0.01)
-    parser.add_argument(
-        "--tqc-architecture", choices=("tiny", "compact", "standard"), default="standard"
-    )
-    parser.add_argument("--tqc-learning-rate", type=float, default=3e-4)
-    parser.add_argument("--tqc-buffer-size", type=int, default=1_000_000)
-    parser.add_argument("--tqc-learning-starts", type=int, default=10_000)
-    parser.add_argument("--tqc-batch-size", type=int, default=256)
-    parser.add_argument("--tqc-gamma", type=float, default=0.999)
-    parser.add_argument("--tqc-tau", type=float, default=0.005)
-    parser.add_argument("--tqc-train-freq", type=int, default=1)
-    parser.add_argument("--tqc-gradient-steps", type=int, default=1)
-    parser.add_argument("--tqc-ent-coef", default="auto_0.01")
-    parser.add_argument("--tqc-forward-prior-initial", type=float, default=0.0)
-    parser.add_argument("--tqc-forward-prior-steps", type=int, default=0)
-    parser.add_argument("--tqc-success-demo-path", default="")
-    parser.add_argument("--tqc-forward-guard-progress-ratio", type=float, default=0.0)
-    parser.add_argument("--tqc-recovery-anchor-strength", type=float, default=0.0)
-    parser.add_argument(
-        "--max-episodes",
-        type=int,
-        default=0,
-        help="stop and save after this many episodes; 0 uses the timestep limit",
-    )
-    parser.add_argument("--curriculum-last-fraction", type=float, default=0.0)
-    parser.add_argument("--curriculum-probability", type=float, default=0.0)
-    parser.add_argument("--curriculum-start-ratio", type=float, default=None)
-    parser.add_argument("--curriculum-end-ratio", type=float, default=None)
-    parser.add_argument("--curriculum-start-s", type=float, default=None)
-    parser.add_argument("--curriculum-end-s", type=float, default=None)
-    parser.add_argument(
-        "--learning-rate",
-        type=float,
-        default=1e-4,
-        help="PPO learning rate; use a smaller value for late-stage fine-tuning",
-    )
-    parser.add_argument(
-        "--gamma",
-        type=float,
-        default=0.9995,
-        help="PPO reward discount; values near 1 carry lap-time rewards farther back",
-    )
-    parser.add_argument(
-        "--gae-lambda",
-        type=float,
-        default=0.995,
-        help="PPO generalized-advantage smoothing factor",
-    )
-    parser.add_argument(
-        "--entropy-coef",
-        type=float,
-        default=0.001,
-        help=(
-            "PPO entropy coefficient: positive explores more, while a small negative "
-            "value favors a more decisive policy"
-        ),
-    )
-    parser.add_argument("--ghost-pose-reward", type=float, default=18.0)
-    parser.add_argument("--barrier-contact-penalty", type=float, default=-50.0)
-    parser.add_argument("--finish-bonus", type=float, default=1000.0)
-    parser.add_argument("--finish-fast-bonus", type=float, default=2000.0)
-    parser.add_argument("--finish-target-s", type=float, default=22.0)
-    parser.add_argument("--finish-pace-decay", type=float, default=1.5)
-    parser.add_argument("--ground-slip-penalty", type=float, default=-1000.0)
-    parser.add_argument("--ground-slip-tolerance-deg", type=float, default=5.0)
-    parser.add_argument(
-        "--forward-bias",
-        type=float,
-        default=1.5,
-        help="initial PPO logit bias toward straight throttle and no brake; 0 disables it",
-    )
-    parser.add_argument("--model-out", type=Path, default=Path("models/polybot-ppo"))
-    parser.add_argument(
-        "--output-root", type=Path,
-        help="TQC registry root; models are stored under <root>/<track>/tqc/",
-    )
-    parser.add_argument(
-        "--resume",
-        type=Path,
-        default=None,
-        help="resume training from an existing PPO model",
-    )
-    parser.add_argument(
-        "--checkpoint-episodes",
-        type=int,
-        default=5,
-        help="save the latest model plus an archive after this many episode restarts; 0 disables",
-    )
-    parser.add_argument(
-        "--tensorboard-log",
-        type=Path,
-        default=None,
-        help="optional TensorBoard output directory (requires tensorboard)",
-    )
-    parser.add_argument(
-        "--progress-bar",
-        action="store_true",
-        help="show Stable-Baselines progress UI (requires tqdm and rich)",
-    )
+    parser = argparse.ArgumentParser(description="Train a v2 PPO or TQC policy")
+    parser.add_argument("--parameter-help", action="store_true",
+                        help="print the central plain-language parameter reference")
+    parser.add_argument("--config", type=Path, help="v2 JSON config shared with the GUI")
+    parser.add_argument("--resume", nargs="?", const="latest")
+    _common(parser)
+    _algorithm_options(parser)
     args = parser.parse_args(argv)
-    _apply_backend_defaults(args)
-
-    if args.timesteps < 1:
-        parser.error("--timesteps must be positive")
-    if args.max_episodes < 0:
-        parser.error("--max-episodes must be non-negative")
-    if args.learning_rate <= 0:
-        parser.error("--learning-rate must be positive")
-    if not 0 < args.gamma <= 1:
-        parser.error("--gamma must be in (0, 1]")
-    if not 0 < args.gae_lambda <= 1:
-        parser.error("--gae-lambda must be in (0, 1]")
-    if not -0.1 <= args.entropy_coef <= 0.1:
-        parser.error("--entropy-coef must be between -0.1 and 0.1")
-    if args.ghost_pose_reward < 0:
-        parser.error("--ghost-pose-reward must be non-negative")
-    if args.barrier_contact_penalty > 0:
-        parser.error("--barrier-contact-penalty must be zero or negative")
-    if args.finish_bonus < 0 or args.finish_fast_bonus < 0:
-        parser.error("finish rewards must be non-negative")
-    if args.finish_target_s <= 0 or args.finish_pace_decay <= 0:
-        parser.error("finish target and pace decay must be positive")
-    if args.ground_slip_penalty > 0:
-        parser.error("--ground-slip-penalty must be zero or negative")
-    if not 0 <= args.ground_slip_tolerance_deg < 90:
-        parser.error("--ground-slip-tolerance-deg must be in [0, 90)")
-    if not 0 <= args.curriculum_last_fraction <= 1:
-        parser.error("--curriculum-last-fraction must be in [0, 1]")
-    if not 0 <= args.curriculum_probability <= 1:
-        parser.error("--curriculum-probability must be in [0, 1]")
-    if (args.curriculum_start_ratio is None) != (args.curriculum_end_ratio is None):
-        parser.error("curriculum section start and end must be provided together")
-    if args.curriculum_start_ratio is not None and not (
-        0 <= args.curriculum_start_ratio < args.curriculum_end_ratio <= 1
-    ):
-        parser.error("curriculum section must satisfy 0 <= start < end <= 1")
-    if (args.curriculum_start_s is None) != (args.curriculum_end_s is None):
-        parser.error("timed curriculum start and end must be provided together")
-    if args.curriculum_start_s is not None and not (
-        0 <= args.curriculum_start_s < args.curriculum_end_s
-    ):
-        parser.error("timed curriculum must satisfy 0 <= start < end")
-    if args.curriculum_start_ratio is not None and args.curriculum_start_s is not None:
-        parser.error("progress and timed curriculum cannot be combined")
-    if args.forward_bias < 0:
-        parser.error("--forward-bias must be non-negative")
-    if args.checkpoint_episodes < 0:
-        parser.error("--checkpoint-episodes must be non-negative")
-    _validate_websocket_arguments(parser, args)
-
-    if args.algorithm == "tqc":
-        from polybot.training.config import TqcConfig, TrainingConfig
-        from polybot.training.reward_profiles import RewardProfileStore
-        from polybot.training.trainer import TrainingService
-
-        unsupported = {
-            "--model-out": args.model_out != Path("models/polybot-ppo"),
-            "--forward-bias": args.forward_bias != 1.5,
-            "--entropy-coef": args.entropy_coef != 0.001,
-            "--learning-rate": args.learning_rate != 1e-4,
-            "--gamma": args.gamma != 0.9995,
-            "--gae-lambda": args.gae_lambda != 0.995,
-            "--architecture": args.architecture != "xl",
-            "--pwm-levels": args.pwm_levels != 41,
-            "--no-pwm": not args.pwm,
-            "--curriculum-probability": args.curriculum_probability != 0,
-            "--curriculum-last-fraction": args.curriculum_last_fraction != 0,
-            "--checkpoint-episodes": args.checkpoint_episodes != 5,
-            "--tensorboard-log": args.tensorboard_log is not None,
-            "--progress-bar": args.progress_bar,
-        }
-        if any(unsupported.values()):
-            unsupported_names = ", ".join(k for k, enabled in unsupported.items() if enabled)
-            parser.error(
-                "unsupported TQC options: " + unsupported_names
-            )
-        reward_overrides = {
-            "--ghost-pose-reward": args.ghost_pose_reward != 18.0,
-            "--barrier-contact-penalty": args.barrier_contact_penalty != -50.0,
-            "--finish-bonus": args.finish_bonus != 1000.0,
-            "--finish-fast-bonus": args.finish_fast_bonus != 2000.0,
-            "--finish-target-s": args.finish_target_s != 22.0,
-            "--finish-pace-decay": args.finish_pace_decay != 1.5,
-            "--ground-slip-penalty": args.ground_slip_penalty != -1000.0,
-            "--ground-slip-tolerance-deg": args.ground_slip_tolerance_deg != 5.0,
-        }
-        if args.reward_profile and any(reward_overrides.values()):
-            parser.error("reward override flags cannot be combined with --reward-profile")
-        if args.reward_profile:
-            rewards = RewardProfileStore().load(args.reward_profile)
-        else:
-            rewards = RewardConfig(
-                imitation_bonus_per_s=args.ghost_pose_reward,
-                barrier_contact_penalty=args.barrier_contact_penalty,
-                finish_bonus=args.finish_bonus,
-                finish_fast_bonus=args.finish_fast_bonus,
-                finish_target_s=args.finish_target_s,
-                finish_pace_decay_per_s=args.finish_pace_decay,
-                ground_slip_penalty_per_rad_s=args.ground_slip_penalty,
-                ground_slip_tolerance_rad=math.radians(args.ground_slip_tolerance_deg),
-            )
-        try:
-            config = TrainingConfig(
-                algorithm="tqc", backend=args.backend, track_name=args.track,
-                track_id=args.track, device=args.device, seed=args.seed,
-                lookahead_count=args.lookahead, frame_skip=args.frame_skip,
-                timesteps=args.timesteps, output_root=args.output_root or Path("models"),
-                max_episode_steps=args.max_steps,
-                reward_scale=args.reward_scale, reward_profile=args.reward_profile,
-                max_episodes=args.max_episodes or None,
-                rewards=rewards, checkpoint_interval=100_000,
-                tqc=TqcConfig(
-                    architecture=args.tqc_architecture, learning_rate=args.tqc_learning_rate,
-                    buffer_size=args.tqc_buffer_size,
-                    learning_starts=args.tqc_learning_starts,
-                    batch_size=args.tqc_batch_size, gamma=args.tqc_gamma,
-                    tau=args.tqc_tau, train_freq=args.tqc_train_freq,
-                    gradient_steps=args.tqc_gradient_steps, ent_coef=args.tqc_ent_coef,
-                    forward_prior_initial=args.tqc_forward_prior_initial,
-                    forward_prior_steps=args.tqc_forward_prior_steps,
-                    success_demo_path=args.tqc_success_demo_path,
-                    forward_guard_progress_ratio=args.tqc_forward_guard_progress_ratio,
-                    recovery_anchor_strength=args.tqc_recovery_anchor_strength,
-                ),
-            )
-            output = TrainingService(config, lambda event: print(json.dumps(event))).run(
-                resume=args.resume, transport=_make_transport(args)
-            )
-        except (ValueError, RuntimeError) as exc:
-            parser.error(str(exc))
-        print(f"Saved TQC model to {output}")
-        return 0
-
-    tqc_overrides = {
-        "--tqc-architecture": args.tqc_architecture != "standard",
-        "--tqc-learning-rate": args.tqc_learning_rate != 3e-4,
-        "--tqc-buffer-size": args.tqc_buffer_size != 1_000_000,
-        "--tqc-learning-starts": args.tqc_learning_starts != 10_000,
-        "--tqc-batch-size": args.tqc_batch_size != 256,
-        "--tqc-gamma": args.tqc_gamma != 0.999,
-        "--tqc-tau": args.tqc_tau != 0.005,
-        "--tqc-train-freq": args.tqc_train_freq != 1,
-        "--tqc-gradient-steps": args.tqc_gradient_steps != 1,
-        "--tqc-ent-coef": args.tqc_ent_coef != "auto_0.01",
-        "--tqc-forward-prior-initial": args.tqc_forward_prior_initial != 0.0,
-        "--tqc-forward-prior-steps": args.tqc_forward_prior_steps != 0,
-        "--tqc-success-demo-path": bool(args.tqc_success_demo_path),
-    }
-    if any(tqc_overrides.values()):
-        names = ", ".join(k for k, enabled in tqc_overrides.items() if enabled)
-        parser.error(f"TQC-only options on PPO run: {names}")
-    if args.output_root is not None:
-        parser.error("--output-root is for TQC; PPO uses --model-out")
-
-    try:
-        from stable_baselines3 import PPO
-        from stable_baselines3.common.callbacks import BaseCallback
-
-        from polybot.training.config import policy_kwargs
-        from polybot.training.devices import resolve_device
-    except ImportError as exc:
-        parser.error("training dependencies are missing; install with: pip install -e '.[train]'")
-        raise AssertionError("unreachable") from exc
-    try:
-        selected_device = resolve_device(args.device)
-    except RuntimeError as exc:
-        parser.error(str(exc))
-    print(
-        f"Device: {selected_device.resolved}"
-        + (f" ({selected_device.gpu_name})" if selected_device.gpu_name else ""),
-        flush=True,
-    )
-
-    transport = _make_transport(args)
-    reward_config = RewardConfig(
-        imitation_bonus_per_s=args.ghost_pose_reward,
-        barrier_contact_penalty=args.barrier_contact_penalty,
-        finish_bonus=args.finish_bonus,
-        finish_fast_bonus=args.finish_fast_bonus,
-        finish_target_s=args.finish_target_s,
-        finish_pace_decay_per_s=args.finish_pace_decay,
-        ground_slip_penalty_per_rad_s=args.ground_slip_penalty,
-        ground_slip_tolerance_rad=math.radians(args.ground_slip_tolerance_deg),
-    )
-
-    try:
-        env = PolyTrackEnv(
-            transport,
-            track_id=args.track,
-            lookahead_count=args.lookahead,
-            frame_skip=args.frame_skip,
-            max_episode_steps=args.max_steps,
-            reward_config=reward_config,
-            request_timeout_s=args.request_timeout,
-            curriculum_last_fraction=args.curriculum_last_fraction,
-            curriculum_probability=args.curriculum_probability,
-            curriculum_start_ratio=args.curriculum_start_ratio,
-            curriculum_end_ratio=args.curriculum_end_ratio,
-            curriculum_start_s=args.curriculum_start_s,
-            curriculum_end_s=args.curriculum_end_s,
-            pwm_enabled=args.pwm,
-            pwm_levels=args.pwm_levels,
+    if args.parameter_help:
+        from polybot.training.parameters import (
+            CURRICULUM_INFO,
+            EVALUATION_INFO,
+            GENERAL_INFO,
+            PPO_INFO,
+            REWARD_INFO,
+            TQC_INFO,
         )
-    except BaseException:
-        transport.close()
-        raise
+
+        for title, mapping in (
+            ("General", GENERAL_INFO), ("PPO", PPO_INFO), ("TQC", TQC_INFO),
+            ("Curriculum", CURRICULUM_INFO), ("Evaluation", EVALUATION_INFO),
+            ("Reward coefficients", REWARD_INFO),
+        ):
+            print(f"\n{title}")
+            for name, detail in mapping.items():
+                print(f"  {name}: {detail.description}")
+        return 0
     try:
-        tensorboard_log = str(args.tensorboard_log) if args.tensorboard_log is not None else None
-        if args.resume is None:
-            model = PPO(
-                "MlpPolicy",
-                env,
-                seed=args.seed,
-                verbose=1,
-                tensorboard_log=tensorboard_log,
-                learning_rate=args.learning_rate,
-                ent_coef=args.entropy_coef,
-                gamma=args.gamma,
-                gae_lambda=args.gae_lambda,
-                policy_kwargs=policy_kwargs(args.architecture),
-                device=selected_device.resolved,
+        cfg = (
+            TrainingConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8")))
+            if args.config else _config_from_args(args, parser)
+        )
+        registry = ModelRegistry(cfg.output_root)
+        resume = None
+        if args.resume is not None:
+            resume = (
+                registry.slot(cfg.track_name, cfg.algorithm, "latest")
+                if args.resume == "latest" else Path(args.resume)
             )
-            _bias_initial_policy_forward(model, args.forward_bias)
-        else:
-            model = PPO.load(
-                str(args.resume),
-                env=env,
-                tensorboard_log=tensorboard_log,
-                custom_objects={
-                    "learning_rate": args.learning_rate,
-                    "ent_coef": args.entropy_coef,
-                    "gamma": args.gamma,
-                    "gae_lambda": args.gae_lambda,
-                },
-                device=selected_device.resolved,
-            )
-
-        class EpisodeCheckpointCallback(BaseCallback):
-            def __init__(self, output: Path, every: int) -> None:
-                super().__init__()
-                self.output = output.with_suffix("")
-                self.best_output = self.output.with_name(f"{self.output.name}-best")
-                self.best_metadata = self.output.with_name(f"{self.output.name}-best.json")
-                self.every = every
-                self.episodes = 0
-                self.next_checkpoint = every
-                self.best_progress_ratio = 0.0
-                self.best_lap_time_s = float("inf")
-                self.clean_episode = True
-                self.episode_imitation_reward = 0.0
-                self.episode_ground_slip_penalty = 0.0
-                if self.best_metadata.exists():
-                    try:
-                        metadata = json.loads(self.best_metadata.read_text(encoding="utf-8"))
-                        self.best_progress_ratio = float(metadata["progress_ratio"])
-                        self.best_lap_time_s = float(metadata.get("best_lap_time_s", float("inf")))
-                    except (KeyError, TypeError, ValueError, OSError, json.JSONDecodeError):
-                        pass
-
-            def _on_step(self) -> bool:
-                dones = self.locals.get("dones", ())
-                completed_episode = self.episodes
-                self.episodes += sum(bool(done) for done in dones)
-                for info, done in zip(self.locals.get("infos", ()), dones, strict=False):
-                    reward_terms = info.get("reward_terms", {})
-                    self.episode_imitation_reward += float(reward_terms.get("ghost_imitation", 0.0))
-                    self.episode_ground_slip_penalty += float(reward_terms.get("ground_slip", 0.0))
-                    if (
-                        reward_terms.get("barrier_contact", 0.0) < 0.0
-                        or reward_terms.get("off_track_landing", 0.0) < 0.0
-                        or reward_terms.get("airborne_roll_failure", 0.0) < 0.0
-                    ):
-                        self.clean_episode = False
-                    progress_m = float(info.get("route_progress_m", 0.0))
-                    track_length_m = max(1.0, float(info.get("track_length_m", 1.0)))
-                    progress_ratio = progress_m / track_length_m
-                    is_finish = "finish" in info.get("events", ())
-                    elapsed_s = float(info.get("elapsed_s", 0.0))
-                    faster_finish = is_finish and elapsed_s < self.best_lap_time_s
-                    if (
-                        args.curriculum_probability == 0.0
-                        and args.curriculum_start_ratio is None
-                        and args.curriculum_start_s is None
-                        and self.clean_episode
-                        and (progress_ratio >= self.best_progress_ratio + 0.02 or faster_finish)
-                    ):
-                        self.output.parent.mkdir(parents=True, exist_ok=True)
-                        self.model.save(str(self.best_output))
-                        self.best_progress_ratio = max(self.best_progress_ratio, progress_ratio)
-                        if faster_finish:
-                            self.best_lap_time_s = elapsed_s
-                        metadata = {
-                            "progress_m": progress_m,
-                            "track_length_m": track_length_m,
-                            "progress_ratio": self.best_progress_ratio,
-                            "finished": self.best_progress_ratio >= 1.0,
-                        }
-                        if math.isfinite(self.best_lap_time_s):
-                            metadata["best_lap_time_s"] = self.best_lap_time_s
-                        self.best_metadata.write_text(
-                            json.dumps(metadata, indent=2),
-                            encoding="utf-8",
-                        )
-                        if faster_finish:
-                            print(
-                                f"Saved fastest model with a {elapsed_s:.3f}s lap.",
-                                flush=True,
-                            )
-                        else:
-                            print(
-                                f"Saved best model at {progress_ratio:.1%} track progress.",
-                                flush=True,
-                            )
-                    if done:
-                        completed_episode += 1
-                        episode_data = info.get("episode", {})
-                        episode_reward = episode_data.get("r")
-                        episode_length = episode_data.get("l")
-                        events = info.get("events", ())
-                        result = "finish" if "finish" in events else ",".join(events) or "reset"
-                        reward_text = (
-                            f"{float(episode_reward):.2f}"
-                            if episode_reward is not None
-                            else "unknown"
-                        )
-                        time_label = "lap" if is_finish else "time"
-                        print(
-                            f"Episode {completed_episode}: reward={reward_text} "
-                            f"progress={progress_ratio:.1%} result={result} "
-                            f"{time_label}={elapsed_s:.3f}s steps={episode_length} "
-                            f"ghost={self.episode_imitation_reward:+.2f} "
-                            f"slip={self.episode_ground_slip_penalty:+.2f}",
-                            flush=True,
-                        )
-                        self.clean_episode = True
-                        self.episode_imitation_reward = 0.0
-                        self.episode_ground_slip_penalty = 0.0
-                if self.every and self.episodes >= self.next_checkpoint:
-                    self.output.parent.mkdir(parents=True, exist_ok=True)
-                    self.model.save(str(self.output))
-                    archive = self.output.with_name(f"{self.output.name}-episode-{self.episodes}")
-                    self.model.save(str(archive))
-                    print(f"Checkpointed model after {self.episodes} episodes.", flush=True)
-                    while self.next_checkpoint <= self.episodes:
-                        self.next_checkpoint += self.every
-                reached_episode_limit = bool(
-                    args.max_episodes and self.episodes >= args.max_episodes
-                )
-                if reached_episode_limit:
-                    print(
-                        f"Reached episode limit ({args.max_episodes}); saving phase model.",
-                        flush=True,
-                    )
-                return not reached_episode_limit
-
-        callback = EpisodeCheckpointCallback(args.model_out, args.checkpoint_episodes)
-        try:
-            model.learn(
-                total_timesteps=args.timesteps,
-                callback=callback,
-                progress_bar=args.progress_bar,
-                reset_num_timesteps=args.resume is None,
-            )
-        except KeyboardInterrupt:
-            args.model_out.parent.mkdir(parents=True, exist_ok=True)
-            model.save(str(args.model_out.with_suffix("")))
-            print(f"Interrupted; saved model to {args.model_out.with_suffix('')}.zip")
-            return 130
-        except BaseException:
-            emergency = args.model_out.with_suffix("").with_name(
-                f"{args.model_out.with_suffix('').name}-emergency"
-            )
-            emergency.parent.mkdir(parents=True, exist_ok=True)
-            model.save(str(emergency))
-            print(f"Training failed; saved emergency model to {emergency}.zip")
-            raise
-        args.model_out.parent.mkdir(parents=True, exist_ok=True)
-        output = args.model_out.with_suffix("")
-        model.save(str(output))
-        print(f"Saved model to {output}.zip")
-    finally:
-        env.close()
+        runner = TrainingRunner(cfg, _event)
+        print(f"planned training steps: {cfg.timesteps}", flush=True)
+        runner.run(resume=resume)
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+        parser.error(str(exc))
     return 0
 
 
-def evaluate_main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Evaluate a saved PPO or TQC policy")
-    _common_arguments(
-        parser,
-        track_default=None,
-        frame_skip_default=None,
-        max_steps_default=None,
-    )
-    parser.add_argument("model", type=Path, help="Stable-Baselines PPO model (.zip is optional)")
-    parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
-    _websocket_arguments(parser)
-    parser.add_argument("--episodes", type=int, default=5)
-    parser.add_argument("--algorithm", choices=("ppo", "tqc"))
-    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--allow-track-override", action="store_true")
-    parser.add_argument("--pwm", action=argparse.BooleanOptionalAction, default=False)
-    parser.add_argument("--pwm-levels", type=int, default=41)
-    args = parser.parse_args(argv)
-    _apply_backend_defaults(args)
-
-    if args.episodes < 1:
-        parser.error("--episodes must be positive")
-    _validate_websocket_arguments(parser, args)
-    from polybot.training.algorithms import model_class
-    from polybot.training.devices import resolve_device
-
+def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Path]:
+    registry = ModelRegistry(args.output_root)
+    directory = registry.slot(args.track_name, args.algorithm, args.slot)
+    metadata = registry.read_metadata(directory)
+    cfg = TrainingConfig.from_dict(metadata.training_config)
+    cfg.backend = args.backend or cfg.backend
+    cfg.device = args.device or cfg.device
+    backend = backend_for(cfg.algorithm)
+    registry.validate(metadata, cfg, backend.action_adapter(cfg).schema)
+    runner = TrainingRunner(cfg)
+    env = runner._environment()
     try:
-        algorithm, metadata = _model_algorithm(args.model, args.algorithm)
-        _validate_playback_metadata(
-            metadata, algorithm, args.track, args.lookahead,
-            allow_track_override=args.allow_track_override,
-        )
-    except ValueError as exc:
-        parser.error(str(exc))
-    if metadata is not None:
-        args.pwm = metadata.action_schema == "pwm-multidiscrete-v1"
-        args.pwm_levels = metadata.pwm_resolution
-    mode = "continuous_pwm" if algorithm == "tqc" else ("ppo_pwm" if args.pwm else "digital")
-    try:
-        selected_device = resolve_device(args.device)
-    except RuntimeError as exc:
-        parser.error(str(exc))
-
-    transport = _make_transport(args)
-    try:
-        env = PolyTrackEnv(
-            transport,
-            track_id=args.track,
-            lookahead_count=args.lookahead,
-            frame_skip=args.frame_skip,
-            max_episode_steps=args.max_steps,
-            request_timeout_s=args.request_timeout,
-            action_mode=mode,
-            pwm_levels=args.pwm_levels,
-        )
-    except BaseException:
-        transport.close()
-        raise
-    summaries: list[dict[str, object]] = []
-    try:
-        model = model_class(algorithm).load(
-            str(args.model), env=env, device=selected_device.resolved
-        )
-        for episode in range(args.episodes):
-            observation, _ = env.reset(seed=args.seed + episode)
-            total_reward = 0.0
-            terminated = truncated = False
-            info: dict[str, object] = {}
-            while not (terminated or truncated):
-                action, _ = model.predict(observation, deterministic=True)
-                observation, reward, terminated, truncated, info = env.step(action)
-                total_reward += reward
-            summaries.append(
-                {
-                    "episode": episode,
-                    "seed": args.seed + episode,
-                    "finished": "finish" in info["events"],
-                    "crashed": "crash" in info["events"],
-                    "elapsed_s": round(float(info["elapsed_s"]), 3),
-                    "progress_m": round(float(info["route_progress_m"]), 3),
-                    "reward": round(total_reward, 3),
-                }
-            )
+        device = resolve_device(cfg.device, algorithm=cfg.algorithm)
+        model = backend.load_model(directory / "policy.zip", env, device.resolved)
     finally:
         env.close()
-    print(json.dumps(summaries, indent=2))
-    return 0 if all(bool(summary["finished"]) for summary in summaries) else 1
+    return cfg, backend, model, directory
+
+
+def _model_parser(description: str) -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description=description)
+    parser.add_argument("--algorithm", choices=ALGORITHMS, required=True)
+    parser.add_argument("--track-name", required=True)
+    parser.add_argument("--slot", choices=("latest", "champion"), default="champion")
+    parser.add_argument("--output-root", type=Path, default=Path("models"))
+    parser.add_argument("--backend", choices=("mock", "websocket"))
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"))
+    return parser
+
+
+def evaluate_main(argv: Sequence[str] | None = None) -> int:
+    parser = _model_parser("Evaluate a saved v2 policy deterministically")
+    parser.add_argument("--episodes", type=int)
+    args = parser.parse_args(argv)
+    try:
+        cfg, _, model, _ = _saved_model(args)
+        runner = TrainingRunner(cfg)
+        result = evaluate_model(
+            model, runner._environment, episodes=args.episodes or cfg.evaluation.episodes,
+            seed=cfg.seed + 1_000_000,
+        )
+        print(json.dumps(result.to_dict(), indent=2))
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+        parser.error(str(exc))
+    return 0
 
 
 def drive_main(argv: Sequence[str] | None = None) -> int:
-    """Drive the currently selected local PolyTrack race with a policy."""
-
-    parser = argparse.ArgumentParser(
-        description="Drive the current PolyTrack race through the local-only AI bridge",
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-    )
-    _common_arguments(
-        parser,
-        track_default="current",
-        frame_skip_default=10,
-        max_steps_default=30_000,
-    )
-    _websocket_arguments(parser)
-    policy = parser.add_mutually_exclusive_group()
-    policy.add_argument(
-        "--model",
-        type=Path,
-        help="saved Stable-Baselines PPO model; omit to use the centreline controller",
-    )
-    policy.add_argument(
-        "--centerline",
-        action="store_true",
-        help="explicitly use the built-in centreline controller (the default)",
-    )
-    parser.add_argument("--episodes", type=int, default=1, help="number of races to drive")
-    parser.add_argument(
-        "--steering-sign",
-        type=int,
-        choices=(-1, 1),
-        default=1,
-        help="invert the baseline controller if the car steers away from the ghost line",
-    )
-    parser.add_argument(
-        "--target-speed",
-        type=float,
-        default=18.0,
-        help="maximum baseline-controller speed in metres per second",
-    )
-    parser.add_argument(
-        "--stochastic",
-        action="store_true",
-        help="sample PPO actions instead of using deterministic predictions",
-    )
-    parser.add_argument(
-        "--pwm",
-        action=argparse.BooleanOptionalAction,
-        default=False,
-        help="use PWM steering action levels expected by PWM-trained models",
-    )
-    parser.add_argument("--pwm-levels", type=int, default=41)
-    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--algorithm", choices=("ppo", "tqc"))
-    parser.add_argument("--allow-track-override", action="store_true")
+    parser = _model_parser("Play one deterministic lap from a v2 policy")
+    parser.add_argument("--realtime", action="store_true")
     args = parser.parse_args(argv)
-
-    if args.episodes < 1:
-        parser.error("--episodes must be positive")
-    if args.stochastic and args.model is None:
-        parser.error("--stochastic requires --model")
-    if args.target_speed <= 0:
-        parser.error("--target-speed must be positive")
-    if args.pwm_levels < 3 or args.pwm_levels % 2 == 0:
-        parser.error("--pwm-levels must be an odd integer >= 3")
-    _validate_websocket_arguments(parser, args)
-
-    policy_type = None
-    model_algorithm = None
-    if args.model is not None:
-        try:
-            model_algorithm, metadata = _model_algorithm(args.model, args.algorithm)
-            _validate_playback_metadata(
-                metadata, model_algorithm, args.track, args.lookahead,
-                allow_track_override=args.allow_track_override,
-            )
-        except ValueError as exc:
-            parser.error(str(exc))
-        from polybot.training.algorithms import model_class
-
-        policy_type = model_class(model_algorithm)
-        if metadata is not None:
-            args.pwm = metadata.action_schema == "pwm-multidiscrete-v1"
-            args.pwm_levels = metadata.pwm_resolution
-        from polybot.training.devices import resolve_device
-
-        try:
-            selected_device = resolve_device(args.device).resolved
-        except RuntimeError as exc:
-            parser.error(str(exc))
-
-    transport = _make_transport(args)
     try:
-        env_kwargs = dict(
-            track_id=args.track,
-            lookahead_count=args.lookahead,
-            frame_skip=args.frame_skip,
-            max_episode_steps=args.max_steps,
-            request_timeout_s=args.request_timeout,
-            pwm_enabled=args.pwm,
-            pwm_levels=args.pwm_levels,
-        )
-        if model_algorithm == "tqc":
-            env_kwargs["pwm_enabled"] = False
-            env_kwargs["action_mode"] = "continuous_pwm"
-        env = PolyTrackEnv(transport, **env_kwargs)
-    except BaseException:
-        transport.close()
-        raise
-    controller = CenterlineController(
-        steering_sign=args.steering_sign,
-        max_speed_mps=args.target_speed,
-    )
-    summaries: list[dict[str, object]] = []
-    try:
-        model = (
-            policy_type.load(str(args.model), env=env, device=selected_device)
-            if policy_type is not None
-            else None
-        )
-        print("Press R in this terminal to restart the current run.", flush=True)
-        for episode in range(args.episodes):
-            episode_seed = args.seed + episode
+        cfg, _, model, _ = _saved_model(args)
+        env = TrainingRunner(cfg)._environment()
+        try:
+            observation, _ = env.reset(seed=cfg.seed)
             while True:
-                observation, _ = _reset_drive_when_ready(
-                    env,
-                    seed=episode_seed,
-                    timeout_s=args.connect_timeout,
-                )
-                total_reward = 0.0
-                terminated = truncated = False
-                info: dict[str, object] = {}
-                restart_reason: str | None = None
-                stuck_since: float | None = None
-                last_status = 0.0
-                while not (terminated or truncated):
-                    step_started = time.monotonic()
-                    if _terminal_restart_requested():
-                        restart_reason = "manual restart"
-                        break
-                    if model is not None:
-                        action, _ = model.predict(
-                            observation,
-                            deterministic=not args.stochastic,
-                        )
-                    else:
-                        telemetry = env.latest_telemetry
-                        assert telemetry is not None
-                        action = controller.policy_action(telemetry)
-                    observation, reward, terminated, truncated, info = env.step(action)
-                    total_reward += reward
-                    if not (terminated or truncated):
-                        telemetry = env.latest_telemetry
-                        assert telemetry is not None
-                        if abs(telemetry.lateral_offset_m) > telemetry.track_half_width_m * 1.1:
-                            restart_reason = "off track"
-                            break
-                        speed = abs(telemetry.local_velocity_mps[2])
-                        if telemetry.elapsed_s > 3.0 and speed < 0.5:
-                            stuck_since = stuck_since or time.monotonic()
-                            if time.monotonic() - stuck_since >= 2.0:
-                                restart_reason = "stuck"
-                                break
-                        else:
-                            stuck_since = None
-                        now = time.monotonic()
-                        if now - last_status >= 1.0:
-                            print(
-                                "drive "
-                                f"speed={speed:5.2f}m/s "
-                                f"offset={telemetry.lateral_offset_m:+6.2f}m "
-                                f"heading={telemetry.heading_error_rad:+6.2f}rad "
-                                f"steer={float(action[0]):+.2f}",
-                                flush=True,
-                            )
-                            last_status = now
-                    # The worker is intentionally unthrottled for training. A
-                    # visible drive should instead track simulation time.
-                    remaining = args.frame_skip * 0.001 - (time.monotonic() - step_started)
-                    if remaining > 0:
-                        time.sleep(remaining)
-                if restart_reason is not None:
-                    print(f"Restarting run ({restart_reason})...", flush=True)
-                    continue
-                summaries.append(_episode_summary(episode, episode_seed, info, total_reward))
-                break
-    except ProtocolViolation as exc:
-        print(f"PolyBot stopped: {exc}", file=sys.stderr)
-        return 2
+                started = time.monotonic()
+                action, _ = model.predict(observation, deterministic=True)
+                observation, _, terminated, truncated, info = env.step(action)
+                if terminated or truncated:
+                    print(json.dumps({"events": info["events"],
+                                      "progress_m": info["route_progress_m"],
+                                      "elapsed_s": info["elapsed_s"]}))
+                    break
+                if args.realtime:
+                    target = info["ticks_advanced"] * env.simulator_capabilities["fixed_dt_s"]
+                    time.sleep(max(0.0, target - (time.monotonic() - started)))
+        finally:
+            env.close()
+    except (ValueError, RuntimeError, FileNotFoundError) as exc:
+        parser.error(str(exc))
+    return 0
+
+
+def smoke_main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run the protocol and environment mock")
+    parser.add_argument("--episodes", type=int, default=1)
+    args = parser.parse_args(argv)
+    from polybot.environment.env import PolyTrackEnv
+
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight")
+    controller = CenterlineController()
+    try:
+        for index in range(args.episodes):
+            env.reset(seed=index)
+            while True:
+                action = controller.policy_action(env.latest_telemetry)
+                _, _, terminated, truncated, info = env.step(action)
+                if terminated or truncated:
+                    print(json.dumps({"events": info["events"],
+                                      "progress_m": info["route_progress_m"]}))
+                    break
     finally:
         env.close()
-
-    print(json.dumps(summaries, indent=2))
     return 0
