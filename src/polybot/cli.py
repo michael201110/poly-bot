@@ -16,6 +16,7 @@ from polybot.models.registry import ModelRegistry
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
+    DQNConfig,
     EvaluationConfig,
     PPOConfig,
     TQCConfig,
@@ -71,6 +72,19 @@ def _algorithm_options(parser: argparse.ArgumentParser) -> None:
     ppo.add_argument("--ppo-imitation", type=float)
     ppo.add_argument("--ppo-initial-forward-bias", type=float)
     ppo.add_argument("--ppo-initial-steering-bias", type=float)
+    dqn = parser.add_argument_group("DQN")
+    dqn.add_argument("--dqn-architecture", choices=("tiny", "compact", "standard"))
+    dqn.add_argument("--dqn-lr", type=float)
+    dqn.add_argument("--dqn-replay", type=int)
+    dqn.add_argument("--dqn-learning-starts", type=int)
+    dqn.add_argument("--dqn-batch", type=int)
+    dqn.add_argument("--dqn-gamma", type=float)
+    dqn.add_argument("--dqn-train-frequency", type=int)
+    dqn.add_argument("--dqn-gradient-steps", type=int)
+    dqn.add_argument("--dqn-target-update-interval", type=int)
+    dqn.add_argument("--dqn-exploration-fraction", type=float)
+    dqn.add_argument("--dqn-initial-eps", type=float)
+    dqn.add_argument("--dqn-final-eps", type=float)
     tqc = parser.add_argument_group("TQC")
     tqc.add_argument("--tqc-architecture", choices=("tiny", "compact", "standard"))
     tqc.add_argument("--tqc-lr", type=float)
@@ -90,10 +104,12 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
     if args.algorithm is None:
         parser.error("--algorithm is required when --config is not provided")
     values = vars(args)
-    other_prefix = "tqc_" if args.algorithm == "ppo" else "ppo_"
-    if any(value is not None for key, value in values.items() if key.startswith(other_prefix)):
-        parser.error(f"{other_prefix.removesuffix('_').upper()} settings do not apply to {args.algorithm.upper()}")
-    if args.algorithm == "tqc" and (args.teacher_model or args.teacher_kl is not None):
+    for prefix in ("ppo_", "dqn_", "tqc_"):
+        if prefix != f"{args.algorithm}_" and any(
+            value is not None for key, value in values.items() if key.startswith(prefix)
+        ):
+            parser.error(f"{prefix.removesuffix('_').upper()} settings do not apply to {args.algorithm.upper()}")
+    if args.algorithm != "ppo" and (args.teacher_model or args.teacher_kl is not None):
         parser.error("teacher settings only apply to PPO")
     shared = {
         "architecture": values[f"{args.algorithm}_architecture"],
@@ -115,6 +131,21 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
         }
         mapping.update(shared)
         specific: dict[str, Any] = {"ppo": PPOConfig(**{
+            key: value for key, value in mapping.items() if value is not None
+        })}
+    elif args.algorithm == "dqn":
+        mapping = {
+            "replay_capacity": args.dqn_replay,
+            "learning_starts": args.dqn_learning_starts,
+            "train_frequency": args.dqn_train_frequency,
+            "gradient_steps": args.dqn_gradient_steps,
+            "target_update_interval": args.dqn_target_update_interval,
+            "exploration_fraction": args.dqn_exploration_fraction,
+            "exploration_initial_eps": args.dqn_initial_eps,
+            "exploration_final_eps": args.dqn_final_eps,
+        }
+        mapping.update(shared)
+        specific = {"dqn": DQNConfig(**{
             key: value for key, value in mapping.items() if value is not None
         })}
     else:
@@ -163,7 +194,7 @@ def _event(event: dict[str, Any]) -> None:
 
 
 def train_main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Train a v2 PPO or TQC policy")
+    parser = argparse.ArgumentParser(description="Train a v2 PPO, DQN or TQC policy")
     parser.add_argument("--parameter-help", action="store_true",
                         help="print the central plain-language parameter reference")
     parser.add_argument("--config", type=Path, help="v2 JSON config shared with the GUI")
@@ -174,6 +205,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     if args.parameter_help:
         from polybot.training.parameters import (
             CURRICULUM_INFO,
+            DQN_INFO,
             EVALUATION_INFO,
             GENERAL_INFO,
             PPO_INFO,
@@ -182,7 +214,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
         )
 
         for title, mapping in (
-            ("General", GENERAL_INFO), ("PPO", PPO_INFO), ("TQC", TQC_INFO),
+            ("General", GENERAL_INFO), ("PPO", PPO_INFO), ("DQN", DQN_INFO), ("TQC", TQC_INFO),
             ("Curriculum", CURRICULUM_INFO), ("Evaluation", EVALUATION_INFO),
             ("Reward coefficients", REWARD_INFO),
         ):

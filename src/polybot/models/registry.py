@@ -13,7 +13,7 @@ from typing import Any
 from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 
 MODEL_SCHEMA = "polybot.model.v2"
-POLYBOT_VERSION = "2.0.0"
+POLYBOT_VERSION = "2.1.0"
 
 
 class IncompatibleModelError(ValueError):
@@ -63,7 +63,7 @@ class ModelMetadata:
     saved_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def __post_init__(self) -> None:
-        if self.schema != MODEL_SCHEMA or self.polybot_version != POLYBOT_VERSION:
+        if self.schema != MODEL_SCHEMA or not self.polybot_version.startswith("2."):
             raise IncompatibleModelError("only v2 models are supported")
 
 

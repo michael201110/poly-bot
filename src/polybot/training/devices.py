@@ -8,7 +8,9 @@ import json
 import platform
 import subprocess
 import sys
+import tempfile
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 
@@ -157,7 +159,7 @@ def checked_parameter_device(parameter: Any, resolved: str) -> str:
     device = parameter.device
     if device.type != resolved:
         raise RuntimeError(
-            f"TQC parameters are on {device}, expected a {resolved} device"
+            f"model parameters are on {device}, expected a {resolved} device"
         )
     return str(device)
 
@@ -165,7 +167,7 @@ def checked_parameter_device(parameter: Any, resolved: str) -> str:
 def doctor_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show PolyBot PyTorch/CUDA diagnostics")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--smoke", choices=("ppo", "tqc"))
+    parser.add_argument("--smoke", choices=("ppo", "dqn", "tqc"))
     args = parser.parse_args(argv)
     try:
         selected = resolve_device(args.device, algorithm=args.smoke)
@@ -180,12 +182,19 @@ def doctor_main(argv: list[str] | None = None) -> int:
         from polybot.algorithms.registry import backend_for
         from polybot.environment.env import PolyTrackEnv
         from polybot.mock import MockSimulatorTransport
-        from polybot.training.config import PPOConfig, TQCConfig, TrainingConfig
+        from polybot.training.config import DQNConfig, PPOConfig, TQCConfig, TrainingConfig
 
         config = TrainingConfig(
             algorithm=args.smoke, backend="mock", device=selected.resolved,
-            **({"ppo": PPOConfig(architecture="tiny")} if args.smoke == "ppo"
-               else {"tqc": TQCConfig(architecture="tiny")}),
+            **{
+                args.smoke: {
+                    "ppo": PPOConfig(architecture="tiny"),
+                    "dqn": DQNConfig(architecture="tiny", replay_capacity=128,
+                                     learning_starts=8, batch_size=8,
+                                     train_frequency=1, target_update_interval=16),
+                    "tqc": TQCConfig(architecture="tiny"),
+                }[args.smoke]
+            },
         )
         backend = backend_for(args.smoke)
         env = PolyTrackEnv(
@@ -198,6 +207,16 @@ def doctor_main(argv: list[str] | None = None) -> int:
                 next(model.policy.parameters()), selected.resolved
             )
             facts["model_parameters"] = backend.parameter_counts(model)
+            if args.smoke == "dqn":
+                model.learn(32)
+                with tempfile.TemporaryDirectory() as temporary:
+                    directory = Path(temporary)
+                    backend.save_model(model, directory, resume=True)
+                    loaded = backend.load_model(directory / "policy.zip", env, selected.resolved, resume=True)
+                    facts["smoke_steps"] = model.num_timesteps
+                    facts["smoke_updates"] = backend.metrics(model)["updates"]
+                    facts["smoke_replay_size"] = loaded.replay_buffer.size()
+                    facts["smoke_resume_loaded"] = True
         finally:
             env.close()
     print(json.dumps(facts, indent=2))

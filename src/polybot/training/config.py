@@ -54,6 +54,38 @@ class PPOConfig:
 
 
 @dataclass(slots=True)
+class DQNConfig:
+    architecture: str = "compact"
+    learning_rate: float = 1e-4
+    replay_capacity: int = 250_000
+    learning_starts: int = 5_000
+    batch_size: int = 128
+    gamma: float = 0.995
+    train_frequency: int = 4
+    gradient_steps: int = 1
+    target_update_interval: int = 10_000
+    exploration_fraction: float = 0.20
+    exploration_initial_eps: float = 1.0
+    exploration_final_eps: float = 0.05
+
+    def __post_init__(self) -> None:
+        if self.architecture not in ARCHITECTURES:
+            raise ValueError("unknown DQN architecture")
+        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
+            raise ValueError("DQN learning rate must be positive and finite")
+        if self.replay_capacity < 1 or self.learning_starts < 0:
+            raise ValueError("DQN replay capacity must be positive; learning starts must be nonnegative")
+        if min(self.batch_size, self.train_frequency, self.gradient_steps, self.target_update_interval) < 1:
+            raise ValueError("DQN batch size, train frequency, gradient steps and target interval must be positive")
+        if not 0 < self.gamma <= 1:
+            raise ValueError("DQN gamma must be in (0, 1]")
+        if not 0 <= self.exploration_fraction <= 1:
+            raise ValueError("DQN exploration fraction must be in [0, 1]")
+        if not (0 <= self.exploration_final_eps <= self.exploration_initial_eps <= 1):
+            raise ValueError("DQN epsilon values must be in [0, 1], with final <= initial")
+
+
+@dataclass(slots=True)
 class TQCConfig:
     architecture: str = "compact"
     learning_rate: float = 3e-4
@@ -171,6 +203,7 @@ class TrainingConfig:
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     rewards: RewardConfig = field(default_factory=summer_1_reward_config)
     ppo: PPOConfig | None = None
+    dqn: DQNConfig | None = None
     tqc: TQCConfig | None = None
 
     def __post_init__(self) -> None:
@@ -208,8 +241,7 @@ class TrainingConfig:
         value["curriculum"] = CurriculumConfig(**curriculum)
         value["evaluation"] = EvaluationConfig(**value["evaluation"])
         value["rewards"] = RewardConfig(**value["rewards"])
-        if value["ppo"] is not None:
-            value["ppo"] = PPOConfig(**value["ppo"])
-        if value["tqc"] is not None:
-            value["tqc"] = TQCConfig(**value["tqc"])
+        for algorithm, config_type in (("ppo", PPOConfig), ("dqn", DQNConfig), ("tqc", TQCConfig)):
+            if value.get(algorithm) is not None:
+                value[algorithm] = config_type(**value[algorithm])
         return cls(**value)

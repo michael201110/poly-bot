@@ -1,4 +1,4 @@
-"""Compare measured mock training TPS for both algorithm and network sizes."""
+"""Compare measured mock training TPS across algorithms and network sizes."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import torch
 from polybot.algorithms.registry import backend_for
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
-from polybot.training.config import PPOConfig, TQCConfig, TrainingConfig
+from polybot.training.config import DQNConfig, PPOConfig, TQCConfig, TrainingConfig
 from polybot.training.devices import resolve_device
 from polybot.training.runner import ScaledTrainingReward
 
@@ -21,19 +21,23 @@ def main() -> None:
     parser.add_argument("--steps", type=int, default=128)
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
     parser.add_argument("--threads", type=int, default=2)
+    parser.add_argument("--algorithms", nargs="+", choices=("ppo", "dqn", "tqc"),
+                        default=("ppo", "dqn", "tqc"))
     args = parser.parse_args()
     torch.set_num_threads(args.threads)
     device = resolve_device(args.device)
-    for algorithm in ("ppo", "tqc"):
+    for algorithm in args.algorithms:
         backend = backend_for(algorithm)
         for architecture in ("tiny", "compact", "standard"):
-            specific = (
-                {"ppo": PPOConfig(architecture=architecture, rollout_steps=32,
-                                  batch_size=32, epochs=2)}
-                if algorithm == "ppo" else
-                {"tqc": TQCConfig(architecture=architecture, learning_starts=32,
-                                  batch_size=32, replay_capacity=1000)}
-            )
+            if algorithm == "ppo":
+                specific = {"ppo": PPOConfig(architecture=architecture, rollout_steps=32,
+                                             batch_size=32, epochs=2)}
+            elif algorithm == "dqn":
+                specific = {"dqn": DQNConfig(architecture=architecture, learning_starts=32,
+                                             batch_size=32, replay_capacity=1000)}
+            else:
+                specific = {"tqc": TQCConfig(architecture=architecture, learning_starts=32,
+                                             batch_size=32, replay_capacity=1000)}
             config = TrainingConfig(
                 algorithm=algorithm, device=device.resolved, timesteps=args.steps,
                 **specific,

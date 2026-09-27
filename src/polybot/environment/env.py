@@ -174,7 +174,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if (
             isinstance(max_ticks, bool)
             or not isinstance(max_ticks, int)
-            or max_ticks < (1 if self.action_adapter.sequence else self.frame_skip)
+            or max_ticks < 1
         ):
             raise ProtocolViolation("simulator cannot advance the requested frame_skip")
         self.simulator_capabilities = dict(result)
@@ -265,8 +265,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         applied = self.action_adapter.apply(action, self.frame_skip)
         reward_action = applied.demand
         tick_controls = applied.ticks
+        transitions: list[Transition] = []
         if self.action_adapter.sequence:
-            transitions: list[Transition] = []
             features = self.simulator_capabilities.get("features", ())
             if "action_sequence" in features:
                 max_ticks = int(self.simulator_capabilities["max_ticks_per_step"])
@@ -307,25 +307,28 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                         "finish" in transitions[-1].events or "crash" in transitions[-1].events
                     ):
                         break
-            last = transitions[-1]
-            transition = Transition(
-                episode_id=last.episode_id,
-                tick=last.tick,
-                ticks_advanced=sum(item.ticks_advanced for item in transitions),
-                telemetry=last.telemetry,
-                events=tuple(event for item in transitions for event in item.events),
-                simulator_info=last.simulator_info,
-            )
         else:
-            result = self._exchange(
-                "step",
-                {
-                    "episode_id": self._episode_id,
-                    "action": tick_controls[0].to_wire(),
-                    "ticks": self.frame_skip,
-                },
-            )
-            transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)
+            max_ticks = int(self.simulator_capabilities["max_ticks_per_step"])
+            digital = tick_controls[0].to_wire()
+            for start in range(0, self.frame_skip, max_ticks):
+                run_ticks = min(max_ticks, self.frame_skip - start)
+                result = self._exchange(
+                    "step",
+                    {"episode_id": self._episode_id, "action": digital, "ticks": run_ticks},
+                )
+                item = Transition.from_wire(result, lookahead_count=self.lookahead_count)
+                transitions.append(item)
+                if "finish" in item.events or "crash" in item.events:
+                    break
+        last = transitions[-1]
+        transition = Transition(
+            episode_id=last.episode_id,
+            tick=last.tick,
+            ticks_advanced=sum(item.ticks_advanced for item in transitions),
+            telemetry=last.telemetry,
+            events=tuple(event for item in transitions for event in item.events),
+            simulator_info=last.simulator_info,
+        )
         if transition.episode_id != self._episode_id:
             raise ProtocolViolation("simulator returned a stale or unexpected episode_id")
         if transition.ticks_advanced > self.frame_skip:

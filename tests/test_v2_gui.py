@@ -12,12 +12,14 @@ from polybot.gui.main import PolyBotWindow
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
+    DQNConfig,
     PPOConfig,
     TQCConfig,
     TrainingConfig,
 )
 from polybot.training.parameters import (
     CURRICULUM_INFO,
+    DQN_INFO,
     EVALUATION_INFO,
     GENERAL_INFO,
     PPO_INFO,
@@ -44,17 +46,20 @@ def qt_app():
 
 def test_every_training_field_has_plain_language_help(window) -> None:
     validate_metadata()
-    for mapping in (GENERAL_INFO, PPO_INFO, TQC_INFO, CURRICULUM_INFO,
+    for mapping in (GENERAL_INFO, PPO_INFO, DQN_INFO, TQC_INFO, CURRICULUM_INFO,
                     EVALUATION_INFO, REWARD_INFO):
         assert all(info.description and len(info.description) > len(info.label)
                    for info in mapping.values())
-    for collection in (window.general, window.ppo_form.widgets, window.tqc_form.widgets,
+    for collection in (window.general, window.ppo_form.widgets, window.dqn_form.widgets,
+                       window.tqc_form.widgets,
                        window.reward_advanced.widgets, window.curriculum_form.widgets,
                        window.evaluation_form.widgets):
         assert all(widget.toolTip() for widget in collection.values())
     assert window.custom_phases.toolTip()
     assert all(field.name in PPO_INFO for field in fields(PPOConfig))
+    assert all(field.name in DQN_INFO for field in fields(DQNConfig))
     assert all(field.name in TQC_INFO for field in fields(TQCConfig))
+    assert all(name in GENERAL_INFO["algorithm"].description for name in ("PPO", "DQN", "TQC"))
 
 
 def test_algorithm_switch_and_progressive_disclosure(window) -> None:
@@ -70,6 +75,17 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert window.configuration().tqc is None
     window.advanced.setChecked(False)
     assert window.ppo_form.widgets["gamma"].isHidden()
+    window.algorithm.setCurrentText("dqn")
+    assert window.algorithm_stack.currentWidget() is window.dqn_form
+    assert window.ppo_form.isHidden() and window.tqc_form.isHidden()
+    assert "nine native digital" in window.algorithm_explanation.text()
+    assert window.dqn_form.widgets["target_update_interval"].isHidden()
+    window.advanced.setChecked(True)
+    assert not window.dqn_form.widgets["target_update_interval"].isHidden()
+    assert "pwm_levels" not in window.dqn_form.widgets
+    assert "tau" not in window.dqn_form.widgets
+    assert window.configuration().dqn is not None
+    assert window.configuration().ppo is None and window.configuration().tqc is None
 
 
 def test_gui_exact_config_roundtrip_and_presets(window) -> None:
@@ -80,6 +96,18 @@ def test_gui_exact_config_roundtrip_and_presets(window) -> None:
     assert window.configuration().ppo == algorithm_presets("ppo")["Fast training"]
     window.algorithm.setCurrentText("tqc")
     assert window.configuration().tqc == algorithm_presets("tqc")["Balanced"]
+    dqn = TrainingConfig(algorithm="dqn", dqn=DQNConfig(architecture="standard"))
+    window.load_configuration(dqn)
+    assert window.configuration().to_dict() == dqn.to_dict()
+    window.preset.setCurrentText("Stable")
+    assert window.configuration().dqn == algorithm_presets("dqn")["Stable"]
+    window._event({
+        "type": "started", "algorithm": "dqn", "parameters": {
+            "actor": 0, "critic": 12345, "total": 12345,
+        }, "gpu_name": None, "device": "cpu", "log": "run.jsonl",
+    })
+    assert "Q-network 12,345" in window.parameter_label.text()
+    assert "Actor" not in window.parameter_label.text()
     custom = TrainingConfig(algorithm="tqc", tqc=TQCConfig(), timesteps=100,
                             curriculum=CurriculumConfig("custom", phases=(
                                 CurriculumPhaseConfig("section", 50, .75, 1.0),
@@ -97,6 +125,14 @@ def test_warnings_explain_unusual_values() -> None:
     warnings = configuration_warnings(cfg, "NVIDIA T500")
     assert len(warnings) >= 4
     assert any("TPS" in warning for warning in warnings)
+    dqn = TrainingConfig(algorithm="dqn", dqn=DQNConfig(
+        architecture="standard", learning_rate=.002, replay_capacity=3_000_000,
+        gradient_steps=8, target_update_interval=50, exploration_fraction=.01,
+        exploration_final_eps=.5,
+    ))
+    dqn_warnings = configuration_warnings(dqn, "NVIDIA T500")
+    assert len(dqn_warnings) >= 6
+    assert any("epsilon" in warning for warning in dqn_warnings)
 
 
 def test_episode_event_is_readable_without_raw_reward_dump(window) -> None:

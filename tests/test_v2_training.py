@@ -14,6 +14,7 @@ from polybot.models.registry import IncompatibleModelError, ModelRegistry
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
+    DQNConfig,
     EvaluationConfig,
     PPOConfig,
     TQCConfig,
@@ -24,12 +25,13 @@ from polybot.training.runner import TrainingRunner
 
 
 def configuration(tmp_path, algorithm: str) -> TrainingConfig:
-    specific = (
-        {"ppo": PPOConfig(architecture="tiny", rollout_steps=32, batch_size=16, epochs=1)}
-        if algorithm == "ppo" else
-        {"tqc": TQCConfig(architecture="tiny", learning_starts=100,
-                          batch_size=16, replay_capacity=1000)}
-    )
+    specific = {
+        "ppo": {"ppo": PPOConfig(architecture="tiny", rollout_steps=32, batch_size=16, epochs=1)},
+        "dqn": {"dqn": DQNConfig(architecture="tiny", learning_starts=8, batch_size=8,
+                                 replay_capacity=1000, train_frequency=1, target_update_interval=16)},
+        "tqc": {"tqc": TQCConfig(architecture="tiny", learning_starts=100,
+                                 batch_size=16, replay_capacity=1000)},
+    }[algorithm]
     return TrainingConfig(
         algorithm=algorithm, device="cpu", timesteps=32,
         evaluation=EvaluationConfig(32, 1), checkpoint_interval=16,
@@ -37,8 +39,8 @@ def configuration(tmp_path, algorithm: str) -> TrainingConfig:
     )
 
 
-def test_registry_contains_only_two_equal_backends() -> None:
-    assert set(ALGORITHMS) == {"ppo", "tqc"}
+def test_registry_contains_three_equal_backends() -> None:
+    assert set(ALGORITHMS) == {"ppo", "dqn", "tqc"}
     with pytest.raises(ValueError, match="unknown algorithm"):
         backend_for("sac")
 
@@ -49,6 +51,11 @@ def test_config_roundtrip_and_algorithm_specific_validation(tmp_path) -> None:
         assert TrainingConfig.from_dict(config.to_dict()) == config
     with pytest.raises(ValueError, match="TQC settings"):
         TrainingConfig(algorithm="ppo", ppo=PPOConfig(), tqc=TQCConfig())
+    with pytest.raises(ValueError, match="DQN"):
+        TrainingConfig(algorithm="ppo", ppo=PPOConfig(), dqn=DQNConfig())
+    old_v2 = configuration(tmp_path, "tqc").to_dict()
+    del old_v2["dqn"]
+    assert TrainingConfig.from_dict(old_v2).dqn is None
     with pytest.raises(ValueError, match="only v2"):
         TrainingConfig.from_dict({"schema": "polybot.config.v1"})
 
@@ -83,7 +90,7 @@ def test_champion_rank_uses_deterministic_finish_and_progress() -> None:
     assert quicker.rank() > strong.rank()
 
 
-@pytest.mark.parametrize("algorithm", ["ppo", "tqc"])
+@pytest.mark.parametrize("algorithm", ["ppo", "dqn", "tqc"])
 def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
     config = configuration(tmp_path, algorithm)
     events: list[dict] = []
@@ -94,17 +101,36 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
     assert (champion / "policy.zip").is_file()
     assert (champion / "metadata.json").is_file()
     assert not (champion / "replay.pkl").exists()
-    assert (latest / "replay.pkl").exists() == (algorithm == "tqc")
+    assert (latest / "replay.pkl").exists() == (algorithm in {"dqn", "tqc"})
     metadata = registry.read_metadata(latest)
     assert metadata.training_config == config.to_dict()
     assert metadata.observation_schema == "polybot.observation.v2"
     assert metadata.evaluation["episodes"] == 1
-    assert metadata.actor_parameters > 0
+    assert (metadata.actor_parameters == 0) == (algorithm == "dqn")
+    assert metadata.critic_parameters > 0
     assert metadata.total_trainable_parameters >= metadata.actor_parameters
+    if algorithm == "ppo":
+        registry.write_metadata(latest, replace(metadata, polybot_version="2.0.0"))
+        assert registry.read_metadata(latest).polybot_version == "2.0.0"
     assert any(event["type"] == "evaluation" for event in events)
     assert any(event["type"] == "champion" for event in events)
     assert list(config.log_root.glob("*.jsonl"))
     before = metadata.training_timesteps
+    if algorithm == "dqn":
+        backend = backend_for("dqn")
+        env = PolyTrackEnv(MockSimulatorTransport(), track_id=config.track_id,
+                           action_adapter=backend.action_adapter(config))
+        try:
+            loaded = backend.load_model(latest / "policy.zip", env, "cpu", resume=True)
+            assert loaded.action_space.n == 9
+            assert loaded.replay_buffer.size() > 0
+            assert backend.metrics(loaded)["updates"] > 0
+            deterministic, _ = loaded.predict(env.reset(seed=5)[0], deterministic=True)
+            assert 0 <= int(deterministic) < 9
+            with pytest.raises(FileNotFoundError, match="requires replay"):
+                backend.load_model(champion / "policy.zip", env, "cpu", resume=True)
+        finally:
+            env.close()
     TrainingRunner(config).run(resume=latest)
     assert registry.read_metadata(latest).training_timesteps > before
     with pytest.raises(IncompatibleModelError, match="track"):

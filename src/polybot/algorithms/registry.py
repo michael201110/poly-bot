@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from polybot.algorithms.base import AlgorithmBackend
+from polybot.algorithms.dqn import DQNBackend
 from polybot.algorithms.ppo import PPOBackend
 from polybot.algorithms.tqc import TQCBackend
 
 ALGORITHMS: dict[str, AlgorithmBackend] = {
     "ppo": PPOBackend(),
+    "dqn": DQNBackend(),
     "tqc": TQCBackend(),
 }
 

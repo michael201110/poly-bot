@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 
 from polybot.environment.rewards import RewardConfig
-from polybot.training.config import CurriculumConfig, EvaluationConfig, PPOConfig, TQCConfig
+from polybot.training.config import CurriculumConfig, DQNConfig, EvaluationConfig, PPOConfig, TQCConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -30,7 +30,10 @@ GENERAL_INFO = _info("General", {
     "track_name": "Name used to group model files. Choose a separate name for each track.",
     "track_id": "Simulator track identifier. 'current' uses the track open in PolyTrack.",
     "backend": "Mock is a fast local test track; WebSocket connects to PolyTrack in your browser.",
-    "algorithm": "PPO reuses fresh rollouts; TQC learns from a replay buffer of past driving.",
+    "algorithm": (
+        "PPO uses fresh PWM rollouts; DQN learns nine native digital actions from replay; "
+        "TQC learns continuous controls from replay."
+    ),
     "device": "Auto tries CUDA and explains a CPU fallback. PPO often runs well on CPU.",
     "seed": "Starting number for repeatable exploration and simulator resets.",
     "frame_skip": "Physics ticks per policy decision. More ticks improve throughput but slow reactions.",
@@ -61,6 +64,29 @@ PPO_INFO = _info("PPO", {
     "initial_forward_bias": "Starting PPO preference for throttle and no brake; learning can override it.",
     "initial_steering_bias": "Starting PPO preference for straight steering; learning can override it.",
 }, algorithm="ppo")
+
+DQN_INFO = _info("DQN", {
+    "architecture": "Q-network width. Larger networks can learn more complex action values but update slower.",
+    "learning_rate": "Size of Q-network weight updates. Around 0.0001 is a cautious starting point.",
+    "replay_capacity": "Maximum past decisions kept for reuse; larger history costs more memory.",
+    "learning_starts": "Number of digital driving decisions collected before Q-network updates begin.",
+    "batch_size": "Stored transitions sampled per Q-network update. Larger batches cost more compute.",
+    "gamma": "How much future reward contributes to each action's Q-value.",
+    "train_frequency": (
+        "Environment decisions collected before a training round; higher values reduce update frequency."
+    ),
+    "gradient_steps": "Q-network updates per training round. More updates use more compute and can overfit replay.",
+    "target_update_interval": (
+        "Environment steps between copies to the target Q-network; "
+        "very short intervals can destabilize targets."
+    ),
+    "exploration_fraction": (
+        "Fraction of the training budget spent reducing random-action probability "
+        "from initial to final epsilon."
+    ),
+    "exploration_initial_eps": "Probability of a random digital action at the start of training; 1 means fully random.",
+    "exploration_final_eps": "Minimum random-action probability after the exploration schedule ends.",
+}, algorithm="dqn")
 
 TQC_INFO = _info("TQC", {
     "architecture": "Actor and critic network width. Standard 256×256 may train slowly on a T500.",
@@ -208,8 +234,10 @@ METRIC_INFO = _info("Status", {
     "simulator_ticks": "Total fixed physics updates executed in the simulator.",
     "finishes": "Number of completed training attempts; champion still depends on evaluation.",
     "crashes": "Number of training attempts ending in a crash or barrier impact.",
-    "replay_size": "TQC experiences stored for later training. It fills during early learning.",
-    "updates": "Number of gradient update rounds applied to TQC networks.",
+    "replay_size": "Past DQN or TQC decisions available for reuse. It fills during early learning.",
+    "updates": "Number of gradient update rounds applied to the selected replay-based learner.",
+    "loss": "DQN error between predicted and bootstrapped Q-values; lower does not necessarily mean better driving.",
+    "exploration_rate": "DQN epsilon: probability of a random action instead of the highest-Q action.",
     "entropy_coefficient": "TQC exploration weight, also called alpha; auto mode adjusts it over time.",
     "actor_loss": "Change to TQC's action policy. Lower is not always better driving.",
     "critic_loss": "Change to TQC's value estimates; spikes can signal instability.",
@@ -224,7 +252,7 @@ METRIC_INFO = _info("Status", {
 
 def validate_metadata() -> None:
     for config_type, info in (
-        (PPOConfig, PPO_INFO), (TQCConfig, TQC_INFO),
+        (PPOConfig, PPO_INFO), (DQNConfig, DQN_INFO), (TQCConfig, TQC_INFO),
         (CurriculumConfig, CURRICULUM_INFO), (EvaluationConfig, EVALUATION_INFO),
         (RewardConfig, REWARD_INFO),
     ):
