@@ -14,7 +14,7 @@ import numpy as np
 from gymnasium import spaces
 
 from polybot.protocol import (
-    EXPERT_ACTION_FEATURE_SLICE,
+    GHOST_GUIDANCE_FEATURE_SLICE,
     PROTOCOL_NAME,
     PROTOCOL_VERSION,
     Action,
@@ -951,8 +951,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
     def _policy_observation(self, telemetry: Telemetry) -> np.ndarray:
         observation = telemetry.to_vector()
         if self.action_mode == "continuous_pwm":
-            # The supplied expert switch is mistimed at Summer 1's jump shortcut.
-            observation[EXPERT_ACTION_FEATURE_SLICE] = 0.0
+            # TQC uses the route lookahead, without ghost pose or action hints.
+            observation[GHOST_GUIDANCE_FEATURE_SLICE] = 0.0
         return observation
 
     def _reward(

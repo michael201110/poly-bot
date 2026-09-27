@@ -183,6 +183,7 @@ def main() -> int:
     parser.add_argument("--tqc-forward-prior-steps", type=int)
     parser.add_argument("--tqc-success-demo-path")
     parser.add_argument("--tqc-forward-guard-progress-ratio", type=float)
+    parser.add_argument("--tqc-recovery-anchor-strength", type=float)
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -442,6 +443,14 @@ def main() -> int:
                 0.0 if launch.tqc_forward_guard_progress_ratio is None
                 else launch.tqc_forward_guard_progress_ratio
             )
+            self.tqc_recovery_anchor = QDoubleSpinBox()
+            self.tqc_recovery_anchor.setDecimals(4)
+            self.tqc_recovery_anchor.setSingleStep(0.0005)
+            self.tqc_recovery_anchor.setRange(0.0, 0.9999)
+            self.tqc_recovery_anchor.setValue(
+                0.0 if launch.tqc_recovery_anchor_strength is None
+                else launch.tqc_recovery_anchor_strength
+            )
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -538,6 +547,7 @@ def main() -> int:
                 ("TQC forward prior steps", self.tqc_prior_steps),
                 ("TQC successful lap demo", self.tqc_success_demo),
                 ("TQC forward guard until progress", self.tqc_forward_guard),
+                ("TQC recovery anchor strength", self.tqc_recovery_anchor),
                 ("Teacher model", self.teacher_model),
                 ("Teacher KL coefficient", self.teacher_kl),
                 ("Expert imitation coefficient", self.expert_imitation),
@@ -676,6 +686,7 @@ def main() -> int:
                 self.tqc_forward_fraction, self.tqc_steering_std, self.tqc_throttle_bias,
                 self.tqc_prior_initial, self.tqc_prior_steps, self.tqc_success_demo,
                 self.tqc_forward_guard,
+                self.tqc_recovery_anchor,
             ):
                 widget.setEnabled(not is_ppo)
             self.action_description.setText(
@@ -761,6 +772,7 @@ def main() -> int:
                     forward_prior_steps=self.tqc_prior_steps.value(),
                     success_demo_path=self.tqc_success_demo.text().strip(),
                     forward_guard_progress_ratio=self.tqc_forward_guard.value(),
+                    recovery_anchor_strength=self.tqc_recovery_anchor.value(),
                 ),
                 reward_scale=self.reward_scale.value(),
                 checkpoint_interval=self.checkpoint.value(),

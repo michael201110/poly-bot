@@ -303,6 +303,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--tqc-forward-prior-steps", type=int, default=0)
     parser.add_argument("--tqc-success-demo-path", default="")
     parser.add_argument("--tqc-forward-guard-progress-ratio", type=float, default=0.0)
+    parser.add_argument("--tqc-recovery-anchor-strength", type=float, default=0.0)
     parser.add_argument(
         "--max-episodes",
         type=int,
@@ -507,6 +508,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     forward_prior_steps=args.tqc_forward_prior_steps,
                     success_demo_path=args.tqc_success_demo_path,
                     forward_guard_progress_ratio=args.tqc_forward_guard_progress_ratio,
+                    recovery_anchor_strength=args.tqc_recovery_anchor_strength,
                 ),
             )
             output = TrainingService(config, lambda event: print(json.dumps(event))).run(

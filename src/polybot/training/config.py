@@ -86,6 +86,7 @@ class TqcConfig:
     forward_prior_steps: int = 0
     success_demo_path: str = ""
     forward_guard_progress_ratio: float = 0.0
+    recovery_anchor_strength: float = 0.0
 
     def __post_init__(self) -> None:
         if self.architecture not in TQC_ARCHITECTURES:
@@ -134,6 +135,10 @@ class TqcConfig:
             0.0 <= self.forward_guard_progress_ratio <= 1.0
         ):
             raise ValueError("TQC forward guard progress ratio must be in [0, 1]")
+        if not math.isfinite(self.recovery_anchor_strength) or not (
+            0.0 <= self.recovery_anchor_strength < 1.0
+        ):
+            raise ValueError("TQC recovery anchor strength must be in [0, 1)")
 
 
 @dataclass(slots=True)

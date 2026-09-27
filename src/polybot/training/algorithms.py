@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from polybot.protocol import EXPERT_ACTION_FEATURE_SLICE
+from polybot.protocol import GHOST_GUIDANCE_FEATURE_SLICE
 from polybot.training.config import TQC_ARCHITECTURES, TrainingConfig, policy_kwargs
 from polybot.training.initialization import apply_forward_bias
 
@@ -53,6 +53,7 @@ def create_model(config: TrainingConfig, env: Any, device: str) -> Any:
         forward_prior_initial=settings.forward_prior_initial,
         forward_prior_steps=settings.forward_prior_steps,
         forward_guard_progress_ratio=settings.forward_guard_progress_ratio,
+        recovery_anchor_strength=settings.recovery_anchor_strength,
         policy_kwargs={"net_arch": {
             "pi": list(TQC_ARCHITECTURES[settings.architecture]),
             "qf": list(TQC_ARCHITECTURES[settings.architecture]),
@@ -67,7 +68,7 @@ def create_model(config: TrainingConfig, env: Any, device: str) -> Any:
 
         with np.load(settings.success_demo_path) as demo:
             observations = demo["observations"].copy()
-            observations[:, EXPERT_ACTION_FEATURE_SLICE] = 0.0
+            observations[:, GHOST_GUIDANCE_FEATURE_SLICE] = 0.0
             model.remember_successful_trajectory(
                 observations, demo["actions"]
             )
@@ -94,6 +95,7 @@ def load_model(config: TrainingConfig, path: Path, env: Any, device: str) -> Any
     else:
         model = model_class("tqc").load(str(path), env=env, device=device)
         model.forward_guard_progress_ratio = config.tqc.forward_guard_progress_ratio
+        model.recovery_anchor_strength = config.tqc.recovery_anchor_strength
         replay_path = path.with_suffix(".replay.pkl")
         if not replay_path.is_file():
             raise FileNotFoundError(

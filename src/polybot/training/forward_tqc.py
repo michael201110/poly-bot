@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import copy
+
 import numpy as np
 import torch
 from sb3_contrib import TQC
@@ -18,6 +20,7 @@ class ForwardWarmupTQC(TQC):
         forward_prior_initial: float = 0.0,
         forward_prior_steps: int = 0,
         forward_guard_progress_ratio: float = 0.0,
+        recovery_anchor_strength: float = 0.0,
         **kwargs,
     ) -> None:
         self.forward_warmup_fraction = forward_warmup_fraction
@@ -25,19 +28,50 @@ class ForwardWarmupTQC(TQC):
         self.forward_prior_initial = forward_prior_initial
         self.forward_prior_steps = forward_prior_steps
         self.forward_guard_progress_ratio = forward_guard_progress_ratio
+        self.recovery_anchor_strength = recovery_anchor_strength
         self.actor_anchor_strength = 0.0
         self.actor_anchor_state = None
         self.successful_trajectories: list[tuple[np.ndarray, np.ndarray]] = []
         self._success_rng = np.random.default_rng(kwargs.get("seed"))
         self.safe_actor_state: list[torch.Tensor] | None = None
+        self.safe_training_state: dict | None = None
         self.safe_actor_progress = 0.0
         super().__init__(*args, **kwargs)
 
+    @staticmethod
+    def _cpu_snapshot(value):
+        if isinstance(value, torch.Tensor):
+            return value.detach().cpu().clone()
+        if isinstance(value, dict):
+            return {key: ForwardWarmupTQC._cpu_snapshot(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [ForwardWarmupTQC._cpu_snapshot(item) for item in value]
+        if isinstance(value, tuple):
+            return tuple(ForwardWarmupTQC._cpu_snapshot(item) for item in value)
+        return copy.deepcopy(value)
+
     def mark_safe_actor(self, progress: float = 0.0) -> None:
-        """Remember a demonstrated or finishing policy for collapse recovery."""
+        """Remember a policy and its learner state for collapse recovery."""
         self.safe_actor_state = [parameter.detach().cpu().clone()
                                  for parameter in self.actor.parameters()]
         self.safe_actor_progress = progress
+        if self.recovery_anchor_strength > 0:
+            self.actor_anchor_state = [parameter.clone() for parameter in self.safe_actor_state]
+            self.actor_anchor_strength = self.recovery_anchor_strength
+        # The demonstration pretrain has no useful critic yet. Capture the full
+        # learner only after an actual episode has reached this progress.
+        if progress > 0:
+            self.safe_training_state = self._cpu_snapshot({
+                "critic": self.critic.state_dict(),
+                "critic_target": self.critic_target.state_dict(),
+                "actor_optimizer": self.actor.optimizer.state_dict(),
+                "critic_optimizer": self.critic.optimizer.state_dict(),
+                "log_ent_coef": getattr(self, "log_ent_coef", None),
+                "ent_coef_optimizer": (
+                    self.ent_coef_optimizer.state_dict()
+                    if getattr(self, "ent_coef_optimizer", None) is not None else None
+                ),
+            })
 
     def restore_safe_actor(self) -> bool:
         if self.safe_actor_state is None:
@@ -47,7 +81,21 @@ class ForwardWarmupTQC(TQC):
                 self.actor.parameters(), self.safe_actor_state, strict=True
             ):
                 parameter.copy_(safe.to(parameter.device))
-        self.actor.optimizer.state.clear()
+        checkpoint = getattr(self, "safe_training_state", None)
+        if checkpoint is None:
+            self.actor.optimizer.state.clear()
+        else:
+            self.critic.load_state_dict(checkpoint["critic"])
+            self.critic_target.load_state_dict(checkpoint["critic_target"])
+            self.actor.optimizer.load_state_dict(checkpoint["actor_optimizer"])
+            self.critic.optimizer.load_state_dict(checkpoint["critic_optimizer"])
+            if checkpoint["log_ent_coef"] is not None:
+                with torch.no_grad():
+                    self.log_ent_coef.copy_(checkpoint["log_ent_coef"].to(self.device))
+                self.ent_coef_optimizer.load_state_dict(checkpoint["ent_coef_optimizer"])
+        if self.recovery_anchor_strength > 0:
+            self.actor_anchor_state = [parameter.clone() for parameter in self.safe_actor_state]
+            self.actor_anchor_strength = self.recovery_anchor_strength
         return True
 
     def remember_successful_trajectory(

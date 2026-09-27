@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 OBSERVATION_SCHEMA = "polybot.telemetry.v2"
-OBSERVATION_SCHEMA_TQC = "polybot.telemetry.tqc-v3"
+OBSERVATION_SCHEMA_TQC = "polybot.telemetry.tqc-v4"
 
 
 def observation_schema_for_algorithm(algorithm: str) -> str:

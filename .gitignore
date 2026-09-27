@@ -8,6 +8,7 @@ __pycache__/
 dist/
 build/
 models/**/checkpoints/
+old-models-pending-delete/
 models/**/latest.zip
 models/**/*.tmp
 models/**/*.replay.pkl

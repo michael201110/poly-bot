@@ -8,16 +8,16 @@ if (-not (Test-Path -LiteralPath $guiPath)) {
 $targetTimesteps = 4000000 # About 24 hours at the observed 45-50 steps/second.
 $remainingTimesteps = $targetTimesteps
 $settings = @{
-    architecture = 'tiny'; learning_rate = 0.0003; buffer_size = 250000
+    architecture = 'tiny'; learning_rate = 0.0001; buffer_size = 250000
     learning_starts = 5000; batch_size = 256; gamma = 0.999; tau = 0.005
     train_freq = 2; gradient_steps = 1; ent_coef = 'auto_0.01'
     forward_warmup_fraction = 0.8; forward_warmup_steering_std = 0.45
     initial_throttle_bias = 1.0; forward_prior_initial = 0.7
     forward_prior_steps = 25000
-    # Disable action cloning for this diagnostic run: the policy must learn by RL.
     success_demo_path = ''
     # The successful run stays on throttle through the shortcut entry at ~66.5%.
     forward_guard_progress_ratio = 0.665
+    recovery_anchor_strength = 0.001
 }
 if ($Resume -or $ModelPath) {
     if (-not $ModelPath) {
@@ -50,7 +50,7 @@ $launchArguments = @(
     '--frame-skip', '30',
     '--max-episode-seconds', '60',
     '--timesteps', [string]$remainingTimesteps,
-    '--reward-profile', '"Summer 1 - full bootstrap"',
+    '--reward-profile', '"Summer 1 - no teacher"',
     '--reward-scale', '0.01',
     '--curriculum', 'full',
     '--checkpoint-interval', '250000',
@@ -69,7 +69,8 @@ $launchArguments = @(
     '--tqc-forward-prior-initial', ([string]$settings.forward_prior_initial),
     '--tqc-forward-prior-steps', ([string]$settings.forward_prior_steps),
     '--tqc-success-demo-path', ('"' + [string]$settings.success_demo_path + '"'),
-    '--tqc-forward-guard-progress-ratio', ([string]$settings.forward_guard_progress_ratio)
+    '--tqc-forward-guard-progress-ratio', ([string]$settings.forward_guard_progress_ratio),
+    '--tqc-recovery-anchor-strength', ([string]$settings.recovery_anchor_strength)
 )
 if ($Resume -or $ModelPath) {
     $launchArguments += @('--model', ('"' + $ModelPath + '"'), '--resume')

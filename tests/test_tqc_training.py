@@ -11,6 +11,7 @@ from gymnasium import spaces
 
 from polybot.env import ControlDuty, PolyTrackEnv, RewardConfig, _expert_action_reward
 from polybot.mock import MockSimulatorTransport
+from polybot.protocol import GHOST_GUIDANCE_FEATURE_SLICE
 from polybot.pwm import ContinuousPwmControls
 from polybot.training.config import (
     TqcConfig,
@@ -57,7 +58,9 @@ def test_env_action_spaces_and_wire_sequence() -> None:
     assert isinstance(continuous.action_space, spaces.Box)
     np.testing.assert_array_equal(continuous.action_space.low, [-1, -1])
     np.testing.assert_array_equal(continuous.action_space.high, [1, 1])
-    continuous.reset(seed=3)
+    observation, _ = continuous.reset(seed=3)
+    assert np.any(continuous.latest_telemetry.to_vector()[GHOST_GUIDANCE_FEATURE_SLICE] != 0)
+    assert np.all(observation[GHOST_GUIDANCE_FEATURE_SLICE] == 0)
     continuous.step(np.array([0.25, 0.75], dtype=np.float32))
     actions = transport.command_log[-1]["params"]["actions"]
     assert len(actions) == 16
@@ -425,5 +428,55 @@ def test_fresh_tqc_can_pretrain_from_successful_lap(tmp_path) -> None:
         np.testing.assert_allclose(recovered, predicted, atol=1e-6)
         model.learn(12)
         assert "train/success_imitation_loss" in model.logger.name_to_value
+    finally:
+        env.close()
+
+
+def test_safe_recovery_restores_learner_and_anchors_actor(tmp_path) -> None:
+    import torch
+
+    from polybot.training.algorithms import create_model
+    from polybot.training.forward_tqc import ForwardWarmupTQC
+
+    env = PolyTrackEnv(MockSimulatorTransport(), action_mode="continuous_pwm")
+    try:
+        model = create_model(
+            TrainingConfig(
+                algorithm="tqc",
+                tqc=TqcConfig(
+                    architecture="tiny", buffer_size=64, learning_starts=2,
+                    batch_size=8, train_freq=2, recovery_anchor_strength=0.001,
+                ),
+            ),
+            env, "cpu",
+        )
+        model.learn(12)
+        model.mark_safe_actor(0.6)
+        actor = next(model.actor.parameters())
+        critic = next(model.critic.parameters())
+        target = next(model.critic_target.parameters())
+        expected = [value.detach().clone() for value in (actor, critic, target)]
+        entropy = model.log_ent_coef.detach().clone()
+        assert model.actor.optimizer.state
+        assert model.critic.optimizer.state
+
+        with torch.no_grad():
+            for value in (actor, critic, target, model.log_ent_coef):
+                value.add_(1)
+        model.actor.optimizer.state.clear()
+        model.critic.optimizer.state.clear()
+        assert model.restore_safe_actor()
+        for value, saved in zip((actor, critic, target), expected, strict=True):
+            torch.testing.assert_close(value, saved)
+        torch.testing.assert_close(model.log_ent_coef, entropy)
+        assert model.actor.optimizer.state
+        assert model.critic.optimizer.state
+        assert model.actor_anchor_strength == 0.001
+
+        archive = tmp_path / "safe.zip"
+        model.save(str(archive))
+        restored = ForwardWarmupTQC.load(str(archive), device="cpu")
+        assert restored.safe_training_state is not None
+        assert restored.actor_anchor_strength == 0.001
     finally:
         env.close()

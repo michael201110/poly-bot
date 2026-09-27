@@ -16,7 +16,7 @@ import numpy as np
 PROTOCOL_NAME = "polybot.sim"
 PROTOCOL_VERSION = 2
 ROUTE_PROGRESS_FEATURE_INDEX = 12
-EXPERT_ACTION_FEATURE_SLICE = slice(39, 42)
+GHOST_GUIDANCE_FEATURE_SLICE = slice(34, 42)
 
 
 class ProtocolViolation(RuntimeError):
