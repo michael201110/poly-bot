@@ -173,8 +173,9 @@ class TrainingRunner:
             runner = self
 
             class Callback(BaseCallback):
-                def __init__(self) -> None:
+                def __init__(self, stop_at: int | None = None) -> None:
                     super().__init__()
+                    self.stop_at = stop_at
                     self.last_status = 0.0
                     self.episode_reward = 0.0
                     self.episode_progress = 0.0
@@ -223,7 +224,9 @@ class TrainingRunner:
                         })
                         self.episode_reward = 0.0
                         self.episode_progress = 0.0
-                    return not runner.stop_requested.is_set()
+                    return not runner.stop_requested.is_set() and (
+                        self.stop_at is None or self.num_timesteps < self.stop_at
+                    )
 
             for index, phase in enumerate(plan.phases):
                 if self.stop_requested.is_set():
@@ -242,7 +245,16 @@ class TrainingRunner:
                     interval = min(next_eval - consumed, next_checkpoint - consumed)
                     chunk = max(1, min(remaining, interval))
                     before = self.model.num_timesteps
-                    self.model.learn(chunk, callback=Callback(), reset_num_timesteps=False)
+                    if cfg.algorithm == "dqn":
+                        # DQN's epsilon schedule uses learn()'s total_timesteps. Passing
+                        # only the next evaluation chunk exhausts exploration early.
+                        self.model.learn(
+                            cfg.timesteps - consumed,
+                            callback=Callback(stop_at=before + chunk),
+                            reset_num_timesteps=False,
+                        )
+                    else:
+                        self.model.learn(chunk, callback=Callback(), reset_num_timesteps=False)
                     if self.model.num_timesteps == before:
                         break
                     consumed = self.model.num_timesteps - start_steps

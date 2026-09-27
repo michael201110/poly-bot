@@ -138,6 +138,32 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
                           backend_for(algorithm).action_adapter(config).schema)
 
 
+def test_dqn_exploration_follows_full_budget_across_evaluation_chunks(tmp_path) -> None:
+    config = replace(
+        configuration(tmp_path, "dqn"),
+        timesteps=1_000,
+        evaluation=EvaluationConfig(16, 1),
+        checkpoint_interval=0,
+        dqn=replace(configuration(tmp_path, "dqn").dqn, exploration_fraction=1.0),
+    )
+    runner = None
+
+    def on_event(event: dict) -> None:
+        if event["type"] == "evaluation":
+            runner.stop()
+
+    runner = TrainingRunner(config, on_event)
+    latest = runner.run()
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id=config.track_id,
+                       action_adapter=backend_for("dqn").action_adapter(config))
+    try:
+        model = backend_for("dqn").load_model(latest / "policy.zip", env, "cpu")
+        assert model.num_timesteps == 16
+        assert model.exploration_rate > 0.9
+    finally:
+        env.close()
+
+
 def test_tqc_warmup_replay_action_matches_executed_action(tmp_path) -> None:
     config = configuration(tmp_path, "tqc")
     backend = backend_for("tqc")
