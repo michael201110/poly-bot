@@ -9,7 +9,7 @@ from stable_baselines3 import DQN
 
 from polybot.algorithms.base import AlgorithmBackend
 from polybot.control.native_digital import NativeDigitalActionAdapter
-from polybot.training.config import ARCHITECTURES, DQNConfig
+from polybot.training.config import DQN_ARCHITECTURES, DQNConfig
 
 if TYPE_CHECKING:
     from polybot.training.config import TrainingConfig
@@ -25,7 +25,8 @@ class DQNBackend(AlgorithmBackend):
             config.dqn = DQNConfig()
 
     def action_adapter(self, config: TrainingConfig) -> NativeDigitalActionAdapter:
-        return NativeDigitalActionAdapter()
+        assert config.dqn is not None
+        return NativeDigitalActionAdapter(brake_enabled=config.dqn.action_set == "full")
 
     def architecture(self, config: TrainingConfig) -> str:
         assert config.dqn is not None
@@ -44,7 +45,7 @@ class DQNBackend(AlgorithmBackend):
             exploration_fraction=p.exploration_fraction,
             exploration_initial_eps=p.exploration_initial_eps,
             exploration_final_eps=p.exploration_final_eps,
-            policy_kwargs={"net_arch": list(ARCHITECTURES[p.architecture])},
+            policy_kwargs={"net_arch": list(DQN_ARCHITECTURES[p.architecture])},
         )
 
     def load_model(

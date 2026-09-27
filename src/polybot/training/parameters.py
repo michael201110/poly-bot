@@ -66,7 +66,14 @@ PPO_INFO = _info("PPO", {
 }, algorithm="ppo")
 
 DQN_INFO = _info("DQN", {
-    "architecture": "Q-network width. Larger networks can learn more complex action values but update slower.",
+    "architecture": (
+        "Q-network width. yosh_2020 uses 64 then 16 hidden units from Yosh's older "
+        "Trackmania model; PolyBot inputs differ."
+    ),
+    "action_set": (
+        "Full has nine digital actions; no_brake has six coast/throttle actions "
+        "for an initial DQN learning stage."
+    ),
     "learning_rate": "Size of Q-network weight updates. Around 0.0001 is a cautious starting point.",
     "replay_capacity": "Maximum past decisions kept for reuse; larger history costs more memory.",
     "learning_starts": "Number of digital driving decisions collected before Q-network updates begin.",

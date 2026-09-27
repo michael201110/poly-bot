@@ -99,6 +99,11 @@ def test_gui_exact_config_roundtrip_and_presets(window) -> None:
     dqn = TrainingConfig(algorithm="dqn", dqn=DQNConfig(architecture="standard"))
     window.load_configuration(dqn)
     assert window.configuration().to_dict() == dqn.to_dict()
+    no_brake = TrainingConfig(algorithm="dqn", dqn=DQNConfig(
+        architecture="yosh_2020", action_set="no_brake",
+    ))
+    window.load_configuration(no_brake)
+    assert window.configuration().to_dict() == no_brake.to_dict()
     window.preset.setCurrentText("Stable")
     assert window.configuration().dqn == algorithm_presets("dqn")["Stable"]
     window._event({

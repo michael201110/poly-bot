@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 from gymnasium import spaces
@@ -8,7 +10,9 @@ from polybot.control.native_digital import NativeDigitalActionAdapter
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Action
-from polybot.training.config import DQNConfig
+from polybot.training.config import DQNConfig, EvaluationConfig, TrainingConfig
+from polybot.training.dqn_brake_stage import SIX_TO_NINE, expand_no_brake_checkpoint
+from polybot.training.runner import TrainingRunner
 
 
 @pytest.mark.parametrize("index,expected", [
@@ -27,7 +31,7 @@ def test_all_native_digital_actions_are_exact_and_stateless(index: int, expected
     assert adapter.action_space == spaces.Discrete(9)
     assert adapter.schema == "digital-discrete-9-v2"
     assert adapter.sequence is False
-    assert set(vars(adapter)) == {"action_space"}  # No pulse scheduler or phase.
+    assert set(vars(adapter)) == {"action_space", "brake_enabled", "schema"}
     for _ in range(2):
         applied = adapter.apply(np.int64(index), 30)
         assert applied.ticks == [expected] * 30
@@ -36,6 +40,18 @@ def test_all_native_digital_actions_are_exact_and_stateless(index: int, expected
         assert applied.demand.brake == expected.brake
         assert not (expected.throttle and expected.brake)
         adapter.reset()
+
+
+@pytest.mark.parametrize("index,expected", [
+    (0, Action(0, False, False)), (1, Action(0, True, False)),
+    (2, Action(-1, False, False)), (3, Action(-1, True, False)),
+    (4, Action(1, False, False)), (5, Action(1, True, False)),
+])
+def test_no_brake_dqn_actions(index: int, expected: Action) -> None:
+    adapter = NativeDigitalActionAdapter(brake_enabled=False)
+    assert adapter.action_space == spaces.Discrete(6)
+    assert adapter.schema == "digital-discrete-6-no-brake-v2"
+    assert adapter.apply(index, 30).ticks == [expected] * 30
 
 
 def test_dqn_step_holds_left_throttle_for_all_thirty_ticks_without_pwm(monkeypatch) -> None:
@@ -70,7 +86,47 @@ def test_dqn_step_holds_left_throttle_for_all_thirty_ticks_without_pwm(monkeypat
     {"target_update_interval": 0}, {"exploration_fraction": 1.1},
     {"exploration_initial_eps": -0.1},
     {"exploration_final_eps": 0.5, "exploration_initial_eps": 0.2},
+    {"action_set": "unknown"},
 ])
 def test_dqn_config_rejects_invalid_values(changes: dict) -> None:
     with pytest.raises(ValueError, match="DQN"):
         DQNConfig(**changes)
+
+
+def test_no_brake_policy_and_replay_transfer_to_full_dqn(tmp_path) -> None:
+    early = TrainingConfig(
+        algorithm="dqn", device="cpu", timesteps=32,
+        evaluation=EvaluationConfig(32, 1), checkpoint_interval=0,
+        output_root=tmp_path / "early", log_root=tmp_path / "logs",
+        dqn=DQNConfig(action_set="no_brake", architecture="yosh_2020",
+                      learning_starts=8, batch_size=8, replay_capacity=128),
+    )
+    source = TrainingRunner(early).run()
+    later = replace(
+        early, timesteps=16, output_root=tmp_path / "later",
+        evaluation=EvaluationConfig(16, 1),
+        dqn=replace(early.dqn, action_set="full"),
+    )
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id=later.track_id,
+                       action_adapter=NativeDigitalActionAdapter())
+    try:
+        destination = expand_no_brake_checkpoint(source, later, env, "cpu")
+        from stable_baselines3 import DQN
+
+        old = DQN.load(source / "policy.zip", device="cpu")
+        new = DQN.load(destination / "policy.zip", device="cpu")
+        assert new.action_space == spaces.Discrete(9)
+        assert new.num_timesteps == old.num_timesteps
+        for old_row, new_row in enumerate(SIX_TO_NINE):
+            np.testing.assert_array_equal(
+                old.policy.q_net.q_net[-1].weight[old_row].detach().numpy(),
+                new.policy.q_net.q_net[-1].weight[new_row].detach().numpy(),
+            )
+        new.load_replay_buffer(destination / "replay.pkl")
+        assert new.replay_buffer.size() >= old.num_timesteps - 1
+        assert set(new.replay_buffer.actions[:new.replay_buffer.size(), 0, 0]) <= set(SIX_TO_NINE)
+    finally:
+        env.close()
+    resumed = TrainingRunner(later).run(resume=destination)
+    assert resumed == destination
+    assert DQN.load(resumed / "policy.zip", device="cpu").num_timesteps > old.num_timesteps

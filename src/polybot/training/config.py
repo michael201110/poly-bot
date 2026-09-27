@@ -11,6 +11,7 @@ from polybot.environment.rewards import RewardConfig, summer_1_reward_config
 
 CONFIG_SCHEMA = "polybot.config.v2"
 ARCHITECTURES = {"tiny": (64, 64), "compact": (128, 128), "standard": (256, 256)}
+DQN_ARCHITECTURES = {**ARCHITECTURES, "yosh_2020": (64, 16)}
 
 
 @dataclass(slots=True)
@@ -56,6 +57,7 @@ class PPOConfig:
 @dataclass(slots=True)
 class DQNConfig:
     architecture: str = "compact"
+    action_set: str = "full"
     learning_rate: float = 1e-4
     replay_capacity: int = 250_000
     learning_starts: int = 5_000
@@ -69,8 +71,10 @@ class DQNConfig:
     exploration_final_eps: float = 0.05
 
     def __post_init__(self) -> None:
-        if self.architecture not in ARCHITECTURES:
+        if self.architecture not in DQN_ARCHITECTURES:
             raise ValueError("unknown DQN architecture")
+        if self.action_set not in {"full", "no_brake"}:
+            raise ValueError("DQN action set must be full or no_brake")
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
             raise ValueError("DQN learning rate must be positive and finite")
         if self.replay_capacity < 1 or self.learning_starts < 0:

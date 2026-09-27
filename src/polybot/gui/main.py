@@ -123,7 +123,15 @@ class ParameterForm(QWidget):
                 continue
             metadata = info[field.name]
             current = getattr(instance, field.name)
-            choices = ("tiny", "compact", "standard") if field.name == "architecture" else ()
+            if field.name == "architecture":
+                choices = (
+                    ("tiny", "compact", "standard", "yosh_2020")
+                    if isinstance(instance, DQNConfig) else ("tiny", "compact", "standard")
+                )
+            elif field.name == "action_set":
+                choices = ("full", "no_brake")
+            else:
+                choices = ()
             widget = _editor(current, metadata.description, choices)
             label = QLabel(metadata.label)
             label.setToolTip(metadata.description)
@@ -281,7 +289,7 @@ class PolyBotWindow(QWidget):
         )
         self.dqn_form = ParameterForm(
             DQNConfig(), DQN_INFO,
-            {"architecture", "learning_rate", "replay_capacity", "exploration_fraction"},
+            {"architecture", "action_set", "learning_rate", "replay_capacity", "exploration_fraction"},
         )
         self.tqc_form = ParameterForm(
             TQCConfig(), TQC_INFO, {"architecture", "learning_rate", "train_frequency"}

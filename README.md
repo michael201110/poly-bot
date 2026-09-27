@@ -17,6 +17,8 @@ python -m venv .venv
 
 In the GUI, choose a track, algorithm, and preset. **Balanced** rewards and algorithm settings are intended as starting points. Hover over any field for a plain-language explanation. **Advanced settings** reveals every algorithm parameter and all reward coefficients. The exact resolved reward values are always visible in the Rewards tab. PPO uses fresh rollouts and PWM steering; DQN uses nine native digital actions and replay; TQC uses continuous controls and replay. None is universally better.
 
+DQN also has a six-action `no_brake` starting mode. For a staged Summer 1 experiment that learns without brake, transfers the learned Q-network and replay into the nine-action model, then continues training, run `python tools/start_staged_dqn.py`. See the [training guide](docs/training.md) for the transfer threshold and saved model folders.
+
 To try a short run on the local mock:
 
 ```powershell
