@@ -15,8 +15,8 @@ $settings = @{
     initial_throttle_bias = 1.0; forward_prior_initial = 0.7
     forward_prior_steps = 25000
     success_demo_path = ''
-    # The successful run stays on throttle through the shortcut entry at ~66.5%.
-    forward_guard_progress_ratio = 0.665
+    # Keep the forward-only guard limited to the early learning section.
+    forward_guard_progress_ratio = 0.250
     recovery_anchor_strength = 0.001
 }
 if ($Resume -or $ModelPath) {
@@ -32,6 +32,7 @@ if ($Resume -or $ModelPath) {
     }
     $metadata = Get-Content -LiteralPath $metadataPath -Raw | ConvertFrom-Json
     foreach ($key in @($settings.Keys)) {
+        if ($key -eq 'forward_guard_progress_ratio') { continue }
         $saved = $metadata.tqc_hyperparameters.PSObject.Properties[$key]
         if ($saved) { $settings[$key] = $saved.Value }
     }

@@ -308,7 +308,9 @@ def test_reward_change_resumes_policy_without_stale_replay(tmp_path) -> None:
     )
     path = TrainingService(config).run()
     changed = replace(
-        config, rewards=replace(config.rewards, barrier_collision_impulse_threshold=1e9),
+        config,
+        rewards=replace(config.rewards, barrier_collision_impulse_threshold=1e9),
+        tqc=replace(config.tqc, forward_guard_progress_ratio=0.25),
     )
     events: list[dict] = []
     resumed = TrainingService(changed, events.append)

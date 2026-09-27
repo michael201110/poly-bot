@@ -498,6 +498,7 @@ class TrainingService:
                     if cfg.algorithm == "tqc" and any(
                         asdict(cfg.tqc).get(key) != value
                         for key, value in resume_metadata.tqc_hyperparameters.items()
+                        if key != "forward_guard_progress_ratio"
                     ):
                         raise IncompatibleModelError(
                             "TQC resume settings differ from saved hyperparameters"
