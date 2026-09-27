@@ -53,7 +53,7 @@ $launchArguments = @(
     '--timesteps', [string]$remainingTimesteps,
     '--reward-profile', '"Summer 1 - no teacher"',
     '--reward-scale', '0.01',
-    '--curriculum', 'full',
+    '--curriculum', 'quarters-randomised',
     '--checkpoint-interval', '250000',
     '--tqc-learning-rate', ([string]$settings.learning_rate),
     '--tqc-buffer-size', ([string]$settings.buffer_size),
