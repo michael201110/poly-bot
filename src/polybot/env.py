@@ -810,9 +810,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
         airborne = grounded_wheels < self.reward_config.off_track_min_grounded_wheels
         clean_takeoff = airborne and not self._was_airborne
+        landed_this_step = not airborne and self._was_airborne
         off_track_landing = (
-            not airborne
-            and self._was_airborne
+            landed_this_step
             and lateral_ratio >= self.reward_config.off_track_lateral_ratio
         )
         if airborne != self._was_airborne:
@@ -848,7 +848,13 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             collision_impulse = 0.0
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
-        barrier_contact = collision_impulse > self.reward_config.barrier_collision_impulse_threshold
+        # The simulator reports an untyped collision impulse. A touchdown can
+        # produce one even when no barrier was hit, so do not end that step as
+        # a barrier contact. Native crash/off-track checks still apply.
+        barrier_contact = (
+            not landed_this_step
+            and collision_impulse > self.reward_config.barrier_collision_impulse_threshold
+        )
         self._barrier_contact_s = dt if barrier_contact else 0.0
 
         fully_airborne = grounded_wheels == 0

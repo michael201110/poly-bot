@@ -484,6 +484,52 @@ def test_native_chassis_collision_terminates_episode() -> None:
         env.close()
 
 
+def test_landing_impact_is_not_treated_as_barrier_contact() -> None:
+    class LandingTransport(MockSimulatorTransport):
+        step_count = 0
+
+        def _transition(self, *, ticks_advanced: int, events: list[str]) -> dict:
+            result = super()._transition(ticks_advanced=ticks_advanced, events=events)
+            if ticks_advanced:
+                self.step_count += 1
+                result["state"]["wheel_contacts"] = (
+                    [0, 0, 0, 0] if self.step_count == 1 else [1, 1, 1, 1]
+                )
+                result["info"]["collision_impulses"] = (
+                    [0.0] if self.step_count == 1 else [1.0]
+                )
+            return result
+
+    transport = LandingTransport()
+    env = PolyTrackEnv(
+        transport,
+        track_id="mock/straight",
+        frame_skip=10,
+        max_episode_steps=100,
+        reward_config=replace(RewardConfig(), off_track_landing_penalty=-25.0),
+    )
+    try:
+        env.reset(seed=0)
+        action = np.asarray([1, 0, 0], dtype=np.int64)
+        _, _, terminated, truncated, _ = env.step(action)
+        assert not (terminated or truncated)
+
+        assert transport.state is not None
+        transport.state.lateral_offset_m = transport.track_half_width_m * 1.1
+        _, _, terminated, truncated, info = env.step(action)
+        assert not (terminated or truncated)
+        assert "off_track_landing" in info["events"]
+        assert "barrier_contact" not in info["events"]
+        assert info["reward_terms"]["off_track_landing"] == -25.0
+        assert info["reward_terms"]["barrier_contact"] == 0.0
+
+        _, _, terminated, truncated, info = env.step(action)
+        assert terminated and not truncated
+        assert "barrier_contact" in info["events"]
+    finally:
+        env.close()
+
+
 def test_simulated_time_limit_is_independent_of_decision_limit() -> None:
     env = make_env(
         track_id="mock/straight",
