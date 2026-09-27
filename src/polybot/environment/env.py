@@ -299,7 +299,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             self._curriculum_reset_diagnostics = None
         if self._episode_curriculum_quarter is not None:
             info["curriculum_quarter"] = self._episode_curriculum_quarter
-            info["curriculum_start_ratio"] = start_progress_ratio
+            info["curriculum_spawn_ratio"] = start_progress_ratio
+            info["curriculum_start_ratio"] = self._episode_curriculum_start_ratio
             info["curriculum_end_ratio"] = self._episode_curriculum_end_ratio
         return observation, info
 

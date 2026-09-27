@@ -42,7 +42,7 @@ def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
     assert 'from "./worker_runtime.js"' not in main_source
     expected = (
         "https://cdn.polymodloader.com/gh/michael201110/poly-bot/"
-        f"020ea536816934f307904b79fc51d2edb16cf789/pml-mod/{runtime_version}/"
+        f"64b8c8fac7dcd90a4b625c8e5c26b4541e790f16/pml-mod/{runtime_version}/"
         "worker_runtime.js"
     )
     assert f'from "{expected}"' in main_source
@@ -137,7 +137,7 @@ def test_latest_mod_imports_worker_from_an_immutable_resolvable_ref() -> None:
         encoding="utf-8"
     )
 
-    assert "/020ea536816934f307904b79fc51d2edb16cf789/" in source
+    assert "/64b8c8fac7dcd90a4b625c8e5c26b4541e790f16/" in source
     assert "/v0.1.23/pml-mod/0.1.0/worker_runtime.js" not in source
 
 

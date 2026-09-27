@@ -106,6 +106,17 @@ def test_curriculum_sections_spawn_with_lead_in_and_keep_global_budget() -> None
     assert (custom.phases[0].spawn_ratio, custom.phases[0].start_ratio,
             custom.phases[0].end_ratio) == (.4, .5, .75)
 
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight", curriculum_random_quarters=True,
+        action_adapter=NativeDigitalActionAdapter(),
+    )
+    try:
+        _, info = env.reset(seed=17)
+        assert info["curriculum_start_ratio"] - info["curriculum_spawn_ratio"] == pytest.approx(.05)
+        assert info["curriculum_end_ratio"] - info["curriculum_start_ratio"] == pytest.approx(.25)
+    finally:
+        env.close()
+
 
 def test_curriculum_reset_info_is_moving_and_section_relative() -> None:
     env = PolyTrackEnv(

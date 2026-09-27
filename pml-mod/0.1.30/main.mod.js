@@ -3,7 +3,7 @@ import {
   PolyMod,
 } from "https://cdn.polymodloader.com/pml/PolyModLoader/0.6.2/PolyTypes.js";
 
-import { polybotWorkerInjection } from "https://cdn.polymodloader.com/gh/michael201110/poly-bot/020ea536816934f307904b79fc51d2edb16cf789/pml-mod/0.1.30/worker_runtime.js";
+import { polybotWorkerInjection } from "https://cdn.polymodloader.com/gh/michael201110/poly-bot/64b8c8fac7dcd90a4b625c8e5c26b4541e790f16/pml-mod/0.1.30/worker_runtime.js";
 
 class PolyBotBridgeMod extends PolyMod {
   touchingPhysics = true;
