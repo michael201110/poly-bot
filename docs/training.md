@@ -69,6 +69,8 @@ This profile also ignores the simulator's untyped collision impulse: a landing c
 the same signal as a wall hit. Off-track and stall detection still end failed episodes.
 When reward settings change on TQC resume, the trainer keeps the policy and starts a new
 replay buffer so old rewards and terminal flags do not keep training it.
+Failed episodes claw back 5.5 reward units per metre gained from their own start point;
+completed curriculum sections keep their progress and section bonus.
 
 TQC defaults: actor and critics each use two 256-unit hidden layers (`standard`); learning rate
 `0.0003`; replay buffer `1,000,000`; learning starts `10,000`; batch size `256`; gamma `0.999`;

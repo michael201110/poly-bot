@@ -328,10 +328,21 @@ def _barrier_contact_reward(telemetry: Telemetry, config: RewardConfig) -> float
     )
 
 
-def _failure_progress_clawback(telemetry: Telemetry, config: RewardConfig) -> float:
-    """Cancel dense progress profit when an episode deliberately terminates incomplete."""
+def _failure_progress_clawback(
+    telemetry: Telemetry,
+    config: RewardConfig,
+    *,
+    episode_start_progress_m: float = 0.0,
+    highest_progress_m: float | None = None,
+) -> float:
+    """Claw back progress earned in this episode, including a later rollback."""
 
-    return config.failure_progress_clawback_per_m * max(0.0, telemetry.route_progress_m)
+    peak = telemetry.route_progress_m
+    if highest_progress_m is not None:
+        peak = max(peak, highest_progress_m)
+    return config.failure_progress_clawback_per_m * max(
+        0.0, peak - episode_start_progress_m
+    )
 
 
 def _failure_early_reward(telemetry: Telemetry, config: RewardConfig) -> float:
@@ -583,6 +594,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_steps = 0
         self._previous_progress_m = 0.0
         self._highest_progress_m = 0.0
+        self._episode_start_progress_m = 0.0
         self._previous_action = Action()
         self._previous_control = ControlDuty.from_action(self._previous_action)
         self._episode_done = True
@@ -696,6 +708,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_steps = 0
         self._previous_progress_m = transition.telemetry.route_progress_m
         self._highest_progress_m = self._previous_progress_m
+        self._episode_start_progress_m = self._previous_progress_m
         self._previous_action = transition.telemetry.previous_action
         self._previous_control = ControlDuty.from_action(self._previous_action)
         self._episode_done = False
@@ -1076,7 +1089,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 _barrier_contact_reward(telemetry, config) if barrier_contact else 0.0
             ),
             "failure_progress_clawback": (
-                _failure_progress_clawback(telemetry, config) if incomplete_failure else 0.0
+                _failure_progress_clawback(
+                    telemetry, config,
+                    episode_start_progress_m=self._episode_start_progress_m,
+                    highest_progress_m=self._highest_progress_m,
+                ) if incomplete_failure else 0.0
             ),
             "failure_early": (
                 _failure_early_reward(telemetry, config) if incomplete_failure else 0.0

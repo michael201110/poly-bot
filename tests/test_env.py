@@ -587,6 +587,10 @@ def test_incomplete_failure_claws_back_accumulated_progress() -> None:
         config = replace(env.reward_config, failure_progress_clawback_per_m=-3.0)
 
         assert _failure_progress_clawback(telemetry, config) == pytest.approx(-2133.0)
+        assert _failure_progress_clawback(
+            replace(telemetry, route_progress_m=650.0), config,
+            episode_start_progress_m=500.0, highest_progress_m=711.0,
+        ) == pytest.approx(-633.0)
     finally:
         env.close()
 
