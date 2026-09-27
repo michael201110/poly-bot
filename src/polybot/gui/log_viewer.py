@@ -14,9 +14,11 @@ from polybot.gui.events import format_event
 
 
 class LiveLogWindow(QWidget):
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, *, follow_newest: bool = False) -> None:
         super().__init__()
+        self.source = path
         self.path = path
+        self.follow_newest = follow_newest
         self.position = 0
         self.setWindowTitle("PolyBot · readable training log")
         self.resize(900, 600)
@@ -34,6 +36,14 @@ class LiveLogWindow(QWidget):
         self.refresh()
 
     def refresh(self) -> None:
+        if self.follow_newest:
+            candidates = list(self.source.parent.glob(self.source.name))
+            if candidates:
+                newest = max(candidates, key=lambda item: (item.stat().st_mtime, item.name))
+                if newest != self.path:
+                    self.path = newest
+                    self.position = 0
+                    self.events.clear()
         if not self.path.is_file():
             return
         with self.path.open(encoding="utf-8") as stream:
@@ -63,9 +73,11 @@ class LiveLogWindow(QWidget):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Watch a running PolyBot training log in readable form")
     parser.add_argument("log", type=Path, help="JSONL file written by PolyBot training")
+    parser.add_argument("--follow-newest", action="store_true",
+                        help="treat log as a glob and switch to the newest matching run")
     args = parser.parse_args(argv)
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    window = LiveLogWindow(args.log)
+    window = LiveLogWindow(args.log, follow_newest=args.follow_newest)
     window.show()
     return app.exec()
 

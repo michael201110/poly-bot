@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import fields
 
 import pytest
@@ -135,3 +136,20 @@ def test_live_log_viewer_follows_appended_events(qt_app, tmp_path) -> None:
         assert "off track" in viewer.events.toPlainText()
     finally:
         viewer.close()
+
+    watcher = LiveLogWindow(tmp_path / "run*.jsonl", follow_newest=True)
+    try:
+        assert watcher.path == path
+        newer = tmp_path / "run-new.jsonl"
+        newer.write_text(json.dumps({
+            "type": "episode", "episode": 3, "timesteps": 200,
+            "progress": .5, "reward": 10, "events": ["stalled"],
+        }) + "\n", encoding="utf-8")
+        previous_time = path.stat().st_mtime
+        os.utime(newer, (previous_time + 10, previous_time + 10))
+        watcher.refresh()
+        assert watcher.path == newer
+        assert "Episode 3" in watcher.events.toPlainText()
+        assert "Episode 2" not in watcher.events.toPlainText()
+    finally:
+        watcher.close()
