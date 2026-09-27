@@ -24,6 +24,7 @@ from polybot.training.models import (
     ModelMetadata,
     ModelRegistry,
     git_commit,
+    observation_schema_for_algorithm,
 )
 from polybot.transport import WebSocketServerTransport
 
@@ -127,6 +128,7 @@ class TrainingService:
             architecture=(cfg.architecture if cfg.algorithm == "ppo" else cfg.tqc.architecture),
             parameter_count=parameters,
             algorithm=cfg.algorithm.upper(),
+            observation_schema=observation_schema_for_algorithm(cfg.algorithm),
             lookahead_count=cfg.lookahead_count,
             action_schema=action_schema(cfg),
             pwm_enabled=cfg.algorithm == "ppo" and cfg.pwm_enabled,
@@ -486,6 +488,7 @@ class TrainingService:
                     registry.assert_compatible(
                         resume_metadata,
                         track_name=cfg.track_name,
+                        observation_schema=observation_schema_for_algorithm(cfg.algorithm),
                         action_schema=action_schema(cfg),
                         algorithm=cfg.algorithm,
                         architecture=(cfg.architecture if cfg.algorithm == "ppo"

@@ -182,6 +182,7 @@ def main() -> int:
     parser.add_argument("--tqc-forward-prior-initial", type=float)
     parser.add_argument("--tqc-forward-prior-steps", type=int)
     parser.add_argument("--tqc-success-demo-path")
+    parser.add_argument("--tqc-forward-guard-progress-ratio", type=float)
     parser.add_argument("--reward-profile")
     parser.add_argument(
         "--curriculum",
@@ -434,6 +435,13 @@ def main() -> int:
                 else launch.tqc_forward_prior_steps
             )
             self.tqc_success_demo = QLineEdit(launch.tqc_success_demo_path or "")
+            self.tqc_forward_guard = QDoubleSpinBox()
+            self.tqc_forward_guard.setDecimals(3)
+            self.tqc_forward_guard.setRange(0.0, 1.0)
+            self.tqc_forward_guard.setValue(
+                0.0 if launch.tqc_forward_guard_progress_ratio is None
+                else launch.tqc_forward_guard_progress_ratio
+            )
             self.reward_profiles = RewardProfileStore()
             self.reward_profile = QComboBox()
             self.reward_profile.setEditable(True)
@@ -529,6 +537,7 @@ def main() -> int:
                 ("TQC forward prior initial", self.tqc_prior_initial),
                 ("TQC forward prior steps", self.tqc_prior_steps),
                 ("TQC successful lap demo", self.tqc_success_demo),
+                ("TQC forward guard until progress", self.tqc_forward_guard),
                 ("Teacher model", self.teacher_model),
                 ("Teacher KL coefficient", self.teacher_kl),
                 ("Expert imitation coefficient", self.expert_imitation),
@@ -666,6 +675,7 @@ def main() -> int:
                 self.tqc_frequency, self.tqc_gradients, self.tqc_entropy,
                 self.tqc_forward_fraction, self.tqc_steering_std, self.tqc_throttle_bias,
                 self.tqc_prior_initial, self.tqc_prior_steps, self.tqc_success_demo,
+                self.tqc_forward_guard,
             ):
                 widget.setEnabled(not is_ppo)
             self.action_description.setText(
@@ -750,6 +760,7 @@ def main() -> int:
                     forward_prior_initial=self.tqc_prior_initial.value(),
                     forward_prior_steps=self.tqc_prior_steps.value(),
                     success_demo_path=self.tqc_success_demo.text().strip(),
+                    forward_guard_progress_ratio=self.tqc_forward_guard.value(),
                 ),
                 reward_scale=self.reward_scale.value(),
                 checkpoint_interval=self.checkpoint.value(),

@@ -7,6 +7,8 @@ import torch
 from sb3_contrib import TQC
 from torch.nn import functional as F
 
+from polybot.protocol import ROUTE_PROGRESS_FEATURE_INDEX
+
 
 class ForwardWarmupTQC(TQC):
     def __init__(
@@ -15,12 +17,14 @@ class ForwardWarmupTQC(TQC):
         forward_warmup_steering_std: float = 0.45,
         forward_prior_initial: float = 0.0,
         forward_prior_steps: int = 0,
+        forward_guard_progress_ratio: float = 0.0,
         **kwargs,
     ) -> None:
         self.forward_warmup_fraction = forward_warmup_fraction
         self.forward_warmup_steering_std = forward_warmup_steering_std
         self.forward_prior_initial = forward_prior_initial
         self.forward_prior_steps = forward_prior_steps
+        self.forward_guard_progress_ratio = forward_guard_progress_ratio
         self.actor_anchor_strength = 0.0
         self.actor_anchor_state = None
         self.successful_trajectories: list[tuple[np.ndarray, np.ndarray]] = []
@@ -59,7 +63,7 @@ class ForwardWarmupTQC(TQC):
         self.successful_trajectories.append((observations.copy(), actions.copy()))
         self.successful_trajectories = self.successful_trajectories[-3:]
 
-    def _rehearse_success(self, batch_size: int) -> None:
+    def _success_loss(self, batch_size: int) -> torch.Tensor:
         observations, actions = self.successful_trajectories[
             int(self._success_rng.integers(len(self.successful_trajectories)))
         ]
@@ -67,12 +71,20 @@ class ForwardWarmupTQC(TQC):
         obs = torch.as_tensor(observations[indices], device=self.device)
         target = torch.as_tensor(actions[indices], device=self.device)
         prediction = self.actor(obs, deterministic=True)
-        loss = F.mse_loss(prediction, target)
+        return F.mse_loss(prediction, target)
+
+    def _rehearse_success(self, batch_size: int) -> None:
+        loss = self._success_loss(batch_size)
         self.actor.optimizer.zero_grad()
         loss.backward()
         self.actor.optimizer.step()
         if hasattr(self, "_logger"):
             self.logger.record("train/success_imitation_loss", loss.item())
+
+    def _add_success_gradient(self, batch_size: int) -> None:
+        loss = self._success_loss(batch_size)
+        (2.0 * loss).backward()
+        self.logger.record("train/success_imitation_loss", loss.item())
 
     def anchor_actor(self, strength: float) -> None:
         """Keep fine-tuning close to a proven policy without freezing the actor."""
@@ -86,17 +98,25 @@ class ForwardWarmupTQC(TQC):
         has_success = bool(self.successful_trajectories)
         if not has_anchor and not has_success:
             return super().train(gradient_steps, batch_size)
-        # Retain completed laps as the off-policy critic continues to change.
-        for _ in range(gradient_steps):
-            super().train(1, batch_size)
-            if has_anchor:
-                with torch.no_grad():
-                    for parameter, anchor in zip(
-                        self.actor.parameters(), self.actor_anchor_state, strict=True
-                    ):
-                        parameter.lerp_(anchor.to(parameter.device), self.actor_anchor_strength)
-            if has_success:
-                self._rehearse_success(batch_size)
+        # Add imitation to the same actor optimizer step as TQC's reward gradient.
+        hook = None
+        if has_success:
+            hook = self.actor.optimizer.register_step_pre_hook(
+                lambda _optimizer, _args, _kwargs: self._add_success_gradient(batch_size)
+            )
+        try:
+            for _ in range(gradient_steps):
+                super().train(1, batch_size)
+                if has_anchor:
+                    with torch.no_grad():
+                        for parameter, anchor in zip(
+                            self.actor.parameters(), self.actor_anchor_state, strict=True
+                        ):
+                            parameter.lerp_(anchor.to(parameter.device),
+                                            self.actor_anchor_strength)
+        finally:
+            if hook is not None:
+                hook.remove()
 
     def forward_prior_strength(self, learning_starts: int) -> float:
         """Exploration-only longitudinal shift, zero after the configured decay."""
@@ -105,12 +125,41 @@ class ForwardWarmupTQC(TQC):
         elapsed = max(0, self.num_timesteps - learning_starts)
         return self.forward_prior_initial * max(0.0, 1.0 - elapsed / self.forward_prior_steps)
 
+    def _apply_forward_guard(self, buffered: np.ndarray) -> bool:
+        if self.forward_guard_progress_ratio <= 0 or self._last_obs is None:
+            return False
+        progress = self._last_obs[:, ROUTE_PROGRESS_FEATURE_INDEX]
+        guard = progress < self.forward_guard_progress_ratio
+        if not np.any(guard):
+            return False
+        # Keep enough throttle to reach the demonstrated jump entry without early braking.
+        buffered[guard, 1] = np.maximum(buffered[guard, 1], 0.5)
+        return True
+
+    def predict(self, observation, state=None, episode_start=None, deterministic=False):
+        action, state = super().predict(
+            observation, state=state, episode_start=episode_start,
+            deterministic=deterministic,
+        )
+        if self.forward_guard_progress_ratio > 0:
+            progress = np.asarray(observation)[..., ROUTE_PROGRESS_FEATURE_INDEX]
+            guard = progress < self.forward_guard_progress_ratio
+            action = np.asarray(action).copy()
+            if action.ndim == 1:
+                if bool(guard):
+                    action[1] = max(float(action[1]), 0.5)
+            else:
+                action[guard, 1] = np.maximum(action[guard, 1], 0.5)
+        return action, state
+
     def _sample_action(self, learning_starts, action_noise=None, n_envs=1):
         if self.num_timesteps >= learning_starts:
             action, buffered = super()._sample_action(learning_starts, action_noise, n_envs)
             strength = self.forward_prior_strength(learning_starts)
             if strength > 0:
                 buffered[:, 1] = np.clip(buffered[:, 1] + strength, -1.0, 1.0)
+            guard_applied = self._apply_forward_guard(buffered)
+            if strength > 0 or guard_applied:
                 action = self.policy.unscale_action(buffered)
             return action, buffered
         if self.forward_warmup_fraction == 0:
@@ -125,4 +174,7 @@ class ForwardWarmupTQC(TQC):
         scaled = self.policy.scale_action(actions)
         if action_noise is not None:
             scaled = np.clip(scaled + action_noise(), -1.0, 1.0)
+        if self._apply_forward_guard(scaled):
+            actions = self.policy.unscale_action(scaled)
+            return actions, scaled
         return self.policy.unscale_action(scaled), scaled

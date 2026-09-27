@@ -14,6 +14,7 @@ import numpy as np
 from gymnasium import spaces
 
 from polybot.protocol import (
+    EXPERT_ACTION_FEATURE_SLICE,
     PROTOCOL_NAME,
     PROTOCOL_VERSION,
     Action,
@@ -702,7 +703,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.latest_telemetry = transition.telemetry
         self._pwm.reset()
         self._continuous_pwm.reset()
-        observation = transition.telemetry.to_vector()
+        observation = self._policy_observation(transition.telemetry)
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
         if self._episode_curriculum_quarter is not None:
             info["curriculum_quarter"] = self._episode_curriculum_quarter
@@ -908,7 +909,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         ) else reward_action
         self.latest_telemetry = transition.telemetry
 
-        observation = transition.telemetry.to_vector()
+        observation = self._policy_observation(transition.telemetry)
         info = self._info(transition, reward_terms=reward_terms)
         if isinstance(reward_action, ControlDuty):
             info["requested_control_duty"] = {
@@ -946,6 +947,13 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if truncated and "time_limit" not in events:
             info["wrapper_time_limit"] = True
         return observation, reward, terminated, truncated, info
+
+    def _policy_observation(self, telemetry: Telemetry) -> np.ndarray:
+        observation = telemetry.to_vector()
+        if self.action_mode == "continuous_pwm":
+            # The supplied expert switch is mistimed at Summer 1's jump shortcut.
+            observation[EXPERT_ACTION_FEATURE_SLICE] = 0.0
+        return observation
 
     def _reward(
         self,

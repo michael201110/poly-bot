@@ -12,6 +12,11 @@ from pathlib import Path
 from typing import Any
 
 OBSERVATION_SCHEMA = "polybot.telemetry.v2"
+OBSERVATION_SCHEMA_TQC = "polybot.telemetry.tqc-v3"
+
+
+def observation_schema_for_algorithm(algorithm: str) -> str:
+    return OBSERVATION_SCHEMA_TQC if algorithm.lower() == "tqc" else OBSERVATION_SCHEMA
 
 
 def track_slug(name: str) -> str:

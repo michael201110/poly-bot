@@ -40,14 +40,14 @@ def _validate_playback_metadata(
 ) -> None:
     if metadata is None:
         return
-    from polybot.training.models import OBSERVATION_SCHEMA, IncompatibleModelError
+    from polybot.training.models import IncompatibleModelError, observation_schema_for_algorithm
 
     expected_actions = (
         {"continuous-pwm-v1"} if algorithm == "tqc" else
         {"pwm-multidiscrete-v1", "digital-multidiscrete-v1"}
     )
     mismatches = []
-    if metadata.observation_schema != OBSERVATION_SCHEMA:
+    if metadata.observation_schema != observation_schema_for_algorithm(algorithm):
         mismatches.append("observation schema")
     if metadata.action_schema not in expected_actions:
         mismatches.append("action schema")
@@ -302,6 +302,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--tqc-forward-prior-initial", type=float, default=0.0)
     parser.add_argument("--tqc-forward-prior-steps", type=int, default=0)
     parser.add_argument("--tqc-success-demo-path", default="")
+    parser.add_argument("--tqc-forward-guard-progress-ratio", type=float, default=0.0)
     parser.add_argument(
         "--max-episodes",
         type=int,
@@ -505,6 +506,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                     forward_prior_initial=args.tqc_forward_prior_initial,
                     forward_prior_steps=args.tqc_forward_prior_steps,
                     success_demo_path=args.tqc_success_demo_path,
+                    forward_guard_progress_ratio=args.tqc_forward_guard_progress_ratio,
                 ),
             )
             output = TrainingService(config, lambda event: print(json.dumps(event))).run(

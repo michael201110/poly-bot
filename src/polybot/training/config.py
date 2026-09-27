@@ -85,6 +85,7 @@ class TqcConfig:
     forward_prior_initial: float = 0.0
     forward_prior_steps: int = 0
     success_demo_path: str = ""
+    forward_guard_progress_ratio: float = 0.0
 
     def __post_init__(self) -> None:
         if self.architecture not in TQC_ARCHITECTURES:
@@ -129,6 +130,10 @@ class TqcConfig:
             raise ValueError("TQC forward prior must be in [0, 1]")
         if self.forward_prior_steps < 0:
             raise ValueError("TQC forward prior steps must be nonnegative")
+        if not math.isfinite(self.forward_guard_progress_ratio) or not (
+            0.0 <= self.forward_guard_progress_ratio <= 1.0
+        ):
+            raise ValueError("TQC forward guard progress ratio must be in [0, 1]")
 
 
 @dataclass(slots=True)

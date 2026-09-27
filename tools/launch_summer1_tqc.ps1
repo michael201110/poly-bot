@@ -14,7 +14,10 @@ $settings = @{
     forward_warmup_fraction = 0.8; forward_warmup_steering_std = 0.45
     initial_throttle_bias = 1.0; forward_prior_initial = 0.7
     forward_prior_steps = 25000
-    success_demo_path = 'profiles/demos/summer-1-26.894s.npz'
+    # Disable action cloning for this diagnostic run: the policy must learn by RL.
+    success_demo_path = ''
+    # The successful run stays on throttle through the shortcut entry at ~66.5%.
+    forward_guard_progress_ratio = 0.665
 }
 if ($Resume -or $ModelPath) {
     if (-not $ModelPath) {
@@ -65,7 +68,8 @@ $launchArguments = @(
     '--tqc-initial-throttle-bias', ([string]$settings.initial_throttle_bias),
     '--tqc-forward-prior-initial', ([string]$settings.forward_prior_initial),
     '--tqc-forward-prior-steps', ([string]$settings.forward_prior_steps),
-    '--tqc-success-demo-path', ('"' + [string]$settings.success_demo_path + '"')
+    '--tqc-success-demo-path', ('"' + [string]$settings.success_demo_path + '"'),
+    '--tqc-forward-guard-progress-ratio', ([string]$settings.forward_guard_progress_ratio)
 )
 if ($Resume -or $ModelPath) {
     $launchArguments += @('--model', ('"' + $ModelPath + '"'), '--resume')

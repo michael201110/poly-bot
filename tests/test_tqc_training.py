@@ -406,7 +406,8 @@ def test_fresh_tqc_can_pretrain_from_successful_lap(tmp_path) -> None:
             TrainingConfig(
                 algorithm="tqc",
                 tqc=TqcConfig(
-                    architecture="tiny", buffer_size=64,
+                    architecture="tiny", buffer_size=64, learning_starts=2,
+                    batch_size=8, train_freq=2,
                     success_demo_path=str(demo_path),
                 ),
             ),
@@ -422,5 +423,7 @@ def test_fresh_tqc_can_pretrain_from_successful_lap(tmp_path) -> None:
         assert model.restore_safe_actor()
         recovered, _ = model.predict(observation, deterministic=True)
         np.testing.assert_allclose(recovered, predicted, atol=1e-6)
+        model.learn(12)
+        assert "train/success_imitation_loss" in model.logger.name_to_value
     finally:
         env.close()
