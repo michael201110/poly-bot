@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from sb3_contrib import TQC
+from stable_baselines3.common.type_aliases import TrainFreq, TrainFrequencyUnit
+from stable_baselines3.common.utils import ConstantSchedule
 
 from polybot.algorithms.base import AlgorithmBackend
 from polybot.control.actions import ContinuousPwmActionAdapter
@@ -25,6 +27,7 @@ class SeededWarmupTQC(TQC):
     ) -> None:
         self.warmup_forward_fraction = warmup_forward_fraction
         self.warmup_steering_std = warmup_steering_std
+        self._refill_replay_from_policy = False
         self._warmup_rng = np.random.default_rng(kwargs.get("seed"))
         super().__init__(*args, **kwargs)
 
@@ -33,6 +36,8 @@ class SeededWarmupTQC(TQC):
     ) -> tuple[np.ndarray, np.ndarray]:
         if self.num_timesteps >= learning_starts:
             return super()._sample_action(learning_starts, action_noise, n_envs)
+        if getattr(self, "_refill_replay_from_policy", False):
+            return super()._sample_action(0, action_noise, n_envs)
         steering = np.clip(
             self._warmup_rng.normal(0, self.warmup_steering_std, n_envs), -1, 1
         )
@@ -90,6 +95,24 @@ class TQCBackend(AlgorithmBackend):
         super().save_model(model, directory, resume=resume)
         if resume:
             model.save_replay_buffer(str(directory / "replay.pkl"))
+
+    def configure_resume(
+        self, model: Any, config: TrainingConfig, device: str, *, fresh_replay: bool = False
+    ) -> None:
+        assert config.tqc is not None
+        p = config.tqc
+        if model.replay_buffer is None:
+            raise RuntimeError("TQC resume requires a replay buffer")
+        model.learning_rate = p.learning_rate
+        model.lr_schedule = ConstantSchedule(p.learning_rate)
+        model.train_freq = TrainFreq(p.train_frequency, TrainFrequencyUnit.STEP)
+        model.gradient_steps = p.gradient_steps
+        model.batch_size = p.batch_size
+        model.gamma = p.gamma
+        model.tau = p.tau
+        if fresh_replay:
+            model.learning_starts = model.num_timesteps + max(p.learning_starts, p.batch_size)
+            model._refill_replay_from_policy = True
 
     def parameter_counts(self, model: Any) -> dict[str, int]:
         actor = sum(p.numel() for p in model.actor.parameters() if p.requires_grad)

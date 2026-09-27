@@ -58,7 +58,9 @@ class PPOBackend(AlgorithmBackend):
     ) -> Any:
         return TeacherAnchoredPPO.load(str(path), env=env, device=device)
 
-    def configure_resume(self, model: Any, config: TrainingConfig, device: str) -> None:
+    def configure_resume(
+        self, model: Any, config: TrainingConfig, device: str, *, fresh_replay: bool = False
+    ) -> None:
         assert config.ppo is not None
         p = config.ppo
         if p.teacher_model:

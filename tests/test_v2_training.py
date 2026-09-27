@@ -169,7 +169,7 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
     assert (latest / "policy.zip").is_file()
     assert (champion / "policy.zip").is_file()
     assert (champion / "metadata.json").is_file()
-    assert not (champion / "replay.pkl").exists()
+    assert (champion / "replay.pkl").exists() == (algorithm in {"dqn", "tqc"})
     assert (latest / "replay.pkl").exists() == (algorithm in {"dqn", "tqc"})
     metadata = registry.read_metadata(latest)
     assert metadata.training_config == config.to_dict()
@@ -196,8 +196,8 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
             assert backend.metrics(loaded)["updates"] > 0
             deterministic, _ = loaded.predict(env.reset(seed=5)[0], deterministic=True)
             assert 0 <= int(deterministic) < 9
-            with pytest.raises(FileNotFoundError, match="requires replay"):
-                backend.load_model(champion / "policy.zip", env, "cpu", resume=True)
+            best = backend.load_model(champion / "policy.zip", env, "cpu", resume=True)
+            assert best.replay_buffer.size() > 0
         finally:
             env.close()
     TrainingRunner(config).run(resume=latest)
@@ -205,6 +205,49 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
     with pytest.raises(IncompatibleModelError, match="track"):
         registry.validate(metadata, replace(config, track_id="mock/gentle-s"),
                           backend_for(algorithm).action_adapter(config).schema)
+
+
+def test_older_tqc_champion_without_replay_can_continue(tmp_path) -> None:
+    config = configuration(tmp_path, "tqc")
+    TrainingRunner(config).run()
+    champion = ModelRegistry(config.output_root).slot(config.track_name, "tqc", "champion")
+    (champion / "replay.pkl").unlink()
+    resumed = replace(
+        config, timesteps=16, evaluation=EvaluationConfig(16, 1),
+        tqc=replace(config.tqc, learning_starts=8),
+    )
+    runner = TrainingRunner(resumed)
+    runner.run(resume=champion, fresh_replay=True)
+    assert runner.model.replay_buffer.size() >= 16
+    assert runner.model.learning_starts >= runner.model.num_timesteps
+    assert runner.model._refill_replay_from_policy
+    assert runner.model._n_updates == 0
+
+
+@pytest.mark.parametrize("timesteps", (24, 32))
+def test_continue_best_restores_champion_after_weaker_evaluation(
+    tmp_path, monkeypatch, timesteps: int
+) -> None:
+    import polybot.training.runner as runner_module
+
+    config = replace(
+        configuration(tmp_path, "tqc"), timesteps=timesteps,
+        evaluation=EvaluationConfig(16, 1),
+    )
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 20.0, 20.0, 0.0, 0.0, 0.0)
+    weak = EvaluationResult(1, 0.0, 0.2, 0.2, None, None, 0.0, 1.0, 0.0)
+    evaluations = iter((strong, weak))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    events: list[dict] = []
+    latest = TrainingRunner(config, events.append).run(rollback_to_champion=True)
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "tqc", "champion")
+    assert (champion / "replay.pkl").is_file()
+    assert registry.read_metadata(champion).training_timesteps == 16
+    assert registry.read_metadata(latest).training_timesteps == timesteps
+    assert registry.read_metadata(latest).evaluation == strong.to_dict()
+    assert any(event["type"] == "rollback" and event["replay_source"] == "champion"
+               for event in events)
 
 
 def test_dqn_exploration_follows_full_budget_across_evaluation_chunks(tmp_path) -> None:

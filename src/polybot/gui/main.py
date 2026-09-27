@@ -48,6 +48,7 @@ from polybot.training.config import (
     TQCConfig,
     TrainingConfig,
 )
+from polybot.training.evaluation import EvaluationResult
 from polybot.training.parameters import (
     CURRICULUM_INFO,
     DQN_INFO,
@@ -194,6 +195,10 @@ class PolyBotWindow(QWidget):
         start.setToolTip("Validate the exact settings shown, then start a fresh model.")
         start.clicked.connect(lambda: self._start(False))
         quick_actions.addWidget(start)
+        continue_best = QPushButton("Continue best model")
+        continue_best.setToolTip("Continue the best evaluated checkpoint for these settings.")
+        continue_best.clicked.connect(lambda: self._start(True, best=True))
+        quick_actions.addWidget(continue_best)
         root.addLayout(quick_actions)
         self.tabs = QTabWidget()
         root.addWidget(self.tabs)
@@ -457,8 +462,10 @@ class PolyBotWindow(QWidget):
              "Choose a track, algorithm, goal, device and preset, then review exact values."),
             ("New training run", lambda: self._start(False),
              "Start fresh with the exact settings shown. Existing champion remains until evaluation improves it."),
-            ("Resume latest", lambda: self._start(True),
-             "Continue from latest policy; TQC requires its replay buffer."),
+            ("Continue from best", lambda: self._start(True, best=True),
+             "Continue the best evaluated policy. Older champions refill replay before learning."),
+            ("Resume latest (advanced)", lambda: self._start(True),
+             "Continue the most recent policy, even if its evaluation regressed."),
             ("Evaluate latest", lambda: self._model_command("evaluate", "latest"),
              "Test latest deterministically without updating it."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
@@ -830,15 +837,35 @@ class PolyBotWindow(QWidget):
             except (ValueError, OSError, KeyError) as exc:
                 self._error(str(exc))
 
-    def _start(self, resume: bool) -> None:
+    def _best_resume_slot(self, cfg: TrainingConfig) -> Path:
+        registry = ModelRegistry(cfg.output_root)
+        latest = registry.slot(cfg.track_name, cfg.algorithm, "latest")
+        champion = registry.slot(cfg.track_name, cfg.algorithm, "champion")
+        if not (champion / "metadata.json").is_file():
+            return latest
+        if not (latest / "metadata.json").is_file():
+            return champion
+        best_eval = registry.read_metadata(champion).evaluation
+        latest_eval = registry.read_metadata(latest).evaluation
+        if best_eval is not None and (
+            latest_eval is None
+            or EvaluationResult(**best_eval).rank() > EvaluationResult(**latest_eval).rank()
+        ):
+            return champion
+        return latest
+
+    def _start(self, resume: bool, *, best: bool = False) -> None:
         if self.worker is not None and self.worker.is_alive():
             self._error("Training is already running.")
             return
         try:
             cfg = self.configuration()
+            registry = ModelRegistry(cfg.output_root)
+            slot = (
+                self._best_resume_slot(cfg) if best
+                else registry.slot(cfg.track_name, cfg.algorithm, "latest")
+            )
             if resume and cfg.algorithm == "dqn":
-                registry = ModelRegistry(cfg.output_root)
-                slot = registry.slot(cfg.track_name, "dqn", "latest")
                 metadata = registry.read_metadata(slot)
                 saved_action_set = metadata.training_config.get("dqn", {}).get("action_set")
                 if saved_action_set in {"full", "no_brake"}:
@@ -847,19 +874,29 @@ class PolyBotWindow(QWidget):
             warnings = configuration_warnings(cfg)
             self.warnings.setText("\n".join(warnings) if warnings else "Settings look reasonable.")
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
-            slot = ModelRegistry(cfg.output_root).slot(cfg.track_name, cfg.algorithm, "latest")
+            fresh_replay = (
+                resume and slot.name == "champion" and cfg.algorithm in {"dqn", "tqc"}
+                and not (slot / "replay.pkl").is_file()
+            )
             self.runner = TrainingRunner(cfg, self.bridge.event.emit)
             self.worker = threading.Thread(
-                target=self._run_worker, args=(slot if resume else None,), daemon=True
+                target=self._run_worker,
+                args=(slot if resume else None, fresh_replay, best), daemon=True,
             )
             self.worker.start()
         except (ValueError, RuntimeError, FileNotFoundError) as exc:
             self._error(str(exc))
 
-    def _run_worker(self, resume: Path | None) -> None:
+    def _run_worker(
+        self, resume: Path | None, fresh_replay: bool = False,
+        rollback_to_champion: bool = False,
+    ) -> None:
         try:
             assert self.runner is not None
-            self.runner.run(resume=resume)
+            self.runner.run(
+                resume=resume, fresh_replay=fresh_replay,
+                rollback_to_champion=rollback_to_champion,
+            )
         except Exception as exc:
             self.bridge.failed.emit(f"Training failed: {exc}")
 

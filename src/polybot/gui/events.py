@@ -47,7 +47,21 @@ def format_event(event: dict[str, Any]) -> str | None:
         return f"{prefix}Plan · {event['total_steps']:,} steps across {len(event['phases'])} phase(s)"
     if kind == "started":
         gpu = f" ({event['gpu_name']})" if event.get("gpu_name") else ""
-        return f"{prefix}Started {event['algorithm'].upper()} on {event['device'].upper()}{gpu}"
+        source = event.get("resume_source")
+        source_slot = str(source).replace("\\", "/").split("/")[-1] if source else ""
+        resumed = f" · resumed {source_slot}" if source else ""
+        refill = " · refilling replay" if event.get("fresh_replay") else ""
+        restore = " · champion rollback enabled" if event.get("rollback_on_regression") else ""
+        return (
+            f"{prefix}Started {event['algorithm'].upper()} on {event['device'].upper()}"
+            f"{gpu}{resumed}{refill}{restore}"
+        )
+    if kind == "rollback":
+        return (
+            f"{prefix}Restored champion{step} · evaluation {_percent(event['evaluated_progress'])}"
+            f" versus champion {_percent(event['champion_progress'])}"
+            f" · replay from {event['replay_source']}"
+        )
     if kind == "phase":
         spawn = event.get("spawn_ratio")
         target_start = event.get("start_ratio")

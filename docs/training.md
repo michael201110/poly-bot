@@ -46,7 +46,7 @@ The reference ghost defines route progress and lookahead. Optional ghost guidanc
 
 ## Evaluation and models
 
-At `evaluation.interval_steps`, the runner releases the training simulator and drives a frozen policy deterministically on full-track seeded episodes. It reports finish rate, median/mean progress, best and median finished lap, and crash/off-track/stall rates. Champion ranking uses those results. The latest policy can regress without replacing champion. A stochastic training finish alone never promotes a champion.
+At `evaluation.interval_steps`, the runner releases the training simulator and drives a frozen policy deterministically on full-track seeded episodes. It reports finish rate, median/mean progress, best and median finished lap, and crash/off-track/stall rates. Champion ranking uses those results. The latest policy can regress without replacing champion. **Continue best model** resumes whichever saved evaluation ranks higher and, after each weaker evaluation, restores the champion and its replay before more training. An older champion without replay reuses the current run's replay on rollback. A stochastic training finish alone never promotes a champion.
 
 ```text
 models/<track>/<algorithm>/
@@ -55,7 +55,7 @@ models/<track>/<algorithm>/
   checkpoints/step-<N>/policy.zip, metadata.json, replay.pkl (DQN or TQC)
 ```
 
-Metadata includes the app version and v2 schema versions, architecture, parameter counts, observation and action schemas, track, reward profile, curriculum, complete configuration, training steps, physics ticks, elapsed wall time, seed, device, finish/crash totals, evaluation, and Git commit. Resume requires compatible track, action and observation schemas, architecture, and rewards. DQN/TQC resume also requires replay; champion inference does not. Existing v2 PPO/TQC configs and models remain loadable. No v1 model is loadable through this path.
+Metadata includes the app version and v2 schema versions, architecture, parameter counts, observation and action schemas, track, reward profile, curriculum, complete configuration, training steps, physics ticks, elapsed wall time, seed, device, finish/crash totals, evaluation, and Git commit. Resume requires compatible track, action and observation schemas, architecture, and rewards. New DQN/TQC champions save their replay buffers alongside policy weights. Older champions without replay can continue from their policy weights using a fresh replay buffer; the policy refills it before gradient updates resume. Existing v2 PPO/TQC configs and models remain loadable. No v1 model is loadable through this path.
 
 ## Observation and protocol
 

@@ -33,7 +33,9 @@ class AlgorithmBackend(ABC):
         directory.mkdir(parents=True, exist_ok=True)
         model.save(str(directory / "policy.zip"))
 
-    def configure_resume(self, model: Any, config: TrainingConfig, device: str) -> None:
+    def configure_resume(
+        self, model: Any, config: TrainingConfig, device: str, *, fresh_replay: bool = False
+    ) -> None:
         """Restore optional training-only state after a model load."""
         return None
 

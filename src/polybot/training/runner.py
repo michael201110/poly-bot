@@ -110,7 +110,7 @@ class TrainingRunner:
     def _save(self, name: str, evaluation: EvaluationResult | None = None) -> Path:
         cfg = self.config
         directory = self.registry.slot(cfg.track_name, cfg.algorithm, name)
-        self.backend.save_model(self.model, directory, resume=name != "champion")
+        self.backend.save_model(self.model, directory, resume=True)
         self.registry.write_metadata(directory, self._metadata(evaluation))
         return directory
 
@@ -133,7 +133,54 @@ class TrainingRunner:
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps})
         return result
 
-    def run(self, *, resume: Path | None = None) -> Path:
+    def _restore_champion_if_worse(
+        self, result: EvaluationResult, training_env: Any,
+        *, phase_start: int, phase_steps: int,
+    ) -> bool:
+        cfg = self.config
+        champion_dir = self.registry.slot(cfg.track_name, cfg.algorithm, "champion")
+        champion_meta = self.registry.read_metadata(champion_dir)
+        if champion_meta.evaluation is None:
+            return False
+        champion = EvaluationResult(**champion_meta.evaluation)
+        if result.rank() >= champion.rank():
+            return False
+        self.registry.validate(champion_meta, cfg, self.backend.action_adapter(cfg).schema)
+        if champion_meta.architecture != self.backend.architecture(cfg):
+            raise ValueError("champion architecture differs from current model")
+        if champion_meta.training_config["rewards"] != cfg.to_dict()["rewards"]:
+            raise ValueError("champion reward settings differ from current replay rewards")
+
+        current_steps = int(self.model.num_timesteps)
+        replay_file = champion_dir / "replay.pkl"
+        reuse_live_replay = cfg.algorithm in {"dqn", "tqc"} and not replay_file.is_file()
+        live_replay = self.model.replay_buffer if reuse_live_replay else None
+        restored = self.backend.load_model(
+            champion_dir / "policy.zip", training_env, self.device.resolved,
+            resume=not reuse_live_replay,
+        )
+        if reuse_live_replay:
+            restored.replay_buffer = live_replay
+        restored.num_timesteps = current_steps
+        self.backend.configure_resume(restored, cfg, self.device.resolved)
+        if cfg.algorithm == "dqn":
+            self.backend.begin_phase(restored, cfg, phase_steps)
+            self.backend.advance_phase(restored, current_steps - phase_start)
+        self.model = restored
+        self.last_evaluation = champion
+        self._emit({
+            "type": "rollback", "timesteps": current_steps,
+            "champion_timesteps": champion_meta.training_timesteps,
+            "evaluated_progress": result.median_progress,
+            "champion_progress": champion.median_progress,
+            "replay_source": "current" if reuse_live_replay else "champion",
+        })
+        return True
+
+    def run(
+        self, *, resume: Path | None = None, fresh_replay: bool = False,
+        rollback_to_champion: bool = False,
+    ) -> Path:
         cfg = self.config
         self.device = resolve_device(cfg.device, algorithm=cfg.algorithm)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -146,6 +193,8 @@ class TrainingRunner:
         training_env: Any = ScaledTrainingReward(first_env, cfg.reward_scale)
         try:
             if resume is None:
+                if fresh_replay:
+                    raise ValueError("fresh replay requires a saved model")
                 self.model = self.backend.create_model(cfg, training_env, self.device.resolved)
             else:
                 metadata = self.registry.read_metadata(resume)
@@ -154,10 +203,15 @@ class TrainingRunner:
                     raise ValueError("resume architecture differs from saved model")
                 if metadata.training_config["rewards"] != cfg.to_dict()["rewards"]:
                     raise ValueError("resume reward settings differ from saved replay rewards")
+                if fresh_replay and cfg.algorithm not in {"dqn", "tqc"}:
+                    raise ValueError("fresh replay applies only to DQN and TQC")
                 self.model = self.backend.load_model(
-                    resume / "policy.zip", training_env, self.device.resolved, resume=True
+                    resume / "policy.zip", training_env, self.device.resolved,
+                    resume=not fresh_replay,
                 )
-                self.backend.configure_resume(self.model, cfg, self.device.resolved)
+                self.backend.configure_resume(
+                    self.model, cfg, self.device.resolved, fresh_replay=fresh_replay
+                )
                 self.ticks = metadata.simulator_ticks
                 self.finishes = metadata.finishes
                 self.crashes = metadata.crashes
@@ -169,6 +223,9 @@ class TrainingRunner:
                 "gpu_name": self.device.gpu_name,
                 "parameters": self.backend.parameter_counts(self.model),
                 "log": str(log_path),
+                "resume_source": str(resume) if resume is not None else None,
+                "fresh_replay": fresh_replay,
+                "rollback_on_regression": rollback_to_champion,
             })
             start_steps = self.model.num_timesteps
             next_eval = cfg.evaluation.interval_steps
@@ -316,12 +373,17 @@ class TrainingRunner:
                         next_checkpoint = consumed + cfg.checkpoint_interval
                     if consumed >= next_eval and not self.stop_requested.is_set():
                         training_env.close()
-                        self._evaluate()
+                        result = self._evaluate()
                         last_evaluated_steps = self.model.num_timesteps
-                        self._save("latest", self.last_evaluation)
                         next_eval = consumed + cfg.evaluation.interval_steps
                         training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
-                        self.model.set_env(training_env)
+                        restored = rollback_to_champion and self._restore_champion_if_worse(
+                            result, training_env, phase_start=phase_start,
+                            phase_steps=phase.steps,
+                        )
+                        if not restored:
+                            self.model.set_env(training_env)
+                        self._save("latest", self.last_evaluation)
                 if cfg.algorithm == "dqn":
                     self._emit({
                         "type": "phase_summary", "index": index + 1,
@@ -332,7 +394,12 @@ class TrainingRunner:
                     })
             training_env.close()
             if not self.stop_requested.is_set() and self.model.num_timesteps != last_evaluated_steps:
-                self._evaluate()
+                result = self._evaluate()
+                if rollback_to_champion:
+                    self._restore_champion_if_worse(
+                        result, training_env, phase_start=phase_start,
+                        phase_steps=phase.steps,
+                    )
             latest = self._save("latest", self.last_evaluation)
             self._emit({"type": "stopped" if self.stop_requested.is_set() else "completed",
                         "path": str(latest), "timesteps": self.model.num_timesteps})

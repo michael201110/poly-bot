@@ -98,9 +98,16 @@ class DQNBackend(AlgorithmBackend):
         if resume:
             model.save_replay_buffer(str(directory / "replay.pkl"))
 
-    def configure_resume(self, model: QRDQN, config: TrainingConfig, device: str) -> None:
+    def configure_resume(
+        self, model: QRDQN, config: TrainingConfig, device: str, *, fresh_replay: bool = False
+    ) -> None:
         if model.replay_buffer is None:
             raise RuntimeError("DQN resume requires a loaded replay buffer")
+        if fresh_replay:
+            assert config.dqn is not None
+            model.learning_starts = model.num_timesteps + max(
+                config.dqn.learning_starts, config.dqn.batch_size
+            )
 
     def begin_phase(self, model: QRDQN, config: TrainingConfig, phase_steps: int) -> None:
         """Reheat epsilon once per phase while keeping replay and optimizer intact."""
