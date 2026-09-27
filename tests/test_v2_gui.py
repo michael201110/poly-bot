@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 from dataclasses import fields
 
 import pytest
 
+from polybot.gui.events import format_event
+from polybot.gui.log_viewer import LiveLogWindow
 from polybot.gui.main import PolyBotWindow
 from polybot.training.config import (
     CurriculumConfig,
@@ -93,3 +96,42 @@ def test_warnings_explain_unusual_values() -> None:
     warnings = configuration_warnings(cfg, "NVIDIA T500")
     assert len(warnings) >= 4
     assert any("TPS" in warning for warning in warnings)
+
+
+def test_episode_event_is_readable_without_raw_reward_dump(window) -> None:
+    episode = {
+        "type": "episode", "episode": 123, "timesteps": 35809,
+        "events": ["airborne_roll_failure"], "progress": .352588,
+        "reward": 94.567, "elapsed_s": 12.12,
+        "reward_terms": {"progress": 0, "action_change": -0.00001},
+    }
+    text = format_event(episode)
+    assert "Episode 123" in text
+    assert "35.3%" in text
+    assert "unstable landing" in text
+    assert "+94.6" in text
+    assert "reward_terms" not in text
+    window._event(episode)
+    assert text in window.log.toPlainText()
+    assert "reward_terms" not in window.log.toPlainText()
+
+
+def test_live_log_viewer_follows_appended_events(qt_app, tmp_path) -> None:
+    path = tmp_path / "run.jsonl"
+    path.write_text(json.dumps({
+        "type": "progress", "timesteps": 100, "steps_per_second": 50,
+        "progress": .2, "run_max_progress": .4, "updates": 10,
+    }) + "\n", encoding="utf-8")
+    viewer = LiveLogWindow(path)
+    try:
+        assert "Step 100" in viewer.status.text()
+        with path.open("a", encoding="utf-8") as stream:
+            stream.write(json.dumps({
+                "type": "episode", "episode": 2, "timesteps": 110,
+                "progress": .35, "reward": -20, "events": ["off_track"],
+            }) + "\n")
+        viewer.refresh()
+        assert "Episode 2" in viewer.events.toPlainText()
+        assert "off track" in viewer.events.toPlainText()
+    finally:
+        viewer.close()

@@ -34,6 +34,7 @@ polybot-train = "polybot.cli:train_main"
 polybot-eval = "polybot.cli:evaluate_main"
 polybot-drive = "polybot.cli:drive_main"
 polybot-gui = "polybot.gui.main:main"
+polybot-live-log = "polybot.gui.log_viewer:main"
 polybot-doctor = "polybot.training.devices:doctor_main"
 
 [tool.setuptools.packages.find]

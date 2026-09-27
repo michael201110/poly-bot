@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from polybot.environment.curriculum import build_plan
 from polybot.environment.rewards import RewardConfig
+from polybot.gui.events import format_event
 from polybot.models.registry import ModelRegistry
 from polybot.training.config import (
     CurriculumConfig,
@@ -155,7 +156,7 @@ class EventBridge(QObject):
 class PolyBotWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("PolyBot Training v2")
+        self.setWindowTitle("PolyBot Training")
         self.resize(900, 760)
         self.runner: TrainingRunner | None = None
         self.worker: threading.Thread | None = None
@@ -481,9 +482,15 @@ class PolyBotWindow(QWidget):
             metric_form.addRow(label, value)
             self.metric_widgets[name] = value
         self.metric_form = metric_form
+        self.log_location = QLabel("Recent events · full detail is saved to a JSONL log")
+        self.log_location.setWordWrap(True)
+        page.addWidget(self.log_location)
         self.log = QTextEdit()
         self.log.setReadOnly(True)
-        self.log.setToolTip("Structured training, episode, evaluation and champion events.")
+        self.log.document().setMaximumBlockCount(400)
+        self.log.setToolTip(
+            "Short summaries of training events. The JSONL file keeps every metric and reward term."
+        )
         page.addWidget(self.log)
 
     def _toggle_advanced(self, enabled: bool) -> None:
@@ -831,6 +838,7 @@ class PolyBotWindow(QWidget):
             self.warnings.setText("\n".join(
                 configuration_warnings(self.configuration(), event.get("gpu_name"))
             ) or "Settings look reasonable.")
+            self.log_location.setText(f"Recent events · full JSONL detail: {event['log']}")
         if kind == "progress":
             self.metrics.setText(
                 f"Step {event['timesteps']:,} · {event['steps_per_second']:.1f} TPS · "
@@ -844,8 +852,9 @@ class PolyBotWindow(QWidget):
                 if name in event and event[name] is not None:
                     value = event[name]
                     widget.setText(f"{value:.3f}" if isinstance(value, float) else str(value))
-        if kind != "progress":
-            self.log.append(json.dumps(event, ensure_ascii=False))
+        summary = format_event(event)
+        if summary:
+            self.log.append(summary)
 
     def _error(self, message: str) -> None:
         self.log.append(message)

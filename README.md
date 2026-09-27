@@ -32,6 +32,8 @@ To train against the game, install the [PolyModLoader bridge](docs/game-integrat
 
 Training saves `models/<track>/<algorithm>/latest/` and a separately proven `champion/`. TQC latest includes a replay buffer for resume; champion playback only needs the policy. A lucky finish during stochastic training never replaces the champion. Deterministic full-track evaluation ranks policies by finish rate, progress, then completed lap time. Models and logs are generated files and ignored by Git. There is no v1 model migration.
 
+The GUI Status tab shows short episode and evaluation summaries. Full reward diagnostics stay in the run's JSONL file. To follow a running log in a separate readable window, run `polybot-live-log logs/<run>.jsonl`; closing that window does not stop training.
+
 ```powershell
 .\.venv\Scripts\polybot-eval.exe --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --episodes 5
 .\.venv\Scripts\polybot-drive.exe --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --realtime
