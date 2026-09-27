@@ -108,6 +108,7 @@ class RewardConfig:
     max_reverse_progress_per_step_m: float = 3.0
     stall_speed_threshold_mps: float = 5.0
     stall_timeout_s: float = 5.0
+    reference_corridor_scale: float = 1.0
     off_track_lateral_ratio: float = 1.05
     off_track_heading_ratio: float = 0.80
     off_track_heading_rad: float = 1.10
@@ -270,6 +271,10 @@ def summer_1_recovery_reward_config() -> RewardConfig:
     )
 
 
+def _reference_corridor_width(telemetry: Telemetry, config: RewardConfig) -> float:
+    return max(0.1, telemetry.track_half_width_m * config.reference_corridor_scale)
+
+
 def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
     """Reject geometric off-track evidence while the car is airborne."""
 
@@ -283,7 +288,7 @@ def _has_off_track_evidence(telemetry: Telemetry, config: RewardConfig) -> bool:
         and abs(telemetry.roll_rad) >= config.off_track_wall_ride_roll_rad
     ):
         return False
-    width = max(0.1, telemetry.track_half_width_m)
+    width = _reference_corridor_width(telemetry, config)
     lateral_ratio = abs(telemetry.lateral_offset_m) / width
     return lateral_ratio >= config.off_track_lateral_ratio or (
         lateral_ratio >= config.off_track_heading_ratio
@@ -805,7 +810,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
         dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
         telemetry = transition.telemetry
-        width = max(0.1, telemetry.track_half_width_m)
+        width = _reference_corridor_width(telemetry, self.reward_config)
         lateral_ratio = abs(telemetry.lateral_offset_m) / width
         grounded_wheels = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
         airborne = grounded_wheels < self.reward_config.off_track_min_grounded_wheels
@@ -986,7 +991,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         telemetry = transition.telemetry
         dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
         forward_speed = max(0.0, telemetry.local_velocity_mps[2])
-        width = max(0.1, telemetry.track_half_width_m)
+        width = _reference_corridor_width(telemetry, config)
         center_factor = float(np.clip(1.0 - abs(telemetry.lateral_offset_m) / width, 0, 1))
         heading_factor = max(0.0, float(np.cos(telemetry.heading_error_rad)))
         on_track_factor = center_factor * heading_factor

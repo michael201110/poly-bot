@@ -60,6 +60,12 @@ For real PolyTrack training, select `--backend websocket --track current` after 
 and a ghost reference. The GUI offers the complete editable reward profile. The TQC command can
 also load a saved profile with `--reward-profile summer-1-balanced`.
 
+`Summer 1 - no teacher` disables ghost pose, action, and speed rewards. TQC still uses the
+selected ghost for route progress and lookahead. This profile doubles the reference corridor
+from the adapter's nominal 5 m to 10 m for speed shaping and geometric off-track checks, so
+early exploration is not judged against the ghost's exact racing line. The corridor is an
+approximation around the reference, not a measurement of the road edge.
+
 TQC defaults: actor and critics each use two 256-unit hidden layers (`standard`); learning rate
 `0.0003`; replay buffer `1,000,000`; learning starts `10,000`; batch size `256`; gamma `0.999`;
 tau `0.005`; train frequency `1`; gradient steps `1`; entropy coefficient `auto`. The

@@ -23,9 +23,11 @@ from polybot.env import (
     _ghost_pose_reward,
     _ground_slip_penalty,
     _has_off_track_evidence,
+    _reference_corridor_width,
 )
 from polybot.mock import MockSimulatorTransport
 from polybot.protocol import Action
+from polybot.training.reward_profiles import RewardProfileStore
 
 
 def make_env(**kwargs: object) -> PolyTrackEnv:
@@ -625,6 +627,21 @@ def test_airborne_jump_does_not_count_as_off_track() -> None:
         )
 
         assert not _has_off_track_evidence(airborne, RewardConfig())
+    finally:
+        env.close()
+
+
+def test_no_teacher_profile_allows_exploration_away_from_ghost_line() -> None:
+    env = make_env(track_id="mock/straight")
+    try:
+        env.reset(seed=0)
+        assert env.latest_telemetry is not None
+        telemetry = replace(env.latest_telemetry, lateral_offset_m=6.0)
+        rewards = RewardProfileStore().load("Summer 1 - no teacher")
+
+        assert _has_off_track_evidence(telemetry, RewardConfig())
+        assert _reference_corridor_width(telemetry, rewards) == 10.0
+        assert not _has_off_track_evidence(telemetry, rewards)
     finally:
         env.close()
 

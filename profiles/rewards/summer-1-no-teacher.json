@@ -60,6 +60,7 @@
     "max_reverse_progress_per_step_m": 3.0,
     "stall_speed_threshold_mps": 5.0,
     "stall_timeout_s": 5.0,
+    "reference_corridor_scale": 2.0,
     "off_track_lateral_ratio": 1.05,
     "off_track_heading_ratio": 0.8,
     "off_track_heading_rad": 1.1,
