@@ -422,6 +422,7 @@ class TrainingService:
                                 "barrier_contact",
                                 "off_track",
                                 "stalled",
+                                "curriculum_section_complete",
                                 "time_limit",
                             )
                             if name in events

@@ -922,6 +922,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
         observation = self._policy_observation(transition.telemetry)
         info = self._info(transition, reward_terms=reward_terms)
+        if not off_track:
+            # The adapter's `off_track` event uses its fixed nominal width,
+            # which can disagree with the reward profile's wider corridor.
+            info["events"] = tuple(event for event in info["events"] if event != "off_track")
         if isinstance(reward_action, ControlDuty):
             info["requested_control_duty"] = {
                 "steer": reward_action.steer,

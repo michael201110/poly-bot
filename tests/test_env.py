@@ -665,6 +665,35 @@ def test_no_teacher_profile_does_not_end_on_untyped_impact() -> None:
         env.close()
 
 
+def test_curriculum_endpoint_ignores_narrow_adapter_off_track_event() -> None:
+    transport = MockSimulatorTransport()
+    rewards = replace(
+        RewardProfileStore().load("Summer 1 - no teacher"), curriculum_section_bonus=250.0,
+    )
+    env = PolyTrackEnv(
+        transport,
+        track_id="mock/straight",
+        frame_skip=1,
+        curriculum_start_ratio=0.2,
+        curriculum_end_ratio=0.25,
+        reward_config=rewards,
+    )
+    try:
+        env.reset(seed=0)
+        assert transport.state is not None
+        transport.state.progress_m = transport.state.track_length_m * 0.25 - 0.1
+        transport.state.lateral_offset_m = 8.0
+        _, _, terminated, truncated, info = env.step(np.asarray([1, 0, 0], dtype=np.int64))
+
+        assert terminated and not truncated
+        assert "curriculum_section_complete" in info["events"]
+        assert "off_track" not in info["events"]
+        assert info["reward_terms"]["curriculum_section"] == 250.0
+        assert info["reward_terms"]["off_track"] == 0.0
+    finally:
+        env.close()
+
+
 def test_bank_wall_ride_does_not_count_as_off_track() -> None:
     env = make_env(track_id="mock/straight")
     try:
