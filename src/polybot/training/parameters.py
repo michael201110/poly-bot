@@ -31,7 +31,7 @@ GENERAL_INFO = _info("General", {
     "track_id": "Simulator track identifier. 'current' uses the track open in PolyTrack.",
     "backend": "Mock is a fast local test track; WebSocket connects to PolyTrack in your browser.",
     "algorithm": (
-        "PPO uses fresh PWM rollouts; DQN learns nine native digital actions from replay; "
+        "PPO uses fresh PWM rollouts; DQN uses QR-DQN with native digital actions and replay; "
         "TQC learns continuous controls from replay."
     ),
     "device": "Auto tries CUDA and explains a CPU fallback. PPO often runs well on CPU.",
@@ -74,6 +74,7 @@ DQN_INFO = _info("DQN", {
         "Full has nine digital actions; no_brake has six coast/throttle actions "
         "for an initial DQN learning stage."
     ),
+    "n_quantiles": "Number of return quantiles QR-DQN predicts per action. More can help but slow updates.",
     "learning_rate": "Size of Q-network weight updates. Around 0.0001 is a cautious starting point.",
     "replay_capacity": "Maximum past decisions kept for reuse; larger history costs more memory.",
     "learning_starts": "Number of digital driving decisions collected before Q-network updates begin.",

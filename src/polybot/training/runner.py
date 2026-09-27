@@ -101,6 +101,7 @@ class TrainingRunner:
             seed=cfg.seed, device=self.device.resolved,
             finishes=self.finishes, crashes=self.crashes,
             evaluation=evaluation.to_dict() if evaluation is not None else None,
+            implementation="qr_dqn" if cfg.algorithm == "dqn" else None,
         )
 
     def _save(self, name: str, evaluation: EvaluationResult | None = None) -> Path:

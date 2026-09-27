@@ -111,17 +111,20 @@ def test_no_brake_policy_and_replay_transfer_to_full_dqn(tmp_path) -> None:
                        action_adapter=NativeDigitalActionAdapter())
     try:
         destination = expand_no_brake_checkpoint(source, later, env, "cpu")
-        from stable_baselines3 import DQN
+        from sb3_contrib import QRDQN
 
-        old = DQN.load(source / "policy.zip", device="cpu")
-        new = DQN.load(destination / "policy.zip", device="cpu")
+        old = QRDQN.load(source / "policy.zip", device="cpu")
+        new = QRDQN.load(destination / "policy.zip", device="cpu")
         assert new.action_space == spaces.Discrete(9)
         assert new.num_timesteps == old.num_timesteps
-        for old_row, new_row in enumerate(SIX_TO_NINE):
-            np.testing.assert_array_equal(
-                old.policy.q_net.q_net[-1].weight[old_row].detach().numpy(),
-                new.policy.q_net.q_net[-1].weight[new_row].detach().numpy(),
-            )
+        for quantile in range(old.policy.quantile_net.n_quantiles):
+            for old_row, new_row in enumerate(SIX_TO_NINE):
+                np.testing.assert_array_equal(
+                    old.policy.quantile_net.quantile_net[-1].weight[quantile * 6 + old_row]
+                    .detach().numpy(),
+                    new.policy.quantile_net.quantile_net[-1].weight[quantile * 9 + new_row]
+                    .detach().numpy(),
+                )
         new.load_replay_buffer(destination / "replay.pkl")
         assert new.replay_buffer.size() >= old.num_timesteps - 1
         assert set(new.replay_buffer.actions[:new.replay_buffer.size(), 0, 0]) <= set(SIX_TO_NINE)
@@ -129,4 +132,4 @@ def test_no_brake_policy_and_replay_transfer_to_full_dqn(tmp_path) -> None:
         env.close()
     resumed = TrainingRunner(later).run(resume=destination)
     assert resumed == destination
-    assert DQN.load(resumed / "policy.zip", device="cpu").num_timesteps > old.num_timesteps
+    assert QRDQN.load(resumed / "policy.zip", device="cpu").num_timesteps > old.num_timesteps

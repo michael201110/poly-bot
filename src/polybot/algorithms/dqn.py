@@ -1,10 +1,11 @@
-"""Standard Stable-Baselines3 DQN with native nine-way digital controls."""
+"""QR-DQN with native digital controls and legacy DQN inference support."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from sb3_contrib import QRDQN
 from stable_baselines3 import DQN
 
 from polybot.algorithms.base import AlgorithmBackend
@@ -32,10 +33,10 @@ class DQNBackend(AlgorithmBackend):
         assert config.dqn is not None
         return config.dqn.architecture
 
-    def create_model(self, config: TrainingConfig, env: Any, device: str) -> DQN:
+    def create_model(self, config: TrainingConfig, env: Any, device: str) -> QRDQN:
         assert config.dqn is not None
         p = config.dqn
-        return DQN(
+        return QRDQN(
             "MlpPolicy", env, seed=config.seed, device=device, verbose=0,
             learning_rate=p.learning_rate, buffer_size=p.replay_capacity,
             learning_starts=p.learning_starts, batch_size=p.batch_size,
@@ -45,13 +46,26 @@ class DQNBackend(AlgorithmBackend):
             exploration_fraction=p.exploration_fraction,
             exploration_initial_eps=p.exploration_initial_eps,
             exploration_final_eps=p.exploration_final_eps,
-            policy_kwargs={"net_arch": list(DQN_ARCHITECTURES[p.architecture])},
+            policy_kwargs={
+                "net_arch": list(DQN_ARCHITECTURES[p.architecture]),
+                "n_quantiles": p.n_quantiles,
+            },
         )
 
     def load_model(
         self, path: Path, env: Any, device: str, *, resume: bool = False
-    ) -> DQN:
-        model = DQN.load(str(path), env=env, device=device)
+    ) -> QRDQN | DQN:
+        from polybot.models.registry import ModelRegistry
+
+        metadata = (
+            ModelRegistry().read_metadata(path.parent)
+            if (path.parent / "metadata.json").is_file() else None
+        )
+        if metadata is not None and metadata.implementation != "qr_dqn":
+            if resume:
+                raise ValueError("Legacy DQN cannot resume as QR-DQN; migrate its checkpoint first")
+            return DQN.load(str(path), env=env, device=device)
+        model = QRDQN.load(str(path), env=env, device=device)
         if resume:
             replay = path.with_name("replay.pkl")
             if not replay.is_file():
@@ -59,20 +73,21 @@ class DQNBackend(AlgorithmBackend):
             model.load_replay_buffer(str(replay))
         return model
 
-    def save_model(self, model: DQN, directory: Path, *, resume: bool = False) -> None:
+    def save_model(self, model: QRDQN, directory: Path, *, resume: bool = False) -> None:
         super().save_model(model, directory, resume=resume)
         if resume:
             model.save_replay_buffer(str(directory / "replay.pkl"))
 
-    def configure_resume(self, model: DQN, config: TrainingConfig, device: str) -> None:
+    def configure_resume(self, model: QRDQN, config: TrainingConfig, device: str) -> None:
         if model.replay_buffer is None:
             raise RuntimeError("DQN resume requires a loaded replay buffer")
 
-    def parameter_counts(self, model: DQN) -> dict[str, int]:
-        q_network = sum(p.numel() for p in model.policy.q_net.parameters() if p.requires_grad)
+    def parameter_counts(self, model: QRDQN | DQN) -> dict[str, int]:
+        network = model.policy.quantile_net if isinstance(model, QRDQN) else model.policy.q_net
+        q_network = sum(p.numel() for p in network.parameters() if p.requires_grad)
         return {"actor": 0, "critic": q_network, "total": q_network}
 
-    def metrics(self, model: DQN) -> dict[str, float | int | None]:
+    def metrics(self, model: QRDQN | DQN) -> dict[str, float | int | None]:
         values = getattr(getattr(model, "_logger", None), "name_to_value", {})
         return {
             "replay_size": model.replay_buffer.size() if model.replay_buffer else 0,

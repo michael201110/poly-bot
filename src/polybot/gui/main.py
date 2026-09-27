@@ -289,7 +289,8 @@ class PolyBotWindow(QWidget):
         )
         self.dqn_form = ParameterForm(
             DQNConfig(), DQN_INFO,
-            {"architecture", "action_set", "learning_rate", "replay_capacity", "exploration_fraction"},
+            {"architecture", "action_set", "n_quantiles", "learning_rate", "replay_capacity",
+             "exploration_fraction"},
         )
         self.tqc_form = ParameterForm(
             TQCConfig(), TQC_INFO, {"architecture", "learning_rate", "train_frequency"}
@@ -535,8 +536,8 @@ class PolyBotWindow(QWidget):
                 "Steering uses discrete PWM pulses."
             ),
             "dqn": (
-                "DQN: off-policy. Its Q-network estimates the value of nine native digital keyboard-style "
-                "actions. It reuses replay and sometimes chooses a random action through epsilon-greedy exploration. "
+                "QR-DQN: off-policy. Its quantile network estimates a range of returns for each native digital "
+                "action. It reuses replay and sometimes chooses a random action through epsilon-greedy exploration. "
                 "It never uses PWM."
             ),
             "tqc": (
@@ -600,8 +601,9 @@ class PolyBotWindow(QWidget):
     def _show_glossary(self) -> None:
         glossary = (
             "Policy / actor: a network that chooses steering and pedals in PPO or TQC.\n"
-            "Q-value: DQN's estimate of future reward for one digital action.\n"
-            "Q-network: DQN's network that predicts all nine action values.\n"
+            "Q-value: mean predicted future reward for one digital action.\n"
+            "Quantiles: QR-DQN's estimates of low-to-high possible future returns.\n"
+            "Q-network: DQN's network that predicts action values or return quantiles.\n"
             "Critic: a network estimating how useful actions or states may be.\n"
             "Environment step: one driving decision. Physics tick: one fixed simulator update.\n"
             "Frame skip: ticks between decisions; larger is faster but reacts slower.\n"

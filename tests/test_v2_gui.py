@@ -78,7 +78,7 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     window.algorithm.setCurrentText("dqn")
     assert window.algorithm_stack.currentWidget() is window.dqn_form
     assert window.ppo_form.isHidden() and window.tqc_form.isHidden()
-    assert "nine native digital" in window.algorithm_explanation.text()
+    assert "quantile network" in window.algorithm_explanation.text()
     assert window.dqn_form.widgets["target_update_interval"].isHidden()
     window.advanced.setChecked(True)
     assert not window.dqn_form.widgets["target_update_interval"].isHidden()

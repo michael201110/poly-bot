@@ -58,6 +58,7 @@ class PPOConfig:
 class DQNConfig:
     architecture: str = "compact"
     action_set: str = "full"
+    n_quantiles: int = 32
     learning_rate: float = 1e-4
     replay_capacity: int = 250_000
     learning_starts: int = 5_000
@@ -75,6 +76,8 @@ class DQNConfig:
             raise ValueError("unknown DQN architecture")
         if self.action_set not in {"full", "no_brake"}:
             raise ValueError("DQN action set must be full or no_brake")
+        if not 2 <= self.n_quantiles <= 200:
+            raise ValueError("DQN quantiles must be between 2 and 200")
         if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
             raise ValueError("DQN learning rate must be positive and finite")
         if self.replay_capacity < 1 or self.learning_starts < 0:

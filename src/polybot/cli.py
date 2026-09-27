@@ -75,6 +75,7 @@ def _algorithm_options(parser: argparse.ArgumentParser) -> None:
     dqn = parser.add_argument_group("DQN")
     dqn.add_argument("--dqn-architecture", choices=("tiny", "compact", "standard", "yosh_2020"))
     dqn.add_argument("--dqn-action-set", choices=("full", "no_brake"))
+    dqn.add_argument("--dqn-quantiles", type=int)
     dqn.add_argument("--dqn-lr", type=float)
     dqn.add_argument("--dqn-replay", type=int)
     dqn.add_argument("--dqn-learning-starts", type=int)
@@ -137,6 +138,7 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
     elif args.algorithm == "dqn":
         mapping = {
             "action_set": args.dqn_action_set,
+            "n_quantiles": args.dqn_quantiles,
             "replay_capacity": args.dqn_replay,
             "learning_starts": args.dqn_learning_starts,
             "train_frequency": args.dqn_train_frequency,

@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import torch
 from gymnasium import spaces
-from stable_baselines3 import DQN
+from sb3_contrib import QRDQN
 
 from polybot.algorithms.dqn import DQNBackend
 from polybot.models.registry import ModelRegistry
@@ -20,22 +20,28 @@ BRAKE_ROWS = ((2, 0), (5, 3), (8, 6))
 
 
 def _expand_q_net(source: Any, target: Any) -> None:
-    old_layers = source.q_net
-    new_layers = target.q_net
+    old_layers = source.quantile_net
+    new_layers = target.quantile_net
     if len(old_layers) != len(new_layers):
         raise ValueError("DQN network architecture changed between brake stages")
     with torch.no_grad():
         for old, new in zip(old_layers[:-1], new_layers[:-1], strict=True):
             new.load_state_dict(old.state_dict())
         old_head, new_head = old_layers[-1], new_layers[-1]
-        if old_head.out_features != 6 or new_head.out_features != 9:
-            raise ValueError("brake stage requires a six-output source and nine-output target")
-        for old_row, new_row in enumerate(SIX_TO_NINE):
-            new_head.weight[new_row].copy_(old_head.weight[old_row])
-            new_head.bias[new_row].copy_(old_head.bias[old_row])
-        for brake_row, coast_row in BRAKE_ROWS:
-            new_head.weight[brake_row].copy_(new_head.weight[coast_row])
-            new_head.bias[brake_row].copy_(new_head.bias[coast_row] - 0.25)
+        n_quantiles = source.n_quantiles
+        if old_head.out_features != 6 * n_quantiles or new_head.out_features != 9 * n_quantiles:
+            raise ValueError("brake stage requires six and nine actions with equal quantiles")
+        for quantile in range(n_quantiles):
+            for old_row, new_row in enumerate(SIX_TO_NINE):
+                target_row = quantile * 9 + new_row
+                source_row = quantile * 6 + old_row
+                new_head.weight[target_row].copy_(old_head.weight[source_row])
+                new_head.bias[target_row].copy_(old_head.bias[source_row])
+            for brake_row, coast_row in BRAKE_ROWS:
+                target_brake = quantile * 9 + brake_row
+                target_coast = quantile * 9 + coast_row
+                new_head.weight[target_brake].copy_(new_head.weight[target_coast])
+                new_head.bias[target_brake].copy_(new_head.bias[target_coast] - 0.25)
 
 
 def expand_no_brake_checkpoint(
@@ -53,6 +59,8 @@ def expand_no_brake_checkpoint(
         raise ValueError("source DQN must use no_brake actions")
     if source_meta.action_schema != "digital-discrete-6-no-brake-v2":
         raise ValueError("source action schema is not the six-action DQN schema")
+    if source_meta.implementation != "qr_dqn":
+        raise ValueError("source must be a QR-DQN six-action checkpoint")
     for key in ("track_id", "lookahead_count", "frame_skip", "reward_scale"):
         if getattr(source_config, key) != getattr(target_config, key):
             raise ValueError(f"brake transfer requires matching {key}")
@@ -60,12 +68,14 @@ def expand_no_brake_checkpoint(
         raise ValueError("brake transfer requires unchanged replay rewards")
     if source_config.dqn.architecture != target_config.dqn.architecture:
         raise ValueError("brake transfer requires matching Q-network architecture")
+    if source_config.dqn.n_quantiles != target_config.dqn.n_quantiles:
+        raise ValueError("brake transfer requires matching quantile count")
 
-    source = DQN.load(str(source_slot / "policy.zip"), device=device)
+    source = QRDQN.load(str(source_slot / "policy.zip"), device=device)
     source.load_replay_buffer(str(source_slot / "replay.pkl"))
     target = backend.create_model(target_config, env, device)
-    _expand_q_net(source.policy.q_net, target.policy.q_net)
-    _expand_q_net(source.policy.q_net_target, target.policy.q_net_target)
+    _expand_q_net(source.policy.quantile_net, target.policy.quantile_net)
+    _expand_q_net(source.policy.quantile_net_target, target.policy.quantile_net_target)
     replay = source.replay_buffer
     if replay is None:
         raise ValueError("source DQN checkpoint has no replay")
@@ -91,5 +101,6 @@ def expand_no_brake_checkpoint(
         total_trainable_parameters=counts["total"],
         training_config=target_config.to_dict(),
         evaluation=None,
+        implementation="qr_dqn",
     ))
     return destination
