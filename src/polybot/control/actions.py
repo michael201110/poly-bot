@@ -26,7 +26,11 @@ class ControlDemand:
 
     @classmethod
     def from_action(cls, action: Action) -> ControlDemand:
-        return cls(float(action.steer), float(action.throttle), float(action.brake))
+        # External telemetry can report both keys pressed at a curriculum spawn.
+        # Match DigitalActionAdapter's established brake-priority behavior.
+        brake = float(action.brake)
+        throttle = 0.0 if brake else float(action.throttle)
+        return cls(float(action.steer), throttle, brake)
 
     @classmethod
     def from_continuous(cls, steer: float, longitudinal: float) -> ControlDemand:

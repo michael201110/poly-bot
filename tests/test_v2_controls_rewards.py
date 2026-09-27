@@ -7,12 +7,14 @@ import pytest
 
 from polybot.control.actions import (
     ContinuousPwmActionAdapter,
+    ControlDemand,
     DigitalActionAdapter,
     DiscretePwmActionAdapter,
 )
 from polybot.environment.env import PolyTrackEnv
 from polybot.environment.rewards import COMPONENTS, RewardConfig
 from polybot.mock import MockSimulatorTransport
+from polybot.protocol import Action
 from polybot.training.reward_profiles import RewardProfileStore
 
 
@@ -29,6 +31,11 @@ def test_control_modes_use_shared_demand_and_never_overlap() -> None:
         assert all(not (tick.throttle and tick.brake) for tick in applied.ticks)
         adapter.reset()
         assert applied == adapter.apply(action, 40)
+
+
+def test_external_overlapping_action_resolves_in_favor_of_brake() -> None:
+    demand = ControlDemand.from_action(Action(steer=1, throttle=True, brake=True))
+    assert demand == ControlDemand(steer=1, throttle=0.0, brake=1.0)
 
 
 def test_pwm_direction_changes_reset_pulse_phase() -> None:
