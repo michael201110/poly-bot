@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import asdict
+from dataclasses import asdict, replace
 
 import numpy as np
 import pytest
@@ -297,6 +297,26 @@ def test_tqc_creation_save_resume_and_raw_reward_logging(tmp_path) -> None:
     )
     with pytest.raises(IncompatibleModelError, match="settings differ"):
         TrainingService(changed).run(resume=path)
+
+
+def test_reward_change_resumes_policy_without_stale_replay(tmp_path) -> None:
+    config = TrainingConfig(
+        algorithm="tqc", backend="mock", track_name="Mock Straight",
+        track_id="mock/straight", frame_skip=8, timesteps=8, output_root=tmp_path,
+        device="cpu", checkpoint_interval=0,
+        tqc=TqcConfig(architecture="tiny", buffer_size=64, learning_starts=2, batch_size=8),
+    )
+    path = TrainingService(config).run()
+    changed = replace(
+        config, rewards=replace(config.rewards, barrier_collision_impulse_threshold=1e9),
+    )
+    events: list[dict] = []
+    resumed = TrainingService(changed, events.append)
+    resumed.run(resume=path)
+
+    assert any(event["type"] == "replay_reset" for event in events)
+    assert resumed.model.num_timesteps == 16
+    assert resumed.model.replay_buffer.size() == 8
 
 
 def test_reward_wrapper_scales_both_algorithms_without_changing_raw_terms() -> None:

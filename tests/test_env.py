@@ -646,6 +646,25 @@ def test_no_teacher_profile_allows_exploration_away_from_ghost_line() -> None:
         env.close()
 
 
+def test_no_teacher_profile_does_not_end_on_untyped_impact() -> None:
+    transport = MockSimulatorTransport()
+    rewards = RewardProfileStore().load("Summer 1 - no teacher")
+    env = PolyTrackEnv(
+        transport, track_id="mock/straight", frame_skip=10, reward_config=rewards,
+    )
+    try:
+        env.reset(seed=0)
+        assert transport.state is not None
+        transport.state.lateral_offset_m = transport.track_half_width_m * 0.95
+        _, _, terminated, truncated, info = env.step(np.asarray([1, 0, 0], dtype=np.int64))
+
+        assert not (terminated or truncated)
+        assert "barrier_contact" not in info["events"]
+        assert info["reward_terms"]["barrier_contact"] == 0.0
+    finally:
+        env.close()
+
+
 def test_bank_wall_ride_does_not_count_as_off_track() -> None:
     env = make_env(track_id="mock/straight")
     try:

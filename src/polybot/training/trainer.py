@@ -476,6 +476,7 @@ class TrainingService:
         try:
             if resume:
                 resume_path = Path(resume)
+                reset_replay_buffer = False
                 try:
                     resume_metadata = registry.metadata_for_archive(resume_path)
                 except FileNotFoundError:
@@ -506,7 +507,20 @@ class TrainingService:
                     self.finishes = resume_metadata.finishes
                     self.crashes = resume_metadata.crashes
                     self.previous_wall_clock_seconds = resume_metadata.wall_clock_seconds
-                self.model = load_model(cfg, resume_path, env, self.device.resolved)
+                    reset_replay_buffer = (
+                        cfg.algorithm == "tqc"
+                        and resume_metadata.reward_settings != asdict(cfg.rewards)
+                    )
+                self.model = load_model(
+                    cfg, resume_path, env, self.device.resolved,
+                    reset_replay_buffer=reset_replay_buffer,
+                )
+                if reset_replay_buffer:
+                    self.status({
+                        "type": "replay_reset",
+                        "reason": "reward settings changed since the checkpoint",
+                        "timesteps": self.model.num_timesteps,
+                    })
             else:
                 self.model = create_model(cfg, env, self.device.resolved)
             configure_model(self.model, cfg, self.device.resolved, service.status)

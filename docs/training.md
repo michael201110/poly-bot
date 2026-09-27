@@ -65,6 +65,10 @@ selected ghost for route progress and lookahead. This profile doubles the refere
 from the adapter's nominal 5 m to 10 m for speed shaping and geometric off-track checks, so
 early exploration is not judged against the ghost's exact racing line. The corridor is an
 approximation around the reference, not a measurement of the road edge.
+This profile also ignores the simulator's untyped collision impulse: a landing can produce
+the same signal as a wall hit. Off-track and stall detection still end failed episodes.
+When reward settings change on TQC resume, the trainer keeps the policy and starts a new
+replay buffer so old rewards and terminal flags do not keep training it.
 
 TQC defaults: actor and critics each use two 256-unit hidden layers (`standard`); learning rate
 `0.0003`; replay buffer `1,000,000`; learning starts `10,000`; batch size `256`; gamma `0.999`;

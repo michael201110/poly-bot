@@ -26,7 +26,7 @@
     "unsafe_speed_penalty_per_m": -0.1,
     "barrier_contact_penalty": -150.0,
     "barrier_early_penalty": 0.0,
-    "barrier_collision_impulse_threshold": 0.0,
+    "barrier_collision_impulse_threshold": 1000000000.0,
     "failure_progress_clawback_per_m": 0.0,
     "failure_early_penalty": -200.0,
     "off_track_landing_penalty": -50.0,

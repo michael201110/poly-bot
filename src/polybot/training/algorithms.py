@@ -78,7 +78,9 @@ def create_model(config: TrainingConfig, env: Any, device: str) -> Any:
     return model
 
 
-def load_model(config: TrainingConfig, path: Path, env: Any, device: str) -> Any:
+def load_model(
+    config: TrainingConfig, path: Path, env: Any, device: str, *, reset_replay_buffer: bool = False
+) -> Any:
     if config.algorithm == "ppo":
         model = model_class("ppo").load(
             str(path), env=env, device=device,
@@ -101,7 +103,8 @@ def load_model(config: TrainingConfig, path: Path, env: Any, device: str) -> Any
             raise FileNotFoundError(
                 f"TQC resume requires its replay buffer: {replay_path}"
             )
-        model.load_replay_buffer(str(replay_path))
+        if not reset_replay_buffer:
+            model.load_replay_buffer(str(replay_path))
     return model
 
 
