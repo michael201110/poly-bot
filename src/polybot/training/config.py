@@ -132,12 +132,15 @@ class CurriculumPhaseConfig:
     end_ratio: float | None = None
     start_s: float | None = None
     end_s: float | None = None
+    lead_in_ratio: float = 0.05
 
     def __post_init__(self) -> None:
         if self.mode not in {"full", "section", "quarters-randomised", "timed"}:
             raise ValueError("invalid custom curriculum phase mode")
         if self.steps < 1:
             raise ValueError("custom curriculum phase steps must be positive")
+        if not 0 <= self.lead_in_ratio < 1:
+            raise ValueError("curriculum lead-in ratio must be in [0, 1)")
         if self.mode == "section" and not (
             self.start_ratio is not None and self.end_ratio is not None
             and 0 <= self.start_ratio < self.end_ratio <= 1
@@ -158,6 +161,7 @@ class CurriculumConfig:
     start_s: float | None = None
     end_s: float | None = None
     phases: tuple[CurriculumPhaseConfig, ...] = ()
+    lead_in_ratio: float = 0.05
 
     def __post_init__(self) -> None:
         if self.mode not in {"full", "section", "quarters", "quarters-randomised", "q4-full", "timed", "custom"}:
@@ -166,6 +170,8 @@ class CurriculumConfig:
             raise ValueError("custom curriculum requires at least one phase")
         if self.mode != "custom" and self.phases:
             raise ValueError("custom phases require custom curriculum mode")
+        if not 0 <= self.lead_in_ratio < 1:
+            raise ValueError("curriculum lead-in ratio must be in [0, 1)")
         if self.mode == "section" and not (
             self.start_ratio is not None and self.end_ratio is not None
             and 0 <= self.start_ratio < self.end_ratio <= 1

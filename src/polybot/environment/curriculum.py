@@ -11,13 +11,17 @@ from polybot.training.config import CurriculumConfig
 class CurriculumPhase:
     mode: str
     steps: int
+    spawn_ratio: float | None = None
     start_ratio: float | None = None
     end_ratio: float | None = None
     start_s: float | None = None
     end_s: float | None = None
+    lead_in_ratio: float = 0.05
 
     def env_kwargs(self) -> dict[str, object]:
         return {
+            "curriculum_spawn_ratio": self.spawn_ratio,
+            "curriculum_lead_in_ratio": self.lead_in_ratio,
             "curriculum_start_ratio": self.start_ratio,
             "curriculum_end_ratio": self.end_ratio,
             "curriculum_start_s": self.start_s,
@@ -40,8 +44,11 @@ def build_plan(config: CurriculumConfig, budget: int) -> CurriculumPlan:
         raise ValueError("training budget must be positive")
     if config.mode == "custom":
         phases = tuple(CurriculumPhase(
-            phase.mode, phase.steps, phase.start_ratio, phase.end_ratio,
-            phase.start_s, phase.end_s,
+            phase.mode, phase.steps,
+            max(0.0, phase.start_ratio - phase.lead_in_ratio)
+            if phase.start_ratio is not None else None,
+            phase.start_ratio, phase.end_ratio, phase.start_s, phase.end_s,
+            phase.lead_in_ratio,
         ) for phase in config.phases)
         plan = CurriculumPlan(phases)
         if plan.total_steps != budget:
@@ -59,9 +66,12 @@ def build_plan(config: CurriculumConfig, budget: int) -> CurriculumPlan:
     each, remainder = divmod(budget, len(sections))
     phases = tuple(
         CurriculumPhase(
-            mode, each + int(index < remainder), start, end,
+            mode, each + int(index < remainder),
+            max(0.0, start - config.lead_in_ratio) if start is not None else None,
+            start, end,
             config.start_s if mode == "timed" else None,
             config.end_s if mode == "timed" else None,
+            config.lead_in_ratio,
         )
         for index, (mode, start, end) in enumerate(sections)
     )

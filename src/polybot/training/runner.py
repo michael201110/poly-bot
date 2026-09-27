@@ -53,6 +53,9 @@ class TrainingRunner:
         self.finishes = 0
         self.crashes = 0
         self.max_progress = 0.0
+        self.max_section_progress = 0.0
+        self.phase_index = 0
+        self.phase_reset_logged = False
         self.started = time.monotonic()
         self.previous_wall_seconds = 0.0
         self.device = None
@@ -192,7 +195,37 @@ class TrainingRunner:
                         / max(1.0, float(info.get("track_length_m", 1))),
                     )
                     runner.max_progress = max(runner.max_progress, self.episode_progress)
+                    section_progress = info.get("section_progress")
+                    if section_progress is not None:
+                        runner.max_section_progress = max(
+                            runner.max_section_progress, float(section_progress)
+                        )
                     runner.ticks += int(info.get("ticks_advanced", 0))
+                    reset_diagnostics = info.get("curriculum_reset_diagnostics")
+                    if reset_diagnostics and not runner.phase_reset_logged:
+                        runner._emit({
+                            "type": "curriculum_reset", "phase": runner.phase_index,
+                            "mode": phase.mode, "spawn_ratio": phase.spawn_ratio,
+                            "start_ratio": phase.start_ratio, "end_ratio": phase.end_ratio,
+                            "action_set": cfg.dqn.action_set if cfg.dqn else None,
+                            "epsilon": getattr(runner.model, "exploration_rate", None),
+                            "replay_size": (
+                                runner.model.replay_buffer.size()
+                                if cfg.algorithm == "dqn" else None
+                            ),
+                            **reset_diagnostics,
+                        })
+                        runner.phase_reset_logged = True
+                    actions = self.locals.get("actions")
+                    if cfg.algorithm == "dqn" and actions is not None:
+                        try:
+                            runner.phase_actions_seen.add(int(actions[0]))
+                        except (TypeError, ValueError, IndexError):
+                            pass
+                    if cfg.algorithm == "dqn":
+                        runner.backend.advance_phase(
+                            runner.model, self.num_timesteps - phase_start
+                        )
                     now = time.monotonic()
                     if now - self.last_status > 0.5:
                         runner._emit({
@@ -200,6 +233,9 @@ class TrainingRunner:
                             "episode": runner.episodes + 1,
                             "progress": self.episode_progress,
                             "run_max_progress": runner.max_progress,
+                            "section_progress": section_progress,
+                            "run_max_section_progress": runner.max_section_progress,
+                            "curriculum_stage": info.get("curriculum_stage", "full track"),
                             "reward": self.episode_reward,
                             "simulator_ticks": runner.ticks,
                             "finishes": runner.finishes,
@@ -220,6 +256,7 @@ class TrainingRunner:
                             "type": "episode", "episode": runner.episodes,
                             "timesteps": self.num_timesteps, "reward": self.episode_reward,
                             "progress": self.episode_progress, "events": sorted(events),
+                            "section_progress": info.get("section_progress"),
                             "elapsed_s": info.get("elapsed_s"),
                             "reward_terms": info.get("reward_terms", {}),
                         })
@@ -237,7 +274,20 @@ class TrainingRunner:
                     training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
                     self.model.set_env(training_env)
                 phase_start = self.model.num_timesteps
-                self._emit({"type": "phase", "index": index + 1, **asdict(phase)})
+                self.phase_index = index + 1
+                self.phase_reset_logged = False
+                self.phase_actions_seen: set[int] = set()
+                self.max_section_progress = 0.0
+                if cfg.algorithm == "dqn":
+                    self.backend.begin_phase(self.model, cfg, phase.steps)
+                phase_event = {"type": "phase", "index": index + 1, **asdict(phase)}
+                if cfg.algorithm == "dqn":
+                    phase_event.update({
+                        "initial_epsilon": self.model.exploration_rate,
+                        "replay_size": self.model.replay_buffer.size(),
+                        "action_set": cfg.dqn.action_set if cfg.dqn else None,
+                    })
+                self._emit(phase_event)
                 while self.model.num_timesteps - phase_start < phase.steps:
                     if self.stop_requested.is_set():
                         break
@@ -247,8 +297,8 @@ class TrainingRunner:
                     chunk = max(1, min(remaining, interval))
                     before = self.model.num_timesteps
                     if cfg.algorithm == "dqn":
-                        # DQN's epsilon schedule uses learn()'s total_timesteps. Passing
-                        # only the next evaluation chunk exhausts exploration early.
+                        # Keep SB3's global progress horizon stable across eval/checkpoint
+                        # chunks. PhaseExplorationSchedule advances independently per step.
                         self.model.learn(
                             cfg.timesteps - consumed,
                             callback=Callback(stop_at=before + chunk),
@@ -272,6 +322,14 @@ class TrainingRunner:
                         next_eval = consumed + cfg.evaluation.interval_steps
                         training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
                         self.model.set_env(training_env)
+                if cfg.algorithm == "dqn":
+                    self._emit({
+                        "type": "phase_summary", "index": index + 1,
+                        "epsilon": self.model.exploration_rate,
+                        "actions_seen": sorted(getattr(self, "phase_actions_seen", set())),
+                        "replay_size": self.model.replay_buffer.size(),
+                        "timesteps": self.model.num_timesteps,
+                    })
             training_env.close()
             if not self.stop_requested.is_set() and self.model.num_timesteps != last_evaluated_steps:
                 self._evaluate()

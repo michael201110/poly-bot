@@ -6,11 +6,14 @@ import numpy as np
 import pytest
 from gymnasium import spaces
 
+from polybot.algorithms.dqn import PhaseExplorationSchedule
+from polybot.algorithms.registry import backend_for
 from polybot.control.native_digital import NativeDigitalActionAdapter
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
+from polybot.models.registry import ModelRegistry
 from polybot.protocol import Action
-from polybot.training.config import DQNConfig, EvaluationConfig, TrainingConfig
+from polybot.training.config import CurriculumConfig, DQNConfig, EvaluationConfig, TrainingConfig
 from polybot.training.dqn_brake_stage import SIX_TO_NINE, expand_no_brake_checkpoint
 from polybot.training.runner import TrainingRunner
 
@@ -133,3 +136,91 @@ def test_no_brake_policy_and_replay_transfer_to_full_dqn(tmp_path) -> None:
     resumed = TrainingRunner(later).run(resume=destination)
     assert resumed == destination
     assert QRDQN.load(resumed / "policy.zip", device="cpu").num_timesteps > old.num_timesteps
+
+
+def test_qrdqn_phase_exploration_reheats_and_decays_per_phase(tmp_path) -> None:
+    cfg = DQNConfig(exploration_initial_eps=1.0, exploration_final_eps=0.1,
+                    exploration_fraction=.5, architecture="tiny")
+    schedule = PhaseExplorationSchedule(cfg, 100)
+    assert schedule.initial == 1.0
+    assert schedule(1.0) == 1.0
+    assert schedule.advance(1) == pytest.approx(.982)
+    assert schedule.steps == 1
+    schedule.advance(50)
+    assert schedule.steps == 50
+    assert schedule(1.0) == pytest.approx(.1)
+
+    training = TrainingConfig(algorithm="dqn", dqn=cfg, timesteps=10,
+                              output_root=tmp_path / "models", log_root=tmp_path / "logs")
+    backend = backend_for("dqn")
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend.action_adapter(training))
+    try:
+        model = backend.create_model(training, env, "cpu")
+        backend.begin_phase(model, training, 100)
+        assert model.exploration_rate == 1.0
+        backend.advance_phase(model, 5)
+        assert model.exploration_rate == model.exploration_schedule(0.9)
+        assert model.exploration_rate < 1.0
+        backend.begin_phase(model, training, 100)
+        assert model.exploration_rate == 1.0
+        assert backend.metrics(model)["replay_size"] == 0
+    finally:
+        env.close()
+
+
+def test_qrdqn_curriculum_reheats_per_phase_and_keeps_replay(tmp_path) -> None:
+    base = TrainingConfig(
+        algorithm="dqn", device="cpu", timesteps=60,
+        curriculum=CurriculumConfig("q4-full"),
+        evaluation=EvaluationConfig(10, 1), checkpoint_interval=0,
+        output_root=tmp_path / "models", log_root=tmp_path / "logs",
+        dqn=DQNConfig(architecture="tiny", learning_starts=8, batch_size=8,
+                      replay_capacity=128, train_frequency=1,
+                      exploration_fraction=1.0),
+    )
+    events: list[dict] = []
+    latest = TrainingRunner(base, events.append).run()
+    phases = [event for event in events if event["type"] == "phase"]
+    summaries = [event for event in events if event["type"] == "phase_summary"]
+    assert [event["initial_epsilon"] for event in phases] == [1.0, 1.0]
+    assert phases[0]["spawn_ratio"] == pytest.approx(.70)
+    assert phases[0]["start_ratio"] == pytest.approx(.75)
+    assert summaries[0]["epsilon"] == pytest.approx(.05)
+    assert summaries[0]["replay_size"] == phases[1]["replay_size"]
+    assert summaries[0]["actions_seen"]
+    evaluations = [event["timesteps"] for event in events if event["type"] == "evaluation"]
+    assert evaluations == sorted(evaluations)
+    assert evaluations[-1] == 60
+    from sb3_contrib import QRDQN
+
+    model = QRDQN.load(latest / "policy.zip", device="cpu")
+    assert model.num_timesteps == 60
+    assert summaries[-1]["replay_size"] >= summaries[0]["replay_size"]
+    assert summaries[-1]["replay_size"] > 0
+
+
+def test_qrdqn_resume_into_curriculum_reheats_without_resetting_steps_or_replay(tmp_path) -> None:
+    base = TrainingConfig(
+        algorithm="dqn", device="cpu", timesteps=12,
+        evaluation=EvaluationConfig(12, 1), checkpoint_interval=0,
+        output_root=tmp_path / "models", log_root=tmp_path / "logs",
+        dqn=DQNConfig(architecture="tiny", learning_starts=4, batch_size=8,
+                      replay_capacity=128, train_frequency=1),
+    )
+    latest = TrainingRunner(base).run()
+    registry = ModelRegistry(base.output_root)
+    before = registry.read_metadata(latest).training_timesteps
+    replay_before = latest / "replay.pkl"
+    assert replay_before.is_file()
+    curriculum = replace(
+        base, timesteps=20, evaluation=EvaluationConfig(10, 1),
+        curriculum=CurriculumConfig("section", .25, .5),
+    )
+    events: list[dict] = []
+    TrainingRunner(curriculum, events.append).run(resume=latest)
+    phase = next(event for event in events if event["type"] == "phase")
+    assert phase["initial_epsilon"] == 1.0
+    assert phase["spawn_ratio"] == pytest.approx(.20)
+    metadata = registry.read_metadata(latest)
+    assert metadata.training_timesteps == before + 20
+    assert (latest / "replay.pkl").stat().st_size >= replay_before.stat().st_size

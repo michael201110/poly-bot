@@ -118,6 +118,7 @@ CURRICULUM_INFO = _info("Curriculum", {
     ),
     "start_ratio": "Start position as a fraction of the lap; 0.75 means three quarters in.",
     "end_ratio": "Stop position as a fraction of the lap; reaching it awards the section bonus.",
+    "lead_in_ratio": "Spawn this far before a target section so the policy takes over in a moving state.",
     "start_s": "Start time in the reference lap for a timed section.",
     "end_s": "End time in the reference lap for a timed section.",
     "phases": (

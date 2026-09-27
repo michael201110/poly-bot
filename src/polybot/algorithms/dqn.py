@@ -16,6 +16,26 @@ if TYPE_CHECKING:
     from polybot.training.config import TrainingConfig
 
 
+class PhaseExplorationSchedule:
+    """Decay DQN epsilon against one curriculum phase's own step count."""
+
+    def __init__(self, config: DQNConfig, phase_steps: int) -> None:
+        self.initial = config.exploration_initial_eps
+        self.final = config.exploration_final_eps
+        self.decay_steps = max(1, round(phase_steps * config.exploration_fraction))
+        self.steps = 0
+        self.value = self.initial
+
+    def __call__(self, _progress_remaining: float) -> float:
+        return self.value
+
+    def advance(self, completed_steps: int) -> float:
+        self.steps = max(self.steps, completed_steps)
+        fraction = min(1.0, self.steps / self.decay_steps)
+        self.value = self.initial + fraction * (self.final - self.initial)
+        return self.value
+
+
 class DQNBackend(AlgorithmBackend):
     name = "dqn"
 
@@ -81,6 +101,19 @@ class DQNBackend(AlgorithmBackend):
     def configure_resume(self, model: QRDQN, config: TrainingConfig, device: str) -> None:
         if model.replay_buffer is None:
             raise RuntimeError("DQN resume requires a loaded replay buffer")
+
+    def begin_phase(self, model: QRDQN, config: TrainingConfig, phase_steps: int) -> None:
+        """Reheat epsilon once per phase while keeping replay and optimizer intact."""
+        assert config.dqn is not None
+        schedule = PhaseExplorationSchedule(config.dqn, phase_steps)
+        model.exploration_schedule = schedule
+        model.exploration_rate = schedule.initial
+
+    def advance_phase(self, model: QRDQN, completed_steps: int) -> None:
+        schedule = model.exploration_schedule
+        if not isinstance(schedule, PhaseExplorationSchedule):
+            raise RuntimeError("QR-DQN phase exploration was not initialized")
+        model.exploration_rate = schedule.advance(completed_steps)
 
     def parameter_counts(self, model: QRDQN | DQN) -> dict[str, int]:
         network = model.policy.quantile_net if isinstance(model, QRDQN) else model.policy.q_net

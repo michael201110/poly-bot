@@ -49,7 +49,34 @@ def format_event(event: dict[str, Any]) -> str | None:
         gpu = f" ({event['gpu_name']})" if event.get("gpu_name") else ""
         return f"{prefix}Started {event['algorithm'].upper()} on {event['device'].upper()}{gpu}"
     if kind == "phase":
-        return f"{prefix}Phase {event['index']} · {event['mode']} · {event['steps']:,} planned steps"
+        spawn = event.get("spawn_ratio")
+        target_start = event.get("start_ratio")
+        target_end = event.get("end_ratio")
+        section = (
+            f" · spawn {_percent(spawn)}; target {_percent(target_start)}–{_percent(target_end)}"
+            if spawn is not None else " · full track"
+        )
+        epsilon = event.get("initial_epsilon")
+        explore = f" · epsilon {epsilon:.2f}" if epsilon is not None else ""
+        return (
+            f"{prefix}Phase {event['index']} · {event['mode']}{section} · "
+            f"{event['steps']:,} planned steps{explore}"
+        )
+    if kind == "curriculum_reset":
+        action = event.get("initial_previous_action", {})
+        return (
+            f"{prefix}Curriculum reset · {event['mode']} · spawn {_percent(event.get('spawn_ratio'))} · "
+            f"speed {_number(event.get('initial_speed_mps'), ' m/s')} · "
+            f"previous action steer {action.get('steer', 0):+g}, throttle {action.get('throttle', 0):g}, "
+            f"brake {action.get('brake', 0):g} · actual steer "
+            f"{_number(event.get('initial_actual_steering'))} · epsilon {_number(event.get('epsilon'))}"
+        )
+    if kind == "phase_summary":
+        actions = ", ".join(str(value) for value in event.get("actions_seen", ())) or "none"
+        return (
+            f"{prefix}Phase {event['index']} complete · epsilon {_number(event.get('epsilon'))} · "
+            f"actions tried {actions} · replay {event.get('replay_size', 0):,}"
+        )
     if kind == "episode":
         reasons = ", ".join(EVENT_NAMES.get(name, name.replace("_", " "))
                             for name in event.get("events", ())) or "ended"

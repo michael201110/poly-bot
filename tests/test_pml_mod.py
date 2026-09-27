@@ -32,7 +32,7 @@ def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
         "main": "main.mod.js",
     }
     assert (MOD_ROOT / version / version_manifest["main"]).is_file()
-    runtime_version = "0.1.28"
+    runtime_version = version
     assert (MOD_ROOT / runtime_version / "worker_runtime.js").is_file()
     assert (MOD_ROOT / version / "worker_runtime.js").read_text(encoding="utf-8") == (
         MOD_ROOT / runtime_version / "worker_runtime.js"
@@ -139,6 +139,18 @@ def test_latest_mod_imports_worker_from_an_immutable_resolvable_ref() -> None:
 
     assert "/020ea536816934f307904b79fc51d2edb16cf789/" in source
     assert "/v0.1.23/pml-mod/0.1.0/worker_runtime.js" not in source
+
+
+def test_latest_worker_keeps_curriculum_reset_kinematics_and_action_history() -> None:
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    version = manifest["latest"]["0.6.3"]
+    source = (MOD_ROOT / version / "worker_runtime.js").read_text(encoding="utf-8")
+    assert "function velocityBetween(previous, current, dtSeconds, basisOverride = null)" in source
+    assert "previousPlayerBuffer" in source
+    assert "earlierPlayerBuffer" in source
+    assert "previousAction: initialAction" in source
+    assert "kinematicDtSeconds ?? ticksAdvanced * fixedDtSeconds" in source
+    assert "null,\n              previousPlayerBuffer ? fixedDtSeconds : 0" in source
 
 
 def test_v2_worker_exports_vehicle_dynamics_and_ghost_guidance() -> None:

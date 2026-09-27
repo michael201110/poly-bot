@@ -7,10 +7,12 @@ import numpy as np
 import pytest
 
 from polybot.algorithms.registry import ALGORITHMS, backend_for
+from polybot.control.native_digital import NativeDigitalActionAdapter
 from polybot.environment.curriculum import build_plan
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import IncompatibleModelError, ModelRegistry
+from polybot.protocol import Action
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
@@ -80,6 +82,62 @@ def test_curriculum_budget_is_global() -> None:
         build_plan(custom, 101)
     cfg = TrainingConfig(curriculum=custom, timesteps=100, tqc=TQCConfig())
     assert TrainingConfig.from_dict(cfg.to_dict()) == cfg
+
+
+def test_curriculum_sections_spawn_with_lead_in_and_keep_global_budget() -> None:
+    expected = [(0.0, 0.0, 0.25), (0.20, 0.25, 0.50), (0.45, 0.50, 0.75),
+                (0.70, 0.75, 1.0)]
+    plan = build_plan(CurriculumConfig("quarters"), 1000)
+    assert plan.total_steps == 1000
+    for phase, (spawn, start, end) in zip(plan.phases[:4], expected, strict=True):
+        assert (phase.spawn_ratio, phase.start_ratio, phase.end_ratio) == (spawn, start, end)
+    randomised = build_plan(CurriculumConfig("quarters-randomised"), 100)
+    assert randomised.total_steps == 100
+    assert randomised.phases[0].env_kwargs()["curriculum_lead_in_ratio"] == 0.05
+    q4_full = build_plan(CurriculumConfig("q4-full"), 100)
+    assert (q4_full.phases[0].spawn_ratio, q4_full.phases[0].start_ratio,
+            q4_full.phases[0].end_ratio) == (0.70, 0.75, 1.0)
+    section = build_plan(CurriculumConfig("section", .25, .5), 20)
+    assert (section.phases[0].spawn_ratio, section.phases[0].start_ratio) == (0.20, 0.25)
+    custom = build_plan(CurriculumConfig("custom", phases=(
+        CurriculumPhaseConfig("section", 20, .5, .75, lead_in_ratio=.1),
+        CurriculumPhaseConfig("full", 30),
+    )), 50)
+    assert (custom.phases[0].spawn_ratio, custom.phases[0].start_ratio,
+            custom.phases[0].end_ratio) == (.4, .5, .75)
+
+
+def test_curriculum_reset_info_is_moving_and_section_relative() -> None:
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight", frame_skip=4,
+        curriculum_spawn_ratio=.20, curriculum_start_ratio=.25, curriculum_end_ratio=.5,
+        action_adapter=NativeDigitalActionAdapter(),
+    )
+    try:
+        _, reset = env.reset(seed=4)
+        assert reset["ticks_advanced"] == 0
+        assert reset["route_progress_m"] > 0
+        assert reset["local_velocity_mps"][2] == pytest.approx(20.0)
+        assert reset["previous_action"] == Action().to_wire()
+        assert reset["actual_steering"] == 0
+        assert reset["section_progress"] == 0
+        assert reset["curriculum_in_lead_in"] is True
+        _, _, _, _, info = env.step(1)
+        assert info["ticks_advanced"] == 4
+        assert info["section_progress"] == pytest.approx(0.0)
+        assert info["curriculum_stage"] == "lead-in"
+    finally:
+        env.close()
+
+    q1 = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight", frame_skip=4)
+    try:
+        _, reset = q1.reset(seed=4)
+        assert reset["ticks_advanced"] == 0
+        assert reset["route_progress_m"] == 0
+        assert reset["local_velocity_mps"][2] == 0
+        assert reset["curriculum_stage"] == "full track"
+    finally:
+        q1.close()
 
 
 def test_champion_rank_uses_deterministic_finish_and_progress() -> None:

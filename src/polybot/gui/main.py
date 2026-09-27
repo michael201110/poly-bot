@@ -419,7 +419,13 @@ class PolyBotWindow(QWidget):
         try:
             curriculum = self._curriculum_configuration()
             plan = build_plan(curriculum, int(_value(self.general["timesteps"])))
-            phases = ", ".join(f"{phase.mode} {phase.steps:,}" for phase in plan.phases)
+            phases = ", ".join(
+                f"{phase.mode} {phase.steps:,}"
+                + (f" (spawn {phase.spawn_ratio:.0%}; target {phase.start_ratio:.0%}–{phase.end_ratio:.0%})"
+                   if phase.spawn_ratio is not None and phase.start_ratio is not None
+                   and phase.end_ratio is not None else "")
+                for phase in plan.phases
+            )
             self.plan_label.setText(f"Total planned steps: {plan.total_steps:,}. Phases: {phases}.")
         except (ValueError, TypeError):
             self.plan_label.setText("Enter valid section bounds to see the training plan.")
@@ -830,6 +836,14 @@ class PolyBotWindow(QWidget):
             return
         try:
             cfg = self.configuration()
+            if resume and cfg.algorithm == "dqn":
+                registry = ModelRegistry(cfg.output_root)
+                slot = registry.slot(cfg.track_name, "dqn", "latest")
+                metadata = registry.read_metadata(slot)
+                saved_action_set = metadata.training_config.get("dqn", {}).get("action_set")
+                if saved_action_set in {"full", "no_brake"}:
+                    _set(self.dqn_form.widgets["action_set"], saved_action_set)
+                    cfg = self.configuration()
             warnings = configuration_warnings(cfg)
             self.warnings.setText("\n".join(warnings) if warnings else "Settings look reasonable.")
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
@@ -884,9 +898,12 @@ class PolyBotWindow(QWidget):
             ) or "Settings look reasonable.")
             self.log_location.setText(f"Recent events · full JSONL detail: {event['log']}")
         if kind == "progress":
+            stage = event.get("curriculum_stage", "full track")
+            section = event.get("section_progress")
+            section_text = f"section {section:.1%}" if section is not None else "full track"
             self.metrics.setText(
                 f"Step {event['timesteps']:,} · {event['steps_per_second']:.1f} TPS · "
-                f"attempt progress {event['progress']:.1%} · reward {event['reward']:.1f}"
+                f"{stage} · lap {event['progress']:.1%} · {section_text} · reward {event['reward']:.1f}"
             )
             self.metrics.setToolTip(
                 "TPS counts environment decisions per wall second. Progress is this attempt; "

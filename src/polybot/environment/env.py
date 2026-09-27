@@ -51,6 +51,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         request_timeout_s: float = 10.0,
         curriculum_last_fraction: float = 0.0,
         curriculum_probability: float = 0.0,
+        curriculum_lead_in_ratio: float = 0.05,
+        curriculum_spawn_ratio: float | None = None,
         curriculum_start_ratio: float | None = None,
         curriculum_end_ratio: float | None = None,
         curriculum_start_s: float | None = None,
@@ -73,8 +75,18 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ValueError("curriculum_last_fraction must be in [0, 1]")
         if not 0.0 <= curriculum_probability <= 1.0:
             raise ValueError("curriculum_probability must be in [0, 1]")
+        if not 0.0 <= curriculum_lead_in_ratio < 1.0:
+            raise ValueError("curriculum_lead_in_ratio must be in [0, 1)")
+        if curriculum_spawn_ratio is None and curriculum_start_ratio is not None:
+            curriculum_spawn_ratio = max(0.0, curriculum_start_ratio - curriculum_lead_in_ratio)
+        if (curriculum_spawn_ratio is None) != (curriculum_start_ratio is None):
+            raise ValueError("curriculum spawn and target start must be provided together")
         if (curriculum_start_ratio is None) != (curriculum_end_ratio is None):
             raise ValueError("curriculum section start and end must be provided together")
+        if curriculum_spawn_ratio is not None and not (
+            0.0 <= curriculum_spawn_ratio <= curriculum_start_ratio < curriculum_end_ratio <= 1.0
+        ):
+            raise ValueError("curriculum must satisfy 0 <= spawn <= start < end <= 1")
         if curriculum_start_ratio is not None and not (
             0.0 <= curriculum_start_ratio < curriculum_end_ratio <= 1.0
         ):
@@ -100,12 +112,16 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.request_timeout_s = request_timeout_s
         self.curriculum_last_fraction = curriculum_last_fraction
         self.curriculum_probability = curriculum_probability
+        self.curriculum_lead_in_ratio = curriculum_lead_in_ratio
+        self.curriculum_spawn_ratio = curriculum_spawn_ratio
         self.curriculum_start_ratio = curriculum_start_ratio
         self.curriculum_end_ratio = curriculum_end_ratio
         self.curriculum_start_s = curriculum_start_s
         self.curriculum_end_s = curriculum_end_s
         self.curriculum_random_quarters = curriculum_random_quarters
         self._episode_curriculum_end_ratio: float | None = None
+        self._episode_curriculum_start_ratio: float | None = None
+        self._episode_curriculum_spawn_ratio: float | None = None
         self._episode_curriculum_quarter: int | None = None
         self.action_adapter = action_adapter or DigitalActionAdapter()
         self.action_space = self.action_adapter.action_space
@@ -136,6 +152,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.latest_telemetry: Telemetry | None = None
         self.simulator_capabilities: Mapping[str, Any] = {}
         self._native_finish_restart_pending = False
+        self._curriculum_reset_diagnostics: dict[str, Any] | None = None
 
     def _exchange(self, op: str, params: Mapping[str, Any]) -> Mapping[str, Any]:
         if self._closed:
@@ -203,15 +220,22 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             else int(self.np_random.integers(0, np.iinfo(np.int32).max))
         )
         start_progress_ratio = 0.0
+        self._episode_curriculum_spawn_ratio = None
+        self._episode_curriculum_start_ratio = None
         self._episode_curriculum_end_ratio = self.curriculum_end_ratio
         self._episode_curriculum_quarter = None
         if self.curriculum_random_quarters:
             quarter = int(self.np_random.integers(0, 4))
-            start_progress_ratio = quarter / 4.0
+            target_start_ratio = quarter / 4.0
+            start_progress_ratio = max(0.0, target_start_ratio - self.curriculum_lead_in_ratio)
             self._episode_curriculum_end_ratio = (quarter + 1) / 4.0
             self._episode_curriculum_quarter = quarter + 1
+            self._episode_curriculum_spawn_ratio = start_progress_ratio
+            self._episode_curriculum_start_ratio = target_start_ratio
         elif self.curriculum_start_ratio is not None:
-            start_progress_ratio = self.curriculum_start_ratio
+            start_progress_ratio = self.curriculum_spawn_ratio or 0.0
+            self._episode_curriculum_spawn_ratio = start_progress_ratio
+            self._episode_curriculum_start_ratio = self.curriculum_start_ratio
         elif (
             self.curriculum_last_fraction > 0.0
             and self.np_random.random() < self.curriculum_probability
@@ -251,6 +275,28 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.action_adapter.reset()
         observation = self._policy_observation(transition.telemetry)
         info = self._info(transition, reward_terms=None, simulator_seed=simulator_seed)
+        self._add_curriculum_info(info, transition.telemetry.route_progress_m)
+        if self._episode_curriculum_start_ratio is not None:
+            telemetry = transition.telemetry
+            info["curriculum_reset_diagnostics"] = {
+                "initial_speed_mps": float(np.linalg.norm(telemetry.local_velocity_mps)),
+                "initial_local_velocity_mps": list(telemetry.local_velocity_mps),
+                "initial_acceleration_mps2": list(telemetry.local_acceleration_mps2),
+                "initial_angular_velocity_radps": list(telemetry.angular_velocity_radps),
+                "initial_previous_action": telemetry.previous_action.to_wire(),
+                "initial_actual_steering": telemetry.actual_steering,
+                "initial_wheel_contacts": list(telemetry.wheel_contacts),
+                "initial_suspension_lengths_m": list(telemetry.suspension_lengths_m),
+                "route_progress_m": telemetry.route_progress_m,
+                "track_length_m": telemetry.track_length_m,
+                "heading_error_rad": telemetry.heading_error_rad,
+                "lateral_offset_m": telemetry.lateral_offset_m,
+                "initial_lookahead": [list(point) for point in telemetry.lookahead],
+                "initial_lookahead_mask": list(telemetry.lookahead_mask),
+            }
+            self._curriculum_reset_diagnostics = info["curriculum_reset_diagnostics"]
+        else:
+            self._curriculum_reset_diagnostics = None
         if self._episode_curriculum_quarter is not None:
             info["curriculum_quarter"] = self._episode_curriculum_quarter
             info["curriculum_start_ratio"] = start_progress_ratio
@@ -446,6 +492,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
         observation = self._policy_observation(transition.telemetry)
         info = self._info(transition, reward_terms=reward_terms)
+        self._add_curriculum_info(info, telemetry.route_progress_m)
+        if self._episode_steps == 1 and self._curriculum_reset_diagnostics is not None:
+            info["curriculum_reset_diagnostics"] = self._curriculum_reset_diagnostics
+            self._curriculum_reset_diagnostics = None
         info["reward_groups"] = reward_groups
         if not off_track:
             # The adapter's `off_track` event uses its fixed nominal width,
@@ -489,6 +539,24 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
     def _policy_observation(self, telemetry: Telemetry) -> np.ndarray:
         return observe(telemetry)
+
+    def _add_curriculum_info(self, info: dict[str, Any], progress_m: float) -> None:
+        if self._episode_curriculum_end_ratio is None:
+            info["curriculum_stage"] = "full track"
+            info["section_progress"] = None
+            info["curriculum_in_lead_in"] = False
+            return
+        start = self._episode_curriculum_start_ratio or 0.0
+        end = self._episode_curriculum_end_ratio
+        ratio = progress_m / max(1.0, float(info.get("track_length_m", 1.0)))
+        info.update({
+            "curriculum_spawn_ratio": self._episode_curriculum_spawn_ratio or 0.0,
+            "curriculum_start_ratio": start,
+            "curriculum_end_ratio": end,
+            "curriculum_in_lead_in": ratio < start,
+            "section_progress": min(1.0, max(0.0, (ratio - start) / (end - start))),
+            "curriculum_stage": "lead-in" if ratio < start else "target section",
+        })
 
     def _reward(
         self,
