@@ -8,7 +8,7 @@ if (-not (Test-Path -LiteralPath $guiPath)) {
 $targetTimesteps = 4000000 # About 24 hours at the observed 45-50 steps/second.
 $remainingTimesteps = $targetTimesteps
 $settings = @{
-    architecture = 'tiny'; learning_rate = 0.0001; buffer_size = 250000
+    architecture = 'standard'; learning_rate = 0.0001; buffer_size = 250000
     learning_starts = 5000; batch_size = 256; gamma = 0.999; tau = 0.005
     train_freq = 2; gradient_steps = 1; ent_coef = 'auto_0.01'
     forward_warmup_fraction = 0.8; forward_warmup_steering_std = 0.45
