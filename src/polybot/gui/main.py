@@ -849,7 +849,7 @@ class PolyBotWindow(QWidget):
         latest_eval = registry.read_metadata(latest).evaluation
         if best_eval is not None and (
             latest_eval is None
-            or EvaluationResult(**best_eval).rank() > EvaluationResult(**latest_eval).rank()
+            or EvaluationResult(**best_eval).rank() >= EvaluationResult(**latest_eval).rank()
         ):
             return champion
         return latest

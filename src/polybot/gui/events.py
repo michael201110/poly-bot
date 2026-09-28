@@ -62,6 +62,8 @@ def format_event(event: dict[str, Any]) -> str | None:
             f" versus champion {_percent(event['champion_progress'])}"
             f" · replay from {event['replay_source']}"
         )
+    if kind == "champion_replay":
+        return f"{prefix}Saved policy-generated replay with champion{step}"
     if kind == "phase":
         spawn = event.get("spawn_ratio")
         target_start = event.get("start_ratio")

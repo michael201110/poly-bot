@@ -224,6 +224,33 @@ def test_older_tqc_champion_without_replay_can_continue(tmp_path) -> None:
     assert runner.model._n_updates == 0
 
 
+def test_older_tqc_champion_refills_replay_before_rollback(tmp_path, monkeypatch) -> None:
+    import polybot.training.runner as runner_module
+
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 20.0, 20.0, 0.0, 0.0, 0.0)
+    weak = EvaluationResult(1, 0.0, 0.2, 0.2, None, None, 0.0, 1.0, 0.0)
+    evaluations = iter((strong, strong, weak))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    config = replace(
+        configuration(tmp_path, "tqc"), timesteps=16,
+        evaluation=EvaluationConfig(16, 1),
+    )
+    TrainingRunner(config).run()
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "tqc", "champion")
+    (champion / "replay.pkl").unlink()
+    resumed = replace(config, timesteps=32, tqc=replace(config.tqc, learning_starts=16))
+    events: list[dict] = []
+    latest = TrainingRunner(resumed, events.append).run(
+        resume=champion, fresh_replay=True, rollback_to_champion=True
+    )
+    assert (champion / "replay.pkl").is_file()
+    assert any(event["type"] == "champion_replay" for event in events)
+    assert any(event["type"] == "rollback" and event["replay_source"] == "champion"
+               for event in events)
+    assert registry.read_metadata(latest).evaluation is None
+
+
 @pytest.mark.parametrize("timesteps", (24, 32))
 def test_continue_best_restores_champion_after_weaker_evaluation(
     tmp_path, monkeypatch, timesteps: int
@@ -245,7 +272,7 @@ def test_continue_best_restores_champion_after_weaker_evaluation(
     assert (champion / "replay.pkl").is_file()
     assert registry.read_metadata(champion).training_timesteps == 16
     assert registry.read_metadata(latest).training_timesteps == timesteps
-    assert registry.read_metadata(latest).evaluation == strong.to_dict()
+    assert registry.read_metadata(latest).evaluation is None
     assert any(event["type"] == "rollback" and event["replay_source"] == "champion"
                for event in events)
 

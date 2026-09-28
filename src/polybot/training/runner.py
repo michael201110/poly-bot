@@ -60,6 +60,8 @@ class TrainingRunner:
         self.previous_wall_seconds = 0.0
         self.device = None
         self.last_evaluation: EvaluationResult | None = None
+        self._champion_refill_source: Path | None = None
+        self._champion_refill_updates: int | None = None
         self.sink: EventSink | None = None
 
     def stop(self) -> None:
@@ -128,6 +130,19 @@ class TrainingRunner:
             previous = self.registry.read_metadata(champion_dir).evaluation
             if previous is not None:
                 champion = EvaluationResult(**previous)
+        # Old champions have no replay file. A resumed champion can collect a
+        # policy-generated buffer before its first update; keep that buffer with
+        # the proven policy so later rollbacks never train from failed attempts.
+        if (
+            cfg.algorithm == "tqc" and champion is not None
+            and self._champion_refill_source == champion_dir
+            and not (champion_dir / "replay.pkl").is_file()
+            and self.model.num_timesteps >= self.model.learning_starts
+            and self.model._n_updates == self._champion_refill_updates
+            and result.rank() >= champion.rank()
+        ):
+            self.model.save_replay_buffer(str(champion_dir / "replay.pkl"))
+            self._emit({"type": "champion_replay", "timesteps": self.model.num_timesteps})
         if champion is None or result.rank() > champion.rank():
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps})
@@ -153,27 +168,28 @@ class TrainingRunner:
 
         current_steps = int(self.model.num_timesteps)
         replay_file = champion_dir / "replay.pkl"
-        reuse_live_replay = cfg.algorithm in {"dqn", "tqc"} and not replay_file.is_file()
-        live_replay = self.model.replay_buffer if reuse_live_replay else None
+        refill_replay = cfg.algorithm in {"dqn", "tqc"} and not replay_file.is_file()
         restored = self.backend.load_model(
             champion_dir / "policy.zip", training_env, self.device.resolved,
-            resume=not reuse_live_replay,
+            resume=not refill_replay,
         )
-        if reuse_live_replay:
-            restored.replay_buffer = live_replay
         restored.num_timesteps = current_steps
-        self.backend.configure_resume(restored, cfg, self.device.resolved)
+        self.backend.configure_resume(
+            restored, cfg, self.device.resolved, fresh_replay=refill_replay
+        )
         if cfg.algorithm == "dqn":
             self.backend.begin_phase(restored, cfg, phase_steps)
             self.backend.advance_phase(restored, current_steps - phase_start)
         self.model = restored
-        self.last_evaluation = champion
+        # The poor result belongs to the discarded policy. The restored policy
+        # has not been evaluated at this step, so latest must not claim its score.
+        self.last_evaluation = None
         self._emit({
             "type": "rollback", "timesteps": current_steps,
             "champion_timesteps": champion_meta.training_timesteps,
             "evaluated_progress": result.median_progress,
             "champion_progress": champion.median_progress,
-            "replay_source": "current" if reuse_live_replay else "champion",
+            "replay_source": "fresh" if refill_replay else "champion",
         })
         return True
 
@@ -212,6 +228,9 @@ class TrainingRunner:
                 self.backend.configure_resume(
                     self.model, cfg, self.device.resolved, fresh_replay=fresh_replay
                 )
+                if fresh_replay and cfg.algorithm == "tqc" and resume.name == "champion":
+                    self._champion_refill_source = resume
+                    self._champion_refill_updates = self.model._n_updates
                 self.ticks = metadata.simulator_ticks
                 self.finishes = metadata.finishes
                 self.crashes = metadata.crashes
