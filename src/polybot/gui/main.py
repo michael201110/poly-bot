@@ -479,6 +479,13 @@ class PolyBotWindow(QWidget):
         self.speed_search_trials.setValue(1000)
         self.speed_search_trials.setToolTip("Maximum live simulator candidates to test before stopping.")
         search_form.addRow("Search trials", self.speed_search_trials)
+        self.speed_search_mode = QComboBox()
+        self.speed_search_mode.addItem("Whole-lap actor search", "global")
+        self.speed_search_mode.addItem("Section speed search", "section")
+        self.speed_search_mode.setToolTip(
+            "Whole-lap search adjusts the actor outputs everywhere; section search changes forward control in one track window."
+        )
+        search_form.addRow("Search method", self.speed_search_mode)
         page.addLayout(search_form)
         speed_button = QPushButton("Optimize TQC champion speed")
         speed_button.setToolTip(
@@ -977,6 +984,7 @@ class PolyBotWindow(QWidget):
                 "--log", str(log_path), "--trials", str(self.speed_search_trials.value()),
                 "--target", str(self.speed_search_target.value()),
                 "--stop-file", str(self.speed_search_stop_file),
+                "--mode", str(self.speed_search_mode.currentData()),
             ])
             process.setWorkingDirectory(str(Path.cwd()))
             process.finished.connect(self._speed_search_finished)

@@ -35,10 +35,12 @@ def emit(path: Path, event: dict) -> None:
 
 def search(
     config_path: Path, log_path: Path, max_trials: int, target_s: float,
-    stop_file: Path | None = None,
+    stop_file: Path | None = None, mode: str = "global",
 ) -> None:
     if max_trials < 1 or target_s <= 0:
         raise ValueError("trials and target seconds must be positive")
+    if mode not in {"global", "section"}:
+        raise ValueError("search mode must be global or section")
     config = TrainingConfig.from_dict(json.loads(config_path.read_text(encoding="utf-8-sig")))
     if config.algorithm != "tqc" or config.backend != "websocket":
         raise ValueError("live speed search requires a websocket TQC profile")
@@ -56,6 +58,7 @@ def search(
 
     best_lap = float(champion.evaluation["median_lap_s"])
     best_actor = deepcopy(model.actor.state_dict())
+    best_schedule = deepcopy(getattr(model, "speed_bias_schedule", []))
     rng = random.Random(config.seed + 25)
     run_tag = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     # Prefer changes that preserve the existing route; exploration broadens later.
@@ -70,29 +73,52 @@ def search(
     ] + [
         (0.0, 0.0, 1.0, gain) for gain in (0.8, 0.9, 1.1, 1.2)
     ]
+    windows = (
+        (0.34, 0.55), (0.55, 0.75), (0.75, 1.0),
+        (0.34, 1.0), (0.5, 1.0), (0.24, 0.36), (0.1, 0.22),
+    )
+    section_probes = [
+        (start, end, amount)
+        for start, end in windows
+        for amount in (0.1, 0.2, 0.3, -0.1)
+    ]
     emit(log_path, {"type": "started", "champion_lap_s": best_lap,
-                    "target_s": target_s, "max_trials": max_trials})
+                    "target_s": target_s, "max_trials": max_trials, "mode": mode})
 
     for trial in range(1, max_trials + 1):
         if best_lap <= target_s or (stop_file is not None and stop_file.exists()):
             break
-        if trial <= len(probes):
-            steer_bias, drive_bias, steer_gain, drive_gain = probes[trial - 1]
+        if mode == "global":
+            section = None
+            if trial <= len(probes):
+                steer_bias, drive_bias, steer_gain, drive_gain = probes[trial - 1]
+            else:
+                broad = trial % 7 == 0
+                steer_bias = rng.gauss(0, 0.08 if broad else 0.025)
+                drive_bias = rng.gauss(0, 0.2 if broad else 0.06)
+                steer_gain = max(0.6, min(1.4, rng.gauss(1, 0.12 if broad else 0.04)))
+                drive_gain = max(0.6, min(1.4, rng.gauss(1, 0.12 if broad else 0.04)))
         else:
-            broad = trial % 7 == 0
-            steer_bias = rng.gauss(0, 0.08 if broad else 0.025)
-            drive_bias = rng.gauss(0, 0.2 if broad else 0.06)
-            steer_gain = max(0.6, min(1.4, rng.gauss(1, 0.12 if broad else 0.04)))
-            drive_gain = max(0.6, min(1.4, rng.gauss(1, 0.12 if broad else 0.04)))
+            steer_bias = drive_bias = 0.0
+            steer_gain = drive_gain = 1.0
+            if trial <= len(section_probes):
+                section = section_probes[trial - 1]
+            else:
+                start, end = rng.choice(windows)
+                section = (start, end, rng.gauss(0, 0.2 if trial % 7 == 0 else 0.08))
 
         model.actor.load_state_dict(best_actor)
+        model.speed_bias_schedule = deepcopy(best_schedule)
         with torch.no_grad():
             model.actor.mu.weight[0].mul_(steer_gain)
             model.actor.mu.weight[1].mul_(drive_gain)
             model.actor.mu.bias[0].add_(steer_bias)
             model.actor.mu.bias[1].add_(drive_bias)
+        if section is not None:
+            model.speed_bias_schedule.append(section)
         parameters = {"steer_bias": steer_bias, "drive_bias": drive_bias,
-                      "steer_gain": steer_gain, "drive_gain": drive_gain}
+                      "steer_gain": steer_gain, "drive_gain": drive_gain,
+                      "speed_window": section}
         try:
             screened = evaluate_model(
                 model, runner._environment, episodes=1, seed=config.seed + 1_000_000
@@ -134,6 +160,7 @@ def search(
             champion = updated
             best_lap = float(confirmed.median_lap_s)
             best_actor = deepcopy(model.actor.state_dict())
+            best_schedule = deepcopy(model.speed_bias_schedule)
             emit(log_path, {"type": "champion", "trial": trial, "lap_s": best_lap,
                             "parameters": parameters})
         except Exception as exc:
@@ -151,8 +178,9 @@ def main() -> None:
     parser.add_argument("--trials", type=int, default=1000)
     parser.add_argument("--target", type=float, default=25.0)
     parser.add_argument("--stop-file", type=Path)
+    parser.add_argument("--mode", choices=("global", "section"), default="global")
     args = parser.parse_args()
-    search(args.config, args.log, args.trials, args.target, args.stop_file)
+    search(args.config, args.log, args.trials, args.target, args.stop_file, args.mode)
 
 
 if __name__ == "__main__":
