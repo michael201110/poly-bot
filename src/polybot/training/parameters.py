@@ -109,6 +109,10 @@ TQC_INFO = _info("TQC", {
     "entropy": "Automatic exploration coefficient, such as auto_0.1. Higher initial values explore more.",
     "warmup_forward_fraction": "Fraction of seeded warmup actions biased toward forward throttle; expires completely.",
     "warmup_steering_std": "Steering variation during warmup. Larger values explore wider turns.",
+    "champion_action_drift_limit": (
+        "On best-model continuation, cap deterministic action drift from the starting champion "
+        "on saved replay states. 0 disables the cap; 0.03 is conservative."
+    ),
 }, algorithm="tqc")
 
 CURRICULUM_INFO = _info("Curriculum", {
@@ -249,6 +253,9 @@ METRIC_INFO = _info("Status", {
     "exploration_rate": "DQN epsilon: probability of a random action instead of the highest-Q action.",
     "entropy_coefficient": "TQC exploration weight, also called alpha; auto mode adjusts it over time.",
     "actor_loss": "Change to TQC's action policy. Lower is not always better driving.",
+    "anchor_action_drift": (
+        "Largest deterministic control change from the proven champion on its saved driving path."
+    ),
     "critic_loss": "Change to TQC's value estimates; spikes can signal instability.",
     "policy_loss": "PPO policy update signal; compare trends with deterministic evaluation.",
     "value_loss": "PPO critic prediction error; it depends strongly on reward scale.",

@@ -452,6 +452,15 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 and telemetry.elapsed_s >= self.curriculum_end_s - self.curriculum_start_s
             )
         )
+        timed_out = (
+            "finish" not in transition.events
+            and not curriculum_section_complete
+            and (
+                "time_limit" in transition.events
+                or self._episode_steps + 1 >= self.max_episode_steps
+                or (self.max_episode_s is not None and telemetry.elapsed_s >= self.max_episode_s)
+            )
+        )
 
         reward, reward_terms, reward_groups = self._reward(
             transition,
@@ -465,6 +474,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             clean_takeoff=clean_takeoff,
             airborne_roll_failure=airborne_roll_failure,
             curriculum_section_complete=curriculum_section_complete,
+            timed_out=timed_out,
         )
         self._episode_steps += 1
         events = set(transition.events)
@@ -536,6 +546,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["landing_grace_s"] = self._landing_grace_s
         if truncated and "time_limit" not in events:
             info["wrapper_time_limit"] = True
+            info["events"] = tuple(dict.fromkeys((*info["events"], "time_limit")))
         return observation, reward, terminated, truncated, info
 
     def _policy_observation(self, telemetry: Telemetry) -> np.ndarray:
@@ -573,6 +584,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         clean_takeoff: bool = False,
         airborne_roll_failure: bool = False,
         curriculum_section_complete: bool = False,
+        timed_out: bool = False,
     ) -> tuple[float, dict[str, float], dict[str, float]]:
         context = RewardContext(
             transition=transition,
@@ -592,6 +604,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             clean_takeoff=clean_takeoff,
             airborne_roll_failure=airborne_roll_failure,
             curriculum_section_complete=curriculum_section_complete,
+            timed_out=timed_out,
         )
         result = calculate_reward(context)
         self._highest_progress_m = max(

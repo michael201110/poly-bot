@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import fields, replace
 from pathlib import Path
 
@@ -72,3 +73,17 @@ def test_winter_4_conservative_pace_changes_only_finish_shaping() -> None:
     for field in fields(RewardConfig):
         if field.name not in {"finish_target_s", "finish_fast_bonus"}:
             assert getattr(conservative, field.name) == getattr(baseline, field.name)
+
+
+def test_summer_1_20s_pace_rewards_faster_finishes_and_claws_back_failures() -> None:
+    config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load(
+        "Summer 1 - 20s pace"
+    )
+    at_29 = config.finish_bonus + config.finish_fast_bonus * math.exp(
+        -config.finish_pace_decay_per_s * (29 - config.finish_target_s)
+    )
+    at_20 = config.finish_bonus + config.finish_fast_bonus
+    assert config.finish_target_s == 20.0
+    assert at_20 > at_29 + 2_900
+    assert config.failure_progress_clawback_per_m == -config.progress_per_m
+    assert config.failure_early_penalty < 0

@@ -466,6 +466,7 @@ class RewardContext:
     clean_takeoff: bool = False
     airborne_roll_failure: bool = False
     curriculum_section_complete: bool = False
+    timed_out: bool = False
 
     @property
     def telemetry(self) -> Telemetry:
@@ -507,7 +508,7 @@ class RewardContext:
     def incomplete_failure(self) -> bool:
         return any((
             self.barrier_contact, self.airborne_roll_failure, self.stalled,
-            self.off_track, "crash" in self.transition.events,
+            self.off_track, self.timed_out, "crash" in self.transition.events,
         ))
 
 

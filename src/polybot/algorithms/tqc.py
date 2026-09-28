@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+import torch as th
 from sb3_contrib import TQC
 from stable_baselines3.common.type_aliases import TrainFreq, TrainFrequencyUnit
 from stable_baselines3.common.utils import ConstantSchedule
@@ -28,6 +30,10 @@ class SeededWarmupTQC(TQC):
         self.warmup_forward_fraction = warmup_forward_fraction
         self.warmup_steering_std = warmup_steering_std
         self._refill_replay_from_policy = False
+        self._champion_actor: Any = None
+        self._champion_observations: th.Tensor | None = None
+        self._champion_action_drift_limit = 0.0
+        self._anchor_action_drift: float | None = None
         self._warmup_rng = np.random.default_rng(kwargs.get("seed"))
         super().__init__(*args, **kwargs)
 
@@ -47,6 +53,72 @@ class SeededWarmupTQC(TQC):
         action = np.stack((steering, forward), axis=1).astype(np.float32)
         # The action space is [-1, 1], so its replay representation is identical.
         return action, action.copy()
+
+    def _excluded_save_params(self) -> list[str]:
+        return [*super()._excluded_save_params(), "_champion_actor", "_champion_observations"]
+
+    def anchor_to_current_policy(
+        self, max_action_drift: float, observations: list[np.ndarray] | None = None
+    ) -> None:
+        """Keep a continued actor near the last proven policy on replay states."""
+        self._champion_action_drift_limit = max_action_drift
+        self._anchor_action_drift = None
+        self._champion_actor = deepcopy(self.actor) if max_action_drift > 0 else None
+        self._champion_observations = (
+            th.as_tensor(np.asarray(observations, dtype=np.float32), device=self.device)
+            if observations else None
+        )
+        if self._champion_observations is not None and self.replay_buffer is not None:
+            count = min(2048, self.replay_buffer.size())
+            if count:
+                replay_observations = self.replay_buffer.sample(
+                    count, env=self._vec_normalize_env
+                ).observations
+                self._champion_observations = th.cat(
+                    (self._champion_observations, replay_observations), dim=0
+                )
+        if self._champion_actor is not None:
+            self._champion_actor.eval()
+            for parameter in self._champion_actor.parameters():
+                parameter.requires_grad_(False)
+
+    def _enforce_actor_anchor(self) -> None:
+        if self._champion_actor is None or self.replay_buffer is None:
+            return
+        if self._champion_observations is None:
+            count = min(2048, self.replay_buffer.size())
+            if count == 0:
+                return
+            self._champion_observations = self.replay_buffer.sample(
+                count, env=self._vec_normalize_env
+            ).observations
+        observations = self._champion_observations
+        with th.no_grad():
+            reference = self._champion_actor(observations, deterministic=True)
+            for _ in range(8):
+                current = self.actor(observations, deterministic=True)
+                drift = (current - reference).abs().amax().item()
+                self._anchor_action_drift = drift
+                if drift <= self._champion_action_drift_limit:
+                    break
+                # Interpolate in weight space and re-check the actual actions;
+                # the actor network itself is nonlinear.
+                ratio = min(0.95, self._champion_action_drift_limit / drift)
+                for parameter, anchor in zip(
+                    self.actor.parameters(), self._champion_actor.parameters(), strict=True
+                ):
+                    parameter.lerp_(anchor, 1 - ratio)
+            self._anchor_action_drift = (
+                self.actor(observations, deterministic=True) - reference
+            ).abs().amax().item()
+
+    def train(self, gradient_steps: int, batch_size: int = 64) -> None:
+        if self._champion_actor is None:
+            super().train(gradient_steps, batch_size)
+            return
+        for _ in range(gradient_steps):
+            super().train(1, batch_size)
+            self._enforce_actor_anchor()
 
 
 class TQCBackend(AlgorithmBackend):
@@ -128,4 +200,5 @@ class TQCBackend(AlgorithmBackend):
             "actor_loss": values.get("train/actor_loss"),
             "critic_loss": values.get("train/critic_loss"),
             "entropy_coefficient": values.get("train/ent_coef"),
+            "anchor_action_drift": model._anchor_action_drift,
         }

@@ -7,6 +7,8 @@ from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any
 
+import numpy as np
+
 
 @dataclass(frozen=True, slots=True)
 class EvaluationResult:
@@ -36,7 +38,8 @@ class EvaluationResult:
 
 
 def evaluate_model(
-    model: Any, env_factory: Callable[[], Any], *, episodes: int, seed: int
+    model: Any, env_factory: Callable[[], Any], *, episodes: int, seed: int,
+    observation_sink: list[np.ndarray] | None = None,
 ) -> EvaluationResult:
     if episodes < 1:
         raise ValueError("evaluation requires at least one episode")
@@ -49,6 +52,8 @@ def evaluate_model(
         for index in range(episodes):
             observation, _ = env.reset(seed=seed + index)
             while True:
+                if observation_sink is not None:
+                    observation_sink.append(np.array(observation, copy=True))
                 action, _ = model.predict(observation, deterministic=True)
                 observation, _, terminated, truncated, info = env.step(action)
                 if terminated or truncated:

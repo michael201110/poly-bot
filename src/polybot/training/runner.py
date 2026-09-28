@@ -62,6 +62,8 @@ class TrainingRunner:
         self.last_evaluation: EvaluationResult | None = None
         self._champion_refill_source: Path | None = None
         self._champion_refill_updates: int | None = None
+        self._champion_path_observations: list[Any] | None = None
+        self._consecutive_rollbacks = 0
         self.sink: EventSink | None = None
 
     def stop(self) -> None:
@@ -118,16 +120,25 @@ class TrainingRunner:
 
     def _evaluate(self) -> EvaluationResult:
         cfg = self.config
+        observations: list[Any] | None = (
+            [] if cfg.algorithm == "tqc" and self.model._champion_actor is not None else None
+        )
         result = evaluate_model(
             self.model, self._environment, episodes=cfg.evaluation.episodes,
             seed=cfg.seed + 1_000_000,
+            observation_sink=observations,
         )
         self.last_evaluation = result
         self._emit({"type": "evaluation", "timesteps": self.model.num_timesteps, **result.to_dict()})
         champion_dir = self.registry.slot(cfg.track_name, cfg.algorithm, "champion")
         champion = None
+        champion_reward_mismatch = False
         if (champion_dir / "metadata.json").is_file():
-            previous = self.registry.read_metadata(champion_dir).evaluation
+            champion_metadata = self.registry.read_metadata(champion_dir)
+            previous = champion_metadata.evaluation
+            champion_reward_mismatch = (
+                champion_metadata.training_config["rewards"] != cfg.to_dict()["rewards"]
+            )
             if previous is not None:
                 champion = EvaluationResult(**previous)
         # Old champions have no replay file. A resumed champion can collect a
@@ -136,16 +147,30 @@ class TrainingRunner:
         if (
             cfg.algorithm == "tqc" and champion is not None
             and self._champion_refill_source == champion_dir
-            and not (champion_dir / "replay.pkl").is_file()
+            and (champion_reward_mismatch or not (champion_dir / "replay.pkl").is_file())
             and self.model.num_timesteps >= self.model.learning_starts
             and self.model._n_updates == self._champion_refill_updates
-            and result.rank() >= champion.rank()
         ):
-            self.model.save_replay_buffer(str(champion_dir / "replay.pkl"))
+            if champion_reward_mismatch:
+                self._save("champion", champion)
+            else:
+                self.model.save_replay_buffer(str(champion_dir / "replay.pkl"))
             self._emit({"type": "champion_replay", "timesteps": self.model.num_timesteps})
-        if champion is None or result.rank() > champion.rank():
+        refill_in_progress = (
+            cfg.algorithm == "tqc"
+            and self._champion_refill_source == champion_dir
+            and self.model._n_updates == self._champion_refill_updates
+            and self.model.num_timesteps < self.model.learning_starts
+        )
+        if champion is None or (result.rank() > champion.rank() and not refill_in_progress):
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps})
+            if cfg.algorithm == "tqc" and self.model._champion_actor is not None:
+                assert cfg.tqc is not None
+                self._champion_path_observations = observations
+                self.model.anchor_to_current_policy(
+                    cfg.tqc.champion_action_drift_limit, observations
+                )
         return result
 
     def _restore_champion_if_worse(
@@ -160,15 +185,26 @@ class TrainingRunner:
         champion = EvaluationResult(**champion_meta.evaluation)
         if result.rank() >= champion.rank():
             return False
+        if (
+            cfg.algorithm == "tqc"
+            and self._champion_refill_source == champion_dir
+            and self.model._n_updates == self._champion_refill_updates
+        ):
+            # The policy is still byte-for-byte the champion during refill.
+            # Rewinding it would only discard clean new-reward replay.
+            return False
         self.registry.validate(champion_meta, cfg, self.backend.action_adapter(cfg).schema)
         if champion_meta.architecture != self.backend.architecture(cfg):
             raise ValueError("champion architecture differs from current model")
-        if champion_meta.training_config["rewards"] != cfg.to_dict()["rewards"]:
-            raise ValueError("champion reward settings differ from current replay rewards")
+        reward_mismatch = champion_meta.training_config["rewards"] != cfg.to_dict()["rewards"]
 
         current_steps = int(self.model.num_timesteps)
         replay_file = champion_dir / "replay.pkl"
-        refill_replay = cfg.algorithm in {"dqn", "tqc"} and not replay_file.is_file()
+        refill_replay = cfg.algorithm in {"dqn", "tqc"} and (
+            reward_mismatch or not replay_file.is_file()
+        )
+        if reward_mismatch and not refill_replay:
+            raise ValueError("champion reward settings differ from current replay rewards")
         restored = self.backend.load_model(
             champion_dir / "policy.zip", training_env, self.device.resolved,
             resume=not refill_replay,
@@ -177,6 +213,11 @@ class TrainingRunner:
         self.backend.configure_resume(
             restored, cfg, self.device.resolved, fresh_replay=refill_replay
         )
+        if cfg.algorithm == "tqc":
+            assert cfg.tqc is not None
+            restored.anchor_to_current_policy(
+                cfg.tqc.champion_action_drift_limit, self._champion_path_observations
+            )
         if cfg.algorithm == "dqn":
             self.backend.begin_phase(restored, cfg, phase_steps)
             self.backend.advance_phase(restored, current_steps - phase_start)
@@ -217,7 +258,7 @@ class TrainingRunner:
                 self.registry.validate(metadata, cfg, self.backend.action_adapter(cfg).schema)
                 if metadata.architecture != self.backend.architecture(cfg):
                     raise ValueError("resume architecture differs from saved model")
-                if metadata.training_config["rewards"] != cfg.to_dict()["rewards"]:
+                if metadata.training_config["rewards"] != cfg.to_dict()["rewards"] and not fresh_replay:
                     raise ValueError("resume reward settings differ from saved replay rewards")
                 if fresh_replay and cfg.algorithm not in {"dqn", "tqc"}:
                     raise ValueError("fresh replay applies only to DQN and TQC")
@@ -228,6 +269,9 @@ class TrainingRunner:
                 self.backend.configure_resume(
                     self.model, cfg, self.device.resolved, fresh_replay=fresh_replay
                 )
+                if rollback_to_champion and cfg.algorithm == "tqc":
+                    assert cfg.tqc is not None
+                    self.model.anchor_to_current_policy(cfg.tqc.champion_action_drift_limit)
                 if fresh_replay and cfg.algorithm == "tqc" and resume.name == "champion":
                     self._champion_refill_source = resume
                     self._champion_refill_updates = self.model._n_updates
@@ -246,6 +290,28 @@ class TrainingRunner:
                 "fresh_replay": fresh_replay,
                 "rollback_on_regression": rollback_to_champion,
             })
+            if (
+                resume is not None and rollback_to_champion and cfg.algorithm == "tqc"
+                and cfg.tqc is not None and cfg.tqc.champion_action_drift_limit > 0
+            ):
+                training_env.close()
+                observations = []
+                baseline = evaluate_model(
+                    self.model, self._environment, episodes=1,
+                    seed=cfg.seed + 1_000_000, observation_sink=observations,
+                )
+                self._champion_path_observations = observations
+                self._emit({
+                    "type": "anchor_baseline", "timesteps": self.model.num_timesteps,
+                    "finish_rate": baseline.finish_rate,
+                    "median_progress": baseline.median_progress,
+                    "observations": len(observations),
+                })
+                training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
+                self.model.set_env(training_env)
+                self.model.anchor_to_current_policy(
+                    cfg.tqc.champion_action_drift_limit, observations
+                )
             start_steps = self.model.num_timesteps
             next_eval = cfg.evaluation.interval_steps
             next_checkpoint = cfg.checkpoint_interval if cfg.checkpoint_interval else cfg.timesteps + 1
@@ -400,6 +466,17 @@ class TrainingRunner:
                             result, training_env, phase_start=phase_start,
                             phase_steps=phase.steps,
                         )
+                        if restored:
+                            self._consecutive_rollbacks += 1
+                            if self._consecutive_rollbacks >= 3:
+                                self._emit({
+                                    "type": "regression_stop",
+                                    "timesteps": self.model.num_timesteps,
+                                    "consecutive_rollbacks": self._consecutive_rollbacks,
+                                })
+                                self.stop_requested.set()
+                        else:
+                            self._consecutive_rollbacks = 0
                         if not restored:
                             self.model.set_env(training_env)
                         self._save("latest", self.last_evaluation)

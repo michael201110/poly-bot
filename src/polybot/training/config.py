@@ -106,6 +106,7 @@ class TQCConfig:
     entropy: str = "auto_0.1"
     warmup_forward_fraction: float = 0.8
     warmup_steering_std: float = 0.35
+    champion_action_drift_limit: float = 0.0
 
     def __post_init__(self) -> None:
         if self.architecture not in ARCHITECTURES:
@@ -118,6 +119,8 @@ class TQCConfig:
             raise ValueError("invalid TQC learning settings")
         if not 0 <= self.warmup_forward_fraction <= 1 or self.warmup_steering_std < 0:
             raise ValueError("invalid TQC warmup settings")
+        if not 0 <= self.champion_action_drift_limit <= 2:
+            raise ValueError("TQC champion action drift limit must be in [0, 2]")
         if self.entropy != "auto" and not self.entropy.startswith("auto_"):
             raise ValueError("TQC entropy must be auto or auto_<positive initial value>")
         if self.entropy.startswith("auto_") and float(self.entropy[5:]) <= 0:

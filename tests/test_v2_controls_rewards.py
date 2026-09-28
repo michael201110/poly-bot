@@ -97,6 +97,26 @@ def test_reward_components_have_unique_complete_terms_and_group_totals() -> None
         env.close()
 
 
+def test_incomplete_time_limit_gets_failure_penalty() -> None:
+    profile = replace(
+        RewardConfig(), failure_early_penalty=-100.0,
+        failure_progress_clawback_per_m=-1.0,
+    )
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight",
+        action_adapter=ContinuousPwmActionAdapter(), reward_config=profile,
+        max_episode_steps=1,
+    )
+    try:
+        env.reset(seed=1)
+        _, _, terminated, truncated, info = env.step(np.array([0, 1], dtype=np.float32))
+        assert not terminated and truncated
+        assert "time_limit" in info["events"]
+        assert info["reward_terms"]["failure_early"] < 0
+    finally:
+        env.close()
+
+
 def test_profile_roundtrip_and_comparison(tmp_path) -> None:
     store = RewardProfileStore(tmp_path)
     balanced = store.load("Balanced")

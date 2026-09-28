@@ -64,6 +64,18 @@ def format_event(event: dict[str, Any]) -> str | None:
         )
     if kind == "champion_replay":
         return f"{prefix}Saved policy-generated replay with champion{step}"
+    if kind == "anchor_baseline":
+        return (
+            f"{prefix}Champion path captured{step} · "
+            f"{_percent(event['median_progress'])} progress, "
+            f"{_percent(event['finish_rate'])} finishes · "
+            f"{event['observations']:,} driving states"
+        )
+    if kind == "regression_stop":
+        return (
+            f"{prefix}Training stopped after {event['consecutive_rollbacks']} "
+            f"weaker evaluations{step}; champion remains saved"
+        )
     if kind == "phase":
         spawn = event.get("spawn_ratio")
         target_start = event.get("start_ratio")

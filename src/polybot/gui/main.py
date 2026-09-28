@@ -876,7 +876,11 @@ class PolyBotWindow(QWidget):
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
             fresh_replay = (
                 resume and slot.name == "champion" and cfg.algorithm in {"dqn", "tqc"}
-                and not (slot / "replay.pkl").is_file()
+                and (
+                    not (slot / "replay.pkl").is_file()
+                    or registry.read_metadata(slot).training_config["rewards"]
+                    != cfg.to_dict()["rewards"]
+                )
             )
             self.runner = TrainingRunner(cfg, self.bridge.event.emit)
             self.worker = threading.Thread(

@@ -5,6 +5,7 @@ from dataclasses import replace
 
 import numpy as np
 import pytest
+import torch as th
 
 from polybot.algorithms.registry import ALGORITHMS, backend_for
 from polybot.control.native_digital import NativeDigitalActionAdapter
@@ -249,6 +250,74 @@ def test_older_tqc_champion_refills_replay_before_rollback(tmp_path, monkeypatch
     assert any(event["type"] == "rollback" and event["replay_source"] == "champion"
                for event in events)
     assert registry.read_metadata(latest).evaluation is None
+
+
+def test_tqc_changed_rewards_require_and_refill_fresh_replay(tmp_path, monkeypatch) -> None:
+    import polybot.training.runner as runner_module
+
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 20.0, 20.0, 0.0, 0.0, 0.0)
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: strong)
+    config = replace(
+        configuration(tmp_path, "tqc"), timesteps=16,
+        evaluation=EvaluationConfig(16, 1),
+    )
+    TrainingRunner(config).run()
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "tqc", "champion")
+    paced = replace(
+        config, rewards=replace(config.rewards, finish_target_s=20.0),
+        tqc=replace(config.tqc, learning_starts=16),
+    )
+    with pytest.raises(ValueError, match="reward settings differ"):
+        TrainingRunner(paced).run(resume=champion)
+    events: list[dict] = []
+    TrainingRunner(paced, events.append).run(
+        resume=champion, fresh_replay=True, rollback_to_champion=True
+    )
+    assert registry.read_metadata(champion).training_config["rewards"] == paced.to_dict()["rewards"]
+    assert (champion / "replay.pkl").is_file()
+    assert any(event["type"] == "champion_replay" for event in events)
+
+
+def test_tqc_champion_anchor_caps_actor_action_drift() -> None:
+    config = TrainingConfig(algorithm="tqc", tqc=TQCConfig(architecture="tiny"))
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        observation, _ = env.reset(seed=42)
+        batch = th.as_tensor(np.stack([observation] * 16), device=model.device)
+        model.anchor_to_current_policy(0.03)
+        model._champion_observations = batch
+        with th.no_grad():
+            reference = model.actor(batch, deterministic=True).clone()
+            model.actor.mu.bias.add_(th.tensor([1.0, -1.0]))
+            assert (model.actor(batch, deterministic=True) - reference).abs().amax() > 0.03
+        model._enforce_actor_anchor()
+        with th.no_grad():
+            drift = (model.actor(batch, deterministic=True) - reference).abs().amax().item()
+        assert drift <= 0.0301
+        assert model._anchor_action_drift <= 0.0301
+    finally:
+        env.close()
+
+
+def test_continue_best_stops_after_repeated_regressions(tmp_path, monkeypatch) -> None:
+    import polybot.training.runner as runner_module
+
+    config = replace(
+        configuration(tmp_path, "tqc"), timesteps=80,
+        evaluation=EvaluationConfig(16, 1),
+    )
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 20.0, 20.0, 0.0, 0.0, 0.0)
+    weak = EvaluationResult(1, 0.0, 0.2, 0.2, None, None, 0.0, 1.0, 0.0)
+    evaluations = iter((strong, weak, weak, weak))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    events: list[dict] = []
+    latest = TrainingRunner(config, events.append).run(rollback_to_champion=True)
+    assert ModelRegistry(config.output_root).read_metadata(latest).training_timesteps == 64
+    assert any(event["type"] == "regression_stop" for event in events)
+    assert events[-1]["type"] == "stopped"
 
 
 @pytest.mark.parametrize("timesteps", (24, 32))
