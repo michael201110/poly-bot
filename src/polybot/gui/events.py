@@ -43,6 +43,25 @@ def format_event(event: dict[str, Any]) -> str | None:
     steps = event.get("timesteps")
     step = f" · step {steps:,}" if isinstance(steps, int) else ""
 
+    if kind == "started" and "champion_lap_s" in event:
+        return (f"{prefix}TQC speed search started · champion {event['champion_lap_s']:.3f} s"
+                f" · target {event['target_s']:.3f} s")
+    if kind == "trial":
+        lap = event["evaluation"].get("median_lap_s")
+        result = f"{lap:.3f} s" if lap is not None else (
+            f"failed at {_percent(event['evaluation'].get('median_progress'))}"
+        )
+        return f"{prefix}Speed trial {event['trial']:,} · {result}"
+    if kind == "champion" and "lap_s" in event:
+        return f"{prefix}New speed champion · trial {event['trial']:,} · {event['lap_s']:.3f} s (5/5 laps)"
+    if kind == "rejected" and "trial" in event:
+        return f"{prefix}Speed trial {event['trial']:,} failed five-lap confirmation"
+    if kind == "completed" and "best_lap_s" in event:
+        status = "target reached" if event["target_met"] else "search stopped"
+        return f"{prefix}TQC speed search {status} · best {event['best_lap_s']:.3f} s"
+    if kind == "error" and "trial" in event:
+        return f"{prefix}Speed search error at trial {event['trial']:,} · {event['error']}"
+
     if kind == "plan":
         return f"{prefix}Plan · {event['total_steps']:,} steps across {len(event['phases'])} phase(s)"
     if kind == "started":

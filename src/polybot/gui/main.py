@@ -7,11 +7,13 @@ import json
 import subprocess
 import sys
 import threading
+import time
 from dataclasses import asdict, fields
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QProcess, Qt, QTimer, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -171,6 +173,11 @@ class PolyBotWindow(QWidget):
         self.resize(900, 760)
         self.runner: TrainingRunner | None = None
         self.worker: threading.Thread | None = None
+        self.speed_search_process: QProcess | None = None
+        self.speed_search_stop_file: Path | None = None
+        self.speed_search_best: float | None = None
+        self.speed_search_log_path: Path | None = None
+        self.speed_search_log_position = 0
         self.bridge = EventBridge()
         self.bridge.event.connect(self._event)
         self.bridge.failed.connect(self._error)
@@ -213,6 +220,9 @@ class PolyBotWindow(QWidget):
         self.algorithm.currentTextChanged.connect(self._algorithm_changed)
         self._algorithm_changed(self.algorithm.currentText())
         self._toggle_advanced(False)
+        self.speed_search_watch = QTimer(self)
+        self.speed_search_watch.timeout.connect(self._poll_speed_search_log)
+        self.speed_search_watch.start(2000)
 
     def _page(self, name: str) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
@@ -457,6 +467,25 @@ class PolyBotWindow(QWidget):
 
     def _models_tab(self) -> None:
         _, page = self._page("Models")
+        search_form = QFormLayout()
+        self.speed_search_target = QDoubleSpinBox()
+        self.speed_search_target.setRange(1.0, 600.0)
+        self.speed_search_target.setDecimals(3)
+        self.speed_search_target.setValue(25.0)
+        self.speed_search_target.setToolTip("Stop once a five-lap-confirmed TQC champion meets this median lap time.")
+        search_form.addRow("Speed target (s)", self.speed_search_target)
+        self.speed_search_trials = QSpinBox()
+        self.speed_search_trials.setRange(1, 1_000_000)
+        self.speed_search_trials.setValue(1000)
+        self.speed_search_trials.setToolTip("Maximum live simulator candidates to test before stopping.")
+        search_form.addRow("Search trials", self.speed_search_trials)
+        page.addLayout(search_form)
+        speed_button = QPushButton("Optimize TQC champion speed")
+        speed_button.setToolTip(
+            "Test small actor-output changes on live laps. Save only faster champions confirmed over all evaluation laps."
+        )
+        speed_button.clicked.connect(self._start_speed_search)
+        page.addWidget(speed_button)
         for label, handler, description in (
             ("Guided new run", self._guided_new_run,
              "Choose a track, algorithm, goal, device and preset, then review exact values."),
@@ -855,11 +884,16 @@ class PolyBotWindow(QWidget):
         return latest
 
     def _start(self, resume: bool, *, best: bool = False) -> None:
+        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
+            self._error("Speed search is using the simulator. Stop it before starting gradient training.")
+            return
         if self.worker is not None and self.worker.is_alive():
             self._error("Training is already running.")
             return
         try:
             cfg = self.configuration()
+            if self._external_speed_search_running(cfg):
+                raise RuntimeError("A live speed search is already using the simulator; watch it in Status")
             registry = ModelRegistry(cfg.output_root)
             slot = (
                 self._best_resume_slot(cfg) if best
@@ -905,9 +939,120 @@ class PolyBotWindow(QWidget):
             self.bridge.failed.emit(f"Training failed: {exc}")
 
     def _stop(self) -> None:
+        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
+            assert self.speed_search_stop_file is not None
+            self.speed_search_stop_file.write_text("stop\n", encoding="utf-8")
+            self.log.append("Stopping speed search after the current candidate; champion remains saved.")
+            return
         if self.runner is not None:
             self.runner.stop()
             self.log.append("Stopping after the current simulator step; latest will be saved.")
+
+    def _start_speed_search(self) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            self._error("Stop gradient training before starting speed search.")
+            return
+        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
+            self._error("Speed search is already running.")
+            return
+        try:
+            cfg = self.configuration()
+            if self._external_speed_search_running(cfg):
+                raise RuntimeError("A live speed search is already running; watch it in Status")
+            if cfg.algorithm != "tqc" or cfg.backend != "websocket":
+                raise ValueError("Speed search needs a TQC model connected to the live simulator")
+            champion = ModelRegistry(cfg.output_root).slot(cfg.track_name, "tqc", "champion")
+            if not (champion / "metadata.json").is_file():
+                raise FileNotFoundError("No evaluated TQC champion is saved for this track")
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+            cfg.log_root.mkdir(parents=True, exist_ok=True)
+            config_path = cfg.log_root / f"speed-search-config-{stamp}.json"
+            log_path = cfg.log_root / f"{cfg.track_name.lower().replace(' ', '-')}-tqc-speed-search-{stamp}.jsonl"
+            self.speed_search_stop_file = cfg.log_root / f"speed-search-stop-{stamp}.txt"
+            config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
+            process = QProcess(self)
+            process.setProgram(sys.executable)
+            process.setArguments([
+                "-m", "polybot.training.speed_search", "--config", str(config_path),
+                "--log", str(log_path), "--trials", str(self.speed_search_trials.value()),
+                "--target", str(self.speed_search_target.value()),
+                "--stop-file", str(self.speed_search_stop_file),
+            ])
+            process.setWorkingDirectory(str(Path.cwd()))
+            process.finished.connect(self._speed_search_finished)
+            self.speed_search_process = process
+            self.speed_search_best = None
+            self.speed_search_log_path = log_path
+            self.speed_search_log_position = 0
+            process.start()
+            if not process.waitForStarted(3000):
+                raise RuntimeError(process.errorString())
+            self.tabs.setCurrentIndex(self.tabs.count() - 1)
+            self.log_location.setText(f"Speed search detail: {log_path}")
+        except (ValueError, OSError, RuntimeError, FileNotFoundError) as exc:
+            self._error(str(exc))
+
+    def _external_speed_search_running(self, cfg: TrainingConfig) -> bool:
+        candidates = list(cfg.log_root.glob("*-tqc-speed-search-*.jsonl"))
+        if not candidates:
+            return False
+        latest = max(candidates, key=lambda item: item.stat().st_mtime)
+        if time.time() - latest.stat().st_mtime > 30:
+            return False
+        lines = latest.read_text(encoding="utf-8").splitlines()
+        if not lines:
+            return False
+        try:
+            return json.loads(lines[-1]).get("type") != "completed"
+        except json.JSONDecodeError:
+            return True
+
+    def _show_speed_search_event(self, event: dict[str, Any]) -> None:
+        kind = event.get("type")
+        if kind == "started" and "champion_lap_s" in event:
+            self.speed_search_best = float(event["champion_lap_s"])
+        elif kind == "champion" and "lap_s" in event:
+            self.speed_search_best = float(event["lap_s"])
+        trial = event.get("trial")
+        if self.speed_search_best is not None:
+            detail = f"trial {trial:,} · " if isinstance(trial, int) else ""
+            self.metrics.setText(f"TQC speed search · {detail}best {self.speed_search_best:.3f} s")
+        summary = format_event(event)
+        if summary:
+            self.log.append(summary)
+
+    def _poll_speed_search_log(self) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            return
+        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
+            path = self.speed_search_log_path
+            if path is None or not path.is_file():
+                return
+        else:
+            candidates = list(Path("logs").glob("*-tqc-speed-search-*.jsonl"))
+            if not candidates:
+                return
+            path = max(candidates, key=lambda item: item.stat().st_mtime)
+        if path != self.speed_search_log_path:
+            self.speed_search_log_path = path
+            self.speed_search_log_position = 0
+            self.log_location.setText(f"Speed search detail: {path}")
+        with path.open(encoding="utf-8") as stream:
+            stream.seek(self.speed_search_log_position)
+            while line := stream.readline():
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    break
+                self._show_speed_search_event(event)
+                self.speed_search_log_position = stream.tell()
+
+    def _speed_search_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
+        self._poll_speed_search_log()
+        if self.speed_search_process is not None and exit_code != 0:
+            error = bytes(self.speed_search_process.readAllStandardError()).decode("utf-8", errors="replace")
+            self.log.append(f"Speed search exited with code {exit_code}: {error[-1200:]}")
+        self.speed_search_process = None
 
     def _model_command(self, command: str, slot: str) -> None:
         try:
@@ -963,6 +1108,10 @@ class PolyBotWindow(QWidget):
         QMessageBox.warning(self, "PolyBot", message)
 
     def closeEvent(self, event: Any) -> None:
+        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
+            self._stop()
+            event.ignore()
+            return
         if self.worker is not None and self.worker.is_alive():
             self._stop()
             event.ignore()

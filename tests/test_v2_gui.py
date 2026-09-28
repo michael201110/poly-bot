@@ -158,6 +158,25 @@ def test_episode_event_is_readable_without_raw_reward_dump(window) -> None:
     assert "reward_terms" not in window.log.toPlainText()
 
 
+def test_speed_search_events_are_readable_in_status(window, tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    log = tmp_path / "logs" / "summer-1-tqc-speed-search-test.jsonl"
+    log.parent.mkdir()
+    events = [
+        {"type": "started", "champion_lap_s": 28.384, "target_s": 25.0},
+        {"type": "trial", "trial": 3, "evaluation": {
+            "finish_rate": 1.0, "median_progress": 1.0, "median_lap_s": 26.7,
+        }},
+        {"type": "champion", "trial": 3, "lap_s": 26.7},
+    ]
+    log.write_text("".join(json.dumps(event) + "\n" for event in events), encoding="utf-8")
+    window._poll_speed_search_log()
+    assert "26.700 s" in window.metrics.text()
+    assert "5/5 laps" in window.log.toPlainText()
+    assert "Speed trial 3" in window.log.toPlainText()
+    assert window.speed_search_target.value() == 25.0
+
+
 def test_live_log_viewer_follows_appended_events(qt_app, tmp_path) -> None:
     path = tmp_path / "run.jsonl"
     path.write_text(json.dumps({
