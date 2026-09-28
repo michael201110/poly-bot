@@ -11,7 +11,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 
-from polybot.control.actions import ActionAdapter, ControlDemand, DigitalActionAdapter
+from polybot.control.actions import ActionAdapter, AppliedAction, ControlDemand, DigitalActionAdapter
 from polybot.environment.observations import observe, size
 from polybot.environment.rewards import (
     RewardConfig,
@@ -158,6 +158,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._landing_grace_s = 0.0
         self._was_airborne = False
         self.latest_telemetry: Telemetry | None = None
+        self._air_brake_request = False
+        self._air_brake_base_action: np.ndarray | None = None
         self.simulator_capabilities: Mapping[str, Any] = {}
         self._native_finish_restart_pending = False
         self._curriculum_reset_diagnostics: dict[str, Any] | None = None
@@ -325,11 +327,48 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise RuntimeError("reset() must be called before step() or after an episode ends")
         if not self.action_space.contains(action):
             raise ValueError(f"action {action!r} is outside {self.action_space}")
-        applied = self.action_adapter.apply(action, self.frame_skip)
-        reward_action = applied.demand
-        tick_controls = applied.ticks
         transitions: list[Transition] = []
-        if self.action_adapter.sequence:
+        air_brake_step = (
+            self._air_brake_request and self.latest_telemetry is not None
+            and all(contact < 0.5 for contact in self.latest_telemetry.wheel_contacts)
+            and self._air_brake_base_action is not None
+        )
+        self._air_brake_request = False
+        base_action = self._air_brake_base_action
+        self._air_brake_base_action = None
+        if air_brake_step:
+            # Query one physics tick at a time only during the air-brake window.
+            # Once any wheel touches down, resume the base policy action for the
+            # remainder of this frame-skip block; the search layer never brakes on ground.
+            tick_controls = []
+            landed = False
+            for _ in range(self.frame_skip):
+                current_action = base_action if landed else action
+                current = self.action_adapter.apply(current_action, 1)
+                control = current.ticks[0]
+                tick_controls.append(control)
+                result = self._exchange(
+                    "step", {"episode_id": self._episode_id,
+                             "action": control.to_wire(), "ticks": 1}
+                )
+                item = Transition.from_wire(result, lookahead_count=self.lookahead_count)
+                transitions.append(item)
+                landed = landed or any(contact >= 0.5 for contact in item.telemetry.wheel_contacts)
+                if "finish" in item.events or "crash" in item.events:
+                    break
+            reward_action = ControlDemand(
+                float(np.mean([item.steer for item in tick_controls])),
+                float(np.mean([item.throttle for item in tick_controls])),
+                float(np.mean([item.brake for item in tick_controls])),
+            )
+            applied = AppliedAction(reward_action, tick_controls)
+        else:
+            applied = self.action_adapter.apply(action, self.frame_skip)
+            reward_action = applied.demand
+            tick_controls = applied.ticks
+        if air_brake_step:
+            pass
+        elif self.action_adapter.sequence:
             features = self.simulator_capabilities.get("features", ())
             if "action_sequence" in features:
                 max_ticks = int(self.simulator_capabilities["max_ticks_per_step"])

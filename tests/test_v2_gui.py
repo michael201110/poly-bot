@@ -73,10 +73,17 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert not window.ppo_form.widgets["gamma"].isHidden()
     assert not window.reward_scroll.isHidden()
     assert not window.pace_polish_section.isHidden()
+    assert not window.adaptation_section.isHidden()
+    assert not window.wr_search_section.isHidden()
+    assert window.wr_target.value() == pytest.approx(22.262)
+    window._load_wr_profile()
+    assert window.wr_trials.value() == 12
     assert window.configuration().tqc is None
     window.advanced.setChecked(False)
     assert window.ppo_form.widgets["gamma"].isHidden()
     assert window.pace_polish_section.isHidden()
+    assert window.adaptation_section.isHidden()
+    assert window.wr_search_section.isHidden()
     window.algorithm.setCurrentText("dqn")
     assert window.algorithm_stack.currentWidget() is window.dqn_form
     assert window.ppo_form.isHidden() and window.tqc_form.isHidden()

@@ -96,6 +96,8 @@ class DQNConfig:
 class TQCConfig:
     architecture: str = "compact"
     learning_rate: float = 3e-4
+    actor_learning_rate: float | None = None
+    critic_learning_rate: float | None = None
     replay_capacity: int = 250_000
     learning_starts: int = 5_000
     batch_size: int = 256
@@ -108,6 +110,15 @@ class TQCConfig:
     warmup_steering_std: float = 0.35
     champion_action_drift_limit: float = 0.0
     champion_lap_tolerance_s: float = 0.0
+    adaptation_replay_steps: int = 25_000
+    adaptation_steering_noise_std: float = 0.01
+    adaptation_longitudinal_noise_std: float = 0.01
+    adaptation_noise_probability: float = 0.01
+    critic_adaptation_updates: int = 5_000
+    actor_polish_block_steps: int = 1_000
+    adaptation_max_position_deviation_m: float = 5.0
+    adaptation_max_heading_deviation_rad: float = 0.75
+    adaptation_max_action_disagreement: float = 0.05
 
     def __post_init__(self) -> None:
         if self.architecture not in ARCHITECTURES:
@@ -118,6 +129,11 @@ class TQCConfig:
             raise ValueError("invalid TQC batch or update frequency")
         if self.learning_rate <= 0 or not 0 < self.gamma <= 1 or not 0 < self.tau <= 1:
             raise ValueError("invalid TQC learning settings")
+        if any(
+            value is not None and (not math.isfinite(value) or value <= 0)
+            for value in (self.actor_learning_rate, self.critic_learning_rate)
+        ):
+            raise ValueError("TQC actor and critic learning rates must be positive and finite")
         if not 0 <= self.warmup_forward_fraction <= 1 or self.warmup_steering_std < 0:
             raise ValueError("invalid TQC warmup settings")
         if not 0 <= self.champion_action_drift_limit <= 2:
@@ -128,6 +144,21 @@ class TQCConfig:
             raise ValueError("TQC entropy must be auto or auto_<positive initial value>")
         if self.entropy.startswith("auto_") and float(self.entropy[5:]) <= 0:
             raise ValueError("TQC initial entropy coefficient must be positive")
+        if min(self.adaptation_replay_steps, self.critic_adaptation_updates,
+               self.actor_polish_block_steps) < 1:
+            raise ValueError("TQC adaptation budgets must be positive")
+        if not 0 <= self.adaptation_steering_noise_std <= 0.1 or not (
+            0 <= self.adaptation_longitudinal_noise_std <= 0.1
+        ):
+            raise ValueError("TQC local action noise must be in [0, 0.1]")
+        if not 0 < self.adaptation_noise_probability <= 1:
+            raise ValueError("TQC local action-noise probability must be in (0, 1]")
+        if self.adaptation_max_position_deviation_m <= 0 or (
+            self.adaptation_max_heading_deviation_rad <= 0
+        ):
+            raise ValueError("TQC closed-loop deviation limits must be positive")
+        if not 0 < self.adaptation_max_action_disagreement <= 2:
+            raise ValueError("TQC action-disagreement limit must be in (0, 2]")
 
 
 @dataclass(slots=True)

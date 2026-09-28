@@ -60,6 +60,10 @@ class ModelMetadata:
     evaluation: dict[str, Any] | None = None
     implementation: str | None = None
     reward_semantics: str | None = None
+    critic_adaptation_required: bool = False
+    adaptation_stage: str | None = None
+    adaptation_rollback_count: int = 0
+    policy_overlays: list[dict[str, Any]] = field(default_factory=list)
     schema: str = MODEL_SCHEMA
     polybot_version: str = POLYBOT_VERSION
     git_commit: str = field(default_factory=git_commit)

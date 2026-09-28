@@ -260,6 +260,8 @@ def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Pa
     try:
         device = resolve_device(cfg.device, algorithm=cfg.algorithm)
         model = backend.load_model(directory / "policy.zip", env, device.resolved)
+        if cfg.algorithm == "tqc":
+            model.policy_overlays = list(metadata.policy_overlays)
     finally:
         env.close()
     return cfg, backend, model, directory

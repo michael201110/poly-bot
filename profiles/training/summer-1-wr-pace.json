@@ -1,0 +1,13 @@
+{
+  "schema": "polybot.wr-pace.v1",
+  "track_name": "Summer 1",
+  "target_lap_s": 22.262,
+  "target_label": "Summer 1 no-fancy-cut world record",
+  "default_sector_resolution": 0.05,
+  "candidate_limit": 12,
+  "confirmation_episodes": 5,
+  "micro_gain_threshold_s": 0.01,
+  "micro_gain_confirmation_episodes": 10,
+  "search_families": ["steering", "drive", "air_brake"],
+  "policy_gradient_updates": false
+}

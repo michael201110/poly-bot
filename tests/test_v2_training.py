@@ -23,9 +23,15 @@ from polybot.training.config import (
     TQCConfig,
     TrainingConfig,
 )
-from polybot.training.evaluation import EvaluationResult
+from polybot.training.evaluation import EvaluationResult, evaluate_model
+from polybot.training.lap_analysis import discover_airborne_regions, sector_delta_map
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
+from polybot.training.wr_search import (
+    _candidate_grid,
+    compose_overlay_stack,
+    confirmation_count_for_gain,
+)
 
 
 def configuration(tmp_path, algorithm: str) -> TrainingConfig:
@@ -295,6 +301,7 @@ def test_speed_search_requires_confirmation_and_records_section_promotion(
     speed_search.search(config_path, tmp_path / "accepted.jsonl", 1, 18.0, mode="section")
     assert registry.read_metadata(champion).evaluation["median_lap_s"] == 19.0
     details = json.loads((champion / "speed-search.json").read_text(encoding="utf-8"))
+    assert ModelRegistry(config.output_root).read_metadata(champion).critic_adaptation_required
     assert details["parameters"]["speed_window"] is not None
     assert details["delta_s"] == pytest.approx(-1.0)
     assert len(details["speed_bias_schedule"]) == 1
@@ -464,6 +471,17 @@ def test_tqc_champion_anchor_caps_actor_action_drift() -> None:
         env.close()
 
 
+def test_speed_search_policy_cannot_skip_critic_adaptation_on_resume(tmp_path) -> None:
+    config = configuration(tmp_path, "tqc")
+    TrainingRunner(config).run()
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "tqc", "champion")
+    metadata = registry.read_metadata(champion)
+    registry.write_metadata(champion, replace(metadata, critic_adaptation_required=True))
+    with pytest.raises(ValueError, match="requires critic adaptation"):
+        TrainingRunner(config).run(resume=champion, pace_polish=True)
+
+
 def test_tqc_speed_bias_schedule_applies_only_inside_window(tmp_path) -> None:
     config = TrainingConfig(algorithm="tqc", tqc=TQCConfig(architecture="tiny"))
     backend = backend_for("tqc")
@@ -488,6 +506,216 @@ def test_tqc_speed_bias_schedule_applies_only_inside_window(tmp_path) -> None:
         restored = backend.load_model(directory / "policy.zip", env, "cpu")
         assert restored.speed_bias_schedule == [list(window) for window in model.speed_bias_schedule]
         np.testing.assert_allclose(restored.predict(inside, deterministic=True)[0], adjusted)
+    finally:
+        env.close()
+
+
+def test_tqc_replay_expansion_and_critic_only_freeze_actor_and_entropy() -> None:
+    config = TrainingConfig(algorithm="tqc", device="cpu", tqc=TQCConfig(
+        architecture="tiny", batch_size=8, learning_starts=100, replay_capacity=128,
+    ))
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        model._adaptation_mode = "replay_expansion"
+        model._adaptation_noise = np.asarray([0.01, 0.01], dtype=np.float32)
+        actor_before = [parameter.detach().clone() for parameter in model.actor.parameters()]
+        critic_before = [parameter.detach().clone() for parameter in model.critic.parameters()]
+        model.learn(16, progress_bar=False)
+        assert all(th.equal(old, new) for old, new in zip(actor_before, model.actor.parameters(), strict=True))
+        assert all(th.equal(old, new) for old, new in zip(critic_before, model.critic.parameters(), strict=True))
+        assert model.replay_buffer.size() == 16
+        assert model._adaptation_action_deviation
+        assert float(np.mean(model._adaptation_action_deviation)) > 0.0
+
+        entropy_before = model.log_ent_coef.detach().clone()
+        actor_before = [parameter.detach().clone() for parameter in model.actor.parameters()]
+        critic_before = [parameter.detach().clone() for parameter in model.critic.parameters()]
+        target_before = [parameter.detach().clone() for parameter in model.critic_target.parameters()]
+        stats = model.train_critics(4, 8)
+        assert all(th.equal(old, new) for old, new in zip(actor_before, model.actor.parameters(), strict=True))
+        assert any(not th.equal(old, new) for old, new in zip(critic_before, model.critic.parameters(), strict=True))
+        assert any(
+            not th.equal(old, new)
+            for old, new in zip(target_before, model.critic_target.parameters(), strict=True)
+        )
+        assert th.equal(entropy_before, model.log_ent_coef.detach())
+        assert stats["critic_loss"] >= 0 and "q_perturbed_action_mean" in stats
+    finally:
+        env.close()
+
+
+def test_tqc_independent_actor_and_critic_learning_rates() -> None:
+    config = TrainingConfig(algorithm="tqc", device="cpu", tqc=TQCConfig(
+        architecture="tiny", learning_rate=1e-4,
+        actor_learning_rate=1e-6, critic_learning_rate=5e-5,
+    ))
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend_for("tqc").action_adapter(config))
+    try:
+        model = backend_for("tqc").create_model(config, env, "cpu")
+        assert model.actor.optimizer.param_groups[0]["lr"] == pytest.approx(1e-6)
+        assert model.critic.optimizer.param_groups[0]["lr"] == pytest.approx(5e-5)
+    finally:
+        env.close()
+
+
+def test_closed_loop_evaluation_detects_compounding_drift_despite_small_action_delta() -> None:
+    class Model:
+        def __init__(self, steer: float) -> None:
+            self.steer = steer
+            self.policy = self
+
+        def set_training_mode(self, _training: bool) -> None:
+            pass
+
+        def predict(self, _observation, deterministic=True):
+            return np.asarray([self.steer, 0.0], dtype=np.float32), None
+
+    class Env:
+        def reset(self, seed=None):
+            self.step_count = 0
+            self.lateral = 0.0
+            return np.zeros(1, dtype=np.float32), {}
+
+        def step(self, action):
+            self.step_count += 1
+            self.lateral += float(action[0]) * 10.0
+            info = {
+                "route_progress_m": float(self.step_count), "track_length_m": 10.0,
+                "position_m": (float(self.step_count), self.lateral, 0.0),
+                "heading_error_rad": self.lateral * 0.01,
+                "local_velocity_mps": (0.0, 0.0, 20.0), "elapsed_s": self.step_count * 0.1,
+                "events": ("finish",) if self.step_count == 10 else (),
+            }
+            return np.zeros(1, dtype=np.float32), 0.0, self.step_count == 10, False, info
+
+        def close(self):
+            pass
+
+    result = evaluate_model(Model(0.01), Env, episodes=1, seed=2, reference_model=Model(0.0))
+    assert result.max_steering_disagreement == pytest.approx(0.01)
+    assert result.max_position_deviation_m == pytest.approx(1.0)
+
+
+def test_sector_delta_map_and_airborne_region_discovery() -> None:
+    def sample(progress, elapsed, *, airborne=False, speed=20.0):
+        contacts = (0.0, 0.0, 0.0, 0.0) if airborne else (1.0, 1.0, 1.0, 1.0)
+        return {
+            "route_progress_m": progress * 100.0, "track_length_m": 100.0,
+            "elapsed_s": elapsed, "speed_mps": speed,
+            "wheel_contacts": contacts, "airborne": airborne,
+            "position_m": (progress, 0.0, 1.0), "local_velocity_mps": (0, 0, speed),
+            "quaternion_xyzw": (0, 0, 0, 1),
+        }
+    champion = [sample(0.0, 0.0), sample(0.5, 5.0), sample(1.0, 10.0)]
+    candidate = [sample(0.0, 0.0), sample(0.5, 4.8), sample(1.0, 9.8)]
+    splits = sector_delta_map(champion, candidate, 0.1)
+    assert len(splits) == 10
+    assert all(row["end"] > row["start"] for row in splits)
+    assert splits[0]["delta_s"] == pytest.approx(-0.04)
+    assert splits[0]["cumulative_delta_s"] == pytest.approx(-0.04)
+    trace = [sample(0.0, 0.0), sample(0.2, 1.0), sample(0.25, 1.1, airborne=True),
+             sample(0.3, 1.2, airborne=True), sample(0.35, 1.3)]
+    regions = discover_airborne_regions([trace])
+    assert len(regions) == 1
+    assert regions[0]["start"] == pytest.approx(0.25)
+    assert regions[0]["end"] == pytest.approx(0.3)
+    repeated = discover_airborne_regions([trace, trace])
+    assert len(repeated) == 1
+    assert repeated[0]["lap_count"] == 2
+    unfinished = discover_airborne_regions([[
+        sample(0.2, 1.0), sample(0.25, 1.1, airborne=True),
+        sample(0.3, 1.2, airborne=True),
+    ]])
+    assert unfinished[0]["landed"] == 0.0
+
+
+def test_tqc_search_overlays_are_smooth_and_airbrake_requires_all_wheels_airborne() -> None:
+    config = TrainingConfig(algorithm="tqc", device="cpu", tqc=TQCConfig(architecture="tiny"))
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        observation, _ = env.reset(seed=7)
+        observation[12] = 0.5
+        baseline, _ = model.predict(observation, deterministic=True)
+        model.policy_overlays = [{"kind": "steer_bias", "start": 0.4, "end": 0.6,
+                                  "amount": 0.002, "taper": 0.02}]
+        center, _ = model.predict(observation, deterministic=True)
+        assert center[0] - baseline[0] == pytest.approx(0.002)
+        observation[12] = 0.4
+        edge_baseline, _ = model.predict(observation, deterministic=True)
+        edge, _ = model.predict(observation, deterministic=True)
+        assert edge[0] - edge_baseline[0] == pytest.approx(0.0, abs=1e-7)
+
+        model.policy_overlays = [{"kind": "air_brake", "start": 0.4, "end": 0.6,
+                                  "duty": 0.05, "taper": 0.01}]
+        model.policy_overlays = [{"kind": "air_brake", "start": 0.4, "end": 0.6,
+                                  "duty": 0.05, "taper": 0.01}]
+        observation[12] = 0.5
+        observation[17:21] = 0.0
+        airborne, _ = model.predict(observation, deterministic=True)
+        assert model._air_brake_active and airborne[1] == pytest.approx(-0.05)
+        observation[19] = 1.0
+        model.policy_overlays = []
+        grounded_base, _ = model.predict(observation, deterministic=True)
+        model.policy_overlays = [{"kind": "air_brake", "start": 0.4, "end": 0.6,
+                                  "duty": 0.05, "taper": 0.01}]
+        grounded, _ = model.predict(observation, deterministic=True)
+        assert not model._air_brake_active
+        np.testing.assert_allclose(grounded, grounded_base)
+
+        for layer, index, value, operation in (
+            ({"kind": "steer_gain", "amount": 1.005}, 0, 1.005, "gain"),
+            ({"kind": "drive_bias", "amount": 0.005}, 1, 0.005, "bias"),
+            ({"kind": "drive_gain", "amount": 0.995}, 1, 0.995, "gain"),
+        ):
+            observation[12] = 0.5
+            model.policy_overlays = []
+            original, _ = model.predict(observation, deterministic=True)
+            model.policy_overlays = [{**layer, "start": 0.4, "end": 0.6, "taper": 0.01}]
+            actual, _ = model.predict(observation, deterministic=True)
+            expected = (original[index] * value if operation == "gain"
+                        else original[index] + value)
+            assert actual[index] == pytest.approx(expected)
+    finally:
+        env.close()
+
+
+def test_wr_search_uses_small_coordinate_candidates_and_micro_confirmation() -> None:
+    rows = _candidate_grid([(0.4, 0.45)], [], family="steering")
+    assert rows[0]["kind"] == "steer_bias"
+    assert rows[0]["amount"] == pytest.approx(-0.001)
+    assert max(abs(row["amount"]) for row in rows if row["kind"] == "steer_bias") == 0.01
+    assert confirmation_count_for_gain(
+        0.009, extra_confirmation_threshold_s=0.01,
+        minimum_confirmation_episodes=5, micro_confirmation_episodes=10,
+    ) == 10
+    assert confirmation_count_for_gain(
+        0.01, extra_confirmation_threshold_s=0.01,
+        minimum_confirmation_episodes=5, micro_confirmation_episodes=10,
+    ) == 5
+    first = {"kind": "steer_bias", "start": 0.4, "end": 0.45, "amount": -0.001}
+    second = {**first, "amount": 0.001}
+    independent = {"kind": "drive_gain", "start": 0.4, "end": 0.45, "amount": 1.002}
+    stack = compose_overlay_stack([first, independent], second)
+    assert stack == [independent, second]
+
+
+def test_tqc_policy_overlay_survives_checkpoint_save_and_reload(tmp_path) -> None:
+    config = TrainingConfig(algorithm="tqc", device="cpu", tqc=TQCConfig(architecture="tiny"))
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        model.policy_overlays = [{
+            "kind": "air_brake", "start": 0.68, "end": 0.81, "duty": 0.02, "taper": 0.003,
+        }]
+        slot = tmp_path / "saved-model"
+        backend.save_model(model, slot, resume=False)
+        loaded = backend.load_model(slot / "policy.zip", env, "cpu")
+        assert loaded.policy_overlays == model.policy_overlays
     finally:
         env.close()
 

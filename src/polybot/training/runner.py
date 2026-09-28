@@ -115,6 +115,10 @@ class TrainingRunner:
             evaluation=evaluation.to_dict() if evaluation is not None else None,
             implementation="qr_dqn" if cfg.algorithm == "dqn" else None,
             reward_semantics=REWARD_SEMANTICS,
+            critic_adaptation_required=bool(getattr(self.model, "critic_adaptation_required", False)),
+            adaptation_stage=getattr(self.model, "adaptation_stage", None),
+            adaptation_rollback_count=int(getattr(self.model, "adaptation_rollback_count", 0)),
+            policy_overlays=list(getattr(self.model, "policy_overlays", [])),
         )
 
     def _save(self, name: str, evaluation: EvaluationResult | None = None) -> Path:
@@ -252,6 +256,8 @@ class TrainingRunner:
             champion_dir / "policy.zip", training_env, self.device.resolved,
             resume=not refill_replay,
         )
+        if cfg.algorithm == "tqc":
+            restored.policy_overlays = list(champion_meta.policy_overlays)
         restored.num_timesteps = current_steps
         self.backend.configure_resume(
             restored, cfg, self.device.resolved, fresh_replay=refill_replay
@@ -294,6 +300,12 @@ class TrainingRunner:
         rollback_to_champion: bool = False, pace_polish: bool = False,
     ) -> Path:
         cfg = self.config
+        if resume is not None and cfg.algorithm == "tqc":
+            resume_metadata = self.registry.read_metadata(resume)
+            if resume_metadata.critic_adaptation_required:
+                raise ValueError(
+                    "this tuned TQC checkpoint requires critic adaptation before normal continuation"
+                )
         if pace_polish:
             if cfg.algorithm != "tqc" or cfg.curriculum.mode != "full":
                 raise ValueError("pace polish requires TQC and full-track training")
@@ -303,6 +315,8 @@ class TrainingRunner:
             resume = champion
             if not (champion / "metadata.json").is_file():
                 raise FileNotFoundError("pace polish requires an evaluated champion")
+            if self.registry.read_metadata(champion).critic_adaptation_required:
+                raise ValueError("tuned champion must complete critic adaptation before pace polish")
             rollback_to_champion = True
         self.device = resolve_device(cfg.device, algorithm=cfg.algorithm)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -334,6 +348,8 @@ class TrainingRunner:
                     resume / "policy.zip", training_env, self.device.resolved,
                     resume=not fresh_replay,
                 )
+                if cfg.algorithm == "tqc":
+                    self.model.policy_overlays = list(metadata.policy_overlays)
                 self.backend.configure_resume(
                     self.model, cfg, self.device.resolved, fresh_replay=fresh_replay
                 )

@@ -99,6 +99,10 @@ DQN_INFO = _info("DQN", {
 TQC_INFO = _info("TQC", {
     "architecture": "Actor and critic network width. Standard 256×256 may train slowly on a T500.",
     "learning_rate": "Size of each actor and critic update. Around 0.0001–0.0003 is common.",
+    "actor_learning_rate": (
+        "Optional independent actor LR; null uses learning_rate. Tuned-champion polish should be microscopic."
+    ),
+    "critic_learning_rate": "Optional independent critic LR; null uses learning_rate. Used for TQC critic adaptation.",
     "replay_capacity": "Past decisions stored for reuse. More history costs RAM and can retain old behaviour.",
     "learning_starts": "Collect this many experiences before gradient updates begin.",
     "batch_size": "Past experiences per update. 128–512 is a useful range; larger uses more compute.",
@@ -116,6 +120,29 @@ TQC_INFO = _info("TQC", {
     "champion_lap_tolerance_s": (
         "Continue learning after a fully completed evaluation lap this many seconds slower "
         "than champion. The champion stays saved; larger regressions still roll back."
+    ),
+    "adaptation_replay_steps": (
+        "Fresh local transitions collected around the deterministic champion before updating critics."
+    ),
+    "adaptation_steering_noise_std": (
+        "Gaussian steering perturbation in normalized action units; champion remains the center."
+    ),
+    "adaptation_longitudinal_noise_std": (
+        "Gaussian throttle/brake perturbation in normalized action units during replay expansion."
+    ),
+    "adaptation_noise_probability": (
+        "Chance of applying the small noise on a decision; sparse noise limits closed-loop drift."
+    ),
+    "critic_adaptation_updates": "Number of critic-only replay updates before actor polishing becomes available.",
+    "actor_polish_block_steps": "Short environment-step block between closed-loop actor evaluations.",
+    "adaptation_max_position_deviation_m": (
+        "Maximum candidate-to-reference position deviation before actor polish is rejected."
+    ),
+    "adaptation_max_heading_deviation_rad": (
+        "Maximum candidate-to-reference heading deviation before actor polish is rejected."
+    ),
+    "adaptation_max_action_disagreement": (
+        "Maximum closed-loop action difference per control dimension against the champion."
     ),
 }, algorithm="tqc")
 

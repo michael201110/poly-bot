@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QStackedWidget,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QTextEdit,
     QVBoxLayout,
@@ -174,7 +176,11 @@ class PolyBotWindow(QWidget):
         self.runner: TrainingRunner | None = None
         self.worker: threading.Thread | None = None
         self.speed_search_process: QProcess | None = None
+        self.adaptation_process: QProcess | None = None
+        self.wr_search_process: QProcess | None = None
         self.speed_search_stop_file: Path | None = None
+        self.wr_search_stop_file: Path | None = None
+        self.wr_stdout_buffer = ""
         self.speed_search_best: float | None = None
         self.speed_search_log_path: Path | None = None
         self.speed_search_log_position = 0
@@ -493,6 +499,100 @@ class PolyBotWindow(QWidget):
         )
         speed_button.clicked.connect(self._start_speed_search)
         page.addWidget(speed_button)
+        self.adaptation_section = QWidget()
+        adaptation_layout = QVBoxLayout(self.adaptation_section)
+        adaptation_layout.addWidget(QLabel("Tuned champion adaptation (advanced)"))
+        preset = QPushButton("Load tuned champion adaptation preset")
+        preset.clicked.connect(self._load_adaptation_preset)
+        adaptation_layout.addWidget(preset)
+        adaptation_actions = QHBoxLayout()
+        adaptation_layout.addLayout(adaptation_actions)
+        for label, stage in (("Collect local replay", "collect"),
+                              ("Validate local replay", "validate"),
+                              ("Adapt critics", "critics"),
+                              ("Experimental actor-gradient polish", "polish"),
+                              ("Run full cycle", "full"),
+                              ("Roll back snapshot", "rollback")):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, selected=stage: self._start_adaptation(selected))
+            adaptation_actions.addWidget(button)
+        page.addWidget(self.adaptation_section)
+        self.wr_search_section = QWidget()
+        wr_layout = QVBoxLayout(self.wr_search_section)
+        wr_layout.addWidget(QLabel("WR Pace Optimizer · frozen TQC policy · live lap-time search"))
+        wr_form = QFormLayout()
+        self.wr_target = QDoubleSpinBox()
+        self.wr_target.setRange(1.0, 600.0)
+        self.wr_target.setDecimals(3)
+        self.wr_target.setValue(22.262)
+        self.wr_target.setToolTip("Summer 1 no-fancy-cut world record target. It is configurable.")
+        wr_form.addRow("Target lap (s)", self.wr_target)
+        self.wr_trials = QSpinBox()
+        self.wr_trials.setRange(1, 2000)
+        self.wr_trials.setValue(12)
+        wr_form.addRow("Maximum candidates", self.wr_trials)
+        self.wr_resolution = QComboBox()
+        for label, value in (("5% coarse", 0.05), ("2% medium", 0.02), ("1% fine", 0.01)):
+            self.wr_resolution.addItem(label, value)
+        self.wr_resolution.setToolTip("Progress resolution used to find and compare useful regions.")
+        wr_form.addRow("Sector resolution", self.wr_resolution)
+        self.wr_micro_gain = QDoubleSpinBox()
+        self.wr_micro_gain.setRange(0.0, 5.0)
+        self.wr_micro_gain.setDecimals(4)
+        self.wr_micro_gain.setValue(0.01)
+        self.wr_micro_gain.setToolTip("Gains below this size require the extra confirmation count.")
+        wr_form.addRow("Micro-gain threshold (s)", self.wr_micro_gain)
+        self.wr_micro_confirm = QSpinBox()
+        self.wr_micro_confirm.setRange(5, 100)
+        self.wr_micro_confirm.setValue(10)
+        wr_form.addRow("Micro-gain confirmations", self.wr_micro_confirm)
+        self.wr_family = QComboBox()
+        for label, value in (("All parameters", "all"), ("Steering", "steering"),
+                             ("Drive", "drive"), ("Air brake", "air_brake")):
+            self.wr_family.addItem(label, value)
+        wr_form.addRow("Parameter family", self.wr_family)
+        self.wr_region_enabled = QCheckBox("Search only selected progress region")
+        wr_layout.addWidget(self.wr_region_enabled)
+        self.wr_region_start = QDoubleSpinBox()
+        self.wr_region_start.setRange(0.0, 0.99)
+        self.wr_region_start.setDecimals(3)
+        self.wr_region_start.setSingleStep(0.01)
+        self.wr_region_start.setValue(0.50)
+        self.wr_region_end = QDoubleSpinBox()
+        self.wr_region_end.setRange(0.01, 1.0)
+        self.wr_region_end.setDecimals(3)
+        self.wr_region_end.setSingleStep(0.01)
+        self.wr_region_end.setValue(0.55)
+        region_row = QHBoxLayout()
+        region_row.addWidget(QLabel("From"))
+        region_row.addWidget(self.wr_region_start)
+        region_row.addWidget(QLabel("to"))
+        region_row.addWidget(self.wr_region_end)
+        wr_layout.addLayout(region_row)
+        wr_layout.addLayout(wr_form)
+        wr_actions = QHBoxLayout()
+        load_wr_profile = QPushButton("Load Summer 1 WR profile")
+        load_wr_profile.clicked.connect(self._load_wr_profile)
+        wr_actions.addWidget(load_wr_profile)
+        analyze = QPushButton("Analyze champion lap")
+        analyze.clicked.connect(lambda: self._start_wr_search(analyze_only=True))
+        wr_actions.addWidget(analyze)
+        start_wr = QPushButton("Run coordinate descent")
+        start_wr.clicked.connect(self._start_wr_search)
+        wr_actions.addWidget(start_wr)
+        stop_wr = QPushButton("Stop WR search safely")
+        stop_wr.clicked.connect(self._stop_wr_search)
+        wr_actions.addWidget(stop_wr)
+        wr_layout.addLayout(wr_actions)
+        self.wr_summary = QLabel("Champion split analysis has not run yet.")
+        self.wr_summary.setWordWrap(True)
+        wr_layout.addWidget(self.wr_summary)
+        self.wr_sector_table = QTableWidget(0, 4)
+        self.wr_sector_table.setHorizontalHeaderLabels(("Region", "Time (s)", "Speed (m/s)", "Status"))
+        self.wr_sector_table.setSortingEnabled(True)
+        self.wr_sector_table.setMaximumHeight(190)
+        wr_layout.addWidget(self.wr_sector_table)
+        page.addWidget(self.wr_search_section)
         self.pace_polish_section = QWidget()
         polish_layout = QVBoxLayout(self.pace_polish_section)
         polish_layout.addWidget(QLabel("Pace polishing: conservative TQC gradients from champion"))
@@ -585,6 +685,8 @@ class PolyBotWindow(QWidget):
             form.set_advanced(enabled)
         self.reward_scroll.setVisible(enabled)
         self.pace_polish_section.setVisible(enabled)
+        self.adaptation_section.setVisible(enabled)
+        self.wr_search_section.setVisible(enabled)
         for name in self.general_advanced:
             self.general[name].setVisible(enabled)
             self.general_labels[name].setVisible(enabled)
@@ -927,7 +1029,85 @@ class PolyBotWindow(QWidget):
         self.speed_search_mode.setCurrentIndex(self.speed_search_mode.findData(mode))
         self._start_speed_search()
 
+    def _load_adaptation_preset(self) -> None:
+        path = Path("profiles/training/summer-1-tqc-tuned-adaptation.json")
+        try:
+            self.load_configuration(TrainingConfig.from_dict(
+                json.loads(path.read_text(encoding="utf-8-sig"))
+            ))
+            self.log.append("Loaded tuned champion adaptation preset (actor 1e-6, critic 5e-5).")
+        except (OSError, ValueError, KeyError) as exc:
+            self._error(str(exc))
+
+    def _start_adaptation(self, stage: str) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            self._error("Stop gradient training before champion adaptation.")
+            return
+        if self.adaptation_process is not None and self.adaptation_process.state() != QProcess.NotRunning:
+            self._error("Champion adaptation is already running.")
+            return
+        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
+            self._error("Stop speed search before champion adaptation.")
+            return
+        try:
+            cfg = self.configuration()
+            if self._external_speed_search_running(cfg):
+                raise RuntimeError("A live speed search is already using the simulator")
+            if cfg.algorithm != "tqc":
+                raise ValueError("Tuned champion adaptation is available only for TQC")
+            config_path = cfg.log_root / f"tuned-adaptation-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.json"
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
+            process = QProcess(self)
+            process.setProgram(sys.executable)
+            process.setArguments(["-m", "polybot.training.adaptation", "--config", str(config_path), "--stage", stage])
+            process.readyReadStandardOutput.connect(self._adaptation_output)
+            process.readyReadStandardError.connect(self._adaptation_error)
+            process.finished.connect(self._adaptation_finished)
+            self.adaptation_process = process
+            process.start()
+            if not process.waitForStarted(5000):
+                raise RuntimeError("Could not start the champion adaptation process")
+            self.log.append(f"Tuned champion adaptation started: {stage}.")
+            self.tabs.setCurrentIndex(self.tabs.count() - 1)
+        except (OSError, ValueError, RuntimeError) as exc:
+            self._error(str(exc))
+
+    def _adaptation_output(self) -> None:
+        if self.adaptation_process is None:
+            return
+        data = bytes(self.adaptation_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        for line in data.splitlines():
+            try:
+                event = json.loads(line)
+                if event.get("type") == "adaptation_critic_progress":
+                    self.metrics.setText(
+                        f"Critic adaptation · {event['updates']:,}/{event['total_updates']:,} updates · "
+                        f"loss {event.get('critic_loss', float('nan')):.4g} · "
+                        f"Q disagreement {event.get('critic_disagreement', float('nan')):.4g}"
+                    )
+                elif event.get("type", "").startswith("adaptation_"):
+                    self.log.append(format_event(event))
+            except (json.JSONDecodeError, TypeError, ValueError):
+                self.log.append(line)
+
+    def _adaptation_error(self) -> None:
+        if self.adaptation_process is not None:
+            data = bytes(self.adaptation_process.readAllStandardError()).decode("utf-8", errors="replace")
+            if data.strip():
+                self.log.append(data.strip())
+
+    def _adaptation_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
+        self._adaptation_output()
+        self._adaptation_error()
+        self.log.append("Champion adaptation finished." if exit_code == 0
+                        else f"Champion adaptation failed (exit {exit_code}).")
+        self.adaptation_process = None
+
     def _start(self, resume: bool, *, best: bool = False, pace_polish: bool = False) -> None:
+        if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
+            self._error("WR pace search is using the simulator. Stop it before starting training.")
+            return
         if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
             self._error("Speed search is using the simulator. Stop it before starting gradient training.")
             return
@@ -989,6 +1169,9 @@ class PolyBotWindow(QWidget):
             self.bridge.failed.emit(f"Training failed: {exc}")
 
     def _stop(self) -> None:
+        if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
+            self._stop_wr_search()
+            return
         if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
             assert self.speed_search_stop_file is not None
             self.speed_search_stop_file.write_text("stop\n", encoding="utf-8")
@@ -997,6 +1180,157 @@ class PolyBotWindow(QWidget):
         if self.runner is not None:
             self.runner.stop()
             self.log.append("Stopping after the current simulator step; latest will be saved.")
+
+    def _start_wr_search(self, *, analyze_only: bool = False) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            self._error("Stop gradient training before starting WR pace search.")
+            return
+        if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
+            self._error("WR pace search is already running.")
+            return
+        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
+            self._error("Stop the other live speed search before starting WR pace search.")
+            return
+        try:
+            cfg = self.configuration()
+            if cfg.algorithm != "tqc" or cfg.backend != "websocket":
+                raise ValueError("WR pace optimization requires a live websocket TQC champion")
+            if self.wr_region_enabled.isChecked() and self.wr_region_start.value() >= self.wr_region_end.value():
+                raise ValueError("Selected progress region must have start < end")
+            champion = ModelRegistry(cfg.output_root).slot(cfg.track_name, "tqc", "champion")
+            if not (champion / "metadata.json").is_file():
+                raise FileNotFoundError("No evaluated TQC champion is saved for this track")
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            cfg.log_root.mkdir(parents=True, exist_ok=True)
+            config_path = cfg.log_root / f"wr-pace-config-{stamp}.json"
+            stop_path = cfg.log_root / f"wr-pace-stop-{stamp}.txt"
+            config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
+            arguments = [
+                "-m", "polybot.training.wr_search", "--config", str(config_path),
+                "--target", str(self.wr_target.value()),
+                "--resolution", str(self.wr_resolution.currentData()),
+                "--family", str(self.wr_family.currentData()),
+                "--trials", "0" if analyze_only else str(self.wr_trials.value()),
+                "--stop-file", str(stop_path),
+                "--micro-gain", str(self.wr_micro_gain.value()),
+                "--micro-confirm", str(self.wr_micro_confirm.value()),
+            ]
+            if self.wr_region_enabled.isChecked():
+                arguments.extend(("--region-start", str(self.wr_region_start.value()),
+                                  "--region-end", str(self.wr_region_end.value())))
+            process = QProcess(self)
+            process.setProgram(sys.executable)
+            process.setArguments(arguments)
+            process.setWorkingDirectory(str(Path.cwd()))
+            process.readyReadStandardOutput.connect(self._wr_search_output)
+            process.readyReadStandardError.connect(self._wr_search_error)
+            process.finished.connect(self._wr_search_finished)
+            self.wr_search_process = process
+            self.wr_search_stop_file = stop_path
+            self.wr_stdout_buffer = ""
+            self.wr_summary.setText("Starting 10-lap deterministic champion baseline…")
+            process.start()
+            if not process.waitForStarted(3000):
+                raise RuntimeError(process.errorString())
+            self.tabs.setCurrentIndex(self.tabs.count() - 1)
+            self.log_location.setText(f"WR search record: {champion.parent / 'wr-search-history.jsonl'}")
+        except (ValueError, OSError, RuntimeError, FileNotFoundError) as exc:
+            self._error(str(exc))
+
+    def _stop_wr_search(self) -> None:
+        if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
+            assert self.wr_search_stop_file is not None
+            self.wr_search_stop_file.write_text("stop\n", encoding="utf-8")
+            self.log.append("WR search will stop after the current candidate; the champion remains protected.")
+
+    def _wr_search_output(self) -> None:
+        if self.wr_search_process is None:
+            return
+        self.wr_stdout_buffer += bytes(
+            self.wr_search_process.readAllStandardOutput()
+        ).decode("utf-8", errors="replace")
+        while "\n" in self.wr_stdout_buffer:
+            line, self.wr_stdout_buffer = self.wr_stdout_buffer.split("\n", 1)
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            kind = event.get("type")
+            if kind == "baseline":
+                lap = float(event["champion_lap_s"])
+                target = float(event["target_lap_s"])
+                self.wr_summary.setText(
+                    f"Champion {lap:.3f}s · target {target:.3f}s · gap {lap-target:+.3f}s · "
+                    f"10/10 baseline · measurement range {event['measurement_floor_s']:.4f}s · "
+                    f"{len(event.get('airborne_regions', []))} airborne regions"
+                )
+                self._show_wr_sectors(event.get("sectors", []))
+            elif kind == "trial":
+                label = "accepted" if event.get("accepted") else "rejected"
+                self.log.append(
+                    f"WR trial {event.get('trial_id')}: {label} · "
+                    f"screen {event.get('screen_lap_s')}s · {event.get('parameter')}"
+                )
+                if event.get("sector_deltas"):
+                    self._show_wr_sectors(event["sector_deltas"], deltas=True)
+            elif kind == "completed":
+                self.wr_summary.setText(
+                    f"Search done · champion {event['champion_lap_s']:.3f}s · "
+                    f"target gap {event['gap_s']:+.3f}s · "
+                    f"{event['accepted']} accepted / {event['trials']} trials"
+                )
+            elif kind == "stopped":
+                self.log.append("WR pace search stopped safely.")
+
+    def _show_wr_sectors(
+        self, sectors: list[dict[str, Any]], *, deltas: bool = False,
+    ) -> None:
+        self.wr_sector_table.setSortingEnabled(False)
+        self.wr_sector_table.setRowCount(len(sectors))
+        for row, sector in enumerate(sectors):
+            values = (
+                f"{sector['start']:.0%}–{sector['end']:.0%}",
+                f"{sector['delta_s']:+.3f}" if deltas else f"{sector['candidate_s']:.3f}",
+                f"{sector['speed_delta_mps']:+.2f}" if deltas else f"{sector['speed_mps']:.2f}",
+                ("gain" if sector["delta_s"] < 0 else "loss")
+                if deltas else ("slow focus" if sector.get("focus") else "baseline"),
+            )
+            for column, value in enumerate(values):
+                self.wr_sector_table.setItem(row, column, QTableWidgetItem(value))
+        self.wr_sector_table.setSortingEnabled(True)
+
+    def _load_wr_profile(self) -> None:
+        try:
+            profile = json.loads(
+                Path("profiles/training/summer-1-wr-pace.json").read_text(encoding="utf-8")
+            )
+            self.wr_target.setValue(float(profile["target_lap_s"]))
+            self.wr_trials.setValue(int(profile["candidate_limit"]))
+            self.wr_resolution.setCurrentIndex(
+                self.wr_resolution.findData(float(profile["default_sector_resolution"]))
+            )
+            self.wr_micro_gain.setValue(float(profile["micro_gain_threshold_s"]))
+            self.wr_micro_confirm.setValue(int(profile["micro_gain_confirmation_episodes"]))
+            self.log.append(
+                f"Loaded WR target: {profile['target_label']} ({profile['target_lap_s']:.3f}s)."
+            )
+        except (OSError, KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            self._error(f"Could not load WR pace profile: {exc}")
+
+    def _wr_search_error(self) -> None:
+        if self.wr_search_process is not None:
+            error = bytes(self.wr_search_process.readAllStandardError()).decode(
+                "utf-8", errors="replace"
+            )
+            if error.strip():
+                self.log.append(f"WR search: {error[-1200:]}")
+
+    def _wr_search_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
+        self._wr_search_output()
+        self._wr_search_error()
+        if exit_code != 0:
+            self.wr_summary.setText(f"WR pace search failed (exit {exit_code}); see log for details.")
+        self.wr_search_process = None
 
     def _start_speed_search(self) -> None:
         if self.worker is not None and self.worker.is_alive():

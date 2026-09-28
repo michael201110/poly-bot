@@ -148,6 +148,8 @@ def search(
             runner.backend.save_model(model, staging, resume=True)
             updated = replace(
                 champion, evaluation=confirmed.to_dict(),
+                critic_adaptation_required=True,
+                adaptation_stage="critic_adaptation_required",
                 saved_at=datetime.now(UTC).isoformat(), git_commit=git_commit(),
             )
             runner.registry.write_metadata(staging, updated)
