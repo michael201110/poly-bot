@@ -64,6 +64,7 @@ class TrainingRunner:
         self._champion_refill_updates: int | None = None
         self._champion_path_observations: list[Any] | None = None
         self._consecutive_rollbacks = 0
+        self._last_rollback_severe = False
         self.sink: EventSink | None = None
 
     def stop(self) -> None:
@@ -225,11 +226,20 @@ class TrainingRunner:
         # The poor result belongs to the discarded policy. The restored policy
         # has not been evaluated at this step, so latest must not claim its score.
         self.last_evaluation = None
+        self._last_rollback_severe = (
+            result.finish_rate < champion.finish_rate
+            or result.median_progress < champion.median_progress - 0.05
+        )
         self._emit({
             "type": "rollback", "timesteps": current_steps,
             "champion_timesteps": champion_meta.training_timesteps,
             "evaluated_progress": result.median_progress,
             "champion_progress": champion.median_progress,
+            "evaluated_finish_rate": result.finish_rate,
+            "champion_finish_rate": champion.finish_rate,
+            "evaluated_lap_s": result.median_lap_s,
+            "champion_lap_s": champion.median_lap_s,
+            "severe": self._last_rollback_severe,
             "replay_source": "fresh" if refill_replay else "champion",
         })
         return True
@@ -467,7 +477,10 @@ class TrainingRunner:
                             phase_steps=phase.steps,
                         )
                         if restored:
-                            self._consecutive_rollbacks += 1
+                            self._consecutive_rollbacks = (
+                                self._consecutive_rollbacks + 1
+                                if self._last_rollback_severe else 0
+                            )
                             if self._consecutive_rollbacks >= 3:
                                 self._emit({
                                     "type": "regression_stop",

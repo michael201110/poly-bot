@@ -320,6 +320,26 @@ def test_continue_best_stops_after_repeated_regressions(tmp_path, monkeypatch) -
     assert events[-1]["type"] == "stopped"
 
 
+def test_slower_complete_laps_do_not_stop_best_model_training(tmp_path, monkeypatch) -> None:
+    import polybot.training.runner as runner_module
+
+    config = replace(
+        configuration(tmp_path, "tqc"), timesteps=80,
+        evaluation=EvaluationConfig(16, 1),
+    )
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 20.0, 20.0, 0.0, 0.0, 0.0)
+    slower = replace(strong, best_lap_s=20.1, median_lap_s=20.1)
+    evaluations = iter((strong, slower, slower, slower, slower))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    events: list[dict] = []
+    latest = TrainingRunner(config, events.append).run(rollback_to_champion=True)
+    assert ModelRegistry(config.output_root).read_metadata(latest).training_timesteps == 80
+    assert sum(event["type"] == "rollback" for event in events) == 4
+    assert all(not event["severe"] for event in events if event["type"] == "rollback")
+    assert not any(event["type"] == "regression_stop" for event in events)
+    assert events[-1]["type"] == "completed"
+
+
 @pytest.mark.parametrize("timesteps", (24, 32))
 def test_continue_best_restores_champion_after_weaker_evaluation(
     tmp_path, monkeypatch, timesteps: int

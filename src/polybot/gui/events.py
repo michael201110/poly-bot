@@ -57,6 +57,12 @@ def format_event(event: dict[str, Any]) -> str | None:
             f"{gpu}{resumed}{refill}{restore}"
         )
     if kind == "rollback":
+        if event.get("evaluated_lap_s") is not None:
+            return (
+                f"{prefix}Restored champion{step} · median lap "
+                f"{event['evaluated_lap_s']:.3f} s versus "
+                f"{event['champion_lap_s']:.3f} s · replay from {event['replay_source']}"
+            )
         return (
             f"{prefix}Restored champion{step} · evaluation {_percent(event['evaluated_progress'])}"
             f" versus champion {_percent(event['champion_progress'])}"
@@ -74,7 +80,7 @@ def format_event(event: dict[str, Any]) -> str | None:
     if kind == "regression_stop":
         return (
             f"{prefix}Training stopped after {event['consecutive_rollbacks']} "
-            f"weaker evaluations{step}; champion remains saved"
+            f"failed finish/progress evaluations{step}; champion remains saved"
         )
     if kind == "phase":
         spawn = event.get("spawn_ratio")
