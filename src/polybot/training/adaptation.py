@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import shutil
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,11 @@ def _policy_digest(directory: Path) -> str:
     with (directory / "policy.zip").open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
+    # Policy overlays are part of the effective champion even though they are
+    # stored in metadata rather than baked into policy.zip.
+    metadata = json.loads((directory / "metadata.json").read_text(encoding="utf-8-sig"))
+    overlays = json.dumps(metadata.get("policy_overlays", []), sort_keys=True, separators=(",", ":"))
+    digest.update(overlays.encode("utf-8"))
     return digest.hexdigest()
 
 
@@ -37,6 +43,22 @@ def candidate_diagnostics_pass(
         if candidate.median_lap_s is not None and reference.median_lap_s is not None
         else None
     )
+    finite_metrics = (
+        candidate.finish_rate, candidate.median_progress, candidate.mean_progress,
+        candidate.crash_rate, candidate.off_track_rate, candidate.stall_rate,
+        candidate.max_position_deviation_m, candidate.max_progress_deviation_m,
+        candidate.max_heading_deviation_rad, candidate.max_steering_disagreement,
+        candidate.max_longitudinal_disagreement,
+        reference.finish_rate, reference.median_progress, reference.mean_progress,
+        reference.crash_rate, reference.off_track_rate, reference.stall_rate,
+        reference.max_position_deviation_m, reference.max_progress_deviation_m,
+        reference.max_heading_deviation_rad, reference.max_steering_disagreement,
+        reference.max_longitudinal_disagreement,
+    )
+    finite_metrics = finite_metrics + tuple(
+        value for value in (candidate.median_lap_s, reference.median_lap_s, lap_delta)
+        if value is not None
+    )
     allowed_lap_delta = min(max(config.tqc.champion_lap_tolerance_s, 0.001), 0.01)
     limits = {
         "position_deviation_limit_m": config.tqc.adaptation_max_position_deviation_m,
@@ -46,6 +68,8 @@ def candidate_diagnostics_pass(
         "lap_delta_limit_s": allowed_lap_delta,
     }
     failures = []
+    if not all(math.isfinite(value) for value in finite_metrics):
+        failures.append("non-finite evaluation metrics")
     if candidate.finish_rate != 1.0 or candidate.median_progress != 1.0:
         failures.append("incomplete laps")
     if candidate.crash_rate or candidate.off_track_rate or candidate.stall_rate:

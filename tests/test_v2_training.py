@@ -15,7 +15,7 @@ from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import IncompatibleModelError, ModelRegistry
 from polybot.protocol import Action
-from polybot.training.adaptation import candidate_diagnostics_pass
+from polybot.training.adaptation import _policy_digest, candidate_diagnostics_pass
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
@@ -594,6 +594,23 @@ def test_adaptation_candidate_gate_checks_closed_loop_drift_and_speed() -> None:
     slower = replace(acceptable, median_lap_s=24.90)
     passed, detail = candidate_diagnostics_pass(slower, reference, config)
     assert not passed and "lap-time regression" in detail["rejection_reasons"]
+    invalid = replace(acceptable, median_lap_s=float("nan"))
+    passed, detail = candidate_diagnostics_pass(invalid, reference, config)
+    assert not passed
+    assert "non-finite evaluation metrics" in detail["rejection_reasons"]
+
+
+def test_adaptation_source_digest_includes_effective_policy_overlays(tmp_path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    for directory, amount in ((first, 0.01), (second, 0.02)):
+        (directory / "policy.zip").write_bytes(b"same network weights")
+        (directory / "metadata.json").write_text(json.dumps({
+            "policy_overlays": [{"kind": "drive_bias", "amount": amount}],
+        }), encoding="utf-8")
+    assert _policy_digest(first) != _policy_digest(second)
 
 
 def test_local_replay_expansion_noise_default_is_sparse() -> None:
