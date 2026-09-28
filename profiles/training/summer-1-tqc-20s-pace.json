@@ -114,7 +114,8 @@
     "entropy": "auto_0.1",
     "warmup_forward_fraction": 0.8,
     "warmup_steering_std": 0.35,
-    "champion_action_drift_limit": 0.0001
+    "champion_action_drift_limit": 0.0001,
+    "champion_lap_tolerance_s": 0.2
   },
   "schema": "polybot.config.v2"
 }

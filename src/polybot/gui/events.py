@@ -68,6 +68,12 @@ def format_event(event: dict[str, Any]) -> str | None:
             f" versus champion {_percent(event['champion_progress'])}"
             f" · replay from {event['replay_source']}"
         )
+    if kind == "lap_tolerance":
+        return (
+            f"{prefix}Continuing near champion{step} · median lap "
+            f"{event['evaluated_lap_s']:.3f} s versus {event['champion_lap_s']:.3f} s "
+            f"(within {event['tolerance_s']:.3f} s); champion remains saved"
+        )
     if kind == "champion_replay":
         return f"{prefix}Saved policy-generated replay with champion{step}"
     if kind == "anchor_baseline":

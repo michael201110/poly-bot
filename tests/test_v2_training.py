@@ -340,6 +340,28 @@ def test_slower_complete_laps_do_not_stop_best_model_training(tmp_path, monkeypa
     assert events[-1]["type"] == "completed"
 
 
+def test_near_champion_laps_keep_learning_without_replacing_champion(tmp_path, monkeypatch) -> None:
+    import polybot.training.runner as runner_module
+
+    base = configuration(tmp_path, "tqc")
+    config = replace(
+        base, timesteps=48, evaluation=EvaluationConfig(16, 1),
+        tqc=replace(base.tqc, champion_lap_tolerance_s=0.2),
+    )
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 20.0, 20.0, 0.0, 0.0, 0.0)
+    slower = replace(strong, best_lap_s=20.1, median_lap_s=20.1)
+    evaluations = iter((strong, slower, slower))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    events: list[dict] = []
+    latest = TrainingRunner(config, events.append).run(rollback_to_champion=True)
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "tqc", "champion")
+    assert registry.read_metadata(champion).evaluation["median_lap_s"] == 20.0
+    assert registry.read_metadata(latest).evaluation["median_lap_s"] == 20.1
+    assert sum(event["type"] == "lap_tolerance" for event in events) == 2
+    assert not any(event["type"] == "rollback" for event in events)
+
+
 @pytest.mark.parametrize("timesteps", (24, 32))
 def test_continue_best_restores_champion_after_weaker_evaluation(
     tmp_path, monkeypatch, timesteps: int

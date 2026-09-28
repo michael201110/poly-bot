@@ -113,6 +113,10 @@ TQC_INFO = _info("TQC", {
         "On best-model continuation, cap deterministic action drift from the starting champion "
         "on saved replay states. 0 disables the cap; 0.03 is conservative."
     ),
+    "champion_lap_tolerance_s": (
+        "Continue learning after a fully completed evaluation lap this many seconds slower "
+        "than champion. The champion stays saved; larger regressions still roll back."
+    ),
 }, algorithm="tqc")
 
 CURRICULUM_INFO = _info("Curriculum", {

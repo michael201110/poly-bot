@@ -187,6 +187,22 @@ class TrainingRunner:
         if result.rank() >= champion.rank():
             return False
         if (
+            cfg.algorithm == "tqc" and cfg.tqc is not None
+            and cfg.tqc.champion_lap_tolerance_s > 0
+            and result.finish_rate == champion.finish_rate == 1.0
+            and result.median_progress == champion.median_progress == 1.0
+            and result.median_lap_s is not None
+            and champion.median_lap_s is not None
+            and result.median_lap_s <= champion.median_lap_s + cfg.tqc.champion_lap_tolerance_s
+        ):
+            self._emit({
+                "type": "lap_tolerance", "timesteps": self.model.num_timesteps,
+                "evaluated_lap_s": result.median_lap_s,
+                "champion_lap_s": champion.median_lap_s,
+                "tolerance_s": cfg.tqc.champion_lap_tolerance_s,
+            })
+            return False
+        if (
             cfg.algorithm == "tqc"
             and self._champion_refill_source == champion_dir
             and self.model._n_updates == self._champion_refill_updates
