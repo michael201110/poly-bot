@@ -35,7 +35,26 @@ class SeededWarmupTQC(TQC):
         self._champion_action_drift_limit = 0.0
         self._anchor_action_drift: float | None = None
         self._warmup_rng = np.random.default_rng(kwargs.get("seed"))
+        self.speed_bias_schedule: list[tuple[float, float, float]] = []
         super().__init__(*args, **kwargs)
+
+    def predict(
+        self, observation: np.ndarray | dict[str, np.ndarray], state: Any = None,
+        episode_start: np.ndarray | None = None, deterministic: bool = False,
+    ) -> tuple[np.ndarray, Any]:
+        action, state = super().predict(observation, state, episode_start, deterministic)
+        schedule = getattr(self, "speed_bias_schedule", ())
+        if not schedule or isinstance(observation, dict):
+            return action, state
+        progress = np.asarray(observation)[..., 12]
+        bias = np.zeros_like(progress, dtype=np.float32)
+        for start, end, amount in schedule:
+            # Taper each window over 2% of the track so action changes are smooth.
+            fade = np.minimum((progress - start) / 0.02, (end - progress) / 0.02)
+            bias += amount * np.clip(fade, 0.0, 1.0)
+        adjusted = np.array(action, copy=True)
+        adjusted[..., 1] = np.clip(adjusted[..., 1] + bias, -1.0, 1.0)
+        return adjusted, state
 
     def _sample_action(
         self, learning_starts: int, action_noise: Any = None, n_envs: int = 1

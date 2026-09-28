@@ -302,6 +302,34 @@ def test_tqc_champion_anchor_caps_actor_action_drift() -> None:
         env.close()
 
 
+def test_tqc_speed_bias_schedule_applies_only_inside_window(tmp_path) -> None:
+    config = TrainingConfig(algorithm="tqc", tqc=TQCConfig(architecture="tiny"))
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        observation, _ = env.reset(seed=42)
+        inside = observation.copy()
+        inside[12] = 0.5
+        outside = observation.copy()
+        outside[12] = 0.1
+        baseline, _ = model.predict(inside, deterministic=True)
+        outside_baseline, _ = model.predict(outside, deterministic=True)
+        model.speed_bias_schedule = [(0.3, 0.7, 0.2)]
+        adjusted, _ = model.predict(inside, deterministic=True)
+        outside_adjusted, _ = model.predict(outside, deterministic=True)
+        assert adjusted[0] == baseline[0]
+        assert adjusted[1] == pytest.approx(min(1.0, baseline[1] + 0.2))
+        np.testing.assert_array_equal(outside_adjusted, outside_baseline)
+        directory = tmp_path / "scheduled-policy"
+        backend.save_model(model, directory)
+        restored = backend.load_model(directory / "policy.zip", env, "cpu")
+        assert restored.speed_bias_schedule == [list(window) for window in model.speed_bias_schedule]
+        np.testing.assert_allclose(restored.predict(inside, deterministic=True)[0], adjusted)
+    finally:
+        env.close()
+
+
 def test_continue_best_stops_after_repeated_regressions(tmp_path, monkeypatch) -> None:
     import polybot.training.runner as runner_module
 
