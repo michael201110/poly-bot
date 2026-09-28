@@ -62,7 +62,10 @@ def evaluate_model(
             progress.append(min(1.0, max(0.0, info["route_progress_m"] / info["track_length_m"])))
             if "finish" in events:
                 laps.append(float(info["elapsed_s"]))
-            crashes += int("crash" in events or "barrier_contact" in events)
+            crashes += int(
+                "crash" in events or "barrier_contact" in events
+                or "airborne_roll_failure" in events
+            )
             off_tracks += int("off_track" in events)
             stalls += int("stalled" in events)
     finally:
