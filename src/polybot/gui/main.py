@@ -40,7 +40,7 @@ from PySide6.QtWidgets import (
 from polybot.environment.curriculum import build_plan
 from polybot.environment.rewards import RewardConfig
 from polybot.gui.events import format_event
-from polybot.models.registry import ModelRegistry
+from polybot.models.registry import REWARD_SEMANTICS, ModelRegistry
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
@@ -483,16 +483,34 @@ class PolyBotWindow(QWidget):
         self.speed_search_mode.addItem("Whole-lap actor search", "global")
         self.speed_search_mode.addItem("Section speed search", "section")
         self.speed_search_mode.setToolTip(
-            "Whole-lap search adjusts the actor outputs everywhere; section search changes forward control in one track window."
+            "Whole-lap search adjusts actor outputs; section search changes forward control in one window."
         )
         search_form.addRow("Search method", self.speed_search_mode)
         page.addLayout(search_form)
         speed_button = QPushButton("Optimize TQC champion speed")
         speed_button.setToolTip(
-            "Test small actor-output changes on live laps. Save only faster champions confirmed over all evaluation laps."
+            "Test small actor-output changes on live laps. Save faster champions only after full confirmation."
         )
         speed_button.clicked.connect(self._start_speed_search)
         page.addWidget(speed_button)
+        self.pace_polish_section = QWidget()
+        polish_layout = QVBoxLayout(self.pace_polish_section)
+        polish_layout.addWidget(QLabel("Pace polishing: conservative TQC gradients from champion"))
+        polish_actions = QHBoxLayout()
+        polish_layout.addLayout(polish_actions)
+        for label, steps in (("Polish champion 25k", 25_000), ("Polish champion 50k", 50_000)):
+            button = QPushButton(label)
+            button.setToolTip("Load Summer 1 safe-polish settings and resume the evaluated champion.")
+            button.clicked.connect(lambda _checked=False, budget=steps: self._start_polish(budget))
+            polish_actions.addWidget(button)
+        search_actions = QHBoxLayout()
+        polish_layout.addLayout(search_actions)
+        for label, mode in (("Search global pace", "global"), ("Search section pace", "section")):
+            button = QPushButton(label)
+            button.setToolTip("Screen candidates, then confirm faster laps before saving champion.")
+            button.clicked.connect(lambda _checked=False, selected=mode: self._start_pace_search(selected))
+            search_actions.addWidget(button)
+        page.addWidget(self.pace_polish_section)
         for label, handler, description in (
             ("Guided new run", self._guided_new_run,
              "Choose a track, algorithm, goal, device and preset, then review exact values."),
@@ -536,6 +554,10 @@ class PolyBotWindow(QWidget):
             "TPS is environment decisions per wall second; progress is the current attempt's fraction of track."
         )
         page.addWidget(self.metrics)
+        self.pace_status = QLabel("Pace: awaiting evaluation")
+        self.pace_status.setWordWrap(True)
+        page.addWidget(self.pace_status)
+        self._pace_champion_lap: float | None = None
         metric_form = QFormLayout()
         page.addLayout(metric_form)
         self.metric_widgets: dict[str, QLabel] = {}
@@ -562,6 +584,7 @@ class PolyBotWindow(QWidget):
         for form in (self.ppo_form, self.dqn_form, self.tqc_form, self.curriculum_form):
             form.set_advanced(enabled)
         self.reward_scroll.setVisible(enabled)
+        self.pace_polish_section.setVisible(enabled)
         for name in self.general_advanced:
             self.general[name].setVisible(enabled)
             self.general_labels[name].setVisible(enabled)
@@ -890,7 +913,21 @@ class PolyBotWindow(QWidget):
             return champion
         return latest
 
-    def _start(self, resume: bool, *, best: bool = False) -> None:
+    def _start_polish(self, steps: int) -> None:
+        profile = Path("profiles/training/summer-1-tqc-safe-polish.json")
+        try:
+            config = TrainingConfig.from_dict(json.loads(profile.read_text(encoding="utf-8")))
+            config.timesteps = steps
+            self.load_configuration(config)
+            self._start(True, pace_polish=True)
+        except (OSError, ValueError, KeyError) as exc:
+            self._error(str(exc))
+
+    def _start_pace_search(self, mode: str) -> None:
+        self.speed_search_mode.setCurrentIndex(self.speed_search_mode.findData(mode))
+        self._start_speed_search()
+
+    def _start(self, resume: bool, *, best: bool = False, pace_polish: bool = False) -> None:
         if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
             self._error("Speed search is using the simulator. Stop it before starting gradient training.")
             return
@@ -903,7 +940,8 @@ class PolyBotWindow(QWidget):
                 raise RuntimeError("A live speed search is already using the simulator; watch it in Status")
             registry = ModelRegistry(cfg.output_root)
             slot = (
-                self._best_resume_slot(cfg) if best
+                registry.slot(cfg.track_name, cfg.algorithm, "champion") if pace_polish
+                else self._best_resume_slot(cfg) if best
                 else registry.slot(cfg.track_name, cfg.algorithm, "latest")
             )
             if resume and cfg.algorithm == "dqn":
@@ -921,12 +959,15 @@ class PolyBotWindow(QWidget):
                     not (slot / "replay.pkl").is_file()
                     or registry.read_metadata(slot).training_config["rewards"]
                     != cfg.to_dict()["rewards"]
+                    or (cfg.algorithm == "tqc"
+                        and registry.read_metadata(slot).reward_semantics != REWARD_SEMANTICS)
                 )
             )
             self.runner = TrainingRunner(cfg, self.bridge.event.emit)
             self.worker = threading.Thread(
                 target=self._run_worker,
-                args=(slot if resume else None, fresh_replay, best), daemon=True,
+                args=(slot if resume else None, fresh_replay, best or pace_polish, pace_polish),
+                daemon=True,
             )
             self.worker.start()
         except (ValueError, RuntimeError, FileNotFoundError) as exc:
@@ -935,12 +976,14 @@ class PolyBotWindow(QWidget):
     def _run_worker(
         self, resume: Path | None, fresh_replay: bool = False,
         rollback_to_champion: bool = False,
+        pace_polish: bool = False,
     ) -> None:
         try:
             assert self.runner is not None
             self.runner.run(
                 resume=resume, fresh_replay=fresh_replay,
                 rollback_to_champion=rollback_to_champion,
+                pace_polish=pace_polish,
             )
         except Exception as exc:
             self.bridge.failed.emit(f"Training failed: {exc}")
@@ -1078,6 +1121,13 @@ class PolyBotWindow(QWidget):
     def _event(self, event: dict[str, Any]) -> None:
         kind = event["type"]
         if kind == "started":
+            try:
+                cfg = self.configuration()
+                slot = ModelRegistry(cfg.output_root).slot(cfg.track_name, cfg.algorithm, "champion")
+                saved = ModelRegistry(cfg.output_root).read_metadata(slot).evaluation
+                self._pace_champion_lap = saved.get("median_lap_s") if saved else None
+            except (OSError, ValueError, KeyError):
+                self._pace_champion_lap = None
             counts = event["parameters"]
             if event["algorithm"] == "dqn":
                 self.parameter_label.setText(
@@ -1107,6 +1157,31 @@ class PolyBotWindow(QWidget):
                 if name in event and event[name] is not None:
                     value = event[name]
                     widget.setText(f"{value:.3f}" if isinstance(value, float) else str(value))
+            self.pace_status.setText(
+                f"Pace polish · LR {event.get('learning_rate') or 0:.1e} · "
+                f"drift {event.get('anchor_action_drift') or 0:.2e} · "
+                f"replay {event.get('replay_size') or 0:,} · "
+                f"rollbacks {event.get('rollback_count') or 0} · "
+                f"air bonus {event.get('air_brake_bonus_per_s') or 0:g} · "
+                f"speed windows {len(event.get('speed_bias_schedule') or [])}"
+            )
+        if kind == "evaluation":
+            lap = event.get("median_lap_s")
+            air = event.get("air_brake_time_s")
+            target_gap = (
+                f" · target gap {lap - self.speed_search_target.value():+.3f}s"
+                if lap is not None else ""
+            )
+            champion_gap = (
+                f" · versus champion {lap - self._pace_champion_lap:+.3f}s"
+                if lap is not None and self._pace_champion_lap is not None else ""
+            )
+            self.pace_status.setText(
+                f"Evaluation median {lap:.3f}s · best {event.get('best_lap_s'):.3f}s · "
+                f"air-brake duty time {air:.2f}s{target_gap}{champion_gap}"
+                if lap is not None and event.get("best_lap_s") is not None and air is not None
+                else "Evaluation did not produce a complete lap"
+            )
         summary = format_event(event)
         if summary:
             self.log.append(summary)

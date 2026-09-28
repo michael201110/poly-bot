@@ -552,7 +552,7 @@ def _driving_terms(c: RewardContext) -> dict[str, float]:
     low_speed_s = min(c.dt, max(0.0, c.stationary_s - p.low_speed_grace_s))
     return {
         "ground_brake": p.ground_brake_penalty_per_s * c.dt * c.action.brake
-        if not c.airborne else 0.0,
+        if any(contact >= 0.5 for contact in c.telemetry.wheel_contacts) else 0.0,
         "low_speed": p.low_speed_penalty_per_s * low_speed_s,
         "unsafe_speed": p.unsafe_speed_penalty_per_m * c.distance_at_speed
         * (1.0 - c.on_track_factor),

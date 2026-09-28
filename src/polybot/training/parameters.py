@@ -146,8 +146,14 @@ REWARD_DESCRIPTIONS = {
     "speed_pace_reward_per_m_per_mps": "Extra points per metre and metre per second of safe forward speed.",
     "speed_pace_limit_mps": "Maximum speed counted in the pace term, in metres per second.",
     "airborne_speed_per_m": "Points per metre of forward flight, reduced when the car tilts.",
-    "airborne_brake_bonus_per_s": "Points per airborne second at full brake duty; partial duty scales it.",
-    "ground_brake_penalty_per_s": "Points per grounded second at full brake duty; negative values discourage braking.",
+    "airborne_brake_bonus_per_s": (
+        "Rewards applied brake duty only while all four wheels are airborne. "
+        "PolyTrack can gain lap time from braking during jumps."
+    ),
+    "ground_brake_penalty_per_s": (
+        "Penalty for applied brake duty when any wheel touches the ground; "
+        "it never applies to four-wheel air braking."
+    ),
     "takeoff_target_speed_mps": "Takeoff speed used as the zero point for the jump speed bonus.",
     "takeoff_speed_reward_per_mps": "Points for each metre per second above or below target takeoff speed.",
     "takeoff_speed_reward_limit": "Maximum absolute takeoff speed reward for one jump.",

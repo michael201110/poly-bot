@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 import threading
 import time
 from collections.abc import Callable
@@ -9,6 +10,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 import gymnasium as gym
 from stable_baselines3.common.callbacks import BaseCallback
@@ -18,11 +20,13 @@ from polybot.environment.curriculum import CurriculumPhase, build_plan
 from polybot.environment.env import PolyTrackEnv
 from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 from polybot.mock import MockSimulatorTransport
-from polybot.models.registry import ModelMetadata, ModelRegistry, track_slug
+from polybot.models.registry import REWARD_SEMANTICS, ModelMetadata, ModelRegistry, track_slug
 from polybot.training.config import TrainingConfig
 from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, evaluate_model
 from polybot.training.metrics import EventSink
+from polybot.training.pace_history import append_pace_history
+from polybot.training.promotion import promote_directory
 from polybot.transport import WebSocketServerTransport
 
 
@@ -110,13 +114,23 @@ class TrainingRunner:
             finishes=self.finishes, crashes=self.crashes,
             evaluation=evaluation.to_dict() if evaluation is not None else None,
             implementation="qr_dqn" if cfg.algorithm == "dqn" else None,
+            reward_semantics=REWARD_SEMANTICS,
         )
 
     def _save(self, name: str, evaluation: EvaluationResult | None = None) -> Path:
         cfg = self.config
         directory = self.registry.slot(cfg.track_name, cfg.algorithm, name)
-        self.backend.save_model(self.model, directory, resume=True)
-        self.registry.write_metadata(directory, self._metadata(evaluation))
+        staging = (
+            directory.parent / f".{directory.name}-staging-{uuid4().hex}"
+            if name == "champion" else directory
+        )
+        self.backend.save_model(self.model, staging, resume=True)
+        self.registry.write_metadata(staging, self._metadata(evaluation))
+        if name == "champion":
+            search_metadata = directory / "speed-search.json"
+            if search_metadata.is_file():
+                shutil.copy2(search_metadata, staging / search_metadata.name)
+            promote_directory(staging, directory, require_replay=cfg.algorithm in {"tqc", "dqn"})
         return directory
 
     def _evaluate(self) -> EvaluationResult:
@@ -139,6 +153,7 @@ class TrainingRunner:
             previous = champion_metadata.evaluation
             champion_reward_mismatch = (
                 champion_metadata.training_config["rewards"] != cfg.to_dict()["rewards"]
+                or (cfg.algorithm == "tqc" and champion_metadata.reward_semantics != REWARD_SEMANTICS)
             )
             if previous is not None:
                 champion = EvaluationResult(**previous)
@@ -166,6 +181,13 @@ class TrainingRunner:
         if champion is None or (result.rank() > champion.rank() and not refill_in_progress):
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps})
+            if cfg.algorithm == "tqc":
+                append_pace_history(
+                    path, source="rl_finetune", evaluation=result, model=self.model,
+                    reward_profile=cfg.reward_profile,
+                    air_brake_bonus_per_s=cfg.rewards.airborne_brake_bonus_per_s,
+                    learning_rate=cfg.tqc.learning_rate if cfg.tqc else None,
+                )
             if cfg.algorithm == "tqc" and self.model._champion_actor is not None:
                 assert cfg.tqc is not None
                 self._champion_path_observations = observations
@@ -213,9 +235,13 @@ class TrainingRunner:
         self.registry.validate(champion_meta, cfg, self.backend.action_adapter(cfg).schema)
         if champion_meta.architecture != self.backend.architecture(cfg):
             raise ValueError("champion architecture differs from current model")
-        reward_mismatch = champion_meta.training_config["rewards"] != cfg.to_dict()["rewards"]
+        reward_mismatch = (
+            champion_meta.training_config["rewards"] != cfg.to_dict()["rewards"]
+            or (cfg.algorithm == "tqc" and champion_meta.reward_semantics != REWARD_SEMANTICS)
+        )
 
         current_steps = int(self.model.num_timesteps)
+        previous_drift = getattr(self.model, "_anchor_action_drift", None)
         replay_file = champion_dir / "replay.pkl"
         refill_replay = cfg.algorithm in {"dqn", "tqc"} and (
             reward_mismatch or not replay_file.is_file()
@@ -257,14 +283,27 @@ class TrainingRunner:
             "champion_lap_s": champion.median_lap_s,
             "severe": self._last_rollback_severe,
             "replay_source": "fresh" if refill_replay else "champion",
+            "learning_rate": cfg.tqc.learning_rate if cfg.tqc else None,
+            "actor_drift": previous_drift,
+            "rollback_count": self._consecutive_rollbacks + 1,
         })
         return True
 
     def run(
         self, *, resume: Path | None = None, fresh_replay: bool = False,
-        rollback_to_champion: bool = False,
+        rollback_to_champion: bool = False, pace_polish: bool = False,
     ) -> Path:
         cfg = self.config
+        if pace_polish:
+            if cfg.algorithm != "tqc" or cfg.curriculum.mode != "full":
+                raise ValueError("pace polish requires TQC and full-track training")
+            champion = self.registry.slot(cfg.track_name, "tqc", "champion")
+            if resume is not None and resume.resolve() != champion.resolve():
+                raise ValueError("pace polish must resume the champion, not latest")
+            resume = champion
+            if not (champion / "metadata.json").is_file():
+                raise FileNotFoundError("pace polish requires an evaluated champion")
+            rollback_to_champion = True
         self.device = resolve_device(cfg.device, algorithm=cfg.algorithm)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         log_path = cfg.log_root / f"{track_slug(cfg.track_name)}-{cfg.algorithm}-{stamp}.jsonl"
@@ -284,7 +323,10 @@ class TrainingRunner:
                 self.registry.validate(metadata, cfg, self.backend.action_adapter(cfg).schema)
                 if metadata.architecture != self.backend.architecture(cfg):
                     raise ValueError("resume architecture differs from saved model")
-                if metadata.training_config["rewards"] != cfg.to_dict()["rewards"] and not fresh_replay:
+                if (
+                    metadata.training_config["rewards"] != cfg.to_dict()["rewards"]
+                    or (cfg.algorithm == "tqc" and metadata.reward_semantics != REWARD_SEMANTICS)
+                ) and not fresh_replay:
                     raise ValueError("resume reward settings differ from saved replay rewards")
                 if fresh_replay and cfg.algorithm not in {"dqn", "tqc"}:
                     raise ValueError("fresh replay applies only to DQN and TQC")
@@ -315,6 +357,10 @@ class TrainingRunner:
                 "resume_source": str(resume) if resume is not None else None,
                 "fresh_replay": fresh_replay,
                 "rollback_on_regression": rollback_to_champion,
+                "mode": "pace_polish" if pace_polish else "training",
+                "learning_rate": cfg.tqc.learning_rate if cfg.tqc else None,
+                "replay_size": self.model.replay_buffer.size()
+                if getattr(self.model, "replay_buffer", None) else None,
             })
             if (
                 resume is not None and rollback_to_champion and cfg.algorithm == "tqc"
@@ -339,7 +385,10 @@ class TrainingRunner:
                     cfg.tqc.champion_action_drift_limit, observations
                 )
             start_steps = self.model.num_timesteps
-            next_eval = cfg.evaluation.interval_steps
+            # A fast champion can diverge after very few PWM decisions even
+            # under a tight continuous-action anchor. Check the first 1,000
+            # environment decisions before settling into the configured interval.
+            next_eval = min(1_000, cfg.evaluation.interval_steps) if pace_polish else cfg.evaluation.interval_steps
             next_checkpoint = cfg.checkpoint_interval if cfg.checkpoint_interval else cfg.timesteps + 1
             last_evaluated_steps = -1
             runner = self
@@ -412,6 +461,10 @@ class TrainingRunner:
                             "steps_per_second": (self.num_timesteps - start_steps)
                             / max(0.001, now - runner.started),
                             "device": runner.device.resolved,
+                            "learning_rate": cfg.tqc.learning_rate if cfg.tqc else None,
+                            "air_brake_bonus_per_s": cfg.rewards.airborne_brake_bonus_per_s,
+                            "speed_bias_schedule": getattr(runner.model, "speed_bias_schedule", []),
+                            "rollback_count": runner._consecutive_rollbacks,
                             **runner.backend.metrics(runner.model),
                         })
                         self.last_status = now
@@ -427,6 +480,7 @@ class TrainingRunner:
                             "section_progress": info.get("section_progress"),
                             "elapsed_s": info.get("elapsed_s"),
                             "reward_terms": info.get("reward_terms", {}),
+                            "air_brake_summary": info.get("air_brake_summary", {}),
                         })
                         self.episode_reward = 0.0
                         self.episode_progress = 0.0
@@ -497,7 +551,7 @@ class TrainingRunner:
                                 self._consecutive_rollbacks + 1
                                 if self._last_rollback_severe else 0
                             )
-                            if self._consecutive_rollbacks >= 3:
+                            if self._consecutive_rollbacks >= (1 if pace_polish else 3):
                                 self._emit({
                                     "type": "regression_stop",
                                     "timesteps": self.model.num_timesteps,

@@ -143,6 +143,14 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._previous_action = Action()
         self._previous_control = ControlDemand.from_action(self._previous_action)
         self._episode_done = True
+        self._airborne_time_s = 0.0
+        self._air_brake_time_s = 0.0
+        self._air_brake_active_time_s = 0.0
+        self._air_brake_reward = 0.0
+        self._air_brake_events = 0
+        self._air_braking_previous = False
+        self._max_air_brake_duty = 0.0
+        self._air_brake_windows: dict[str, float] = {}
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._barrier_contact_s = 0.0
@@ -265,6 +273,14 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._previous_action = transition.telemetry.previous_action
         self._previous_control = ControlDemand.from_action(self._previous_action)
         self._episode_done = False
+        self._airborne_time_s = 0.0
+        self._air_brake_time_s = 0.0
+        self._air_brake_active_time_s = 0.0
+        self._air_brake_reward = 0.0
+        self._air_brake_events = 0
+        self._air_braking_previous = False
+        self._max_air_brake_duty = 0.0
+        self._air_brake_windows = {}
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._barrier_contact_s = 0.0
@@ -380,6 +396,13 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ProtocolViolation("simulator returned a stale or unexpected episode_id")
         if transition.ticks_advanced > self.frame_skip:
             raise ProtocolViolation("simulator advanced more ticks than requested")
+        executed = tick_controls[:transition.ticks_advanced]
+        if executed:
+            reward_action = ControlDemand(
+                sum(item.steer for item in executed) / len(executed),
+                sum(item.throttle for item in executed) / len(executed),
+                sum(item.brake for item in executed) / len(executed),
+            )
 
         dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
         telemetry = transition.telemetry
@@ -476,6 +499,24 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             curriculum_section_complete=curriculum_section_complete,
             timed_out=timed_out,
         )
+        fully_airborne = all(contact < 0.5 for contact in telemetry.wheel_contacts)
+        braking_in_air = fully_airborne and reward_action.brake > 0
+        if fully_airborne:
+            self._airborne_time_s += dt
+        if braking_in_air:
+            self._air_brake_time_s += dt * reward_action.brake
+            self._air_brake_active_time_s += dt
+            self._max_air_brake_duty = max(self._max_air_brake_duty, reward_action.brake)
+            progress_ratio = telemetry.route_progress_m / max(1.0, telemetry.track_length_m)
+            window_start = min(0.95, max(0.0, int(progress_ratio * 20) / 20))
+            window = f"{window_start:.2f}-{window_start + 0.05:.2f}"
+            self._air_brake_windows[window] = (
+                self._air_brake_windows.get(window, 0.0) + dt * reward_action.brake
+            )
+            if not self._air_braking_previous:
+                self._air_brake_events += 1
+        self._air_braking_previous = braking_in_air
+        self._air_brake_reward += reward_terms.get("airborne_brake", 0.0)
         self._episode_steps += 1
         events = set(transition.events)
         crash = "crash" in events and not landing_grace
@@ -513,17 +554,28 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             # which can disagree with the reward profile's wider corridor.
             info["events"] = tuple(event for event in info["events"] if event != "off_track")
         info["requested_control_duty"] = {
-            "steer": reward_action.steer,
-            "throttle": reward_action.throttle,
-            "brake": reward_action.brake,
+            "steer": applied.demand.steer,
+            "throttle": applied.demand.throttle,
+            "brake": applied.demand.brake,
         }
-        executed = tick_controls[:transition.ticks_advanced]
         if executed:
             info["applied_control_fraction"] = {
                 "steer": sum(item.steer for item in executed) / len(executed),
                 "throttle": sum(item.throttle for item in executed) / len(executed),
                 "brake": sum(item.brake for item in executed) / len(executed),
             }
+        info["air_brake_summary"] = {
+            "airborne_time_s": self._airborne_time_s,
+            "air_brake_time_s": self._air_brake_time_s,
+            "air_brake_fraction": self._air_brake_time_s / self._airborne_time_s
+            if self._airborne_time_s else 0.0,
+            "air_brake_reward": self._air_brake_reward,
+            "air_brake_events": self._air_brake_events,
+            "average_air_brake_duty": self._air_brake_time_s / self._air_brake_active_time_s
+            if self._air_brake_active_time_s else 0.0,
+            "max_air_brake_duty": self._max_air_brake_duty,
+            "air_brake_windows": self._air_brake_windows.copy(),
+        }
         if stalled:
             info["events"] = (*transition.events, "stalled")
             info["stationary_s"] = self._stationary_s

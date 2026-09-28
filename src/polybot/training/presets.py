@@ -38,6 +38,14 @@ def algorithm_presets(algorithm: str) -> dict[str, PPOConfig | DQNConfig | TQCCo
             "Fast / Lightweight": replace(balanced, architecture="tiny", batch_size=128,
                                           train_frequency=4),
             "Advanced": replace(balanced, architecture="standard"),
+            "Summer 1 - TQC Safe Polish": replace(
+                balanced, architecture="compact", learning_rate=1e-5,
+                replay_capacity=250_000, learning_starts=20_000,
+                batch_size=256, gamma=0.995, tau=0.005,
+                train_frequency=4, gradient_steps=1, entropy="auto_0.1",
+                champion_action_drift_limit=1e-5,
+                champion_lap_tolerance_s=0.15,
+            ),
         }
     raise ValueError("unknown algorithm")
 

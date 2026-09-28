@@ -157,9 +157,11 @@ def format_event(event: dict[str, Any]) -> str | None:
         return line
     if kind == "evaluation":
         lap = _number(event.get("best_lap_s"), "s")
+        median = _number(event.get("median_lap_s"), "s")
         return (
             f"{prefix}Evaluation{step} · finish {_percent(event.get('finish_rate'))}"
-            f" · median progress {_percent(event.get('median_progress'))} · best lap {lap}"
+            f" · median progress {_percent(event.get('median_progress'))}"
+            f" · median lap {median} · best lap {lap}"
         )
     if kind == "champion":
         return f"{prefix}New champion{step} · best evaluated policy saved"

@@ -72,9 +72,11 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     window.advanced.setChecked(True)
     assert not window.ppo_form.widgets["gamma"].isHidden()
     assert not window.reward_scroll.isHidden()
+    assert not window.pace_polish_section.isHidden()
     assert window.configuration().tqc is None
     window.advanced.setChecked(False)
     assert window.ppo_form.widgets["gamma"].isHidden()
+    assert window.pace_polish_section.isHidden()
     window.algorithm.setCurrentText("dqn")
     assert window.algorithm_stack.currentWidget() is window.dqn_form
     assert window.ppo_form.isHidden() and window.tqc_form.isHidden()
@@ -96,6 +98,8 @@ def test_gui_exact_config_roundtrip_and_presets(window) -> None:
     assert window.configuration().ppo == algorithm_presets("ppo")["Fast training"]
     window.algorithm.setCurrentText("tqc")
     assert window.configuration().tqc == algorithm_presets("tqc")["Balanced"]
+    window.preset.setCurrentText("Summer 1 - TQC Safe Polish")
+    assert window.configuration().tqc.learning_rate == 1e-5
     dqn = TrainingConfig(algorithm="dqn", dqn=DQNConfig(architecture="standard"))
     window.load_configuration(dqn)
     assert window.configuration().to_dict() == dqn.to_dict()

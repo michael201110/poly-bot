@@ -24,6 +24,7 @@ from polybot.training.config import (
     TrainingConfig,
 )
 from polybot.training.evaluation import EvaluationResult
+from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
 
 
@@ -158,6 +159,154 @@ def test_champion_rank_uses_deterministic_finish_and_progress() -> None:
     assert strong.rank() > weak.rank()
     quicker = replace(strong, best_lap_s=22, median_lap_s=22)
     assert quicker.rank() > strong.rank()
+    reliable = EvaluationResult(5, 1.0, 1.0, 1.0, 24.5, 25.0, 0, 0, 0)
+    slower = replace(reliable, median_lap_s=25.1, mean_progress=1.000001)
+    assert reliable.rank() > slower.rank()
+
+
+def test_tqc_resume_applies_optimizer_rate_and_mutable_settings(tmp_path) -> None:
+    initial = configuration(tmp_path, "tqc")
+    initial.tqc = replace(initial.tqc, learning_rate=3e-4)
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id=initial.track_id,
+        action_adapter=backend.action_adapter(initial),
+    )
+    try:
+        model = backend.create_model(initial, env, "cpu")
+        path = tmp_path / "saved"
+        backend.save_model(model, path, resume=True)
+        resumed = backend.load_model(path / "policy.zip", env, "cpu", resume=True)
+        changed = replace(initial, tqc=replace(
+            initial.tqc, learning_rate=1e-5, batch_size=32,
+            train_frequency=4, gradient_steps=2, gamma=0.995, tau=0.006,
+        ))
+        backend.configure_resume(resumed, changed, "cpu")
+        assert resumed.learning_rate == pytest.approx(1e-5)
+        assert resumed.lr_schedule(0.5) == pytest.approx(1e-5)
+        for optimizer in (
+            resumed.actor.optimizer, resumed.critic.optimizer,
+            resumed.ent_coef_optimizer,
+        ):
+            assert optimizer is not None
+            assert all(group["lr"] == pytest.approx(1e-5)
+                       for group in optimizer.param_groups)
+        assert resumed.batch_size == 32
+        assert resumed.train_freq.frequency == 4
+        assert resumed.gradient_steps == 2
+        assert resumed.gamma == pytest.approx(0.995)
+        assert resumed.tau == pytest.approx(0.006)
+    finally:
+        env.close()
+
+
+def test_champion_directory_promotion_is_complete_and_retains_backup(tmp_path) -> None:
+    champion = tmp_path / "champion"
+    staging = tmp_path / "candidate"
+    champion.mkdir()
+    staging.mkdir()
+    for name in ("policy.zip", "replay.pkl", "metadata.json"):
+        (champion / name).write_text("old", encoding="utf-8")
+    (staging / "policy.zip").write_text("new", encoding="utf-8")
+    with pytest.raises(FileNotFoundError):
+        promote_directory(staging, champion, require_replay=True)
+    assert (champion / "policy.zip").read_text(encoding="utf-8") == "old"
+    for name in ("replay.pkl", "metadata.json"):
+        (staging / name).write_text("new", encoding="utf-8")
+    backup = promote_directory(staging, champion, require_replay=True)
+    assert backup is not None
+    assert (champion / "policy.zip").read_text(encoding="utf-8") == "new"
+    assert (backup / "policy.zip").read_text(encoding="utf-8") == "old"
+
+
+def test_champion_promotion_recovers_from_transient_windows_lock(tmp_path, monkeypatch) -> None:
+    import polybot.training.promotion as promotion
+
+    champion = tmp_path / "champion"
+    staging = tmp_path / "candidate"
+    champion.mkdir()
+    staging.mkdir()
+    for folder, text in ((champion, "old"), (staging, "new")):
+        for name in ("policy.zip", "replay.pkl", "metadata.json"):
+            (folder / name).write_text(text, encoding="utf-8")
+    replace_real = promotion.os.replace
+    attempts = 0
+
+    def transient_replace(source, destination):
+        nonlocal attempts
+        if source == staging.resolve() and destination == champion.resolve() and attempts == 0:
+            attempts += 1
+            raise PermissionError("simulated scanner lock")
+        return replace_real(source, destination)
+
+    monkeypatch.setattr(promotion.os, "replace", transient_replace)
+    monkeypatch.setattr(promotion.time, "sleep", lambda _: None)
+    backup = promote_directory(staging, champion, require_replay=True)
+    assert attempts == 1
+    assert backup is not None
+    assert (champion / "replay.pkl").read_text(encoding="utf-8") == "new"
+    assert (backup / "replay.pkl").read_text(encoding="utf-8") == "old"
+
+
+def test_pace_polish_resumes_champion_instead_of_latest(tmp_path) -> None:
+    cfg = configuration(tmp_path, "tqc")
+    TrainingRunner(cfg).run()
+    registry = ModelRegistry(cfg.output_root)
+    champion = registry.slot(cfg.track_name, "tqc", "champion")
+    latest = registry.slot(cfg.track_name, "tqc", "latest")
+    events = []
+    short = replace(cfg, timesteps=4, checkpoint_interval=0)
+    with pytest.raises(ValueError, match="champion, not latest"):
+        TrainingRunner(short).run(resume=latest, pace_polish=True)
+    TrainingRunner(short, events.append).run(pace_polish=True)
+    started = next(event for event in events if event["type"] == "started")
+    assert started["resume_source"] == str(champion)
+    assert started["rollback_on_regression"] is True
+    assert started["mode"] == "pace_polish"
+
+
+def test_speed_search_requires_confirmation_and_records_section_promotion(
+    tmp_path, monkeypatch,
+) -> None:
+    import polybot.training.speed_search as speed_search
+
+    config = configuration(tmp_path, "tqc")
+    TrainingRunner(config).run()
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "tqc", "champion")
+    original = registry.read_metadata(champion)
+    baseline = EvaluationResult(5, 1.0, 1.0, 1.0, 20.0, 20.0, 0, 0, 0)
+    registry.write_metadata(champion, replace(original, evaluation=baseline.to_dict()))
+    config.backend = "websocket"
+    config_path = tmp_path / "search.json"
+    config_path.write_text(json.dumps(config.to_dict()), encoding="utf-8")
+    policy_before = (champion / "policy.zip").read_bytes()
+    history_path = champion.parent / "pace-history.jsonl"
+    history_before = history_path.read_text(encoding="utf-8").splitlines()
+    faster = replace(baseline, median_lap_s=19.0, best_lap_s=19.0)
+    failed = replace(baseline, finish_rate=0.0, median_lap_s=None, best_lap_s=None)
+    evaluations = iter((faster, failed))
+    monkeypatch.setattr(speed_search, "evaluate_model", lambda *a, **kw: next(evaluations))
+    speed_search.search(config_path, tmp_path / "rejected.jsonl", 1, 18.0)
+    assert (champion / "policy.zip").read_bytes() == policy_before
+    assert history_path.read_text(encoding="utf-8").splitlines() == history_before
+
+    evaluations = iter((faster, faster))
+    speed_search.search(config_path, tmp_path / "accepted.jsonl", 1, 18.0, mode="section")
+    assert registry.read_metadata(champion).evaluation["median_lap_s"] == 19.0
+    details = json.loads((champion / "speed-search.json").read_text(encoding="utf-8"))
+    assert details["parameters"]["speed_window"] is not None
+    assert details["delta_s"] == pytest.approx(-1.0)
+    assert len(details["speed_bias_schedule"]) == 1
+    history = history_path.read_text(encoding="utf-8").splitlines()
+    assert len(history) == len(history_before) + 1
+    assert json.loads(history[-1])["source"] == "speed_search_section"
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend_for("tqc").action_adapter(config))
+    try:
+        restored = backend_for("tqc").load_model(champion / "policy.zip", env, "cpu", resume=True)
+        assert restored.speed_bias_schedule == details["speed_bias_schedule"]
+    finally:
+        env.close()
 
 
 @pytest.mark.parametrize("algorithm", ["ppo", "dqn", "tqc"])
@@ -277,6 +426,19 @@ def test_tqc_changed_rewards_require_and_refill_fresh_replay(tmp_path, monkeypat
     assert registry.read_metadata(champion).training_config["rewards"] == paced.to_dict()["rewards"]
     assert (champion / "replay.pkl").is_file()
     assert any(event["type"] == "champion_replay" for event in events)
+
+
+def test_old_tqc_reward_semantics_rejects_replay_even_with_same_coefficients(tmp_path) -> None:
+    config = configuration(tmp_path, "tqc")
+    TrainingRunner(config).run()
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "tqc", "champion")
+    metadata = registry.read_metadata(champion)
+    registry.write_metadata(champion, replace(metadata, reward_semantics=None))
+    with pytest.raises(ValueError, match="reward settings differ"):
+        TrainingRunner(replace(config, timesteps=4, checkpoint_interval=0)).run(
+            resume=champion, pace_polish=True
+        )
 
 
 def test_tqc_champion_anchor_caps_actor_action_drift() -> None:

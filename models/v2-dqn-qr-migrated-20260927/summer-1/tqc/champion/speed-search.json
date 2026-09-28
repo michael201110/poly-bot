@@ -1,26 +1,80 @@
 {
   "method": "live actor-output parameter search",
-  "trial": 59,
+  "trial": 7,
   "parameters": {
     "steer_bias": 0.0,
     "drive_bias": 0.0,
     "steer_gain": 1.0,
     "drive_gain": 1.0,
     "speed_window": [
+      0.55,
+      0.75,
+      0.005
+    ]
+  },
+  "previous_champion_median_lap_s": 24.990000000000002,
+  "candidate_median_lap_s": 24.987000000000002,
+  "delta_s": -0.0030000000000001137,
+  "speed_bias_schedule": [
+    [
+      0.55,
+      0.75,
+      0.1
+    ],
+    [
+      0.55,
+      0.75,
+      0.3
+    ],
+    [
+      0.75,
+      1.0,
+      0.1
+    ],
+    [
+      0.75,
+      1.0,
+      0.2
+    ],
+    [
+      0.75,
+      1.0,
+      0.3
+    ],
+    [
+      0.55,
+      0.75,
+      0.12341498361820787
+    ],
+    [
+      0.5,
+      1.0,
+      -0.02795652212638885
+    ],
+    [
       0.75,
       1.0,
       0.09461693969700091
+    ],
+    [
+      0.55,
+      0.75,
+      0.005
     ]
-  },
+  ],
   "evaluation": {
     "episodes": 5,
     "finish_rate": 1.0,
     "median_progress": 1.0,
     "mean_progress": 1.0,
-    "best_lap_s": 24.990000000000002,
-    "median_lap_s": 24.990000000000002,
+    "best_lap_s": 24.987000000000002,
+    "median_lap_s": 24.987000000000002,
     "crash_rate": 0.0,
     "off_track_rate": 0.0,
-    "stall_rate": 0.0
+    "stall_rate": 0.0,
+    "airborne_time_s": 5.820000000000004,
+    "air_brake_time_s": 0.002,
+    "air_brake_fraction": 0.00034364261168384855,
+    "air_brake_reward": 0.004
   }
 }

@@ -196,6 +196,16 @@ class TQCBackend(AlgorithmBackend):
             raise RuntimeError("TQC resume requires a replay buffer")
         model.learning_rate = p.learning_rate
         model.lr_schedule = ConstantSchedule(p.learning_rate)
+        # Loading restores the optimizer state, including its old param-group LR.
+        # Apply the new rate before the first resumed gradient step as well as
+        # through the schedule used by subsequent SB3 updates.
+        for optimizer in (
+            model.actor.optimizer, model.critic.optimizer,
+            getattr(model, "ent_coef_optimizer", None),
+        ):
+            if optimizer is not None:
+                for group in optimizer.param_groups:
+                    group["lr"] = p.learning_rate
         model.train_freq = TrainFreq(p.train_frequency, TrainFrequencyUnit.STEP)
         model.gradient_steps = p.gradient_steps
         model.batch_size = p.batch_size

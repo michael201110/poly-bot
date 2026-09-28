@@ -12,9 +12,15 @@ from polybot.control.actions import (
     DiscretePwmActionAdapter,
 )
 from polybot.environment.env import PolyTrackEnv
-from polybot.environment.rewards import COMPONENTS, RewardConfig
+from polybot.environment.rewards import (
+    COMPONENTS,
+    RewardConfig,
+    RewardContext,
+    _airborne_terms,
+    _driving_terms,
+)
 from polybot.mock import MockSimulatorTransport
-from polybot.protocol import Action
+from polybot.protocol import Action, Transition
 from polybot.training.reward_profiles import RewardProfileStore
 
 
@@ -91,8 +97,42 @@ def test_reward_components_have_unique_complete_terms_and_group_totals() -> None
         assert sum(terms.values()) == pytest.approx(reward)
         assert sum(groups.values()) == pytest.approx(reward)
         assert info["requested_control_duty"]["brake"] == pytest.approx(0.05)
-        assert terms["ground_brake"] == pytest.approx(-10 * 10 / 60 * 0.05)
+        assert terms["ground_brake"] == pytest.approx(
+            -10 * 10 / 60 * info["applied_control_fraction"]["brake"]
+        )
         assert info["applied_control_fraction"]["brake"] == pytest.approx(0.0, abs=0.1)
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize(
+    ("contacts", "brake", "air", "ground"),
+    [
+        ((0, 0, 0, 0), 1.0, 2.0, 0.0),
+        ((0, 0, 0, 0), 0.5, 1.0, 0.0),
+        ((0, 0, 0, 0), 0.0, 0.0, 0.0),
+        ((1, 0, 0, 0), 1.0, 0.0, -1.5),
+        ((1, 1, 1, 1), 1.0, 0.0, -1.5),
+    ],
+)
+def test_air_braking_and_ground_braking_are_exclusive(
+    contacts, brake, air, ground,
+) -> None:
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight")
+    try:
+        env.reset(seed=1)
+        assert env.latest_telemetry is not None
+        telemetry = replace(env.latest_telemetry, wheel_contacts=contacts)
+        action = ControlDemand(0.0, 0.0, brake)
+        context = RewardContext(
+            Transition("test", 60, 60, telemetry, (), {}), action,
+            ControlDemand(0.0, 0.0, 0.0),
+            replace(RewardConfig(), airborne_brake_bonus_per_s=2.0,
+                    ground_brake_penalty_per_s=-1.5),
+            1 / 60, 0.0, 0.0, 0.0,
+        )
+        assert _airborne_terms(context)["airborne_brake"] == pytest.approx(air)
+        assert _driving_terms(context)["ground_brake"] == pytest.approx(ground)
     finally:
         env.close()
 

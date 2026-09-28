@@ -14,6 +14,7 @@ from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 
 MODEL_SCHEMA = "polybot.model.v2"
 POLYBOT_VERSION = "2.2.0"
+REWARD_SEMANTICS = "executed-controls-v1"
 
 
 class IncompatibleModelError(ValueError):
@@ -58,6 +59,7 @@ class ModelMetadata:
     crashes: int
     evaluation: dict[str, Any] | None = None
     implementation: str | None = None
+    reward_semantics: str | None = None
     schema: str = MODEL_SCHEMA
     polybot_version: str = POLYBOT_VERSION
     git_commit: str = field(default_factory=git_commit)

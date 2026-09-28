@@ -6,13 +6,13 @@
   "device": "cuda",
   "seed": 20260927,
   "frame_skip": 30,
-  "timesteps": 1586483,
+  "timesteps": 25000,
   "max_episode_seconds": 60.0,
   "max_episode_steps": 30000,
   "lookahead_count": 12,
   "reward_profile": "Summer 1 - 20s pace",
   "reward_scale": 0.01,
-  "checkpoint_interval": 50000,
+  "checkpoint_interval": 25000,
   "output_root": "models\\v2-dqn-qr-migrated-20260927",
   "log_root": "logs",
   "curriculum": {
@@ -114,8 +114,8 @@
     "entropy": "auto_0.1",
     "warmup_forward_fraction": 0.8,
     "warmup_steering_std": 0.35,
-    "champion_action_drift_limit": 0.00005,
-    "champion_lap_tolerance_s": 0.2
+    "champion_action_drift_limit": 1e-05,
+    "champion_lap_tolerance_s": 0.15
   },
   "schema": "polybot.config.v2"
 }

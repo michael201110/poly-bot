@@ -21,15 +21,22 @@ class EvaluationResult:
     crash_rate: float
     off_track_rate: float
     stall_rate: float
+    airborne_time_s: float = 0.0
+    air_brake_time_s: float = 0.0
+    air_brake_fraction: float = 0.0
+    air_brake_reward: float = 0.0
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def rank(self) -> tuple[float, ...]:
+        reliable = self.finish_rate == 1.0 and self.median_progress == 1.0
         return (
             self.finish_rate,
             self.median_progress,
-            self.mean_progress,
+            -(self.median_lap_s if self.median_lap_s is not None else float("inf"))
+            if reliable else self.mean_progress,
+            self.mean_progress if reliable else
             -(self.median_lap_s if self.median_lap_s is not None else float("inf")),
             -self.crash_rate,
             -self.off_track_rate,
@@ -46,6 +53,7 @@ def evaluate_model(
     progress: list[float] = []
     laps: list[float] = []
     crashes = off_tracks = stalls = 0
+    airborne_time = air_brake_time = air_brake_reward = 0.0
     env = env_factory()
     model.policy.set_training_mode(False)
     try:
@@ -68,6 +76,10 @@ def evaluate_model(
             )
             off_tracks += int("off_track" in events)
             stalls += int("stalled" in events)
+            summary = info.get("air_brake_summary", {})
+            airborne_time += float(summary.get("airborne_time_s", 0.0))
+            air_brake_time += float(summary.get("air_brake_time_s", 0.0))
+            air_brake_reward += float(summary.get("air_brake_reward", 0.0))
     finally:
         env.close()
         model.policy.set_training_mode(True)
@@ -76,4 +88,7 @@ def evaluate_model(
         statistics.fmean(progress), min(laps) if laps else None,
         statistics.median(laps) if laps else None,
         crashes / episodes, off_tracks / episodes, stalls / episodes,
+        airborne_time / episodes, air_brake_time / episodes,
+        air_brake_time / airborne_time if airborne_time else 0.0,
+        air_brake_reward / episodes,
     )

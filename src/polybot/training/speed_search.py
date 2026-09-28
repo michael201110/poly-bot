@@ -10,7 +10,6 @@ from __future__ import annotations
 import argparse
 import json
 import random
-import shutil
 from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -23,6 +22,8 @@ from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import git_commit
 from polybot.training.config import TrainingConfig
 from polybot.training.evaluation import evaluate_model
+from polybot.training.pace_history import append_pace_history
+from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
 
 
@@ -64,14 +65,14 @@ def search(
     # Prefer changes that preserve the existing route; exploration broadens later.
     probes = [
         (steer, 0.0, 1.0, 1.0)
-        for steer in (-0.1, -0.05, -0.025, -0.01, 0.01, 0.025, 0.05, 0.1)
+        for steer in (-0.02, -0.01, -0.005, -0.002, 0.002, 0.005, 0.01, 0.02)
     ] + [
         (0.0, drive, 1.0, 1.0)
-        for drive in (-0.1, -0.05, -0.025, 0.025, 0.05, 0.1, 0.2, 0.3)
+        for drive in (-0.02, -0.01, -0.005, 0.005, 0.01, 0.02, 0.04)
     ] + [
-        (0.0, 0.0, gain, 1.0) for gain in (0.8, 0.9, 1.1, 1.2)
+        (0.0, 0.0, gain, 1.0) for gain in (0.98, 0.99, 1.01, 1.02)
     ] + [
-        (0.0, 0.0, 1.0, gain) for gain in (0.8, 0.9, 1.1, 1.2)
+        (0.0, 0.0, 1.0, gain) for gain in (0.98, 0.99, 1.01, 1.02)
     ]
     windows = (
         (0.34, 0.55), (0.55, 0.75), (0.75, 1.0),
@@ -80,7 +81,7 @@ def search(
     section_probes = [
         (start, end, amount)
         for start, end in windows
-        for amount in (0.1, 0.2, 0.3, -0.1)
+        for amount in (0.005, 0.01, -0.005, -0.01, 0.02, -0.02)
     ]
     emit(log_path, {"type": "started", "champion_lap_s": best_lap,
                     "target_s": target_s, "max_trials": max_trials, "mode": mode})
@@ -94,10 +95,10 @@ def search(
                 steer_bias, drive_bias, steer_gain, drive_gain = probes[trial - 1]
             else:
                 broad = trial % 7 == 0
-                steer_bias = rng.gauss(0, 0.08 if broad else 0.025)
-                drive_bias = rng.gauss(0, 0.2 if broad else 0.06)
-                steer_gain = max(0.6, min(1.4, rng.gauss(1, 0.12 if broad else 0.04)))
-                drive_gain = max(0.6, min(1.4, rng.gauss(1, 0.12 if broad else 0.04)))
+                steer_bias = rng.gauss(0, 0.02 if broad else 0.005)
+                drive_bias = rng.gauss(0, 0.05 if broad else 0.015)
+                steer_gain = max(0.95, min(1.05, rng.gauss(1, 0.03 if broad else 0.01)))
+                drive_gain = max(0.95, min(1.05, rng.gauss(1, 0.03 if broad else 0.01)))
         else:
             steer_bias = drive_bias = 0.0
             steer_gain = drive_gain = 1.0
@@ -105,7 +106,7 @@ def search(
                 section = section_probes[trial - 1]
             else:
                 start, end = rng.choice(windows)
-                section = (start, end, rng.gauss(0, 0.2 if trial % 7 == 0 else 0.08))
+                section = (start, end, rng.gauss(0, 0.03 if trial % 7 == 0 else 0.01))
 
         model.actor.load_state_dict(best_actor)
         model.speed_bias_schedule = deepcopy(best_schedule)
@@ -150,13 +151,23 @@ def search(
                 saved_at=datetime.now(UTC).isoformat(), git_commit=git_commit(),
             )
             runner.registry.write_metadata(staging, updated)
-            for filename in ("policy.zip", "replay.pkl", "metadata.json"):
-                shutil.copy2(staging / filename, champion_dir / filename)
-            (champion_dir / "speed-search.json").write_text(json.dumps({
+            (staging / "speed-search.json").write_text(json.dumps({
                 "method": "live actor-output parameter search",
                 "trial": trial, "parameters": parameters,
+                "previous_champion_median_lap_s": best_lap,
+                "candidate_median_lap_s": confirmed.median_lap_s,
+                "delta_s": confirmed.median_lap_s - best_lap,
+                "speed_bias_schedule": model.speed_bias_schedule,
                 "evaluation": confirmed.to_dict(),
             }, indent=2) + "\n", encoding="utf-8")
+            promote_directory(staging, champion_dir, require_replay=True)
+            append_pace_history(
+                champion_dir,
+                source=f"speed_search_{mode}", evaluation=confirmed, model=model,
+                reward_profile=config.reward_profile,
+                air_brake_bonus_per_s=config.rewards.airborne_brake_bonus_per_s,
+                learning_rate=config.tqc.learning_rate if config.tqc else None,
+            )
             champion = updated
             best_lap = float(confirmed.median_lap_s)
             best_actor = deepcopy(model.actor.state_dict())
