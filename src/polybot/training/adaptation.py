@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 from pathlib import Path
@@ -16,6 +17,63 @@ from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, evaluate_model
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import ScaledTrainingReward, TrainingRunner
+
+
+def _policy_digest(directory: Path) -> str:
+    digest = hashlib.sha256()
+    with (directory / "policy.zip").open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def candidate_diagnostics_pass(
+    candidate: EvaluationResult, reference: EvaluationResult, config: TrainingConfig,
+) -> tuple[bool, dict[str, Any]]:
+    """Gate adaptation candidates on reliability, closed-loop drift, and lap time."""
+    assert config.tqc is not None
+    lap_delta = (
+        candidate.median_lap_s - reference.median_lap_s
+        if candidate.median_lap_s is not None and reference.median_lap_s is not None
+        else None
+    )
+    allowed_lap_delta = min(max(config.tqc.champion_lap_tolerance_s, 0.001), 0.01)
+    limits = {
+        "position_deviation_limit_m": config.tqc.adaptation_max_position_deviation_m,
+        "progress_deviation_limit_m": config.tqc.adaptation_max_position_deviation_m,
+        "heading_deviation_limit_rad": config.tqc.adaptation_max_heading_deviation_rad,
+        "action_disagreement_limit": config.tqc.adaptation_max_action_disagreement,
+        "lap_delta_limit_s": allowed_lap_delta,
+    }
+    failures = []
+    if candidate.finish_rate != 1.0 or candidate.median_progress != 1.0:
+        failures.append("incomplete laps")
+    if candidate.crash_rate or candidate.off_track_rate or candidate.stall_rate:
+        failures.append("crash, off-track, or stall")
+    if candidate.max_position_deviation_m > limits["position_deviation_limit_m"]:
+        failures.append("position drift")
+    if candidate.max_progress_deviation_m > limits["progress_deviation_limit_m"]:
+        failures.append("progress drift")
+    if candidate.max_heading_deviation_rad > limits["heading_deviation_limit_rad"]:
+        failures.append("heading drift")
+    if max(candidate.max_steering_disagreement, candidate.max_longitudinal_disagreement) > (
+        limits["action_disagreement_limit"]
+    ):
+        failures.append("action disagreement")
+    if lap_delta is None or lap_delta > allowed_lap_delta:
+        failures.append("lap-time regression")
+    diagnostics = {
+        **limits,
+        "lap_delta_s": lap_delta,
+        "max_position_deviation_m": candidate.max_position_deviation_m,
+        "max_progress_deviation_m": candidate.max_progress_deviation_m,
+        "max_heading_deviation_rad": candidate.max_heading_deviation_rad,
+        "max_steering_disagreement": candidate.max_steering_disagreement,
+        "max_longitudinal_disagreement": candidate.max_longitudinal_disagreement,
+        "passed": not failures,
+        "rejection_reasons": failures,
+    }
+    return not failures, diagnostics
 
 
 def run_adaptation(
@@ -65,7 +123,7 @@ def run_adaptation(
                     group["lr"] = rate
         return model
 
-    def save(path: Path, required: bool, state: str) -> None:
+    def save(path: Path, required: bool, state: str) -> Path | None:
         runner.model.critic_adaptation_required = required
         runner.model.adaptation_stage = state
         staging = path.parent / f".{path.name}-staging-{uuid4().hex}"
@@ -75,12 +133,15 @@ def run_adaptation(
             old_search = champion / "speed-search.json"
             if old_search.is_file():
                 shutil.copy2(old_search, staging / old_search.name)
-        if path.exists():
-            shutil.rmtree(path)
-        promote_directory(staging, path, require_replay=True)
+        return promote_directory(staging, path, require_replay=True)
 
     def collect() -> None:
         metadata = runner.registry.read_metadata(champion)
+        if metadata.evaluation is None:
+            raise ValueError("local replay expansion requires a fully evaluated champion")
+        source_reference = EvaluationResult(**metadata.evaluation)
+        source_digest = _policy_digest(champion)
+        reference = load(champion, replay=False)
         runner.model = load(champion, replay=False)
         runner.model.critic_adaptation_required = True
         runner.model.adaptation_stage = "replay_expansion"
@@ -98,14 +159,26 @@ def run_adaptation(
             raise RuntimeError("replay expansion collected no local action perturbations")
         # The trainer owns a live websocket listener; close it before opening the
         # independent deterministic evaluation listener on the same local port.
-        save(work, required=True, state="replay_expanded")
         env.close()
         evaluation = evaluate_model(
             runner.model, runner._environment, episodes=config.evaluation.episodes,
-            seed=config.seed + 2_000_000,
+            seed=config.seed + 2_000_000, reference_model=reference,
         )
         runner.last_evaluation = evaluation
+        safe, diagnostics = candidate_diagnostics_pass(evaluation, source_reference, config)
+        # Candidate diagnostics compare closed-loop behavior to a fresh deterministic
+        # run of the source champion, not to critic or replay-derived estimates.
+        if not safe:
+            emit({"type": "adaptation_replay_rejected", **diagnostics,
+                  **evaluation.to_dict()})
+            raise RuntimeError("replay-expanded checkpoint failed closed-loop validation")
         save(work, required=True, state="replay_expanded")
+        source_path = work.parent / "working-source.json"
+        source_path.write_text(json.dumps({
+            "source_policy_sha256": source_digest,
+            "source_saved_at": metadata.saved_at,
+            "replay_expansion_evaluation": evaluation.to_dict(),
+        }, indent=2) + "\n", encoding="utf-8")
         emit({"type": "adaptation_stage", "stage": "replay_expansion",
               "transitions_collected": cfg.adaptation_replay_steps,
               "replay_size": runner.model.replay_buffer.size(),
@@ -113,14 +186,21 @@ def run_adaptation(
               "action_noise_probability": cfg.adaptation_noise_probability,
               "mean_action_deviation": mean_action_deviation,
               **evaluation.to_dict()})
-        if evaluation.finish_rate < 1.0:
-            raise RuntimeError("replay-expanded champion did not pass deterministic lap validation")
         emit({"type": "adaptation_source", "champion_metadata": metadata.adaptation_stage})
         reopen_training_env()
 
     def critics() -> None:
         if not (work / "metadata.json").is_file():
             raise FileNotFoundError("collect local champion replay before critic adaptation")
+        work_metadata = runner.registry.read_metadata(work)
+        source_path = work.parent / "working-source.json"
+        if work_metadata.adaptation_stage != "replay_expanded" or not source_path.is_file():
+            raise RuntimeError("critic adaptation requires a validated replay-expansion checkpoint")
+        source = json.loads(source_path.read_text(encoding="utf-8"))
+        if source.get("source_policy_sha256") != _policy_digest(champion):
+            raise RuntimeError("champion changed since replay expansion; collect fresh local replay")
+        reference_result = EvaluationResult(**source["replay_expansion_evaluation"])
+        reference_model = load(work, replay=False)
         runner.model = load(work, replay=True)
         runner.model.critic_adaptation_required = True
         runner.model._adaptation_mode = "critic_only"
@@ -137,19 +217,23 @@ def run_adaptation(
         runner.model._adaptation_mode = None
         runner.model.critic_adaptation_required = False
         runner.model.adaptation_stage = "critics_adapted"
-        save(work, required=False, state="critics_adapted")
         env.close()
         evaluation = evaluate_model(
             runner.model, runner._environment, episodes=config.evaluation.episodes,
-            seed=config.seed + 2_000_000,
+            seed=config.seed + 2_000_000, reference_model=reference_model,
         )
         runner.last_evaluation = evaluation
-        emit({"type": "adaptation_critic_validation", **evaluation.to_dict()})
-        if evaluation.finish_rate < 1.0 or evaluation.median_lap_s is None:
-            raise RuntimeError("critic-adapted checkpoint failed deterministic validation; champion retained")
-        save(champion, required=False, state="critics_adapted")
+        safe, diagnostics = candidate_diagnostics_pass(evaluation, reference_result, config)
+        emit({"type": "adaptation_critic_validation", **diagnostics, **evaluation.to_dict()})
+        if not safe:
+            emit({"type": "adaptation_critic_rejected", **diagnostics})
+            raise RuntimeError("critic-adapted candidate rejected; champion and replay-expansion checkpoint retained")
+        save(work, required=False, state="critics_adapted")
+        backup = save(champion, required=False, state="critics_adapted")
+        source_path.unlink(missing_ok=True)
         emit({"type": "adaptation_stage", "stage": "critic_adaptation",
               "updates": cfg.critic_adaptation_updates,
+              "champion_backup": str(backup) if backup else None,
               **runner.model._adaptation_diagnostics})
         reopen_training_env()
 
@@ -196,16 +280,13 @@ def run_adaptation(
             seed=config.seed + 3_000_000, reference_model=reference,
         )
         runner.last_evaluation = result
+        if metadata.evaluation is None:
+            raise ValueError("actor candidate diagnostics require a champion evaluation")
+        reference_result = EvaluationResult(**metadata.evaluation)
+        safe, diagnostics = candidate_diagnostics_pass(result, reference_result, config)
         safe = (
-            result.finish_rate == 1.0 and result.median_progress == 1.0
-            and result.crash_rate == 0 and result.off_track_rate == 0 and result.stall_rate == 0
-            and result.max_position_deviation_m <= cfg.adaptation_max_position_deviation_m
-            and result.max_heading_deviation_rad <= cfg.adaptation_max_heading_deviation_rad
-            and result.max_steering_disagreement <= cfg.adaptation_max_action_disagreement
-            and result.max_longitudinal_disagreement <= cfg.adaptation_max_action_disagreement
-            and result.median_lap_s is not None and metadata.evaluation is not None
-            and metadata.evaluation.get("median_lap_s") is not None
-            and result.median_lap_s < float(metadata.evaluation["median_lap_s"])
+            safe and result.median_lap_s is not None and reference_result.median_lap_s is not None
+            and result.median_lap_s < reference_result.median_lap_s
         )
         if safe:
             save(champion, required=False, state="actor_polished")
@@ -218,6 +299,7 @@ def run_adaptation(
             save(champion, required=False, state=metadata.adaptation_stage or "critics_adapted")
             emit({"type": "adaptation_polish_rejected", "reason": "unsafe or no confirmed speed gain",
                   "rollback_count": runner.model.adaptation_rollback_count,
+                  **diagnostics,
                   **result.to_dict()})
 
     try:

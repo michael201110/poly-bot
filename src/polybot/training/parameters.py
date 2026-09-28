@@ -131,10 +131,11 @@ TQC_INFO = _info("TQC", {
         "Gaussian throttle/brake perturbation in normalized action units during replay expansion."
     ),
     "adaptation_noise_probability": (
-        "Chance of applying the small noise on a decision; sparse noise limits closed-loop drift."
+        "Chance of local action noise at each decision; the tuned profile uses 0.01% "
+        "plus a forced sample every 10,000 decisions."
     ),
-    "critic_adaptation_updates": "Number of critic-only replay updates before actor polishing becomes available.",
-    "actor_polish_block_steps": "Short environment-step block between closed-loop actor evaluations.",
+    "critic_adaptation_updates": "Number of critic-only replay updates in the explicit critic adaptation stage.",
+    "actor_polish_block_steps": "Short environment-step budget for optional experimental actor-gradient polishing.",
     "adaptation_max_position_deviation_m": (
         "Maximum candidate-to-reference position deviation before actor polish is rejected."
     ),

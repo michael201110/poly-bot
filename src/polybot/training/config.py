@@ -113,7 +113,7 @@ class TQCConfig:
     adaptation_replay_steps: int = 25_000
     adaptation_steering_noise_std: float = 0.01
     adaptation_longitudinal_noise_std: float = 0.01
-    adaptation_noise_probability: float = 0.01
+    adaptation_noise_probability: float = 0.0001
     critic_adaptation_updates: int = 5_000
     actor_polish_block_steps: int = 1_000
     adaptation_max_position_deviation_m: float = 5.0

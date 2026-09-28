@@ -177,6 +177,7 @@ class PolyBotWindow(QWidget):
         self.worker: threading.Thread | None = None
         self.speed_search_process: QProcess | None = None
         self.adaptation_process: QProcess | None = None
+        self.adaptation_stdout_buffer = ""
         self.wr_search_process: QProcess | None = None
         self.speed_search_stop_file: Path | None = None
         self.wr_search_stop_file: Path | None = None
@@ -755,7 +756,12 @@ class PolyBotWindow(QWidget):
         forms = {"ppo": self.ppo_form, "dqn": self.dqn_form, "tqc": self.tqc_form}
         types = {"ppo": PPOConfig, "dqn": DQNConfig, "tqc": TQCConfig}
         algorithm = self.algorithm.currentText()
-        return types[algorithm](**forms[algorithm].values())
+        values = forms[algorithm].values()
+        if algorithm == "tqc":
+            for name in ("actor_learning_rate", "critic_learning_rate"):
+                if values[name] is not None:
+                    values[name] = float(values[name])
+        return types[algorithm](**values)
 
     def _save_preset(self) -> None:
         name, ok = QInputDialog.getText(self, "Save preset", "Preset name")
@@ -1049,6 +1055,9 @@ class PolyBotWindow(QWidget):
         if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
             self._error("Stop speed search before champion adaptation.")
             return
+        if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
+            self._error("Stop WR pace search before champion adaptation.")
+            return
         try:
             cfg = self.configuration()
             if self._external_speed_search_running(cfg):
@@ -1065,6 +1074,7 @@ class PolyBotWindow(QWidget):
             process.readyReadStandardError.connect(self._adaptation_error)
             process.finished.connect(self._adaptation_finished)
             self.adaptation_process = process
+            self.adaptation_stdout_buffer = ""
             process.start()
             if not process.waitForStarted(5000):
                 raise RuntimeError("Could not start the champion adaptation process")
@@ -1077,7 +1087,12 @@ class PolyBotWindow(QWidget):
         if self.adaptation_process is None:
             return
         data = bytes(self.adaptation_process.readAllStandardOutput()).decode("utf-8", errors="replace")
-        for line in data.splitlines():
+        self.adaptation_stdout_buffer += data
+        while "\n" in self.adaptation_stdout_buffer:
+            line, self.adaptation_stdout_buffer = self.adaptation_stdout_buffer.split("\n", 1)
+            line = line.strip()
+            if not line:
+                continue
             try:
                 event = json.loads(line)
                 if event.get("type") == "adaptation_critic_progress":
@@ -1100,6 +1115,9 @@ class PolyBotWindow(QWidget):
     def _adaptation_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
         self._adaptation_output()
         self._adaptation_error()
+        if self.adaptation_stdout_buffer.strip():
+            self.log.append(self.adaptation_stdout_buffer.strip())
+            self.adaptation_stdout_buffer = ""
         self.log.append("Champion adaptation finished." if exit_code == 0
                         else f"Champion adaptation failed (exit {exit_code}).")
         self.adaptation_process = None
@@ -1405,6 +1423,10 @@ class PolyBotWindow(QWidget):
         summary = format_event(event)
         if summary:
             self.log.append(summary)
+        if kind == "champion" and event.get("critic_adaptation_required"):
+            self.log.append(
+                "Speed candidate promoted. Run Tuned champion adaptation before resuming TQC gradients."
+            )
 
     def _poll_speed_search_log(self) -> None:
         if self.worker is not None and self.worker.is_alive():

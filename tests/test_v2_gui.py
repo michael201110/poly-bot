@@ -5,6 +5,7 @@ import os
 from dataclasses import fields
 
 import pytest
+from PySide6.QtWidgets import QPushButton
 
 from polybot.gui.events import format_event
 from polybot.gui.log_viewer import LiveLogWindow
@@ -95,6 +96,20 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert "tau" not in window.dqn_form.widgets
     assert window.configuration().dqn is not None
     assert window.configuration().ppo is None and window.configuration().tqc is None
+
+
+def test_adaptation_gui_preset_and_explicit_stage_controls(window) -> None:
+    window._load_adaptation_preset()
+    config = window.configuration()
+    assert config.algorithm == "tqc"
+    assert config.tqc.actor_learning_rate == pytest.approx(1e-6)
+    assert config.tqc.critic_learning_rate == pytest.approx(5e-5)
+    assert config.tqc.adaptation_noise_probability == pytest.approx(0.0001)
+    labels = {button.text() for button in window.findChildren(QPushButton)}
+    assert "Collect local replay" in labels
+    assert "Adapt critics" in labels
+    assert "Experimental actor-gradient polish" in labels
+    assert "Run full cycle" in labels
 
 
 def test_gui_exact_config_roundtrip_and_presets(window) -> None:

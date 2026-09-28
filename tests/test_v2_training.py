@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -14,6 +15,7 @@ from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import IncompatibleModelError, ModelRegistry
 from polybot.protocol import Action
+from polybot.training.adaptation import candidate_diagnostics_pass
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
@@ -23,6 +25,7 @@ from polybot.training.config import (
     TQCConfig,
     TrainingConfig,
 )
+from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, evaluate_model
 from polybot.training.lap_analysis import discover_airborne_regions, sector_delta_map
 from polybot.training.promotion import promote_directory
@@ -302,6 +305,9 @@ def test_speed_search_requires_confirmation_and_records_section_promotion(
     assert registry.read_metadata(champion).evaluation["median_lap_s"] == 19.0
     details = json.loads((champion / "speed-search.json").read_text(encoding="utf-8"))
     assert ModelRegistry(config.output_root).read_metadata(champion).critic_adaptation_required
+    accepted_events = [json.loads(line) for line in (tmp_path / "accepted.jsonl").read_text().splitlines()]
+    assert any(event.get("critic_adaptation_required") is True
+               for event in accepted_events if event["type"] == "champion")
     assert details["parameters"]["speed_window"] is not None
     assert details["delta_s"] == pytest.approx(-1.0)
     assert len(details["speed_bias_schedule"]) == 1
@@ -556,8 +562,140 @@ def test_tqc_independent_actor_and_critic_learning_rates() -> None:
         model = backend_for("tqc").create_model(config, env, "cpu")
         assert model.actor.optimizer.param_groups[0]["lr"] == pytest.approx(1e-6)
         assert model.critic.optimizer.param_groups[0]["lr"] == pytest.approx(5e-5)
+        model._logger = Mock()
+        model._update_learning_rate([
+            model.actor.optimizer, model.critic.optimizer, model.ent_coef_optimizer,
+        ])
+        assert model.actor.optimizer.param_groups[0]["lr"] == pytest.approx(1e-6)
+        assert model.critic.optimizer.param_groups[0]["lr"] == pytest.approx(5e-5)
+        assert model.ent_coef_optimizer.param_groups[0]["lr"] == pytest.approx(1e-4)
     finally:
         env.close()
+
+
+def test_adaptation_candidate_gate_checks_closed_loop_drift_and_speed() -> None:
+    config = TrainingConfig(algorithm="tqc", tqc=TQCConfig(architecture="tiny"))
+    reference = EvaluationResult(5, 1.0, 1.0, 1.0, 24.888, 24.888, 0.0, 0.0, 0.0)
+    acceptable = replace(
+        reference, best_lap_s=24.8885, median_lap_s=24.8885,
+        max_position_deviation_m=0.2, max_progress_deviation_m=0.1,
+        max_heading_deviation_rad=0.02,
+        max_steering_disagreement=0.001, max_longitudinal_disagreement=0.002,
+    )
+    passed, detail = candidate_diagnostics_pass(acceptable, reference, config)
+    assert passed and detail["lap_delta_s"] == pytest.approx(0.0005)
+    assert detail["rejection_reasons"] == []
+
+    unsafe = replace(acceptable, off_track_rate=0.2, max_position_deviation_m=6.0)
+    passed, detail = candidate_diagnostics_pass(unsafe, reference, config)
+    assert not passed
+    assert "crash, off-track, or stall" in detail["rejection_reasons"]
+    assert "position drift" in detail["rejection_reasons"]
+    slower = replace(acceptable, median_lap_s=24.90)
+    passed, detail = candidate_diagnostics_pass(slower, reference, config)
+    assert not passed and "lap-time regression" in detail["rejection_reasons"]
+
+
+def test_local_replay_expansion_noise_default_is_sparse() -> None:
+    assert TQCConfig().adaptation_noise_probability == pytest.approx(0.0001)
+
+
+def _write_mock_tqc_champion(config: TrainingConfig) -> tuple[TrainingRunner, EvaluationResult]:
+    runner = TrainingRunner(config)
+    runner.device = resolve_device("cpu", algorithm="tqc")
+    env = runner._environment()
+    try:
+        runner.model = runner.backend.create_model(config, env, "cpu")
+        runner.model.critic_adaptation_required = True
+        runner.model.policy_overlays = [{
+            "kind": "drive_bias", "start": 0.2, "end": 0.4,
+            "amount": 0.001, "taper": 0.01,
+        }]
+        result = EvaluationResult(5, 1.0, 1.0, 1.0, 10.0, 10.0, 0.0, 0.0, 0.0)
+        champion = runner.registry.slot(config.track_name, "tqc", "champion")
+        runner.backend.save_model(runner.model, champion, resume=True)
+        runner.registry.write_metadata(champion, runner._metadata(result))
+        return runner, result
+    finally:
+        env.close()
+
+
+def test_three_stage_adaptation_collects_then_critic_updates_atomically(
+    tmp_path, monkeypatch,
+) -> None:
+    import polybot.training.adaptation as adaptation
+
+    base = configuration(tmp_path, "tqc")
+    config = replace(
+        base, backend="mock", track_name="Mock straight", track_id="mock/straight",
+        evaluation=EvaluationConfig(16, 2),
+        tqc=replace(
+            base.tqc, batch_size=8, replay_capacity=128,
+            adaptation_replay_steps=16, adaptation_noise_probability=0.2,
+            critic_adaptation_updates=4,
+        ),
+    )
+    runner, result = _write_mock_tqc_champion(config)
+    champion = runner.registry.slot(config.track_name, "tqc", "champion")
+    original_actor = [parameter.detach().clone() for parameter in runner.model.actor.parameters()]
+    original_entropy = runner.model.log_ent_coef.detach().clone()
+    original_critic = [parameter.detach().clone() for parameter in runner.model.critic.parameters()]
+    monkeypatch.setattr(adaptation, "evaluate_model", lambda *args, **kwargs: result)
+    adaptation.run_adaptation(config, "full")
+
+    metadata = runner.registry.read_metadata(champion)
+    env = runner._environment()
+    try:
+        updated = runner.backend.load_model(champion / "policy.zip", env, "cpu", resume=True)
+    finally:
+        env.close()
+    assert metadata.adaptation_stage == "critics_adapted"
+    assert not metadata.critic_adaptation_required
+    assert metadata.policy_overlays == updated.policy_overlays
+    assert any(
+        not th.equal(old, new)
+        for old, new in zip(original_critic, updated.critic.parameters(), strict=True)
+    )
+    assert all(
+        th.equal(old, new)
+        for old, new in zip(original_actor, updated.actor.parameters(), strict=True)
+    )
+    assert th.equal(original_entropy, updated.log_ent_coef.detach())
+    assert updated.replay_buffer.size() == 16
+    assert (champion.parent / "champion-backup-1" / "metadata.json").is_file()
+    assert not (champion.parent / "adaptation" / "working-source.json").exists()
+
+
+def test_rejected_critic_candidate_keeps_champion_and_validated_replay_unchanged(
+    tmp_path, monkeypatch,
+) -> None:
+    import polybot.training.adaptation as adaptation
+
+    base = configuration(tmp_path, "tqc")
+    config = replace(
+        base, backend="mock", track_name="Mock straight", track_id="mock/straight",
+        evaluation=EvaluationConfig(16, 2),
+        tqc=replace(
+            base.tqc, batch_size=8, replay_capacity=128,
+            adaptation_replay_steps=16, adaptation_noise_probability=0.2,
+            critic_adaptation_updates=4,
+        ),
+    )
+    runner, result = _write_mock_tqc_champion(config)
+    champion = runner.registry.slot(config.track_name, "tqc", "champion")
+    original_policy = (champion / "policy.zip").read_bytes()
+    unsafe = replace(result, off_track_rate=0.5, max_position_deviation_m=10.0)
+    evaluations = iter((result, unsafe))
+    monkeypatch.setattr(adaptation, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    with pytest.raises(RuntimeError, match="candidate rejected"):
+        adaptation.run_adaptation(config, "full")
+
+    metadata = runner.registry.read_metadata(champion)
+    work = champion.parent / "adaptation" / "working"
+    assert (champion / "policy.zip").read_bytes() == original_policy
+    assert metadata.critic_adaptation_required
+    assert runner.registry.read_metadata(work).adaptation_stage == "replay_expanded"
+    assert (work.parent / "working-source.json").is_file()
 
 
 def test_closed_loop_evaluation_detects_compounding_drift_despite_small_action_delta() -> None:

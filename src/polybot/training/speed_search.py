@@ -175,7 +175,8 @@ def search(
             best_actor = deepcopy(model.actor.state_dict())
             best_schedule = deepcopy(model.speed_bias_schedule)
             emit(log_path, {"type": "champion", "trial": trial, "lap_s": best_lap,
-                            "parameters": parameters})
+                            "parameters": parameters,
+                            "critic_adaptation_required": True})
         except Exception as exc:
             emit(log_path, {"type": "error", "trial": trial, "error": repr(exc)})
             raise
