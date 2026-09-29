@@ -32,7 +32,7 @@ def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
         "main": "main.mod.js",
     }
     assert (MOD_ROOT / version / version_manifest["main"]).is_file()
-    runtime_version = version
+    runtime_version = "0.1.30"
     assert (MOD_ROOT / runtime_version / "worker_runtime.js").is_file()
     assert (MOD_ROOT / version / "worker_runtime.js").read_text(encoding="utf-8") == (
         MOD_ROOT / runtime_version / "worker_runtime.js"
@@ -199,6 +199,15 @@ def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
 
     assert '(0, l.GG)(this, Ue, null, "f"),' in source
     assert '(0, l.GG)(this, re, new st.A(), "f"),' in source
+
+
+def test_latest_mod_treats_equal_record_frames_as_rewinds() -> None:
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
+    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(
+        encoding="utf-8"
+    )
+
+    assert "e.frames <= this.getCarState().frames" in source
 
 
 def test_anchor_validator_rejects_missing_or_duplicate_tokens(tmp_path: Path) -> None:
