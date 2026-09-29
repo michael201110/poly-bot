@@ -621,12 +621,16 @@ def test_local_replay_expansion_noise_default_is_sparse() -> None:
     assert TQCConfig().adaptation_noise_probability == pytest.approx(0.0001)
 
 
-def _write_mock_tqc_champion(config: TrainingConfig) -> tuple[TrainingRunner, EvaluationResult]:
+def _write_mock_tqc_champion(
+    config: TrainingConfig, *, initial_replay_steps: int = 0,
+) -> tuple[TrainingRunner, EvaluationResult]:
     runner = TrainingRunner(config)
     runner.device = resolve_device("cpu", algorithm="tqc")
     env = runner._environment()
     try:
         runner.model = runner.backend.create_model(config, env, "cpu")
+        if initial_replay_steps:
+            runner.model.learn(initial_replay_steps, reset_num_timesteps=False, progress_bar=False)
         runner.model.critic_adaptation_required = True
         runner.model.policy_overlays = [{
             "kind": "drive_bias", "start": 0.2, "end": 0.4,
@@ -639,6 +643,15 @@ def _write_mock_tqc_champion(config: TrainingConfig) -> tuple[TrainingRunner, Ev
         return runner, result
     finally:
         env.close()
+
+
+def test_full_adaptation_requires_enough_new_replay_for_critic_batch(tmp_path) -> None:
+    import polybot.training.adaptation as adaptation
+
+    base = configuration(tmp_path, "tqc")
+    config = replace(base, tqc=replace(base.tqc, adaptation_replay_steps=7, batch_size=8))
+    with pytest.raises(ValueError, match="at least one critic batch"):
+        adaptation.run_adaptation(config, "full")
 
 
 def test_three_stage_adaptation_collects_then_critic_updates_atomically(
@@ -656,7 +669,7 @@ def test_three_stage_adaptation_collects_then_critic_updates_atomically(
             critic_adaptation_updates=4,
         ),
     )
-    runner, result = _write_mock_tqc_champion(config)
+    runner, result = _write_mock_tqc_champion(config, initial_replay_steps=8)
     champion = runner.registry.slot(config.track_name, "tqc", "champion")
     original_actor = [parameter.detach().clone() for parameter in runner.model.actor.parameters()]
     original_entropy = runner.model.log_ent_coef.detach().clone()
@@ -683,9 +696,11 @@ def test_three_stage_adaptation_collects_then_critic_updates_atomically(
         for old, new in zip(original_actor, updated.actor.parameters(), strict=True)
     )
     assert th.equal(original_entropy, updated.log_ent_coef.detach())
-    assert updated.replay_buffer.size() == 16
+    assert updated.replay_buffer.size() == 24
     assert (champion.parent / "champion-backup-1" / "metadata.json").is_file()
     assert not (champion.parent / "adaptation" / "working" / "working-source.json").exists()
+    history = [json.loads(line) for line in (champion.parent / "pace-history.jsonl").read_text().splitlines()]
+    assert history[-1]["source"] == "critic_adaptation"
     stages = [event.get("stage") for event in events if event.get("type") == "adaptation_stage"]
     assert stages == ["replay_expansion", "critic_adaptation", "candidate_promotion"]
 

@@ -24,7 +24,7 @@
     "backend": "websocket",
     "track_name": "Summer 1",
     "track_id": "current",
-    "device": "cuda",
+    "device": "cpu",
     "seed": 20260927,
     "frame_skip": 30,
     "timesteps": 25000,
@@ -47,7 +47,7 @@
     },
     "evaluation": {
       "interval_steps": 5000,
-      "episodes": 5
+      "episodes": 3
     },
     "rewards": {
       "progress_per_m": 3.0,
@@ -129,7 +129,7 @@
       "critic_learning_rate": 5e-05,
       "replay_capacity": 250000,
       "learning_starts": 20000,
-      "batch_size": 256,
+      "batch_size": 64,
       "gamma": 0.995,
       "tau": 0.005,
       "train_frequency": 4,
@@ -139,11 +139,11 @@
       "warmup_steering_std": 0.35,
       "champion_action_drift_limit": 1e-05,
       "champion_lap_tolerance_s": 0.15,
-      "adaptation_replay_steps": 25000,
-      "adaptation_steering_noise_std": 0.01,
-      "adaptation_longitudinal_noise_std": 0.01,
-      "adaptation_noise_probability": 0.0001,
-      "critic_adaptation_updates": 5000,
+      "adaptation_replay_steps": 128,
+      "adaptation_steering_noise_std": 0.001,
+      "adaptation_longitudinal_noise_std": 0.001,
+      "adaptation_noise_probability": 0.02,
+      "critic_adaptation_updates": 4,
       "actor_polish_block_steps": 4,
       "adaptation_max_position_deviation_m": 5,
       "adaptation_max_heading_deviation_rad": 0.75,
@@ -151,15 +151,15 @@
     },
     "schema": "polybot.config.v2"
   },
-  "training_timesteps": 251679,
+  "training_timesteps": 251807,
   "simulator_ticks": 0,
-  "wall_seconds": 549.4566368000087,
+  "wall_seconds": 186.91544630000135,
   "seed": 20260927,
-  "device": "cuda",
+  "device": "cpu",
   "finishes": 0,
   "crashes": 0,
   "evaluation": {
-    "episodes": 5,
+    "episodes": 3,
     "finish_rate": 1.0,
     "median_progress": 1.0,
     "mean_progress": 1.0,
@@ -170,7 +170,7 @@
     "stall_rate": 0.0,
     "airborne_time_s": 5.700000000000003,
     "air_brake_time_s": 2.794999999999996,
-    "air_brake_fraction": 0.49035087719298154,
+    "air_brake_fraction": 0.4903508771929815,
     "air_brake_reward": 5.589999999999992,
     "mean_steering_disagreement": 0.0,
     "max_steering_disagreement": 0.0,
@@ -178,17 +178,17 @@
     "mean_longitudinal_disagreement": 0.0,
     "max_longitudinal_disagreement": 0.0,
     "p95_longitudinal_disagreement": 0.0,
-    "max_position_deviation_m": 0.0,
+    "max_position_deviation_m": 1.8208929118217998,
     "median_position_deviation_m": 0.0,
-    "max_heading_deviation_rad": 0.0,
-    "max_speed_deviation_mps": 0.0,
+    "max_heading_deviation_rad": 0.039022118552007684,
+    "max_speed_deviation_mps": 1.182755845230268,
     "max_progress_deviation_m": 0.0,
-    "lap_time_delta_s": null
+    "lap_time_delta_s": 0.0
   },
   "implementation": null,
   "reward_semantics": "executed-controls-v1",
-  "critic_adaptation_required": true,
-  "adaptation_stage": "critic_adaptation_required",
+  "critic_adaptation_required": false,
+  "adaptation_stage": "critics_adapted",
   "adaptation_rollback_count": 1,
   "policy_overlays": [
     {
@@ -208,6 +208,6 @@
   ],
   "schema": "polybot.model.v2",
   "polybot_version": "2.2.0",
-  "git_commit": "ed8c5c3af6761e1924b11b67c2d5ecb7ef43ffe1",
-  "saved_at": "2026-09-29T05:30:01.811973+00:00"
+  "git_commit": "02fdda7e81382b4b22507589679235f208f17a09",
+  "saved_at": "2026-09-29T06:37:33.974256+00:00"
 }

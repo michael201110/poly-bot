@@ -16,6 +16,7 @@ import numpy as np
 from polybot.training.config import TrainingConfig
 from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, evaluate_model
+from polybot.training.pace_history import append_pace_history
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import ScaledTrainingReward, TrainingRunner
 
@@ -111,6 +112,10 @@ def run_adaptation(
         raise ValueError("champion adaptation requires full-track TQC")
     if stage not in {"collect", "validate", "critics", "promote", "polish", "full", "rollback"}:
         raise ValueError(f"unknown adaptation stage: {stage}")
+    if stage in {"collect", "full"} and config.tqc.adaptation_replay_steps < config.tqc.batch_size:
+        raise ValueError(
+            "local replay expansion must collect at least one critic batch of transitions"
+        )
     runner = TrainingRunner(config, status=status)
     runner.device = resolve_device(config.device, algorithm="tqc")
     champion = runner.registry.slot(config.track_name, "tqc", "champion")
@@ -173,7 +178,10 @@ def run_adaptation(
         source_reference = EvaluationResult(**metadata.evaluation)
         source_digest = _policy_digest(champion)
         reference = load(champion, replay=False)
-        runner.model = load(champion, replay=False)
+        # Keep the champion's experience and add local transitions to that replay.
+        # A replay-free candidate would throw away useful history and leave critics
+        # trained on only the short expansion window.
+        runner.model = load(champion, replay=True)
         runner.model.critic_adaptation_required = True
         runner.model.adaptation_stage = "replay_expansion"
         runner.model._adaptation_mode = "replay_expansion"
@@ -298,6 +306,12 @@ def run_adaptation(
         runner.model.critic_adaptation_required = False
         runner.model.adaptation_stage = "critics_adapted"
         backup = save(champion, required=False, state="critics_adapted")
+        append_pace_history(
+            champion, source="critic_adaptation", evaluation=evaluation, model=runner.model,
+            reward_profile=config.reward_profile,
+            air_brake_bonus_per_s=config.rewards.airborne_brake_bonus_per_s,
+            learning_rate=cfg.critic_learning_rate or cfg.learning_rate,
+        )
         source_path.unlink(missing_ok=True)
         emit({"type": "adaptation_stage", "stage": "candidate_promotion",
               "champion_backup": str(backup) if backup else None,
