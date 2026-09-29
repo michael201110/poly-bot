@@ -28,7 +28,9 @@ STEERING_BIASES = (-0.001, 0.001, -0.002, 0.002, -0.005, 0.005, -0.01, 0.01)
 STEERING_GAINS = (0.998, 1.002, 0.995, 1.005)
 DRIVE_BIASES = (-0.002, 0.002, -0.005, 0.005, -0.01, 0.01, -0.02, 0.02)
 DRIVE_GAINS = (0.998, 1.002, 0.995, 1.005)
-AIR_BRAKE_DUTIES = (0.02, 0.05, 0.10, 0.15, 0.20)
+# ContinuousPwmControls interprets these values as pulse density. Small duties
+# mostly tap the brake; include sustained and fully held braking for air-search.
+AIR_BRAKE_DUTIES = (0.02, 0.05, 0.10, 0.20, 0.35, 0.50, 0.75, 1.0)
 
 
 def emit(history: Path, event: dict[str, Any]) -> None:

@@ -858,6 +858,14 @@ def test_wr_search_uses_small_coordinate_candidates_and_micro_confirmation() -> 
     assert stack == [independent, second]
 
 
+def test_air_brake_search_includes_sustained_and_held_control_duties() -> None:
+    region = {"start": 0.68, "end": 0.81, "duration_s": 2.97, "landed": 1.0}
+    candidates = _candidate_grid([(0.68, 0.81)], [region], family="air_brake")
+    assert [candidate["duty"] for candidate in candidates] == [
+        0.02, 0.05, 0.10, 0.20, 0.35, 0.50, 0.75, 1.0,
+    ]
+
+
 def test_tqc_policy_overlay_survives_checkpoint_save_and_reload(tmp_path) -> None:
     config = TrainingConfig(algorithm="tqc", device="cpu", tqc=TQCConfig(architecture="tiny"))
     backend = backend_for("tqc")
