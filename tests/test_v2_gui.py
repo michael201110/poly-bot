@@ -76,6 +76,11 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert not window.pace_polish_section.isHidden()
     assert not window.adaptation_section.isHidden()
     assert not window.wr_search_section.isHidden()
+    assert not window.section_optimizer_section.isHidden()
+    assert {"Start 1 hour", "Start 4 hours", "Run until stopped", "Resume saved search", "Pause and save",
+            "Stop safely", "Skip section", "Force refine"} <= {
+                button.text() for button in window.section_optimizer_section.findChildren(QPushButton)
+            }
     assert window.wr_target.value() == pytest.approx(22.262)
     window._load_wr_profile()
     assert window.wr_trials.value() == 12
@@ -85,6 +90,7 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert window.pace_polish_section.isHidden()
     assert window.adaptation_section.isHidden()
     assert window.wr_search_section.isHidden()
+    assert window.section_optimizer_section.isHidden()
     window.algorithm.setCurrentText("dqn")
     assert window.algorithm_stack.currentWidget() is window.dqn_form
     assert window.ppo_form.isHidden() and window.tqc_form.isHidden()

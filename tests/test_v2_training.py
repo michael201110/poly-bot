@@ -30,6 +30,7 @@ from polybot.training.evaluation import EvaluationResult, evaluate_model
 from polybot.training.lap_analysis import discover_airborne_regions, sector_delta_map
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
+from polybot.training.section_optimizer import section_windows, write_checkpoint
 from polybot.training.wr_search import (
     _candidate_grid,
     compose_overlay_stack,
@@ -876,6 +877,22 @@ def test_air_brake_search_includes_sustained_and_held_control_duties() -> None:
     assert candidates[0] == {
         "kind": "air_brake", "start": 0.0, "end": 1.0, "duty": 1.0, "taper": 0.003,
     }
+
+
+def test_section_optimizer_windows_refine_only_prioritized_regions(tmp_path) -> None:
+    coarse = section_windows(0, [])
+    assert len(coarse) == 10
+    assert coarse[0] == (0.0, 0.1) and coarse[-1] == (0.9, 1.0)
+    refined = section_windows(1, [
+        {"start": 0.5, "end": 0.6, "priority": 1},
+        {"start": 0.2, "end": 0.3, "priority": 3},
+    ])
+    assert refined == [(0.2, 0.25), (0.25, 0.3), (0.5, 0.55), (0.55, 0.6)]
+    state_path = tmp_path / "optimizer-state.json"
+    state = {"section_index": 3, "candidate_index": 7, "champion_hash": "abc"}
+    write_checkpoint(state_path, state)
+    assert json.loads(state_path.read_text(encoding="utf-8")) == state
+    assert list(tmp_path.glob("*.tmp")) == []
 
 
 def test_tqc_policy_overlay_survives_checkpoint_save_and_reload(tmp_path) -> None:

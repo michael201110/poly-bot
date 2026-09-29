@@ -179,6 +179,11 @@ class PolyBotWindow(QWidget):
         self.adaptation_process: QProcess | None = None
         self.adaptation_stdout_buffer = ""
         self.wr_search_process: QProcess | None = None
+        self.section_optimizer_process: QProcess | None = None
+        self.section_optimizer_stop_file: Path | None = None
+        self.section_optimizer_skip_file: Path | None = None
+        self.section_optimizer_refine_file: Path | None = None
+        self.section_optimizer_stdout = ""
         self.speed_search_stop_file: Path | None = None
         self.wr_search_stop_file: Path | None = None
         self.wr_stdout_buffer = ""
@@ -593,6 +598,36 @@ class PolyBotWindow(QWidget):
         self.wr_sector_table.setSortingEnabled(True)
         self.wr_sector_table.setMaximumHeight(190)
         wr_layout.addWidget(self.wr_sector_table)
+        self.section_optimizer_section = QWidget()
+        section_layout = QVBoxLayout(self.section_optimizer_section)
+        section_layout.addWidget(QLabel(
+            "Autonomous Section Optimizer · sequential 10% sweep, then promising-section refinement"
+        ))
+        section_actions = QHBoxLayout()
+        for label, hours in (("Start 1 hour", 1), ("Start 4 hours", 4), ("Run until stopped", None)):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, budget=hours: self._start_section_optimizer(budget))
+            section_actions.addWidget(button)
+        resume = QPushButton("Resume saved search")
+        resume.clicked.connect(lambda: self._start_section_optimizer(None))
+        section_actions.addWidget(resume)
+        pause = QPushButton("Pause and save")
+        pause.clicked.connect(self._stop_section_optimizer)
+        section_actions.addWidget(pause)
+        stop = QPushButton("Stop safely")
+        stop.clicked.connect(self._stop_section_optimizer)
+        section_actions.addWidget(stop)
+        skip = QPushButton("Skip section")
+        skip.clicked.connect(self._skip_optimizer_section)
+        section_actions.addWidget(skip)
+        refine = QPushButton("Force refine")
+        refine.clicked.connect(self._force_optimizer_refine)
+        section_actions.addWidget(refine)
+        section_layout.addLayout(section_actions)
+        self.section_optimizer_status = QLabel("No section optimizer run active. Progress resumes from saved state.")
+        self.section_optimizer_status.setWordWrap(True)
+        section_layout.addWidget(self.section_optimizer_status)
+        wr_layout.addWidget(self.section_optimizer_section)
         page.addWidget(self.wr_search_section)
         self.pace_polish_section = QWidget()
         polish_layout = QVBoxLayout(self.pace_polish_section)
@@ -688,6 +723,7 @@ class PolyBotWindow(QWidget):
         self.pace_polish_section.setVisible(enabled)
         self.adaptation_section.setVisible(enabled)
         self.wr_search_section.setVisible(enabled)
+        self.section_optimizer_section.setVisible(enabled)
         for name in self.general_advanced:
             self.general[name].setVisible(enabled)
             self.general_labels[name].setVisible(enabled)
@@ -1046,6 +1082,9 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _start_adaptation(self, stage: str) -> None:
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            self._error("Stop the section optimizer before champion adaptation.")
+            return
         if self.worker is not None and self.worker.is_alive():
             self._error("Stop gradient training before champion adaptation.")
             return
@@ -1123,6 +1162,9 @@ class PolyBotWindow(QWidget):
         self.adaptation_process = None
 
     def _start(self, resume: bool, *, best: bool = False, pace_polish: bool = False) -> None:
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            self._error("Section optimizer is using the simulator. Stop it before starting training.")
+            return
         if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
             self._error("WR pace search is using the simulator. Stop it before starting training.")
             return
@@ -1209,6 +1251,9 @@ class PolyBotWindow(QWidget):
         if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
             self._error("Stop the other live speed search before starting WR pace search.")
             return
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            self._error("Stop the section optimizer before starting WR pace search.")
+            return
         try:
             cfg = self.configuration()
             if cfg.algorithm != "tqc" or cfg.backend != "websocket":
@@ -1254,6 +1299,114 @@ class PolyBotWindow(QWidget):
             self.log_location.setText(f"WR search record: {champion.parent / 'wr-search-history.jsonl'}")
         except (ValueError, OSError, RuntimeError, FileNotFoundError) as exc:
             self._error(str(exc))
+
+    def _start_section_optimizer(self, hours: int | None) -> None:
+        if self.worker is not None and self.worker.is_alive():
+            self._error("Stop gradient training before starting the section optimizer.")
+            return
+        if any(process is not None and process.state() != QProcess.NotRunning for process in
+               (self.section_optimizer_process, self.wr_search_process, self.speed_search_process,
+                self.adaptation_process)):
+            self._error("Another live training or search process is using the simulator.")
+            return
+        try:
+            cfg = self.configuration()
+            if cfg.algorithm != "tqc" or cfg.backend != "websocket":
+                raise ValueError("Section optimization needs a live websocket TQC champion")
+            champion = ModelRegistry(cfg.output_root).slot(cfg.track_name, "tqc", "champion")
+            if not (champion / "metadata.json").is_file():
+                raise FileNotFoundError("No evaluated TQC champion is saved for this track")
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            cfg.log_root.mkdir(parents=True, exist_ok=True)
+            config_path = cfg.log_root / f"section-optimizer-config-{stamp}.json"
+            stop_path = cfg.log_root / f"section-optimizer-stop-{stamp}.txt"
+            skip_path = cfg.log_root / f"section-optimizer-skip-{stamp}.txt"
+            refine_path = cfg.log_root / f"section-optimizer-refine-{stamp}.txt"
+            config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
+            args = ["-m", "polybot.training.section_optimizer", "--config", str(config_path),
+                    "--target", str(self.wr_target.value()), "--stop-file", str(stop_path),
+                    "--skip-file", str(skip_path), "--refine-file", str(refine_path)]
+            if hours is not None:
+                args.extend(("--hours", str(hours)))
+            process = QProcess(self)
+            process.setProgram(sys.executable)
+            process.setArguments(args)
+            process.setWorkingDirectory(str(Path.cwd()))
+            process.readyReadStandardOutput.connect(self._section_optimizer_output)
+            process.readyReadStandardError.connect(self._section_optimizer_error)
+            process.finished.connect(self._section_optimizer_finished)
+            self.section_optimizer_process = process
+            self.section_optimizer_stop_file = stop_path
+            self.section_optimizer_skip_file = skip_path
+            self.section_optimizer_refine_file = refine_path
+            self.section_optimizer_stdout = ""
+            self.section_optimizer_status.setText("Starting; measuring a 10-lap deterministic timing floor…")
+            process.start()
+            if not process.waitForStarted(3000):
+                raise RuntimeError(process.errorString())
+            self.tabs.setCurrentIndex(self.tabs.count() - 1)
+            self.log_location.setText(f"Section search record: {champion.parent / 'section-search-history.jsonl'}")
+        except (ValueError, OSError, RuntimeError, FileNotFoundError) as exc:
+            self._error(str(exc))
+
+    def _stop_section_optimizer(self) -> None:
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            assert self.section_optimizer_stop_file is not None
+            self.section_optimizer_stop_file.write_text("stop\n", encoding="utf-8")
+            self.section_optimizer_status.setText("Stop requested; current atomic evaluation will finish safely.")
+
+    def _skip_optimizer_section(self) -> None:
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            assert self.section_optimizer_skip_file is not None
+            self.section_optimizer_skip_file.write_text("skip\n", encoding="utf-8")
+
+    def _force_optimizer_refine(self) -> None:
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            assert self.section_optimizer_refine_file is not None
+            self.section_optimizer_refine_file.write_text("refine\n", encoding="utf-8")
+
+    def _section_optimizer_output(self) -> None:
+        if self.section_optimizer_process is None:
+            return
+        self.section_optimizer_stdout += bytes(self.section_optimizer_process.readAllStandardOutput()).decode(
+            "utf-8", errors="replace"
+        )
+        while "\n" in self.section_optimizer_stdout:
+            line, self.section_optimizer_stdout = self.section_optimizer_stdout.split("\n", 1)
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            kind = event.get("type")
+            if kind in {"optimizer_started", "optimizer_resumed", "baseline_measured", "section_started",
+                        "trial", "champion_promoted", "refinement_started", "target_reached",
+                        "optimizer_stopped", "sweep_completed"}:
+                section = event.get("section", [])
+                window = f" · {section[0]:.0%}–{section[1]:.0%}" if len(section) == 2 else ""
+                trial = event.get("total_trials", "—")
+                lap = event.get("champion_lap_s", event.get("median_lap_s"))
+                lap_text = f"{lap:.3f}s" if isinstance(lap, (int, float)) else "—"
+                self.section_optimizer_status.setText(
+                    f"{kind.replace('_', ' ').title()}{window} · champion {lap_text} · trial {trial} · "
+                    f"runtime {event.get('runtime_seconds', 0):.0f}s"
+                )
+                if kind in {"trial", "champion_promoted", "target_reached", "optimizer_stopped"}:
+                    self.log.append(f"Section optimizer: {kind}{window} · champion {lap_text}")
+
+    def _section_optimizer_error(self) -> None:
+        if self.section_optimizer_process is not None:
+            error = bytes(self.section_optimizer_process.readAllStandardError()).decode("utf-8", errors="replace")
+            if error.strip():
+                self.log.append(f"Section optimizer: {error[-1200:]}")
+
+    def _section_optimizer_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
+        self._section_optimizer_output()
+        self._section_optimizer_error()
+        if exit_code:
+            self.section_optimizer_status.setText(
+                f"Section optimizer exited with code {exit_code}; checkpoint is saved."
+            )
+        self.section_optimizer_process = None
 
     def _stop_wr_search(self) -> None:
         if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
@@ -1351,6 +1504,9 @@ class PolyBotWindow(QWidget):
         self.wr_search_process = None
 
     def _start_speed_search(self) -> None:
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            self._error("Stop the section optimizer before starting speed search.")
+            return
         if self.worker is not None and self.worker.is_alive():
             self._error("Stop gradient training before starting speed search.")
             return

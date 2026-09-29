@@ -144,16 +144,16 @@
       "adaptation_longitudinal_noise_std": 0.01,
       "adaptation_noise_probability": 0.0001,
       "critic_adaptation_updates": 5000,
-      "actor_polish_block_steps": 1000,
+      "actor_polish_block_steps": 4,
       "adaptation_max_position_deviation_m": 5,
       "adaptation_max_heading_deviation_rad": 0.75,
       "adaptation_max_action_disagreement": 0.05
     },
     "schema": "polybot.config.v2"
   },
-  "training_timesteps": 226679,
+  "training_timesteps": 251679,
   "simulator_ticks": 0,
-  "wall_seconds": 119.30050110000593,
+  "wall_seconds": 549.4566368000087,
   "seed": 20260927,
   "device": "cuda",
   "finishes": 0,
@@ -163,15 +163,15 @@
     "finish_rate": 1.0,
     "median_progress": 1.0,
     "mean_progress": 1.0,
-    "best_lap_s": 24.888,
-    "median_lap_s": 24.888,
+    "best_lap_s": 24.503,
+    "median_lap_s": 24.503,
     "crash_rate": 0.0,
     "off_track_rate": 0.0,
     "stall_rate": 0.0,
-    "airborne_time_s": 5.670000000000003,
-    "air_brake_time_s": 0.05900000000000004,
-    "air_brake_fraction": 0.010405643738977075,
-    "air_brake_reward": 0.11800000000000008,
+    "airborne_time_s": 5.700000000000003,
+    "air_brake_time_s": 2.794999999999996,
+    "air_brake_fraction": 0.49035087719298154,
+    "air_brake_reward": 5.589999999999992,
     "mean_steering_disagreement": 0.0,
     "max_steering_disagreement": 0.0,
     "p95_steering_disagreement": 0.0,
@@ -197,10 +197,17 @@
       "end": 0.8125708765756886,
       "duty": 0.02,
       "taper": 0.003
+    },
+    {
+      "kind": "air_brake",
+      "start": 0.6885754790660777,
+      "end": 0.8117268237040133,
+      "duty": 1.0,
+      "taper": 0.003
     }
   ],
   "schema": "polybot.model.v2",
   "polybot_version": "2.2.0",
-  "git_commit": "21b363c",
-  "saved_at": "2026-09-28T21:08:11.790964+00:00"
+  "git_commit": "ed8c5c3af6761e1924b11b67c2d5ecb7ef43ffe1",
+  "saved_at": "2026-09-29T05:30:01.811973+00:00"
 }
