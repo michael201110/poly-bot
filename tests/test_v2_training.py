@@ -867,6 +867,15 @@ def test_air_brake_search_includes_sustained_and_held_control_duties() -> None:
     previous = {"kind": "air_brake", "start": 0.6885, "end": 0.8126, "duty": 0.02}
     refined = {"kind": "air_brake", "start": 0.6886, "end": 0.8117, "duty": 0.2}
     assert compose_overlay_stack([previous], refined) == [refined]
+    global_hold = {"kind": "air_brake", "start": 0.0, "end": 1.0, "duty": 1.0}
+    assert compose_overlay_stack([previous, refined], global_hold) == [global_hold]
+    candidates = _candidate_grid(
+        [(0.2, 0.25), (0.7, 0.75)], [region], family="air_brake",
+        include_global_air_brake=True,
+    )
+    assert candidates[0] == {
+        "kind": "air_brake", "start": 0.0, "end": 1.0, "duty": 1.0, "taper": 0.003,
+    }
 
 
 def test_tqc_policy_overlay_survives_checkpoint_save_and_reload(tmp_path) -> None:

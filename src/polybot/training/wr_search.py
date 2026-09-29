@@ -157,7 +157,10 @@ def search(
         search_airborne = [
             item for item in airborne if item["start"] < region[1] and item["end"] > region[0]
         ]
-    candidates = _candidate_grid(regions, search_airborne, family=family)
+    candidates = _candidate_grid(
+        regions, search_airborne, family=family,
+        include_global_air_brake=family == "air_brake" and region is None,
+    )
     candidates = candidates[:max_trials]
     accepted = 0
     trial_id = 0
@@ -304,7 +307,7 @@ def _progress(sample: dict[str, Any]) -> float:
 
 def _candidate_grid(
     regions: list[tuple[float, float]], airborne: list[dict[str, float]],
-    *, family: str = "all",
+    *, family: str = "all", include_global_air_brake: bool = False,
 ) -> list[dict[str, Any]]:
     kinds = (
         ("steer_bias", STEERING_BIASES), ("steer_gain", STEERING_GAINS),
@@ -323,12 +326,21 @@ def _candidate_grid(
                 result.append({"kind": kind, "start": start, "end": end,
                                "amount": value, "taper": 0.01})
     landed_regions = [region for region in airborne if region.get("landed", 0) >= 1]
+    if landed_regions and family == "air_brake" and include_global_air_brake:
+        # Test a genuine held-air-brake policy across every flight first. The
+        # action layer is still gated by all-four-wheel airborne telemetry.
+        result.append({"kind": "air_brake", "start": 0.0, "end": 1.0,
+                       "duty": 1.0, "taper": 0.003})
     if landed_regions and family in {"all", "air_brake"}:
-        longest = max(landed_regions, key=lambda region: region["duration_s"])
-        for duty in AIR_BRAKE_DUTIES:
-            result.append({"kind": "air_brake", "start": longest["start"],
-                           "end": longest["end"], "duty": duty,
-                           "taper": min(0.003, (longest["end"] - longest["start"]) / 2)})
+        selected_regions = (
+            landed_regions if family == "air_brake" and len(regions) > 1
+            else [max(landed_regions, key=lambda item: item["duration_s"])]
+        )
+        for selected in selected_regions:
+            for duty in AIR_BRAKE_DUTIES:
+                result.append({"kind": "air_brake", "start": selected["start"],
+                               "end": selected["end"], "duty": duty,
+                               "taper": min(0.003, (selected["end"] - selected["start"]) / 2)})
     # Keep coordinate descent reproducible: each parameter family is tested
     # locally, and every accepted overlay becomes the parent for the next one.
     return result
