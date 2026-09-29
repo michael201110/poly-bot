@@ -586,6 +586,9 @@ def test_adaptation_candidate_gate_checks_closed_loop_drift_and_speed() -> None:
     passed, detail = candidate_diagnostics_pass(acceptable, reference, config)
     assert passed and detail["lap_delta_s"] == pytest.approx(0.0005)
     assert detail["rejection_reasons"] == []
+    paired = replace(acceptable, median_lap_s=24.90, lap_time_delta_s=-0.001)
+    passed, detail = candidate_diagnostics_pass(paired, reference, config)
+    assert passed and detail["lap_delta_s"] == pytest.approx(-0.001)
 
     unsafe = replace(acceptable, off_track_rate=0.2, max_position_deviation_m=6.0)
     passed, detail = candidate_diagnostics_pass(unsafe, reference, config)
@@ -681,7 +684,7 @@ def test_three_stage_adaptation_collects_then_critic_updates_atomically(
     assert th.equal(original_entropy, updated.log_ent_coef.detach())
     assert updated.replay_buffer.size() == 16
     assert (champion.parent / "champion-backup-1" / "metadata.json").is_file()
-    assert not (champion.parent / "adaptation" / "working-source.json").exists()
+    assert not (champion.parent / "adaptation" / "working" / "working-source.json").exists()
 
 
 def test_rejected_critic_candidate_keeps_champion_and_validated_replay_unchanged(
@@ -713,7 +716,7 @@ def test_rejected_critic_candidate_keeps_champion_and_validated_replay_unchanged
     assert (champion / "policy.zip").read_bytes() == original_policy
     assert metadata.critic_adaptation_required
     assert runner.registry.read_metadata(work).adaptation_stage == "replay_expanded"
-    assert (work.parent / "working-source.json").is_file()
+    assert (work / "working-source.json").is_file()
 
 
 def test_closed_loop_evaluation_detects_compounding_drift_despite_small_action_delta() -> None:

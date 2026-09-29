@@ -38,11 +38,12 @@ def candidate_diagnostics_pass(
 ) -> tuple[bool, dict[str, Any]]:
     """Gate adaptation candidates on reliability, closed-loop drift, and lap time."""
     assert config.tqc is not None
-    lap_delta = (
-        candidate.median_lap_s - reference.median_lap_s
-        if candidate.median_lap_s is not None and reference.median_lap_s is not None
-        else None
-    )
+    # Prefer same-seed closed-loop lap deltas. Comparing the candidate's laps
+    # with champion metadata can mistake ordinary timing variation for policy
+    # regression (or improvement), since that metadata may come from another run.
+    lap_delta = candidate.lap_time_delta_s
+    if lap_delta is None and candidate.median_lap_s is not None and reference.median_lap_s is not None:
+        lap_delta = candidate.median_lap_s - reference.median_lap_s
     finite_metrics = (
         candidate.finish_rate, candidate.median_progress, candidate.mean_progress,
         candidate.crash_rate, candidate.off_track_rate, candidate.stall_rate,
@@ -56,7 +57,8 @@ def candidate_diagnostics_pass(
         reference.max_longitudinal_disagreement,
     )
     finite_metrics = finite_metrics + tuple(
-        value for value in (candidate.median_lap_s, reference.median_lap_s, lap_delta)
+        value for value in (candidate.median_lap_s, reference.median_lap_s,
+                            candidate.lap_time_delta_s, lap_delta)
         if value is not None
     )
     allowed_lap_delta = min(max(config.tqc.champion_lap_tolerance_s, 0.001), 0.01)
@@ -147,12 +149,17 @@ def run_adaptation(
                     group["lr"] = rate
         return model
 
-    def save(path: Path, required: bool, state: str) -> Path | None:
+    def save(
+        path: Path, required: bool, state: str,
+        extra_files: dict[str, dict[str, Any]] | None = None,
+    ) -> Path | None:
         runner.model.critic_adaptation_required = required
         runner.model.adaptation_stage = state
         staging = path.parent / f".{path.name}-staging-{uuid4().hex}"
         runner.backend.save_model(runner.model, staging, resume=True)
         runner.registry.write_metadata(staging, runner._metadata(runner.last_evaluation))
+        for name, value in (extra_files or {}).items():
+            (staging / name).write_text(json.dumps(value, indent=2) + "\n", encoding="utf-8")
         if path == champion:
             old_search = champion / "speed-search.json"
             if old_search.is_file():
@@ -196,13 +203,11 @@ def run_adaptation(
             emit({"type": "adaptation_replay_rejected", **diagnostics,
                   **evaluation.to_dict()})
             raise RuntimeError("replay-expanded checkpoint failed closed-loop validation")
-        save(work, required=True, state="replay_expanded")
-        source_path = work.parent / "working-source.json"
-        source_path.write_text(json.dumps({
+        save(work, required=True, state="replay_expanded", extra_files={"working-source.json": {
             "source_policy_sha256": source_digest,
             "source_saved_at": metadata.saved_at,
             "replay_expansion_evaluation": evaluation.to_dict(),
-        }, indent=2) + "\n", encoding="utf-8")
+        }})
         emit({"type": "adaptation_stage", "stage": "replay_expansion",
               "transitions_collected": cfg.adaptation_replay_steps,
               "replay_size": runner.model.replay_buffer.size(),
@@ -217,7 +222,7 @@ def run_adaptation(
         if not (work / "metadata.json").is_file():
             raise FileNotFoundError("collect local champion replay before critic adaptation")
         work_metadata = runner.registry.read_metadata(work)
-        source_path = work.parent / "working-source.json"
+        source_path = work / "working-source.json"
         if work_metadata.adaptation_stage != "replay_expanded" or not source_path.is_file():
             raise RuntimeError("critic adaptation requires a validated replay-expansion checkpoint")
         source = json.loads(source_path.read_text(encoding="utf-8"))
@@ -264,6 +269,10 @@ def run_adaptation(
     def validate_replay() -> None:
         if not (work / "metadata.json").is_file():
             raise FileNotFoundError("collect local champion replay before validation")
+        metadata = runner.registry.read_metadata(champion)
+        if metadata.evaluation is None:
+            raise ValueError("local replay validation requires a champion evaluation")
+        reference_result = EvaluationResult(**metadata.evaluation)
         reference = load(champion, replay=False)
         runner.model = load(work, replay=True)
         env.close()
@@ -274,8 +283,9 @@ def run_adaptation(
                               cfg.adaptation_longitudinal_noise_std),
             action_noise_probability=cfg.adaptation_noise_probability,
         )
-        emit({"type": "adaptation_noisy_validation", **noisy.to_dict()})
-        if noisy.finish_rate < 1 or noisy.crash_rate or noisy.off_track_rate or noisy.stall_rate:
+        safe, diagnostics = candidate_diagnostics_pass(noisy, reference_result, config)
+        emit({"type": "adaptation_noisy_validation", **diagnostics, **noisy.to_dict()})
+        if not safe:
             raise RuntimeError("local replay perturbation failed closed-loop lap validation")
 
     def polish() -> None:
