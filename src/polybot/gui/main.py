@@ -516,6 +516,7 @@ class PolyBotWindow(QWidget):
         for label, stage in (("Collect local replay", "collect"),
                               ("Validate local replay", "validate"),
                               ("Adapt critics", "critics"),
+                              ("Validate & promote candidate", "promote"),
                               ("Experimental actor-gradient polish", "polish"),
                               ("Run full cycle", "full"),
                               ("Roll back snapshot", "rollback")):

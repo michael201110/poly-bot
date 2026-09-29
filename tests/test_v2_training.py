@@ -662,7 +662,8 @@ def test_three_stage_adaptation_collects_then_critic_updates_atomically(
     original_entropy = runner.model.log_ent_coef.detach().clone()
     original_critic = [parameter.detach().clone() for parameter in runner.model.critic.parameters()]
     monkeypatch.setattr(adaptation, "evaluate_model", lambda *args, **kwargs: result)
-    adaptation.run_adaptation(config, "full")
+    events = []
+    adaptation.run_adaptation(config, "full", events.append)
 
     metadata = runner.registry.read_metadata(champion)
     env = runner._environment()
@@ -685,6 +686,8 @@ def test_three_stage_adaptation_collects_then_critic_updates_atomically(
     assert updated.replay_buffer.size() == 16
     assert (champion.parent / "champion-backup-1" / "metadata.json").is_file()
     assert not (champion.parent / "adaptation" / "working" / "working-source.json").exists()
+    stages = [event.get("stage") for event in events if event.get("type") == "adaptation_stage"]
+    assert stages == ["replay_expansion", "critic_adaptation", "candidate_promotion"]
 
 
 def test_rejected_critic_candidate_keeps_champion_and_validated_replay_unchanged(
@@ -717,6 +720,69 @@ def test_rejected_critic_candidate_keeps_champion_and_validated_replay_unchanged
     assert metadata.critic_adaptation_required
     assert runner.registry.read_metadata(work).adaptation_stage == "replay_expanded"
     assert (work / "working-source.json").is_file()
+
+
+def test_final_candidate_gate_rolls_back_without_touching_tuned_champion(tmp_path, monkeypatch) -> None:
+    import polybot.training.adaptation as adaptation
+
+    base = configuration(tmp_path, "tqc")
+    config = replace(
+        base, backend="mock", track_name="Mock straight", track_id="mock/straight",
+        evaluation=EvaluationConfig(16, 2),
+        tqc=replace(
+            base.tqc, batch_size=8, replay_capacity=128,
+            adaptation_replay_steps=16, adaptation_noise_probability=0.2,
+            critic_adaptation_updates=4,
+        ),
+    )
+    runner, result = _write_mock_tqc_champion(config)
+    champion = runner.registry.slot(config.track_name, "tqc", "champion")
+    original_policy = (champion / "policy.zip").read_bytes()
+    unsafe = replace(result, off_track_rate=0.2, max_position_deviation_m=8.0)
+    evaluations = iter((result, result, unsafe))
+    monkeypatch.setattr(adaptation, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+
+    with pytest.raises(RuntimeError, match="final closed-loop gate rejected"):
+        adaptation.run_adaptation(config, "full")
+
+    metadata = runner.registry.read_metadata(champion)
+    work = champion.parent / "adaptation" / "working"
+    assert (champion / "policy.zip").read_bytes() == original_policy
+    assert metadata.critic_adaptation_required
+    assert runner.registry.read_metadata(work).adaptation_stage == "critics_validated"
+    assert (work / "working-source.json").is_file()
+
+
+def test_three_adaptation_stages_can_resume_between_critic_and_promotion(tmp_path, monkeypatch) -> None:
+    import polybot.training.adaptation as adaptation
+
+    base = configuration(tmp_path, "tqc")
+    config = replace(
+        base, backend="mock", track_name="Mock straight", track_id="mock/straight",
+        evaluation=EvaluationConfig(16, 2),
+        tqc=replace(
+            base.tqc, batch_size=8, replay_capacity=128,
+            adaptation_replay_steps=16, adaptation_noise_probability=0.2,
+            critic_adaptation_updates=4,
+        ),
+    )
+    runner, result = _write_mock_tqc_champion(config)
+    champion = runner.registry.slot(config.track_name, "tqc", "champion")
+    source_policy = (champion / "policy.zip").read_bytes()
+    monkeypatch.setattr(adaptation, "evaluate_model", lambda *args, **kwargs: result)
+
+    adaptation.run_adaptation(config, "collect")
+    adaptation.run_adaptation(config, "critics")
+    work = champion.parent / "adaptation" / "working"
+    assert (champion / "policy.zip").read_bytes() == source_policy
+    assert runner.registry.read_metadata(work).adaptation_stage == "critics_validated"
+    assert (work / "working-source.json").is_file()
+
+    adaptation.run_adaptation(config, "promote")
+    promoted = runner.registry.read_metadata(champion)
+    assert promoted.adaptation_stage == "critics_adapted"
+    assert not promoted.critic_adaptation_required
+    assert (champion.parent / "champion-backup-1" / "metadata.json").is_file()
 
 
 def test_closed_loop_evaluation_detects_compounding_drift_despite_small_action_delta() -> None:

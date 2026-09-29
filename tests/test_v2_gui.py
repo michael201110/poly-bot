@@ -114,6 +114,7 @@ def test_adaptation_gui_preset_and_explicit_stage_controls(window) -> None:
     labels = {button.text() for button in window.findChildren(QPushButton)}
     assert "Collect local replay" in labels
     assert "Adapt critics" in labels
+    assert "Validate & promote candidate" in labels
     assert "Experimental actor-gradient polish" in labels
     assert "Run full cycle" in labels
 

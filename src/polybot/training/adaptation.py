@@ -109,7 +109,7 @@ def run_adaptation(
     """Run collect, critics, polish, full, or rollback against the saved champion."""
     if config.algorithm != "tqc" or config.curriculum.mode != "full" or config.tqc is None:
         raise ValueError("champion adaptation requires full-track TQC")
-    if stage not in {"collect", "validate", "critics", "polish", "full", "rollback"}:
+    if stage not in {"collect", "validate", "critics", "promote", "polish", "full", "rollback"}:
         raise ValueError(f"unknown adaptation stage: {stage}")
     runner = TrainingRunner(config, status=status)
     runner.device = resolve_device(config.device, algorithm="tqc")
@@ -257,13 +257,51 @@ def run_adaptation(
         if not safe:
             emit({"type": "adaptation_critic_rejected", **diagnostics})
             raise RuntimeError("critic-adapted candidate rejected; champion and replay-expansion checkpoint retained")
-        save(work, required=False, state="critics_adapted")
+        source["critic_adaptation_evaluation"] = evaluation.to_dict()
+        source["critic_adaptation_diagnostics"] = diagnostics
+        save(work, required=True, state="critics_validated",
+             extra_files={"working-source.json": source})
+        emit({"type": "adaptation_stage", "stage": "critic_adaptation",
+              "updates": cfg.critic_adaptation_updates, "candidate_saved": str(work),
+              **runner.model._adaptation_diagnostics})
+        reopen_training_env()
+
+    def promote_validated_candidate() -> None:
+        if not (work / "metadata.json").is_file():
+            raise FileNotFoundError("critic adaptation candidate is not saved")
+        work_metadata = runner.registry.read_metadata(work)
+        source_path = work / "working-source.json"
+        if work_metadata.adaptation_stage != "critics_validated" or not source_path.is_file():
+            raise RuntimeError("promotion requires an independently validated critic candidate")
+        source = json.loads(source_path.read_text(encoding="utf-8"))
+        if source.get("source_policy_sha256") != _policy_digest(champion):
+            raise RuntimeError("champion changed before candidate promotion; recollect local replay")
+        metadata = runner.registry.read_metadata(champion)
+        if metadata.evaluation is None:
+            raise ValueError("candidate promotion requires a source champion evaluation")
+        reference_result = EvaluationResult(**metadata.evaluation)
+        reference_model = load(champion, replay=False)
+        runner.model = load(work, replay=True)
+        runner.model.critic_adaptation_required = True
+        runner.model._adaptation_mode = None
+        env.close()
+        evaluation = evaluate_model(
+            runner.model, runner._environment, episodes=config.evaluation.episodes,
+            seed=config.seed + 3_000_000, reference_model=reference_model,
+        )
+        safe, diagnostics = candidate_diagnostics_pass(evaluation, reference_result, config)
+        emit({"type": "adaptation_promotion_validation", **diagnostics, **evaluation.to_dict()})
+        if not safe:
+            emit({"type": "adaptation_promotion_rejected", **diagnostics})
+            raise RuntimeError("final closed-loop gate rejected candidate; source champion remains active")
+        runner.last_evaluation = evaluation
+        runner.model.critic_adaptation_required = False
+        runner.model.adaptation_stage = "critics_adapted"
         backup = save(champion, required=False, state="critics_adapted")
         source_path.unlink(missing_ok=True)
-        emit({"type": "adaptation_stage", "stage": "critic_adaptation",
-              "updates": cfg.critic_adaptation_updates,
+        emit({"type": "adaptation_stage", "stage": "candidate_promotion",
               "champion_backup": str(backup) if backup else None,
-              **runner.model._adaptation_diagnostics})
+              "evaluation": evaluation.to_dict(), "diagnostics": diagnostics})
         reopen_training_env()
 
     def validate_replay() -> None:
@@ -351,6 +389,8 @@ def run_adaptation(
             validate_replay()
         if stage in {"critics", "full"}:
             critics()
+        if stage == "promote" or stage == "full":
+            promote_validated_candidate()
         if stage == "polish":
             polish()
         return champion
@@ -362,7 +402,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument(
-        "--stage", choices=("collect", "validate", "critics", "polish", "full", "rollback"),
+        "--stage", choices=("collect", "validate", "critics", "promote", "polish", "full", "rollback"),
         default="full",
     )
     args = parser.parse_args()
