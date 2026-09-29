@@ -864,6 +864,9 @@ def test_air_brake_search_includes_sustained_and_held_control_duties() -> None:
     assert [candidate["duty"] for candidate in candidates] == [
         0.02, 0.05, 0.10, 0.20, 0.35, 0.50, 0.75, 1.0,
     ]
+    previous = {"kind": "air_brake", "start": 0.6885, "end": 0.8126, "duty": 0.02}
+    refined = {"kind": "air_brake", "start": 0.6886, "end": 0.8117, "duty": 0.2}
+    assert compose_overlay_stack([previous], refined) == [refined]
 
 
 def test_tqc_policy_overlay_survives_checkpoint_save_and_reload(tmp_path) -> None:

@@ -61,14 +61,21 @@ def compose_overlay_stack(
 ) -> list[dict[str, Any]]:
     """Replace the same coordinate while retaining independent learned layers."""
     start, end = float(candidate["start"]), float(candidate["end"])
-    retained = [
-        layer for layer in existing
-        if not (
-            layer.get("kind") == candidate.get("kind")
-            and abs(float(layer.get("start", -1)) - start) <= 1e-9
-            and abs(float(layer.get("end", -1)) - end) <= 1e-9
+    retained = []
+    for layer in existing:
+        if layer.get("kind") != candidate.get("kind"):
+            retained.append(layer)
+            continue
+        old_start, old_end = float(layer.get("start", -1)), float(layer.get("end", -1))
+        same_window = (
+            abs(old_start - start) <= 1e-9 and abs(old_end - end) <= 1e-9
         )
-    ]
+        if candidate.get("kind") == "air_brake" and not same_window:
+            overlap = max(0.0, min(old_end, end) - max(old_start, start))
+            smaller_window = min(old_end - old_start, end - start)
+            same_window = smaller_window > 0 and overlap / smaller_window >= 0.8
+        if not same_window:
+            retained.append(layer)
     return [*retained, candidate]
 
 
