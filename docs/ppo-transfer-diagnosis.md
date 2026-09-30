@@ -193,3 +193,9 @@ steps it improved to a clean 25.358s lap, again 5/5; this remains the best
 observed PPO result. Blocks have continued automatically from the champion,
 with no confirmed sub-22 lap yet. This registry is isolated from the normal
 track PPO champion until a candidate is faster and reliable.
+
+The run has since completed another 10,240-step block at 63,488 total steps;
+the champion remains 25.358s and finished 5/5. At the next intermediate
+evaluation, 68,608 steps, the candidate reached only 23.5% progress and was
+rolled back. Training continued from the saved champion. The 22-second target
+is still unmet.
