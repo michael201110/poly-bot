@@ -99,3 +99,12 @@ def test_summer_1_spin_control_profile_targets_grounded_yaw_spins() -> None:
     assert config.ground_spin_penalty_per_rad_s == -12.0
     assert config.ground_spin_min_grounded_wheels == 2
     assert config.barrier_collision_impulse_threshold == 1e9
+
+
+def test_summer_1_impact_pace_profile_keeps_contacts_nonterminal() -> None:
+    config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load(
+        "Summer 1 - 20s pace impact"
+    )
+    assert config.barrier_collision_impulse_threshold == 0.0
+    assert config.barrier_contact_penalty == -50.0
+    assert config.finish_target_s == 20.0

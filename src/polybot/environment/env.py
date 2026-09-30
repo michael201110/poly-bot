@@ -570,8 +570,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
         # The simulator reports an untyped collision impulse. A touchdown can
-        # produce one even when no barrier was hit, so do not end that step as
-        # a barrier contact. Native crash/off-track checks still apply.
+        # produce one even when no barrier was hit, so exclude the landing
+        # transition. Other impacts receive a reward cost but remain nonterminal:
+        # PPO must be able to learn from the post-contact trajectory and finish.
         barrier_contact = (
             not landed_this_step
             and collision_impulse > self.reward_config.barrier_collision_impulse_threshold
@@ -639,15 +640,16 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._air_brake_reward += reward_terms.get("airborne_brake", 0.0)
         self._episode_steps += 1
         events = set(transition.events)
-        crash = "crash" in events and not landing_grace
+        native_crash = "crash" in events
         if "finish" in events and self.simulator_capabilities.get("simulator") != "mock-kinematic":
             self._native_finish_restart_pending = True
         terminated = (
             "finish" in events
-            or crash
+            # A simulator-side crash ends its episode even if its reward is
+            # suppressed during landing grace; never step a terminal sim again.
+            or native_crash
             or stalled
             or off_track
-            or barrier_contact
             or airborne_roll_failure
             or curriculum_section_complete
         )

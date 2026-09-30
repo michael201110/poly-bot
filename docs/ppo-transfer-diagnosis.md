@@ -840,3 +840,18 @@ slowed to 24.435s and was rolled back; later 5/5 candidates evaluated at
 the isolated best PPO checkpoint. Rollout episodes now finish consistently,
 but no candidate has yet beaten the 24.263s baseline or reached the 22-second
 target.
+
+## Full-track impact-cost PPO (30 September 2026)
+
+The stagewise run stopped at 118,784 steps with the exact graft still the best
+policy (24.263s). Its 60%-progress gate could not learn from the early contact,
+and its actor residual remained narrowly bounded. A new isolated PPO experiment
+starts from the frozen TQC actor graft with a full-track progress window, a
+larger but bounded residual, and more PPO exploration. The objective remains
+lap time and completion; no section has prescribed actions.
+
+The `Summer 1 - 20s pace impact` profile adds a small global cost for collision
+impulses above threshold, excluding landing transitions. Such an impact is now
+nonterminal so the policy can learn from what follows and complete the lap. The
+fresh actor graft passed 5/5 live validation at 24.263s before PPO updates. It
+has not yet produced a faster candidate.

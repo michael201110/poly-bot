@@ -253,6 +253,33 @@ def test_incomplete_time_limit_gets_failure_penalty() -> None:
         env.close()
 
 
+def test_collision_impact_cost_does_not_end_the_episode() -> None:
+    transport = MockSimulatorTransport()
+    env = PolyTrackEnv(
+        transport, track_id="mock/straight",
+        action_adapter=ContinuousActionAdapter(),
+        reward_config=replace(
+            RewardConfig(), barrier_collision_impulse_threshold=0.0,
+            barrier_contact_penalty=-50.0,
+        ),
+    )
+    try:
+        env.reset(seed=1)
+        assert transport.state is not None
+        # The mock reports a collision impulse near the edge while still inside
+        # the off-track corridor, providing a harmless contact to learn from.
+        transport.state.lateral_offset_m = transport.track_half_width_m * 0.95
+        _, _, terminated, truncated, info = env.step(
+            np.array([0.0, 1.0], dtype=np.float32)
+        )
+        assert "barrier_contact" in info["events"]
+        assert info["reward_terms"]["barrier_contact"] == pytest.approx(-50.0)
+        assert not terminated
+        assert not truncated
+    finally:
+        env.close()
+
+
 def test_profile_roundtrip_and_comparison(tmp_path) -> None:
     store = RewardProfileStore(tmp_path)
     balanced = store.load("Balanced")
