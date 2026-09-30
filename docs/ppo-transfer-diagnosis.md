@@ -905,9 +905,11 @@ showed two or three non-landing collision impulses per lap, with peaks around
 7,100–8,900. The global detected-impact penalty is now -1,000 rather than -50,
 and remains nonterminal with no prescribed action. The first 8,192-step block
 under this profile evaluated at 24.381s (5/5 finishes), the next at 24.401s,
-and the third at 24.328s, all 5/5. Each remained within the 0.25s accumulation
-window; none beat the 24.263s graft. Raw contacts remained at two or three per
-lap in the first two blocks. Episode records retain raw impact peak/count and
-landing/non-landing peaks. They now also record contact progress ratios so the
-curriculum gate can be aligned with observed contacts while leaving the policy
-free to learn its own actions.
+and the third at 24.328s, all 5/5. Later blocks evaluated at 24.420s and
+24.393s; none beat the 24.263s graft, and all remain within the 0.25s
+accumulation window. Raw contacts remained at two or three per lap. New
+progress diagnostics place them at 9.3% and 99.1%. Since the 58%-to-finish
+gate cannot learn the early contact, the next curriculum pass opens PPO only
+from 8% to 15%, preserving the graft elsewhere while letting the policy learn
+freely in the early contact region. This is a training window, not an action
+prescription.
