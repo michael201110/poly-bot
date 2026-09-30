@@ -557,3 +557,24 @@ failures came from a large actor/transfer mismatch, not inherent inability of
 PPO to reproduce this teacher. It does not yet meet the sub-22s criterion: the
 validated PPO is currently a faithful 24.263s initialization, and fine-tuning
 should proceed only from this parity checkpoint with evaluation safeguards.
+
+## First on-policy probe (30 September 2026)
+
+The exact graft passed five fresh live validation episodes at 24.263s (5/5,
+zero crash/off-track/stall events), was registered as the isolated PPO
+champion, and was promoted over the slower global PPO champion. An initial
+guarded fine-tuning run used learning rate 3e-6, target KL 0.0003, anchor KL
+0.1, and action standard deviation 0.05. Its first deterministic evaluation
+slowed to 24.715s (5/5); the next two candidates finished 0/5, with median
+progress 56.4% and 23.4%. Each regression was restored to the verified
+24.263s champion. The run was stopped cleanly at 20,480 steps, before further
+updates could accumulate.
+
+The rollout logs show the actor's approximate KL stayed under 0.0004, while
+the critic explained variance remained near zero (about 0.008 at 20,475
+steps). This points to a value estimate that is not yet useful for ranking the
+noisy on-policy actions, rather than a broken deterministic transfer. The next
+run first trains the value function with the actor frozen, checks that the
+deterministic graft remains 5/5, then resumes guarded PPO updates from the
+value-warmed checkpoint. The exact-transfer champion remains intact; no
+sub-22s PPO lap has been achieved yet.

@@ -1900,6 +1900,11 @@ def main(argv: list[str] | None = None) -> int:
             student_path = student_dir / "policy.zip"
             if not student_path.is_file():
                 raise FileNotFoundError("PPO student checkpoint missing; run collect and pretrain first")
+            finetune_registry = ModelRegistry(args.output_root)
+            resume_metadata = finetune_registry.read_metadata(student_dir)
+            _align_ppo_config_to_checkpoint(
+                config, resume_metadata, action_std=args.ppo_action_std,
+            )
             # Live stages are launched through TrainingRunner to preserve the normal
             # evaluation, checkpoint, rollback, and champion promotion guarantees.
             if args.stage in {"value_warmup", "full"}:
@@ -1913,12 +1918,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.stage in {"finetune", "full"}:
                 rounds = args.max_rounds if args.max_rounds > 0 else None
                 round_index = 0
-                finetune_registry = ModelRegistry(args.output_root)
                 champion_path = finetune_registry.slot(config.track_name, "ppo", "champion")
-                _align_ppo_config_to_checkpoint(
-                    config, finetune_registry.read_metadata(student_dir),
-                    action_std=args.ppo_action_std,
-                )
                 if args.ppo_anchor_kl > 0:
                     anchor_dir = _ppo_teacher_anchor_dir_for_source(
                         args.output_root / "ppo-teacher-anchor", student_dir,
