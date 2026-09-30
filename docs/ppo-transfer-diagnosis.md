@@ -266,3 +266,14 @@ candidate achieved only 0/5 finishes and 23.6% median progress, so it was not
 used as the PPO seed. The pipeline retained the independently validated
 24.971s baseline and began a new PPO run in
 `models/experiments/ppo-transfer-rl-recovery-20261003`.
+
+That first recovery retry revealed two control-flow/data issues: the reliable
+baseline gate skipped requested later DAgger rounds, and stochastic PPO actions
+were not seeded per collection round, making three rounds identical. Commits
+`8beabd9` and `733f840` fix these behaviors. In the corrected three-round run,
+the datasets varied (4,725, 5,630, and 4,831 samples), but all distilled
+candidates still failed the 5-episode completion gate and were discarded. PPO
+fine-tuning restarted from the validated 24.971s baseline; at 234,496 steps its
+first two candidates both finished 0/5 at 23.2% and 22.8% median progress and
+were rolled back. The new run remains active in
+`models/experiments/ppo-transfer-rl-recovery-20261003-r4`.
