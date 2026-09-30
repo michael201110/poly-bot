@@ -51,6 +51,18 @@ def _error_summary(error: np.ndarray) -> dict[str, float | int]:
     }
 
 
+def _transformed_deterministic_mode(model: Any, observations: np.ndarray) -> np.ndarray:
+    """Return the distribution mode after SB3's public-predict action transform."""
+    actions = _deterministic_mean(model, observations)
+    if model.policy.squash_output:
+        actions = model.policy.unscale_action(actions)
+    else:
+        actions = np.clip(
+            actions, model.action_space.low, model.action_space.high,
+        )
+    return np.asarray(actions, dtype=np.float32)
+
+
 def compare_same_observations(
     teacher: Any, student: Any, dataset: TeacherDataset,
     student_overlays: list[dict[str, Any]] | None = None,
@@ -123,7 +135,12 @@ def compare_same_observations(
                 student.predict(obs[:min(512, len(obs))], deterministic=True)[0]
             )))
         ),
-        "student_predict_vs_clipped_mean_max_difference": float(
+        "student_predict_vs_transformed_deterministic_mode_max_difference": float(
+            np.max(np.abs(
+                raw_student - _transformed_deterministic_mode(student, obs)
+            ))
+        ),
+        "student_predict_vs_raw_deterministic_mode_max_difference": float(
             np.max(np.abs(raw_student - _deterministic_mean(student, obs)))
         ),
         "sections": sections,

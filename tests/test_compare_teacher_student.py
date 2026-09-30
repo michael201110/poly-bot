@@ -12,7 +12,12 @@ from polybot.algorithms.ppo_tqc import initialize_actor_from_tqc
 from polybot.algorithms.registry import backend_for
 from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
-from polybot.training.compare_teacher_student import _record, first_divergences, replay_actions
+from polybot.training.compare_teacher_student import (
+    _record,
+    _transformed_deterministic_mode,
+    first_divergences,
+    replay_actions,
+)
 from polybot.training.config import PPOConfig, TQCConfig, TrainingConfig
 
 
@@ -62,6 +67,35 @@ def test_identical_continuous_actions_replay_identically_with_both_backends() ->
         finally:
             env.close()
     assert tick_sequences[0] == tick_sequences[1]
+
+
+def test_deterministic_mode_matches_public_predict_transforms() -> None:
+    observations = np.zeros((4, 105), dtype=np.float32)
+    for architecture, expected in (
+        ("standard", np.asarray([1.0, -1.0], dtype=np.float32)),
+        ("tqc_compatible", np.tanh(np.asarray([2.0, -2.0], dtype=np.float32))),
+    ):
+        config = TrainingConfig(
+            algorithm="ppo", backend="mock", track_id="mock/straight", frame_skip=1,
+            ppo=PPOConfig(
+                architecture=architecture, rollout_steps=8, batch_size=8, epochs=1,
+            ),
+        )
+        env = PolyTrackEnv(
+            MockSimulatorTransport(), track_id="mock/straight", frame_skip=1,
+            action_adapter=backend_for("ppo").action_adapter(config),
+        )
+        model = backend_for("ppo").create_model(config, env, "cpu")
+        try:
+            with th.no_grad():
+                model.policy.action_net.weight.zero_()
+                model.policy.action_net.bias.copy_(th.tensor([2.0, -2.0]))
+            predicted, _ = model.predict(observations, deterministic=True)
+            mode = _transformed_deterministic_mode(model, observations)
+            np.testing.assert_allclose(predicted, mode, atol=1e-7, rtol=0.0)
+            np.testing.assert_allclose(mode, np.broadcast_to(expected, mode.shape), atol=1e-7)
+        finally:
+            env.close()
 
 
 def test_overlapping_air_brake_resumes_previous_layer_on_touchdown() -> None:

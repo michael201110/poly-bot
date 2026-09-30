@@ -4,10 +4,12 @@ The directly distilled PPO student does **not** reproduce the frozen TQC
 teacher's actions accurately enough to stay on its line. This is visible before
 the two cars separate. The simulator is also highly sensitive to even much
 smaller persistent action changes, so ordinary behavioral cloning error is a
-poor initialization for this particular 24.263-second path. A guarded PPO probe
-that was already running when this diagnosis resumed was stopped at its safe
-boundary at 130,143 steps; it saved `latest` and did not replace the champion.
-No training was started as part of the diagnosis.
+poor initialization for this particular 24.263-second path. The earlier PPO
+probe was stopped at its safe boundary at 130,143 steps. During a later
+continuation, three additional guarded full-actor update blocks were evaluated
+and rejected at 61,440, 69,632, and 77,824 total steps (0/5 finishes each); the
+24.263-second champion was restored each time. That loop was then stopped at a
+round boundary. No training remains active, and the champion was not replaced.
 
 ## Reproduce
 
@@ -752,11 +754,12 @@ different controls before the car paths visibly separate.
 The ordinary PPO artifact uses SB3's unsquashed Gaussian policy, whose public
 `predict()` clips deterministic means to `[-1, 1]`; the TQC-compatible PPO
 control uses the same tanh-squashed deterministic mean as TQC. The ordinary
-student is deterministic and repeatable at inference, but its pre-clip mean
-can differ from the clipped action by as much as `0.0759`. This is a real
-policy-output transform difference to account for in training and validation,
-though the live comparison already uses the clipped public prediction. It does
-not explain the whole failure: even a `0.0001` fixed TQC action offset can
+student is deterministic and repeatable at inference. On the saved teacher
+states, its raw Gaussian mode differs from the clipped public action by as much
+as `0.2217`, while public `predict()` matches the correctly transformed mode
+exactly. This clipping is expected behavior, not an inference bug; the action
+error table and live comparison use the public clipped prediction. It does not
+explain the whole failure: even a `0.0001` fixed TQC action offset can
 derail a live lap, while exact replay of the unmodified TQC actions reproduces
 the finish. In a separate early residual probe, a `5e-6` requested steering
 difference moved two PWM pulses to different ticks; the state was only
@@ -773,3 +776,42 @@ TQC-compatible actor-copy checkpoint; use bounded updates with deterministic
 teacher comparisons and reject a candidate at the first repeatable pulse-phase
 or trajectory regression. The current 24.263s actor-copy PPO has zero on-policy
 updates and is not a sub-22s result.
+
+## Current-session confirmation (30 September 2026)
+
+The read-only comparison was repeated against the frozen teacher and the
+ordinary directly distilled student. The teacher SHA-256 remains
+`FFBEA4CA57116CD2586C17CCEC4FC761600E0D1EE5C6D94E31B98122220DAECE`; the
+student is
+`models/experiments/ppo-wallspin-standard-20260930/summer-1/ppo/teacher-student/pretrained`,
+SHA-256 `8C0CE7D9D875803BFD30D8030C4A635D488B81D381718337090A7E828A14D0F2`.
+On seed `20260929`, TQC again finished in 24.263s. The ordinary student failed
+at 25.998% progress after 8.13s from an airborne-roll failure. Its first action
+already differed by more than 0.05, before measurable vehicle separation;
+heading differed by 0.1 degrees at decision 3 and position by 1cm at decision
+12.
+
+The exact TQC-compatible actor-copy PPO is a useful control: its SHA-256 is
+`A4C48A885A054836801AAA9F9BE2583FAFDC404F644E4D9D2F98427E8CB42C0F`. In the
+same-seed live comparison, both it and TQC finished in 24.263s in 809 decisions.
+No action, position, heading, speed, or wheel-contact difference crossed the
+smallest detector threshold, and replaying the teacher's saved actions again
+reproduced the same finish. Its same-observation action MAE was below
+`3.4e-7` steering and `2.0e-7` longitudinal.
+
+The TQC-compatible candidate after the three rejected update blocks had
+same-observation MAE `0.00036` steering and `0.00028` longitudinal (maximum
+error `0.0024`). Despite those small errors, its deterministic evaluations
+finished 0/5 times, with median progress `23.5%`, `56.7%`, and `23.5%`. The
+single-seed teacher perturbation test independently showed failures from fixed
+offsets as small as `0.0001`. These are not estimates of general finish
+probability, but together they demonstrate that the line is acutely sensitive
+to small actor changes.
+
+The report's deterministic-output check was corrected in this recheck. It now
+compares public `predict()` with the distribution mode after the policy's
+actual transform: tanh/unscale for squashed policies and action-bound clipping
+for ordinary Gaussian policies. For both tested PPO architectures the maximum
+difference is zero. The previous report field had compared an unsquashed
+policy's clipped output against its *unclipped* mode and mislabeled that as a
+clipped-mean discrepancy. A regression test now covers both transforms.
