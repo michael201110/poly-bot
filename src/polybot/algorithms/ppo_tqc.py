@@ -21,7 +21,13 @@ class TQCSquashedActorCriticPolicy(ActorCriticPolicy):
 
 
 class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
-    """Freeze a grafted TQC mean actor and learn a smooth linear PPO residual."""
+    """Freeze a grafted TQC mean actor and learn a bounded PPO residual."""
+
+    def __init__(self, *args: Any, residual_action_limit: float = 0.1, **kwargs: Any) -> None:
+        if not 0.0 <= residual_action_limit <= 1.0:
+            raise ValueError("residual action limit must be in [0, 1]")
+        self.residual_action_limit = float(residual_action_limit)
+        super().__init__(*args, **kwargs)
 
     def _build_mlp_extractor(self) -> None:
         super()._build_mlp_extractor()
@@ -32,7 +38,8 @@ class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
         nn.init.zeros_(self.residual_action.bias)
 
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor) -> Any:
-        mean_actions = self.action_net(latent_pi) + self.residual_action(latent_pi)
+        correction = self.residual_action_limit * th.tanh(self.residual_action(latent_pi))
+        mean_actions = self.action_net(latent_pi) + correction
         return self.action_dist.proba_distribution(
             mean_actions, self.log_std,
         )

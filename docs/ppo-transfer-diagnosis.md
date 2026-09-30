@@ -600,6 +600,30 @@ Resetting PWM phase at every block was tested and rejected: it made the frozen
 TQC policy itself fail at 23.0% progress, so that would alter the teacher's
 control semantics too much. The follow-up implementation instead adds a
 TQC-residual PPO architecture: it freezes the transferred ReLU trunk and mean
-head, and learns a zero-initialized linear correction on top. This keeps the
-teacher's steep feature boundaries fixed while PPO adjusts its output. Live
-evaluation of that architecture is still pending.
+head, and learns a zero-initialized linear correction on top. A fresh graft
+passed five live evaluations at 24.263s with identical action and telemetry
+traces, so the initialization is stable.
+
+Residual fine-tuning exposed the same amplification at a much smaller scale.
+With a 0.1 action-correction limit, the 5,120-step candidate's offline action
+MAE was only 0.000137 steering and 0.000095 longitudinal. On a live identical
+start, the first PWM tick schedule difference occurred at decision 3: teacher
+and student requested steering 0.933984 and 0.933989, with the same average
+duty, but two pulses landed on different ticks. Their positions differed by
+only 0.000006m then. At decision 13, nearby observations made the teacher's
+steering responses differ by about 0.182; the student rolled over at 53.9%
+progress while TQC finished in 24.263s. Same-observation teacher/PPO action
+differences at those early states remained below 0.001. This confirms the
+dominant failure is extreme closed-loop sensitivity to pulse-phase divergence,
+not a large policy-output or observation-schema mismatch.
+
+Bounded PPO probes at learning rates 3e-7 and 3e-6 were both rolled back. The
+3e-7 candidates repeatedly failed near 54% progress; the 3e-6 candidate failed
+near 23.5%. Air-brake use fell to 6-10% of airborne time on the former,
+compared with 45.3% for TQC. The residual bound is retained as a configurable
+safety limit, but it has not yet made on-policy optimization useful. The
+validated PPO and global champion remain at 24.263s; no sub-22s PPO lap has
+been confirmed. Future progress needs a rollout strategy that avoids letting
+microscopic PWM phase changes destabilize the teacher's high-sensitivity
+steering states, while still allowing larger corrections in recoverable
+states.

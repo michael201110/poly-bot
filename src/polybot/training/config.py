@@ -29,6 +29,7 @@ DQN_ARCHITECTURES = {
 @dataclass(slots=True)
 class PPOConfig:
     architecture: str = "compact"
+    residual_action_limit: float = 0.1
     learning_rate: float = 3e-4
     action_std: float | None = None
     gamma: float = 0.995
@@ -48,6 +49,8 @@ class PPOConfig:
     def __post_init__(self) -> None:
         if self.architecture not in ARCHITECTURES:
             raise ValueError("unknown PPO architecture")
+        if not math.isfinite(self.residual_action_limit) or not 0 <= self.residual_action_limit <= 1:
+            raise ValueError("PPO residual action limit must be in [0, 1]")
         if self.rollout_steps < 2 or not 2 <= self.batch_size <= self.rollout_steps:
             raise ValueError("invalid PPO rollout or batch size")
         if self.rollout_steps % self.batch_size or self.epochs < 1:

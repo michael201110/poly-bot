@@ -1251,6 +1251,10 @@ def main(argv: list[str] | None = None) -> int:
         help="fix PPO exploration standard deviation during fine-tuning",
     )
     parser.add_argument(
+        "--ppo-residual-action-limit", type=float, default=0.1,
+        help="maximum absolute TQC-mean correction for residual PPO updates",
+    )
+    parser.add_argument(
         "--ppo-rollback-progress-tolerance", type=float, default=0.02,
         help="allow this much median-progress loss before restoring the champion",
     )
@@ -1300,6 +1304,8 @@ def main(argv: list[str] | None = None) -> int:
         not np.isfinite(args.ppo_action_std) or args.ppo_action_std <= 0
     ):
         parser.error("--ppo-action-std must be positive and finite")
+    if not np.isfinite(args.ppo_residual_action_limit) or not 0 <= args.ppo_residual_action_limit <= 1:
+        parser.error("--ppo-residual-action-limit must be in [0, 1]")
     if not 0 <= args.ppo_rollback_progress_tolerance < 1:
         parser.error("--ppo-rollback-progress-tolerance must be in [0, 1)")
     if not np.isfinite(args.ppo_rollback_lap_tolerance) or args.ppo_rollback_lap_tolerance < 0:
@@ -1312,6 +1318,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.ppo_action_std is not None:
         assert config.ppo is not None
         config.ppo.action_std = args.ppo_action_std
+    assert config.ppo is not None
+    config.ppo.residual_action_limit = args.ppo_residual_action_limit
     if args.tqc_actor_init:
         if args.stage != "pretrain":
             parser.error("--tqc-actor-init currently requires --stage pretrain")

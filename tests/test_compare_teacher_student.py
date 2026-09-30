@@ -185,6 +185,10 @@ def test_tqc_residual_ppo_graft_starts_exact_and_freezes_teacher_actor(tmp_path)
         for name, parameter in model.policy.named_parameters():
             if name in anchor_weights:
                 th.testing.assert_close(parameter, anchor_weights[name], rtol=0.0, atol=0.0)
+        with th.no_grad():
+            model.policy.residual_action.bias.copy_(th.tensor([50.0, -50.0]))
+        bounded, _ = model.predict(observations, deterministic=True)
+        assert np.max(np.abs(bounded - source)) <= config.ppo.residual_action_limit + 1e-6
         sampled, _ = model.predict(observations, deterministic=False)
         assert np.all(np.isfinite(sampled))
         assert np.all(sampled >= -1.0) and np.all(sampled <= 1.0)
@@ -192,6 +196,7 @@ def test_tqc_residual_ppo_graft_starts_exact_and_freezes_teacher_actor(tmp_path)
         model.save(str(checkpoint))
         loaded = backend_for("ppo").load_model(checkpoint, None, "cpu")
         restored, _ = loaded.predict(observations, deterministic=True)
+        np.testing.assert_allclose(restored, bounded, atol=1e-7, rtol=0.0)
         assert np.all(np.isfinite(restored))
         assert np.all(restored >= -1.0) and np.all(restored <= 1.0)
     finally:

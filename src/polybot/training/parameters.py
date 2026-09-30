@@ -55,6 +55,10 @@ PPO_INFO = _info("PPO", {
         "so a TQC actor can be copied exactly into PPO."
     ),
     "action_std": "Fixed exploration noise during PPO fine-tuning; blank keeps the learned standard deviation.",
+    "residual_action_limit": (
+        "Maximum correction added to the frozen TQC mean for tqc_residual. A smaller limit "
+        "protects teacher behavior; increase it gradually to search for pace."
+    ),
     "learning_rate": "Size of each network update. Around 0.0001–0.0003 is a common starting range.",
     "gamma": "How much future reward matters. Higher values look farther ahead.",
     "gae_lambda": "Balances smooth long-term advantage estimates against short-term accuracy.",

@@ -62,6 +62,7 @@ def _algorithm_options(parser: argparse.ArgumentParser) -> None:
         "--ppo-architecture",
         choices=("tiny", "compact", "standard", "tqc_compatible", "tqc_residual"),
     )
+    ppo.add_argument("--ppo-residual-action-limit", type=float)
     ppo.add_argument("--ppo-lr", type=float)
     ppo.add_argument("--ppo-rollout", type=int)
     ppo.add_argument("--ppo-batch", type=int)
@@ -131,6 +132,7 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
             "imitation_coefficient": args.ppo_imitation,
             "initial_forward_bias": args.ppo_initial_forward_bias,
             "initial_steering_bias": args.ppo_initial_steering_bias,
+            "residual_action_limit": args.ppo_residual_action_limit,
         }
         mapping.update(shared)
         specific: dict[str, Any] = {"ppo": PPOConfig(**{
