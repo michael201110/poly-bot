@@ -898,13 +898,13 @@ learning. The exact TQC graft stays the champion and rollback point; larger
 regressions still restore it.
 
 The first accumulation blocks then evaluated at 24.338s, 24.394s, and
-24.349s, each 5/5 finishes. They remain slower than the graft, and their
-episode summaries reported zero `barrier_contact` reward. The existing -50
-impact cost was weak relative to the roughly 5,000-point finish reward, and it
-did not appear in those logged rollouts. The profile now uses a global -1,000
-cost for detected non-landing impacts, without ending an episode or choosing
-any control action. Training episode records also report raw collision-impulse
-peak/count, split into landing and non-landing peaks. A fresh run from the
-exact graft will show whether the simulator sends impact signals for the
-visually observed barrier contacts before PPO is judged on whether it learns to
-avoid them.
+24.349s, each 5/5 finishes. The `barrier_contact` value in each episode record
+is only the final step's reward term, not a per-episode sum, so its zero did not
+show that the impacts were absent. Raw diagnostics from the fresh graft run
+showed two or three non-landing collision impulses per lap, with peaks around
+7,100–8,900. The global detected-impact penalty is now -1,000 rather than -50,
+and remains nonterminal with no prescribed action. The first 8,192-step block
+under this profile evaluated at 24.381s (5/5 finishes), still slower than the
+24.263s graft but within the 0.25s accumulation window. Episode records now
+retain raw impact peak/count and landing/non-landing peaks so subsequent
+blocks can show whether PPO reduces contacts as it learns.
