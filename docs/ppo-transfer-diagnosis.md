@@ -867,4 +867,8 @@ next two failed 0/5, so all were rejected. The next curriculum trial keeps the
 grafted behavior through that second failure cluster (gate starts at 58%) and
 lets PPO learn over the finish section. These progress gates prescribe no
 control action or line; earlier sections can be opened once the later section
-shows reliable improvement.
+shows reliable improvement. At the 58% gate, four candidates finished 5/5 with
+median lap times of 24.347s, 24.405s, 24.375s, and 24.321s. Each was rolled
+back because it remained slower than 24.263s. PPO's approximate KL stayed near
+`6.7e-6`, well below the `0.001` target, so the next trial raises the learning
+rate and update epochs while retaining the same gate and rollback protection.
