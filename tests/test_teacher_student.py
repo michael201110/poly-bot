@@ -5,9 +5,11 @@ import threading
 from pathlib import Path
 from types import SimpleNamespace
 
+import gymnasium as gym
 import numpy as np
 import pytest
 import torch as th
+from gymnasium import spaces
 
 from polybot.algorithms.registry import backend_for
 from polybot.training.config import PPOConfig, TrainingConfig
@@ -902,12 +904,52 @@ def test_tqc_residual_gates_policy_exploration_outside_progress_window() -> None
         distribution = model.policy.get_distribution(observations).distribution
         stddev = distribution.stddev
 
-        assert th.all(stddev[0] < 1e-8)
+        assert th.allclose(stddev[0], th.full_like(stddev[0], 1e-4), atol=1e-8)
         assert th.allclose(stddev[1:], th.full_like(stddev[1:], 0.02), atol=1e-7)
 
         sampled_actions, _, _ = model.policy(observations, deterministic=False)
         mean_actions, _, _ = model.policy(observations, deterministic=True)
-        assert th.equal(sampled_actions[0], mean_actions[0])
+        assert th.max(th.abs(sampled_actions[0] - mean_actions[0])) < 2e-4
         assert th.isfinite(model.policy.evaluate_actions(observations, sampled_actions)[1]).all()
     finally:
         env.close()
+
+
+def test_tqc_residual_gated_policy_completes_a_finite_ppo_update() -> None:
+    class ProgressEnv(gym.Env):
+        observation_space = spaces.Box(-5, 5, (105,), dtype=np.float32)
+        action_space = spaces.Box(-1, 1, (2,), dtype=np.float32)
+
+        def __init__(self) -> None:
+            self.step_n = 0
+
+        def reset(self, *, seed: int | None = None, options: dict | None = None):
+            super().reset(seed=seed)
+            self.step_n = 0
+            observation = np.zeros(105, dtype=np.float32)
+            observation[12] = 0.55
+            return observation, {}
+
+        def step(self, action: np.ndarray):
+            self.step_n += 1
+            observation = np.zeros(105, dtype=np.float32)
+            observation[12] = min(0.55 + self.step_n * 0.01, 1.0)
+            return observation, float(observation[12]), False, self.step_n >= 32, {}
+
+    config = TrainingConfig(
+        algorithm="ppo", backend="mock", device="cpu",
+        ppo=PPOConfig(
+            architecture="tqc_residual", residual_progress_start=0.75,
+            residual_progress_end=1.0, action_std=0.02, learning_rate=1e-5,
+            rollout_steps=32, batch_size=16, epochs=1,
+        ),
+    )
+    model = backend_for("ppo").create_model(config, ProgressEnv(), "cpu")
+    model.policy.freeze_base_actor()
+    model.learn(total_timesteps=32)
+
+    metrics = model.logger.name_to_value
+    for name in (
+        "train/policy_gradient_loss", "train/value_loss", "train/approx_kl", "train/loss",
+    ):
+        assert np.isfinite(metrics[name]), name

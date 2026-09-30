@@ -58,7 +58,7 @@ class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
             # A gated residual must leave the frozen teacher's full behavior
             # unchanged outside its window. Masking only the mean still lets
             # PPO's Gaussian exploration perturb the teacher everywhere.
-            log_std = th.where(active.bool(), self.log_std, th.full_like(correction, -30.0))
+            log_std = th.where(active.bool(), self.log_std, th.full_like(correction, -9.2103405))
         mean_actions = self.action_net(latent_pi) + correction
         return self.action_dist.proba_distribution(
             mean_actions, log_std,
