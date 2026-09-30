@@ -5,11 +5,12 @@ teacher's actions accurately enough to stay on its line. This is visible before
 the two cars separate. The simulator is also highly sensitive to even much
 smaller persistent action changes, so ordinary behavioral cloning error is a
 poor initialization for this particular 24.263-second path. The earlier PPO
-probe was stopped at its safe boundary at 130,143 steps. During a later
-continuation, three additional guarded full-actor update blocks were evaluated
-and rejected at 61,440, 69,632, and 77,824 total steps (0/5 finishes each); the
-24.263-second champion was restored each time. That loop was then stopped at a
-round boundary. No training remains active, and the champion was not replaced.
+probe was stopped at its safe boundary at 130,143 steps. A later guarded
+continuation evaluated a slower 24.716-second candidate at 57,344 steps, then
+rejected five candidates at 61,440, 65,536, 69,632, 73,728, and 77,824 steps
+(0/5 finishes each). The 24.263-second champion was restored after every
+regression. A stop request was honored after the final evaluated checkpoint;
+no training remains active, and the champion was not replaced.
 
 ## Reproduce
 
