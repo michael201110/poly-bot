@@ -861,6 +861,10 @@ exploration scale was too disruptive for the sensitive route. The next blocks
 used 0.01 action standard deviation and a 0.05 residual limit across the full
 track. The next two deterministic candidates still failed 0/5 live laps and
 were rolled back. Failures clustered around 23% progress at the first jump and
-chicane. The next curriculum trial keeps the verified teacher action through
-that opening (residual gate starts at 25%) and lets PPO learn over the rest of
-the route; that boundary prescribes no control action or line.
+chicane. A 25%-gate trial let rollouts through the first chicane, but many then
+failed around 53–57% progress. Its first candidate finished 5/5 at 24.773s; the
+next two failed 0/5, so all were rejected. The next curriculum trial keeps the
+grafted behavior through that second failure cluster (gate starts at 58%) and
+lets PPO learn over the finish section. These progress gates prescribe no
+control action or line; earlier sections can be opened once the later section
+shows reliable improvement.
