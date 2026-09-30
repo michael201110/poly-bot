@@ -858,5 +858,9 @@ first five blocks used action standard deviation 0.02. Every candidate either
 failed the five-lap reliability evaluation or ran slower, so guarded rollback
 restored the graft each time; the best remains 24.263s at 49,152 timesteps. This
 exploration scale was too disruptive for the sensitive route. The next blocks
-use 0.01 action standard deviation and a 0.05 residual limit, still across the
-full track, to test a smaller on-policy search while keeping exact rollback.
+used 0.01 action standard deviation and a 0.05 residual limit across the full
+track. The next two deterministic candidates still failed 0/5 live laps and
+were rolled back. Failures clustered around 23% progress at the first jump and
+chicane. The next curriculum trial keeps the verified teacher action through
+that opening (residual gate starts at 25%) and lets PPO learn over the rest of
+the route; that boundary prescribes no control action or line.
