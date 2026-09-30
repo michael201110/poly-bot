@@ -570,11 +570,17 @@ progress 56.4% and 23.4%. Each regression was restored to the verified
 24.263s champion. The run was stopped cleanly at 20,480 steps, before further
 updates could accumulate.
 
-The rollout logs show the actor's approximate KL stayed under 0.0004, while
-the critic explained variance remained near zero (about 0.008 at 20,475
-steps). This points to a value estimate that is not yet useful for ranking the
-noisy on-policy actions, rather than a broken deterministic transfer. The next
-run first trains the value function with the actor frozen, checks that the
-deterministic graft remains 5/5, then resumes guarded PPO updates from the
-value-warmed checkpoint. The exact-transfer champion remains intact; no
-sub-22s PPO lap has been achieved yet.
+The first rollout logs showed actor approximate KL below 0.0004, while critic
+explained variance remained near zero. A 10,240-step value-only warmup then
+kept actor parameters byte-for-byte unchanged and again evaluated 5/5 at
+24.263s, but final critic explained variance was still only about 0.012. Two
+further PPO candidates using learning rate 3e-7, target KL 0.0001, anchor KL
+0.25, and action standard deviation 0.02 both evaluated 0/5, at median
+progress 14.3% and 30.4%. Both were rolled back. This shows the short critic
+warmup did not resolve the policy update instability; deterministic transfer
+and base champion remain intact, but no sub-22s PPO lap has been achieved.
+
+The runner now saves a rejected PPO candidate and its failed evaluation under
+`checkpoints/step-<n>-rejected` before restoring the champion. The next probe
+can compare that exact failed actor against TQC on the same teacher states and
+trace the live divergence, instead of losing the candidate during rollback.

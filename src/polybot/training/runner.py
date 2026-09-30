@@ -270,6 +270,15 @@ class TrainingRunner:
             )
             if not progress_regression and not lap_regression:
                 return False
+        rejected_path = self._save(
+            f"checkpoints/step-{self.model.num_timesteps}-rejected", result,
+        )
+        self._emit({
+            "type": "ppo_candidate_rejected", "timesteps": self.model.num_timesteps,
+            "path": str(rejected_path), "finish_rate": result.finish_rate,
+            "median_progress": result.median_progress,
+            "median_lap_s": result.median_lap_s,
+        })
         current_steps = int(self.model.num_timesteps)
         self.model = self.backend.load_model(
             champion_dir / "policy.zip", env, self.device.resolved, resume=True
