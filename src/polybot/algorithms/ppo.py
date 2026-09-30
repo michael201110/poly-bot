@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import torch as th
 
 from polybot.algorithms.base import AlgorithmBackend
 from polybot.algorithms.ppo_initialization import apply_forward_bias
@@ -47,6 +50,7 @@ class PPOBackend(AlgorithmBackend):
             model, p.initial_forward_bias,
             steering_strength=p.initial_steering_bias,
         )
+        self._configure_action_std(model, p.action_std)
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
             model.set_teacher(teacher, p.teacher_kl_coefficient)
@@ -79,12 +83,21 @@ class PPOBackend(AlgorithmBackend):
         model.gamma = p.gamma
         model.gae_lambda = p.gae_lambda
         model.target_kl = p.target_kl
+        self._configure_action_std(model, p.action_std)
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
             model.set_teacher(teacher, p.teacher_kl_coefficient)
         else:
             model.set_teacher(None, 0.0)
         model.set_expert_imitation(p.imitation_coefficient)
+
+    @staticmethod
+    def _configure_action_std(model: Any, action_std: float | None) -> None:
+        if action_std is None:
+            return
+        with th.no_grad():
+            model.policy.log_std.fill_(math.log(action_std))
+        model.policy.log_std.requires_grad_(False)
 
     def parameter_counts(self, model: Any) -> dict[str, int]:
         total = sum(p.numel() for p in model.policy.parameters() if p.requires_grad)

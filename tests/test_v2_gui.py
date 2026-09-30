@@ -170,6 +170,9 @@ def test_gui_exact_config_roundtrip_and_presets(window) -> None:
     cfg = TrainingConfig(algorithm="ppo", ppo=PPOConfig(), reward_profile=None)
     window.load_configuration(cfg)
     assert window.configuration().to_dict() == cfg.to_dict()
+    low_noise = TrainingConfig(algorithm="ppo", ppo=PPOConfig(action_std=0.05))
+    window.load_configuration(low_noise)
+    assert window.configuration().ppo.action_std == pytest.approx(0.05)
     window.preset.setCurrentText("Fast training")
     assert window.configuration().ppo == algorithm_presets("ppo")["Fast training"]
     window.algorithm.setCurrentText("tqc")

@@ -154,7 +154,7 @@ class ParameterForm(QWidget):
 
     def values(self) -> dict[str, Any]:
         result = {name: _value(widget) for name, widget in self.widgets.items()}
-        for name in ("start_ratio", "end_ratio", "start_s", "end_s"):
+        for name in ("start_ratio", "end_ratio", "start_s", "end_s", "action_std"):
             if name in result and result[name] is not None:
                 result[name] = float(result[name])
         return result

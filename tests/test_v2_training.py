@@ -520,6 +520,25 @@ def test_latest_checkpoint_drops_stale_evaluation_after_unvalidated_updates() ->
     ) is None
 
 
+def test_ppo_action_std_can_be_fixed_for_fine_tuning(tmp_path) -> None:
+    config = configuration(tmp_path, "ppo")
+    config.ppo.action_std = 0.05
+    backend = backend_for("ppo")
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id=config.track_id,
+        action_adapter=backend.action_adapter(config),
+    )
+    try:
+        model = backend.create_model(config, env, "cpu")
+        assert th.allclose(model.policy.log_std.detach().exp(), th.full_like(model.policy.log_std, 0.05))
+        assert not model.policy.log_std.requires_grad
+        backend.configure_resume(model, config, "cpu")
+        assert th.allclose(model.policy.log_std.detach().exp(), th.full_like(model.policy.log_std, 0.05))
+        assert not model.policy.log_std.requires_grad
+    finally:
+        env.close()
+
+
 def test_older_tqc_champion_without_replay_can_continue(tmp_path) -> None:
     config = configuration(tmp_path, "tqc")
     TrainingRunner(config).run()

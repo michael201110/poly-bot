@@ -50,6 +50,7 @@ GENERAL_INFO = _info("General", {
 
 PPO_INFO = _info("PPO", {
     "architecture": "Neural network width. Larger networks can learn complex behaviour but update slower.",
+    "action_std": "Fixed exploration noise during PPO fine-tuning; blank keeps the learned standard deviation.",
     "learning_rate": "Size of each network update. Around 0.0001–0.0003 is a common starting range.",
     "gamma": "How much future reward matters. Higher values look farther ahead.",
     "gae_lambda": "Balances smooth long-term advantage estimates against short-term accuracy.",

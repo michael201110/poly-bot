@@ -18,6 +18,7 @@ DQN_ARCHITECTURES = {**ARCHITECTURES, "yosh_2020": (64, 16)}
 class PPOConfig:
     architecture: str = "compact"
     learning_rate: float = 3e-4
+    action_std: float | None = None
     gamma: float = 0.995
     gae_lambda: float = 0.95
     entropy_coefficient: float = 0.005
@@ -43,6 +44,10 @@ class PPOConfig:
             raise ValueError("invalid PPO discount settings")
         if self.learning_rate <= 0 or self.entropy_coefficient < 0:
             raise ValueError("invalid PPO learning settings")
+        if self.action_std is not None and (
+            not math.isfinite(self.action_std) or self.action_std <= 0
+        ):
+            raise ValueError("PPO action standard deviation must be positive and finite")
         if self.teacher_kl_coefficient < 0 or (
             self.teacher_kl_coefficient and not self.teacher_model
         ):

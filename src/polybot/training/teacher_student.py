@@ -1155,6 +1155,10 @@ def main(argv: list[str] | None = None) -> int:
         help="penalize drift from the run's immutable starting PPO actor",
     )
     parser.add_argument(
+        "--ppo-action-std", type=float,
+        help="fix PPO exploration standard deviation during fine-tuning",
+    )
+    parser.add_argument(
         "--ppo-rollback-progress-tolerance", type=float, default=0.02,
         help="allow this much median-progress loss before restoring the champion",
     )
@@ -1200,6 +1204,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("PPO learning rate and target KL must be positive")
     if not np.isfinite(args.ppo_anchor_kl) or args.ppo_anchor_kl < 0:
         parser.error("--ppo-anchor-kl must be finite and nonnegative")
+    if args.ppo_action_std is not None and (
+        not np.isfinite(args.ppo_action_std) or args.ppo_action_std <= 0
+    ):
+        parser.error("--ppo-action-std must be positive and finite")
     if not 0 <= args.ppo_rollback_progress_tolerance < 1:
         parser.error("--ppo-rollback-progress-tolerance must be in [0, 1)")
     if not np.isfinite(args.ppo_rollback_lap_tolerance) or args.ppo_rollback_lap_tolerance < 0:
@@ -1209,6 +1217,9 @@ def main(argv: list[str] | None = None) -> int:
         teacher_path, args.output_root, args.device
     )
     _apply_reward_profile(config, args.reward_profile)
+    if args.ppo_action_std is not None:
+        assert config.ppo is not None
+        config.ppo.action_std = args.ppo_action_std
     if args.student_architecture is not None:
         if config.ppo is None:
             config.ppo = PPOConfig(architecture=args.student_architecture)

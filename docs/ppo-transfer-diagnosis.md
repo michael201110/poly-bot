@@ -444,7 +444,22 @@ to updated policies rather than that seed. A second anchoring defect was found:
 the fine-tuning jobs reused a 2,048-step PPO snapshot with no successful
 evaluation as their KL reference, even after the 24.675s champion had improved.
 Anchor directories are now versioned by their starting policy hash, so each new
-continuation is anchored to the exact validated champion it resumes. The next
-run keeps the conservative 3e-7 learning rate, 0.0001 target KL, and 0.5 anchor
-coefficient, now with the correct 24.675s anchor. The sub-22s criterion remains
-open.
+continuation is anchored to the exact validated champion it resumes.
+
+A controlled one-update PPO probe from 24.675s (learning rate 3e-7, target KL
+0.0001, and the matching champion anchor) changed mean actions on 16,180
+successful teacher states by steering MAE 0.000369 (p95 0.000863) and
+longitudinal MAE 0.000376 (p95 0.000662). On the same five fixed seeds, the
+champion remained 5/5 at 24.675s while the updated policy failed 0/5 at median
+23.6% progress. Weight interpolation confirmed a very narrow safe region: a
+1% and larger blends failed 0/5; a 0.1% blend completed 5/5 but slowed to
+26.027s.
+
+The PPO champion's learned action standard deviation is about 0.15. Stochastic
+training episodes under that noise frequently crashed or left the track. A
+single on-policy update with a fixed 0.05 action standard deviation instead
+completed 5/5 at 25.859s, still slower than the champion but stable enough to
+continue searching. The trainer now exposes a fixed PPO action-standard-
+deviation setting; the next sustained run uses 0.05 noise, the 3e-7 learning
+rate, target KL 0.0001, and the 24.675s hash-matched anchor. The sub-22s
+criterion remains open.
