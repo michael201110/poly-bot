@@ -2053,8 +2053,11 @@ def main(argv: list[str] | None = None) -> int:
                     config.ppo.entropy_coefficient = 1e-4
                     config.ppo.target_kl = args.ppo_target_kl
                     runner = TrainingRunner(config)
-                    latest = _run_with_stop_file(
-                        runner, args.stop_file,
+                    # The outer loop checks stop requests between complete,
+                    # evaluated update blocks. Interrupting PPO.collect_rollouts
+                    # mid-buffer would save a checkpoint with no fresh evaluation
+                    # and could discard the critic retained by actor rollback.
+                    latest = runner.run(
                         resume=student_dir, rollback_to_champion=True,
                         ppo_rollback_progress_tolerance=args.ppo_rollback_progress_tolerance,
                         ppo_rollback_lap_tolerance_s=args.ppo_rollback_lap_tolerance,
