@@ -889,6 +889,10 @@ the graft and rolled back. The next trial tests standard more exploratory PPO
 settings (learning rate `3e-4`, action standard deviation `0.02`, KL target
 `0.02`) with the same late-section gate and exact rollback. Three candidates
 then finished 5/5 at 24.365s, 24.393s, and 24.363s, followed by 24.383s; each
-was rolled back. The late-only gate was too restrictive for learning from the
-early contact, so the next trial reopens the full track with much lower action
-noise (`0.005`) and retains exact-graft rollback.
+was rolled back. A full-track low-noise trial produced 28.523s and 29.818s
+5/5 candidates followed by a 0/5 candidate; all were rolled back. Strict
+zero-tolerance rollback also restarted PPO from the same exact actor each block,
+so small on-policy changes could not accumulate. The next trial returns to the
+reliable 58% gate and permits candidates within 0.25s of the graft to continue
+learning. The exact TQC graft stays the champion and rollback point; larger
+regressions still restore it.
