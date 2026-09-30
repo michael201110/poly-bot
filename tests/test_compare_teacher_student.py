@@ -133,11 +133,11 @@ def test_ppo_action_wrapper_replays_tqc_speed_schedule_and_bias_layers() -> None
     np.testing.assert_allclose(info["transformed_policy_action"], [0.22, 0.35], atol=1e-7)
 
 
-def test_tqc_compatible_ppo_actor_graft_matches_squashed_tqc_mean(tmp_path) -> None:
+def test_tqc_residual_ppo_graft_starts_exact_and_freezes_teacher_actor(tmp_path) -> None:
     config = TrainingConfig(
         algorithm="ppo", backend="mock", track_id="mock/straight", frame_skip=1,
         timesteps=8, ppo=PPOConfig(
-            architecture="tqc_compatible", rollout_steps=8, batch_size=8, epochs=1,
+            architecture="tqc_residual", rollout_steps=8, batch_size=8, epochs=1,
         ),
     )
     env = PolyTrackEnv(
@@ -159,8 +159,32 @@ def test_tqc_compatible_ppo_actor_graft_matches_squashed_tqc_mean(tmp_path) -> N
             source = th.tanh(actor.mu(actor.latent_pi(th.as_tensor(observations)))).numpy()
         student, _ = model.predict(observations, deterministic=True)
         np.testing.assert_allclose(student, source, atol=1e-7, rtol=0.0)
+        assert all(
+            not parameter.requires_grad
+            for module in (
+                model.policy.features_extractor,
+                model.policy.mlp_extractor.policy_net,
+                model.policy.action_net,
+            )
+            for parameter in module.parameters()
+        )
+        assert all(
+            parameter.requires_grad for parameter in model.policy.residual_action.parameters()
+        )
+        assert all(
+            th.count_nonzero(parameter) == 0
+            for parameter in model.policy.residual_action.parameters()
+        )
+        anchor_weights = {
+            name: parameter.detach().clone()
+            for name, parameter in model.policy.named_parameters()
+            if not parameter.requires_grad
+        }
 
         model.learn(total_timesteps=8)
+        for name, parameter in model.policy.named_parameters():
+            if name in anchor_weights:
+                th.testing.assert_close(parameter, anchor_weights[name], rtol=0.0, atol=0.0)
         sampled, _ = model.predict(observations, deterministic=False)
         assert np.all(np.isfinite(sampled))
         assert np.all(sampled >= -1.0) and np.all(sampled <= 1.0)

@@ -7,6 +7,7 @@ from typing import Any
 import torch as th
 from stable_baselines3.common.distributions import SquashedDiagGaussianDistribution
 from stable_baselines3.common.policies import ActorCriticPolicy
+from torch import nn
 
 
 class TQCSquashedActorCriticPolicy(ActorCriticPolicy):
@@ -17,6 +18,24 @@ class TQCSquashedActorCriticPolicy(ActorCriticPolicy):
         if len(self.action_space.shape) != 1:
             raise ValueError("TQC-compatible PPO needs a flat continuous action space")
         self.action_dist = SquashedDiagGaussianDistribution(self.action_space.shape[0])
+
+
+class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
+    """Freeze a grafted TQC mean actor and learn a smooth linear PPO residual."""
+
+    def _build_mlp_extractor(self) -> None:
+        super()._build_mlp_extractor()
+        self.residual_action = nn.Linear(
+            self.mlp_extractor.latent_dim_pi, self.action_space.shape[0],
+        )
+        nn.init.zeros_(self.residual_action.weight)
+        nn.init.zeros_(self.residual_action.bias)
+
+    def _get_action_dist_from_latent(self, latent_pi: th.Tensor) -> Any:
+        mean_actions = self.action_net(latent_pi) + self.residual_action(latent_pi)
+        return self.action_dist.proba_distribution(
+            mean_actions, self.log_std,
+        )
 
 
 def initialize_actor_from_tqc(ppo_model: Any, tqc_model: Any) -> dict[str, int]:
@@ -72,4 +91,14 @@ def initialize_actor_from_tqc(ppo_model: Any, tqc_model: Any) -> dict[str, int]:
             copied["parameters"] = copied.get("parameters", 0) + sum(
                 int(tensor.numel()) for tensor in source_state.values()
             )
+        if hasattr(target_policy, "residual_action"):
+            nn.init.zeros_(target_policy.residual_action.weight)
+            nn.init.zeros_(target_policy.residual_action.bias)
+            for module in (
+                target_policy.features_extractor,
+                target_policy.mlp_extractor.policy_net,
+                target_policy.action_net,
+            ):
+                for parameter in module.parameters():
+                    parameter.requires_grad_(False)
     return copied

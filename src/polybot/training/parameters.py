@@ -50,7 +50,8 @@ GENERAL_INFO = _info("General", {
 
 PPO_INFO = _info("PPO", {
     "architecture": (
-        "Network size. tqc_compatible uses a 128×128 ReLU actor and tanh-squashed controls "
+        "Network size. tqc_compatible matches the 128×128 TQC actor; tqc_residual freezes that "
+        "actor and trains a linear correction head, keeping the TQC response smooth and stable. "
         "so a TQC actor can be copied exactly into PPO."
     ),
     "action_std": "Fixed exploration noise during PPO fine-tuning; blank keeps the learned standard deviation.",

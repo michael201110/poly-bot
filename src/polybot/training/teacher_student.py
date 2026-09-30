@@ -1200,12 +1200,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--supervised-learning-rate", type=float, default=1e-4)
     parser.add_argument(
-        "--student-architecture", choices=("tiny", "compact", "standard", "tqc_compatible"),
+        "--student-architecture",
+        choices=("tiny", "compact", "standard", "tqc_compatible", "tqc_residual"),
         help="override the distilled PPO student's network size",
     )
     parser.add_argument(
         "--tqc-actor-init", action="store_true",
-        help="initialize a TQC-compatible squashed PPO actor by exact weight transfer",
+        help="initialize a TQC-anchored PPO residual actor by exact weight transfer",
     )
     parser.add_argument("--timesteps", type=int, default=10_000_000)
     parser.add_argument("--warmup-steps", type=int, default=2_048)
@@ -1317,7 +1318,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.student_architecture is not None:
             parser.error("--tqc-actor-init selects its compatible architecture automatically")
         assert config.ppo is not None
-        config.ppo.architecture = "tqc_compatible"
+        config.ppo.architecture = "tqc_residual"
         config.ppo.action_std = args.initial_action_std
     if args.student_architecture is not None:
         if config.ppo is None:

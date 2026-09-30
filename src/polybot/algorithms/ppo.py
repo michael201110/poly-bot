@@ -12,7 +12,10 @@ from torch import nn
 from polybot.algorithms.base import AlgorithmBackend
 from polybot.algorithms.ppo_initialization import apply_forward_bias
 from polybot.algorithms.ppo_teacher import TeacherAnchoredPPO
-from polybot.algorithms.ppo_tqc import TQCSquashedActorCriticPolicy
+from polybot.algorithms.ppo_tqc import (
+    TQCResidualActorCriticPolicy,
+    TQCSquashedActorCriticPolicy,
+)
 from polybot.control.actions import ContinuousActionAdapter
 from polybot.training.config import ARCHITECTURES, PPOConfig
 
@@ -40,9 +43,14 @@ class PPOBackend(AlgorithmBackend):
         assert config.ppo is not None
         p = config.ppo
         layers = list(ARCHITECTURES[p.architecture])
-        tqc_compatible = p.architecture == "tqc_compatible"
+        tqc_compatible = p.architecture in {"tqc_compatible", "tqc_residual"}
+        policy_class = (
+            TQCResidualActorCriticPolicy
+            if p.architecture == "tqc_residual"
+            else TQCSquashedActorCriticPolicy if tqc_compatible else "MlpPolicy"
+        )
         model = TeacherAnchoredPPO(
-            TQCSquashedActorCriticPolicy if tqc_compatible else "MlpPolicy",
+            policy_class,
             env, seed=config.seed, device=device, verbose=0,
             learning_rate=p.learning_rate, gamma=p.gamma, gae_lambda=p.gae_lambda,
             ent_coef=p.entropy_coefficient, n_steps=p.rollout_steps,
@@ -113,7 +121,9 @@ class PPOBackend(AlgorithmBackend):
         total = sum(p.numel() for p in model.policy.parameters() if p.requires_grad)
         actor = sum(
             p.numel() for module in (
-                model.policy.mlp_extractor.policy_net, model.policy.action_net
+                model.policy.mlp_extractor.policy_net, model.policy.action_net,
+                *([model.policy.residual_action]
+                  if hasattr(model.policy, "residual_action") else []),
             ) for p in module.parameters() if p.requires_grad
         )
         critic = sum(

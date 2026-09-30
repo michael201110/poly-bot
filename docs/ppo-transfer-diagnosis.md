@@ -584,3 +584,22 @@ The runner now saves a rejected PPO candidate and its failed evaluation under
 `checkpoints/step-<n>-rejected` before restoring the champion. The next probe
 can compare that exact failed actor against TQC on the same teacher states and
 trace the live divergence, instead of losing the candidate during rollback.
+
+The preserved 15,360-step candidate was replayed live against TQC on the same
+seed. It failed at 14.2% progress, while TQC finished in 24.263s. Their
+executed tick schedules first differed at decision 8 even though the continuous
+steering actions differed by only 0.000045 and the reported per-block steering
+duty was identical. `ContinuousPwmControls` carries fractional pulse error
+between blocks, so that small action perturbation moved two steering pulses
+within the 30-tick block. The resulting tiny state offset reached 0.0001m and
+0.005 degrees by decision 13; on those neighboring states, both neural actors
+changed steering by about 0.182. This identifies stateful PWM phase plus the
+teacher actor's local sensitivity as the closed-loop amplification path.
+
+Resetting PWM phase at every block was tested and rejected: it made the frozen
+TQC policy itself fail at 23.0% progress, so that would alter the teacher's
+control semantics too much. The follow-up implementation instead adds a
+TQC-residual PPO architecture: it freezes the transferred ReLU trunk and mean
+head, and learns a zero-initialized linear correction on top. This keeps the
+teacher's steep feature boundaries fixed while PPO adjusts its output. Live
+evaluation of that architecture is still pending.

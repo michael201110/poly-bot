@@ -133,7 +133,9 @@ class ParameterForm(QWidget):
                 if isinstance(instance, DQNConfig):
                     choices = ("tiny", "compact", "standard", "yosh_2020")
                 elif isinstance(instance, PPOConfig):
-                    choices = ("tiny", "compact", "standard", "tqc_compatible")
+                    choices = (
+                        "tiny", "compact", "standard", "tqc_compatible", "tqc_residual",
+                    )
                 else:
                     choices = ("tiny", "compact", "standard")
             elif field.name == "action_set":

@@ -14,9 +14,14 @@ ARCHITECTURES = {
     "tiny": (64, 64), "compact": (128, 128), "standard": (256, 256),
     # Match the current TQC actor: two 128-wide ReLU layers and tanh-squashed actions.
     "tqc_compatible": (128, 128),
+    # Freeze those TQC layers during PPO and learn a linear output residual.
+    "tqc_residual": (128, 128),
 }
 DQN_ARCHITECTURES = {
-    **{name: shape for name, shape in ARCHITECTURES.items() if name != "tqc_compatible"},
+    **{
+        name: shape for name, shape in ARCHITECTURES.items()
+        if name not in {"tqc_compatible", "tqc_residual"}
+    },
     "yosh_2020": (64, 16),
 }
 
