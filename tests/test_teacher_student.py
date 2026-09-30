@@ -907,9 +907,11 @@ def test_tqc_residual_gates_policy_exploration_outside_progress_window() -> None
         assert th.allclose(stddev[0], th.full_like(stddev[0], 1e-4), atol=1e-8)
         assert th.allclose(stddev[1:], th.full_like(stddev[1:], 0.02), atol=1e-7)
 
+        th.manual_seed(0)
         sampled_actions, _, _ = model.policy(observations, deterministic=False)
         mean_actions, _, _ = model.policy(observations, deterministic=True)
-        assert th.max(th.abs(sampled_actions[0] - mean_actions[0])) < 2e-4
+        assert th.equal(sampled_actions[0], mean_actions[0])
+        assert not th.equal(sampled_actions[1], mean_actions[1])
         assert th.isfinite(model.policy.evaluate_actions(observations, sampled_actions)[1]).all()
     finally:
         env.close()

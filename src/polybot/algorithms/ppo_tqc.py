@@ -67,7 +67,23 @@ class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> Any:
         self._residual_progress = obs[:, 12]
         try:
-            return super().forward(obs, deterministic=deterministic)
+            actions, values, log_prob = super().forward(obs, deterministic=deterministic)
+            if deterministic or log_prob is None or self.residual_progress_start <= 0:
+                return actions, values, log_prob
+            active = (
+                (obs[:, 12] >= self.residual_progress_start)
+                & (obs[:, 12] <= self.residual_progress_end)
+            ).unsqueeze(-1)
+            if bool(active.all()):
+                return actions, values, log_prob
+            # Keep rollout actions exactly on the teacher mean outside the
+            # residual window. The finite inactive variance is used only to
+            # give PPO stable log probabilities, not to perturb the car.
+            distribution = self.get_distribution(obs)
+            mean_actions = distribution.get_actions(deterministic=True)
+            actions = th.where(active, actions, mean_actions)
+            log_prob = distribution.log_prob(actions)
+            return actions, values, log_prob
         finally:
             self._residual_progress = None
 
