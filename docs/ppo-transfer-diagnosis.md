@@ -199,3 +199,10 @@ the champion remains 25.358s and finished 5/5. At the next intermediate
 evaluation, 68,608 steps, the candidate reached only 23.5% progress and was
 rolled back. Training continued from the saved champion. The 22-second target
 is still unmet.
+
+At 78,848 steps another candidate reached 27.8% progress and was restored to
+the 25.358s checkpoint. A subsequent candidate completed all five eval laps
+but was slower at 27.637s, so it was not promoted. At 99,328 steps a candidate
+reached 64.5% progress without finishing. By 104,448 steps the runner was
+again on the saved 25.358s, 5/5 champion and continued training. No sub-22s lap
+has been confirmed.
