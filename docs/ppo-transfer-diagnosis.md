@@ -206,3 +206,9 @@ but was slower at 27.637s, so it was not promoted. At 99,328 steps a candidate
 reached 64.5% progress without finishing. By 104,448 steps the runner was
 again on the saved 25.358s, 5/5 champion and continued training. No sub-22s lap
 has been confirmed.
+
+At 109,568 steps PPO improved to 25.310s with a 5/5 finish evaluation. At
+114,688 steps it improved again to **25.086s, 5/5 finishes**, now the best
+verified PPO lap. Evaluations at 119,808 and 124,928 steps regressed to 23.4%
+and 20.0% progress respectively and were rolled back. The run continues from
+the 25.086s champion; the sub-22s target remains unmet.
