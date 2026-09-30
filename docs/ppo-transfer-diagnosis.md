@@ -373,3 +373,29 @@ JSONL trajectories). The corrected DAgger round is in
 `runs/teacher-student/rl-lr3e5-kl01/round-001.npz` and its candidate model is
 preserved under `models/experiments/ppo-transfer-dagger-20260930`. Neither
 changes the saved TQC teacher nor the validated 24.971s PPO champion.
+
+## Fidelity refinement and PPO restart (30 September 2026)
+
+Because the original offline fit was still improving at epoch 400, actor-only
+regression was continued from that seed for 1,000 epochs at learning rate
+5e-5. On the exact same held-out teacher laps, combined MSE fell from
+0.00396 to 0.000923; steering MAE fell from 0.0369 to 0.0175 and longitudinal
+MAE from 0.0168 to 0.0085. The critic was left unchanged. The refined model is
+isolated at
+`models/experiments/ppo-transfer-bc-refine-20260930/summer-1/ppo/teacher-student/pretrained`.
+
+Better teacher-state imitation alone did not improve driving: its independent
+5-episode validation crashed 5/5 at 55.2% median progress. A matched-seed trace
+showed action error over 0.05 by decision 3, then position error over 1 cm by
+decision 20 and an airborne-roll failure at 55.1%. The refinement was therefore
+not promoted as a reliable policy. This directly verifies the diagnosis that
+the failure is dominated by compounding state-distribution error, rather than
+only teacher-state regression loss.
+
+A deterministic recovery-DAgger pass from that refined model collected the
+teacher's labels over the 3 seconds before the repeatable 55.1% crash. The
+resulting student completed **5/5** independent validation laps at median
+25.025s (best 25.025s), with no crashes or off-track events. It is now the
+reliable, isolated starting point for continuous PPO search; the original
+24.971s PPO champion and 24.263s TQC teacher remain unchanged. The sub-22s
+success criterion has not yet been met.
