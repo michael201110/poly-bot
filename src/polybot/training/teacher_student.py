@@ -883,6 +883,17 @@ def _align_ppo_config_to_checkpoint(
         config.ppo.action_std = float(saved_std) if saved_std is not None else None
 
 
+def _tqc_actor_graft_architecture(requested: str | None) -> str:
+    """Choose an exact-actor PPO graft, with residual mode as the safe default."""
+    if requested is None:
+        return "tqc_residual"
+    if requested == "tqc_compatible":
+        return requested
+    raise ValueError(
+        "exact TQC actor initialization supports only tqc_compatible or the default tqc_residual"
+    )
+
+
 def _apply_reward_profile(config: TrainingConfig, profile: str | None) -> TrainingConfig:
     """Override the teacher's inherited shaping when a run names a profile."""
 
@@ -1224,7 +1235,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--tqc-actor-init", action="store_true",
-        help="initialize a TQC-anchored PPO residual actor by exact weight transfer",
+        help=(
+            "initialize a PPO actor by exact TQC weight transfer; defaults to a frozen residual, "
+            "or combine with --student-architecture tqc_compatible for a trainable full actor"
+        ),
     )
     parser.add_argument("--timesteps", type=int, default=10_000_000)
     parser.add_argument("--warmup-steps", type=int, default=2_048)
@@ -1375,10 +1389,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.tqc_actor_init:
         if args.stage != "pretrain":
             parser.error("--tqc-actor-init currently requires --stage pretrain")
-        if args.student_architecture is not None:
-            parser.error("--tqc-actor-init selects its compatible architecture automatically")
         assert config.ppo is not None
-        config.ppo.architecture = "tqc_residual"
+        try:
+            config.ppo.architecture = _tqc_actor_graft_architecture(args.student_architecture)
+        except ValueError as exc:
+            parser.error(str(exc))
         config.ppo.action_std = args.initial_action_std
     if args.student_architecture is not None:
         if config.ppo is None:

@@ -215,6 +215,48 @@ def test_tqc_residual_ppo_graft_starts_exact_and_freezes_teacher_actor(tmp_path)
         env.close()
 
 
+def test_tqc_compatible_graft_supports_longer_rollouts_and_updates_full_actor() -> None:
+    config = TrainingConfig(
+        algorithm="ppo", backend="mock", track_id="mock/straight", frame_skip=1,
+        timesteps=8, ppo=PPOConfig(
+            architecture="tqc_compatible", rollout_steps=4096, batch_size=256, epochs=1,
+        ),
+    )
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight", frame_skip=1,
+        action_adapter=backend_for("ppo").action_adapter(config),
+    )
+    model = backend_for("ppo").create_model(config, env, "cpu")
+    actor = SimpleNamespace(
+        features_extractor=FlattenExtractor(model.observation_space),
+        latent_pi=nn.Sequential(nn.Linear(105, 128), nn.ReLU(), nn.Linear(128, 128), nn.ReLU()),
+        mu=nn.Linear(128, 2),
+    )
+    teacher = SimpleNamespace(actor=actor)
+    try:
+        copied = initialize_actor_from_tqc(model, teacher)
+        observations = np.random.default_rng(18).normal(size=(32, 105)).astype(np.float32)
+        with th.no_grad():
+            expected = th.tanh(actor.mu(actor.latent_pi(th.as_tensor(observations)))).numpy()
+        actual, _ = model.predict(observations, deterministic=True)
+        assert copied["parameters"] > 0
+        assert model.n_steps == 4096
+        assert model.batch_size == 256
+        assert not hasattr(model.policy, "residual_action")
+        np.testing.assert_allclose(actual, expected, atol=1e-7, rtol=0.0)
+        assert all(
+            parameter.requires_grad
+            for module in (
+                model.policy.features_extractor,
+                model.policy.mlp_extractor.policy_net,
+                model.policy.action_net,
+            )
+            for parameter in module.parameters()
+        )
+    finally:
+        env.close()
+
+
 def test_tqc_residual_can_be_gated_to_a_progress_window() -> None:
     config = TrainingConfig(
         algorithm="ppo", backend="mock", track_id="mock/straight", frame_skip=1,

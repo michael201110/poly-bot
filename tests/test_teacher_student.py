@@ -30,6 +30,7 @@ from polybot.training.teacher_student import (
     _run_with_stop_file,
     _seed_validated_ppo_champion,
     _should_resume_ppo_champion,
+    _tqc_actor_graft_architecture,
     aggregate_teacher_datasets,
     collect_dagger_data,
     collect_teacher_data,
@@ -70,6 +71,13 @@ def test_ppo_continuation_uses_checkpoint_architecture_and_action_noise() -> Non
 
     _align_ppo_config_to_checkpoint(config, metadata, action_std=0.02)
     assert config.ppo.action_std == 0.02
+
+
+def test_exact_tqc_actor_init_can_select_full_trainable_compatible_policy() -> None:
+    assert _tqc_actor_graft_architecture(None) == "tqc_residual"
+    assert _tqc_actor_graft_architecture("tqc_compatible") == "tqc_compatible"
+    with pytest.raises(ValueError, match="only tqc_compatible"):
+        _tqc_actor_graft_architecture("standard")
 
 
 def test_teacher_student_stop_file_interrupts_active_training(tmp_path: Path) -> None:
