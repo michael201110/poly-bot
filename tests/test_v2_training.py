@@ -13,7 +13,7 @@ from polybot.control.native_digital import NativeDigitalActionAdapter
 from polybot.environment.curriculum import build_plan
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
-from polybot.models.registry import IncompatibleModelError, ModelRegistry
+from polybot.models.registry import IncompatibleModelError, ModelMetadata, ModelRegistry
 from polybot.protocol import Action
 from polybot.training.adaptation import _policy_digest, candidate_diagnostics_pass
 from polybot.training.config import (
@@ -28,9 +28,10 @@ from polybot.training.config import (
 from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, evaluate_model
 from polybot.training.lap_analysis import discover_airborne_regions, sector_delta_map
+from polybot.training.pace_config import champion_evaluation_config
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
-from polybot.training.section_optimizer import section_windows, write_checkpoint
+from polybot.training.section_optimizer import SectionOptimizer, section_windows, write_checkpoint
 from polybot.training.wr_search import (
     _candidate_grid,
     compose_overlay_stack,
@@ -53,6 +54,17 @@ def configuration(tmp_path, algorithm: str) -> TrainingConfig:
     )
 
 
+def test_websocket_environment_allows_cold_ghost_reference_startup(tmp_path) -> None:
+    config = configuration(tmp_path, "ppo")
+    config.backend = "websocket"
+    runner = TrainingRunner(config, transport_factory=MockSimulatorTransport)
+    env = runner._environment()
+    try:
+        assert env.request_timeout_s == 180.0
+    finally:
+        env.close()
+
+
 def test_registry_contains_three_equal_backends() -> None:
     assert set(ALGORITHMS) == {"ppo", "dqn", "tqc"}
     with pytest.raises(ValueError, match="unknown algorithm"):
@@ -63,6 +75,38 @@ def test_config_roundtrip_and_algorithm_specific_validation(tmp_path) -> None:
     for name in ALGORITHMS:
         config = configuration(tmp_path, name)
         assert TrainingConfig.from_dict(config.to_dict()) == config
+
+
+def test_pace_search_uses_champion_evaluation_semantics_and_requested_seed(tmp_path) -> None:
+    champion_config = configuration(tmp_path, "tqc")
+    champion_config.track_name = "Summer 1"
+    champion_config.track_id = "current"
+    champion_config.rewards = replace(
+        champion_config.rewards, barrier_collision_impulse_threshold=1_000_000_000.0,
+    )
+    requested = TrainingConfig.from_dict(champion_config.to_dict())
+    requested.seed = 12345
+    requested.rewards = replace(requested.rewards, barrier_collision_impulse_threshold=0.0)
+    requested.reward_profile = "different profile"
+
+    metadata = ModelMetadata(
+        algorithm="tqc", architecture="tiny", actor_parameters=0, critic_parameters=0,
+        total_trainable_parameters=0, observation_schema="polybot.observation.v2",
+        action_schema="continuous-pwm-v2", track_name=champion_config.track_name,
+        track_id=champion_config.track_id, lookahead_count=champion_config.lookahead_count,
+        reward_profile=champion_config.reward_profile, curriculum={},
+        training_config=champion_config.to_dict(), training_timesteps=0, simulator_ticks=0,
+        wall_seconds=0, seed=champion_config.seed, device="cpu", finishes=0, crashes=0,
+    )
+    resolved = champion_evaluation_config(requested, metadata)
+    assert resolved.seed == requested.seed
+    assert resolved.reward_profile == champion_config.reward_profile
+    assert resolved.rewards.barrier_collision_impulse_threshold == 1_000_000_000.0
+    assert resolved.tqc == champion_config.tqc
+
+    requested.track_id = "another-track"
+    with pytest.raises(ValueError, match="different track"):
+        champion_evaluation_config(requested, metadata)
     with pytest.raises(ValueError, match="TQC settings"):
         TrainingConfig(algorithm="ppo", ppo=PPOConfig(), tqc=TQCConfig())
     with pytest.raises(ValueError, match="DQN"):
@@ -72,6 +116,22 @@ def test_config_roundtrip_and_algorithm_specific_validation(tmp_path) -> None:
     assert TrainingConfig.from_dict(old_v2).dqn is None
     with pytest.raises(ValueError, match="only v2"):
         TrainingConfig.from_dict({"schema": "polybot.config.v1"})
+    old_ppo = configuration(tmp_path, "ppo").to_dict()
+    old_ppo["ppo"]["pwm_levels"] = 41
+    with pytest.raises(ValueError, match=r"continuous Box\(2\)"):
+        TrainingConfig.from_dict(old_ppo)
+    ppo_cfg = configuration(tmp_path, "ppo")
+    legacy_ppo = ModelMetadata(
+        algorithm="ppo", architecture="tiny", actor_parameters=0, critic_parameters=0,
+        total_trainable_parameters=0, observation_schema="polybot.observation.v2",
+        action_schema="pwm-multidiscrete-v2", track_name=ppo_cfg.track_name,
+        track_id=ppo_cfg.track_id, lookahead_count=ppo_cfg.lookahead_count,
+        reward_profile=None, curriculum={}, training_config=ppo_cfg.to_dict(),
+        training_timesteps=0, simulator_ticks=0, wall_seconds=0, seed=0, device="cpu",
+        finishes=0, crashes=0,
+    )
+    with pytest.raises(IncompatibleModelError, match="discrete PWM"):
+        ModelRegistry(tmp_path).validate(legacy_ppo, ppo_cfg, "continuous-pwm-v2")
 
 
 def test_curriculum_budget_is_global() -> None:
@@ -210,6 +270,40 @@ def test_tqc_resume_applies_optimizer_rate_and_mutable_settings(tmp_path) -> Non
         env.close()
 
 
+def test_ppo_resume_applies_current_optimizer_and_update_settings(tmp_path) -> None:
+    initial = configuration(tmp_path, "ppo")
+    initial.ppo = replace(initial.ppo, learning_rate=3e-4)
+    backend = backend_for("ppo")
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id=initial.track_id,
+        action_adapter=backend.action_adapter(initial),
+    )
+    try:
+        model = backend.create_model(initial, env, "cpu")
+        path = tmp_path / "ppo-saved"
+        backend.save_model(model, path, resume=True)
+        resumed = backend.load_model(path / "policy.zip", env, "cpu", resume=True)
+        changed = replace(initial, ppo=replace(
+            initial.ppo, learning_rate=1e-5, entropy_coefficient=1e-4,
+            epochs=2, gamma=0.99, gae_lambda=0.9, target_kl=0.003,
+        ))
+
+        backend.configure_resume(resumed, changed, "cpu")
+
+        assert resumed.learning_rate == pytest.approx(1e-5)
+        assert resumed.lr_schedule(0.5) == pytest.approx(1e-5)
+        assert all(group["lr"] == pytest.approx(1e-5)
+                   for group in resumed.policy.optimizer.param_groups)
+        assert resumed.ent_coef == pytest.approx(1e-4)
+        assert resumed.n_epochs == 2
+        assert resumed.batch_size == changed.ppo.batch_size
+        assert resumed.gamma == pytest.approx(0.99)
+        assert resumed.gae_lambda == pytest.approx(0.9)
+        assert resumed.target_kl == pytest.approx(0.003)
+    finally:
+        env.close()
+
+
 def test_champion_directory_promotion_is_complete_and_retains_backup(tmp_path) -> None:
     champion = tmp_path / "champion"
     staging = tmp_path / "candidate"
@@ -286,7 +380,12 @@ def test_speed_search_requires_confirmation_and_records_section_promotion(
     champion = registry.slot(config.track_name, "tqc", "champion")
     original = registry.read_metadata(champion)
     baseline = EvaluationResult(5, 1.0, 1.0, 1.0, 20.0, 20.0, 0, 0, 0)
-    registry.write_metadata(champion, replace(original, evaluation=baseline.to_dict()))
+    saved_overlay = {
+        "kind": "air_brake", "start": 0.7, "end": 0.8, "duty": 1.0, "taper": 0.003,
+    }
+    registry.write_metadata(champion, replace(
+        original, evaluation=baseline.to_dict(), policy_overlays=[saved_overlay],
+    ))
     config.backend = "websocket"
     config_path = tmp_path / "search.json"
     config_path.write_text(json.dumps(config.to_dict()), encoding="utf-8")
@@ -296,14 +395,22 @@ def test_speed_search_requires_confirmation_and_records_section_promotion(
     faster = replace(baseline, median_lap_s=19.0, best_lap_s=19.0)
     failed = replace(baseline, finish_rate=0.0, median_lap_s=None, best_lap_s=None)
     evaluations = iter((faster, failed))
-    monkeypatch.setattr(speed_search, "evaluate_model", lambda *a, **kw: next(evaluations))
+    observed_overlay_stacks = []
+
+    def evaluate_with_saved_overlays(model, *args, **kwargs):
+        observed_overlay_stacks.append(model.policy_overlays)
+        return next(evaluations)
+
+    monkeypatch.setattr(speed_search, "evaluate_model", evaluate_with_saved_overlays)
     speed_search.search(config_path, tmp_path / "rejected.jsonl", 1, 18.0)
+    assert observed_overlay_stacks == [[saved_overlay], [saved_overlay]]
     assert (champion / "policy.zip").read_bytes() == policy_before
     assert history_path.read_text(encoding="utf-8").splitlines() == history_before
 
     evaluations = iter((faster, faster))
     speed_search.search(config_path, tmp_path / "accepted.jsonl", 1, 18.0, mode="section")
     assert registry.read_metadata(champion).evaluation["median_lap_s"] == 19.0
+    assert registry.read_metadata(champion).policy_overlays == [saved_overlay]
     details = json.loads((champion / "speed-search.json").read_text(encoding="utf-8"))
     assert ModelRegistry(config.output_root).read_metadata(champion).critic_adaptation_required
     accepted_events = [json.loads(line) for line in (tmp_path / "accepted.jsonl").read_text().splitlines()]
@@ -321,6 +428,33 @@ def test_speed_search_requires_confirmation_and_records_section_promotion(
         assert restored.speed_bias_schedule == details["speed_bias_schedule"]
     finally:
         env.close()
+
+
+def test_speed_search_prioritizes_start_acceleration_windows() -> None:
+    from polybot.training.speed_search import _section_probes
+
+    probes = _section_probes()
+    assert probes[:6] == [
+        (0.0, 0.05, 0.02), (0.0, 0.05, 0.05), (0.0, 0.05, 0.10),
+        (0.0, 0.05, -0.02), (0.0, 0.05, -0.05), (0.0, 0.05, -0.10),
+    ]
+    assert (0.0, 0.20, 0.10) in probes
+    assert (0.05, 0.15, -0.10) in probes
+    assert (0.55, 0.75, 0.01) in probes
+
+
+def test_speed_search_cli_supports_seeded_followup_batches() -> None:
+    import sys
+    from unittest.mock import patch
+
+    from polybot.training.speed_search import main
+
+    arguments = ["speed_search", "--config", "config.json", "--log", "run.jsonl",
+                 "--mode", "section", "--seed-offset", "2000"]
+    with patch.object(sys, "argv", arguments), \
+         patch("polybot.training.speed_search.search") as search_mock:
+        main()
+    assert search_mock.call_args.args[-1] == 2000
 
 
 @pytest.mark.parametrize("algorithm", ["ppo", "dqn", "tqc"])
@@ -897,6 +1031,12 @@ def test_tqc_search_overlays_are_smooth_and_airbrake_requires_all_wheels_airborn
         observation[17:21] = 0.0
         airborne, _ = model.predict(observation, deterministic=True)
         assert model._air_brake_active and airborne[1] == pytest.approx(-0.05)
+        outside = observation.copy()
+        outside[12] = 0.3
+        batched, _ = model.predict(np.stack((observation, outside)), deterministic=True)
+        individual, _ = model.predict(outside, deterministic=True)
+        np.testing.assert_allclose(batched[0], airborne)
+        np.testing.assert_allclose(batched[1], individual)
         observation[19] = 1.0
         model.policy_overlays = []
         grounded_base, _ = model.predict(observation, deterministic=True)
@@ -919,6 +1059,61 @@ def test_tqc_search_overlays_are_smooth_and_airbrake_requires_all_wheels_airborn
             expected = (original[index] * value if operation == "gain"
                         else original[index] + value)
             assert actual[index] == pytest.approx(expected)
+    finally:
+        env.close()
+
+
+def test_tqc_overlay_transform_matches_live_policy_and_keeps_gradients(tmp_path) -> None:
+    config = TrainingConfig(algorithm="tqc", device="cpu", tqc=TQCConfig(architecture="tiny"))
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        observations = np.stack([env.reset(seed=index)[0] for index in (3, 4)]).astype(np.float32)
+        observations[:, 12] = 0.5
+        observations[0, 17:21] = 0.0
+        observations[1, 17:21] = 1.0
+        model.speed_bias_schedule = [(0.3, 0.7, 0.2)]
+        model.policy_overlays = [
+            {"kind": "steer_bias", "start": 0.4, "end": 0.6, "amount": 0.002, "taper": 0.02},
+            {"kind": "drive_gain", "start": 0.4, "end": 0.6, "amount": 1.1, "taper": 0.02},
+            {"kind": "air_brake", "start": 0.4, "end": 0.6, "duty": 0.05, "taper": 0.01},
+        ]
+        obs = th.as_tensor(observations)
+        raw = model.actor(obs, deterministic=True)
+        training_actions = model._apply_overlays_to_actions(raw, obs).detach().numpy()
+        live_actions = np.stack([model.predict(row, deterministic=True)[0] for row in observations])
+        np.testing.assert_allclose(training_actions, live_actions, atol=1e-6)
+
+        base = th.tensor([[0.2, 0.1], [0.2, 0.1]], requires_grad=True)
+        transformed = model._apply_overlays_to_actions(base, obs)
+        transformed.sum().backward()
+        assert base.grad is not None
+        assert base.grad[1, 1].abs() > 0
+        assert base.grad[0, 0].abs() > 0
+    finally:
+        env.close()
+
+
+def test_tqc_training_uses_post_overlay_actions_for_actor_and_target_critics(tmp_path) -> None:
+    config = replace(
+        configuration(tmp_path, "tqc"), timesteps=24,
+        tqc=replace(configuration(tmp_path, "tqc").tqc, learning_starts=8,
+                    train_frequency=1, batch_size=8, replay_capacity=128),
+    )
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight",
+                       action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        model.policy_overlays = [{
+            "kind": "drive_bias", "start": 0.1, "end": 0.9, "amount": 0.01, "taper": 0.02,
+        }]
+        model.speed_bias_schedule = [(0.1, 0.9, 0.01)]
+        model.learn(total_timesteps=24, progress_bar=False)
+        assert model._n_updates > 0
+        assert np.isfinite(model.logger.name_to_value["train/actor_loss"])
+        assert np.isfinite(model.logger.name_to_value["train/critic_loss"])
     finally:
         env.close()
 
@@ -979,6 +1174,106 @@ def test_section_optimizer_windows_refine_only_prioritized_regions(tmp_path) -> 
     assert list(tmp_path.glob("*.tmp")) == []
 
 
+def test_section_optimizer_combo_mode_pairs_steering_and_drive() -> None:
+    optimizer = object.__new__(SectionOptimizer)
+    optimizer.candidate_mode = "combo"
+    candidates = optimizer._build_candidates(0.2, 0.3)
+
+    assert len(candidates) == 16
+    assert all(len(candidate) == 2 for candidate in candidates)
+    assert all({layer["kind"] for layer in candidate} == {"steer_bias", "drive_bias"}
+               for candidate in candidates)
+    assert all(layer["start"] == 0.2 and layer["end"] == 0.3
+               for candidate in candidates for layer in candidate)
+    assert len({(candidate[0]["amount"], candidate[1]["amount"])
+                for candidate in candidates}) == 16
+
+
+def test_adaptive_section_candidates_follow_profile_then_narrow(tmp_path) -> None:
+    profile = {
+        "arms": [{
+            "id": "late_drive", "section": [0.75, 1.0],
+            "kind": "speed_bias_schedule", "anchor": 0.0, "step": 0.01,
+            "values": [0.035, 0.045, 0.052, 0.060, 0.070],
+        }],
+    }
+    profile_path = tmp_path / "adaptive.json"
+    profile_path.write_text(json.dumps(profile), encoding="utf-8")
+    optimizer = object.__new__(SectionOptimizer)
+    optimizer.candidate_mode = "adaptive"
+    optimizer.adaptive_arms = json.loads(profile_path.read_text())["arms"]
+    optimizer.state = {"level_index": 0, "adaptive_memory": {}}
+    initial = optimizer._build_candidates(0.75, 1.0)
+    assert [row["amount"] for row in initial] == profile["arms"][0]["values"]
+    optimizer.state["level_index"] = 1
+    optimizer.state["adaptive_memory"]["late_drive"] = {"best_parameter_value": 0.052}
+    refined = optimizer._build_candidates(0.75, 0.8)
+    assert [row["amount"] for row in refined] == pytest.approx([0.042, 0.047, 0.052, 0.057, 0.062])
+    assert all(row["kind"] == "speed_bias_schedule" for row in refined)
+
+
+@pytest.mark.parametrize(
+    ("parameter", "values", "window_start", "window_end", "expected_windows"),
+    [
+        ("start", [0.6786, 0.6836, 0.6886, 0.6936, 0.6986], 0.6886, 0.8117,
+         [(value, 0.8117) for value in [0.6786, 0.6836, 0.6886, 0.6936, 0.6986]]),
+        ("end", [0.8017, 0.8067, 0.8117, 0.8167, 0.8217], 0.6886, 0.8117,
+         [(0.6886, value) for value in [0.8017, 0.8067, 0.8117, 0.8167, 0.8217]]),
+    ],
+)
+def test_adaptive_air_brake_timing_candidates_shift_one_boundary(
+    parameter, values, window_start, window_end, expected_windows,
+) -> None:
+    section = [0.65, 0.75] if parameter == "start" else [0.75, 0.85]
+    arm = {
+        "id": f"air_brake_{parameter}", "section": section, "kind": "air_brake",
+        "parameter": parameter, "anchor": window_start if parameter == "start" else window_end,
+        "step": 0.005, "values": values, "window_start": window_start,
+        "window_end": window_end, "window_taper": 0.003,
+        "fixed_parameters": {"duty": 1.0},
+    }
+    optimizer = object.__new__(SectionOptimizer)
+    optimizer.candidate_mode = "adaptive"
+    optimizer.adaptive_arms = [arm]
+    optimizer.state = {"level_index": 0, "adaptive_memory": {}}
+
+    candidates = optimizer._build_candidates(*section)
+
+    assert [(row["start"], row["end"]) for row in candidates] == pytest.approx(expected_windows)
+    assert all(row["kind"] == "air_brake" and row["duty"] == 1.0
+               and row["taper"] == 0.003 for row in candidates)
+
+
+def test_rejected_adaptive_schedule_trial_restores_schedule() -> None:
+    class Model:
+        policy_overlays = [{"kind": "air_brake", "start": 0.6, "end": 0.8, "duty": 1.0}]
+        speed_bias_schedule = [(0.1, 0.2, 0.03)]
+
+    baseline = EvaluationResult(1, 1.0, 1.0, 1.0, 24.263, 24.263, 0.0, 0.0, 0.0)
+    screen = replace(baseline, median_lap_s=24.2, best_lap_s=24.2)
+    failed_confirmation = replace(baseline, median_lap_s=24.3, best_lap_s=24.3)
+    outcomes = iter((screen, failed_confirmation))
+    optimizer = object.__new__(SectionOptimizer)
+    optimizer.model = Model()
+    optimizer.lap_traces = []
+    optimizer.state = {
+        "champion_lap_s": 24.263, "timing_floor_s": 0.001, "total_laps": 0,
+        "total_trials": 0, "section_scores": {}, "rejected_candidates": [],
+        "seed": 1,
+    }
+    optimizer.candidate_mode = "single"
+    optimizer.evaluate = lambda *args, **kwargs: next(outcomes)
+    optimizer.should_stop = lambda: False
+    optimizer.emit = lambda *args, **kwargs: None
+    optimizer.checkpoint = lambda: None
+    accepted = optimizer._run_trial(0.75, 1.0, {
+        "kind": "speed_bias_schedule", "start": 0.75, "end": 1.0, "amount": 0.052,
+    })
+    assert accepted is False
+    assert optimizer.model.speed_bias_schedule == [(0.1, 0.2, 0.03)]
+    assert optimizer.model.policy_overlays == Model.policy_overlays
+
+
 def test_tqc_policy_overlay_survives_checkpoint_save_and_reload(tmp_path) -> None:
     config = TrainingConfig(algorithm="tqc", device="cpu", tqc=TQCConfig(architecture="tiny"))
     backend = backend_for("tqc")
@@ -1012,6 +1307,62 @@ def test_continue_best_stops_after_repeated_regressions(tmp_path, monkeypatch) -
     assert ModelRegistry(config.output_root).read_metadata(latest).training_timesteps == 64
     assert any(event["type"] == "regression_stop" for event in events)
     assert events[-1]["type"] == "stopped"
+
+
+def test_ppo_regression_restores_consistent_champion_and_stops_after_three_weaker_evals(
+    tmp_path, monkeypatch,
+) -> None:
+    import polybot.training.runner as runner_module
+
+    base = configuration(tmp_path, "ppo")
+    config = replace(
+        base, timesteps=160, evaluation=EvaluationConfig(32, 1), checkpoint_interval=0,
+    )
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 24.263, 24.263, 0.0, 0.0, 0.0)
+    weak = EvaluationResult(1, 0.0, 0.2, 0.2, None, None, 1.0, 0.0, 0.0)
+    evaluations = iter((strong, weak, weak, weak))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    events: list[dict] = []
+    latest = TrainingRunner(config, events.append).run(rollback_to_champion=True)
+    metadata = ModelRegistry(config.output_root).read_metadata(latest)
+    assert metadata.training_timesteps == 128
+    assert metadata.evaluation["finish_rate"] == 1.0
+    assert sum(event["type"] == "ppo_champion_restore" for event in events) == 3
+    restore_events = [event for event in events if event["type"] == "ppo_champion_restore"]
+    assert [event["rng_seed"] for event in restore_events] == [
+        (config.seed + event["timesteps"]) % (2**32 - 1)
+        for event in restore_events
+    ]
+    assert len({event["rng_seed"] for event in restore_events}) == len(restore_events)
+    assert any(event["type"] == "regression_stop" for event in events)
+    assert events[-1]["type"] == "stopped"
+
+
+def test_ppo_small_progress_dips_keep_learning_but_preserve_champion(tmp_path, monkeypatch) -> None:
+    import polybot.training.runner as runner_module
+
+    base = configuration(tmp_path, "ppo")
+    config = replace(
+        base, timesteps=96, evaluation=EvaluationConfig(32, 1), checkpoint_interval=0,
+    )
+    strong = EvaluationResult(1, 0.0, 0.50, 0.50, None, None, 0.0, 0.0, 0.0)
+    slightly_weaker = EvaluationResult(
+        1, 0.0, 0.45, 0.45, None, None, 0.0, 0.0, 0.0,
+    )
+    evaluations = iter((strong, slightly_weaker, slightly_weaker))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    events: list[dict] = []
+    latest = TrainingRunner(config, events.append).run(
+        rollback_to_champion=True, ppo_rollback_progress_tolerance=0.10,
+    )
+
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "ppo", "champion")
+    assert registry.read_metadata(champion).evaluation["median_progress"] == 0.50
+    latest_metadata = registry.read_metadata(latest)
+    assert latest_metadata.training_timesteps == 96
+    assert latest_metadata.evaluation["median_progress"] == 0.45
+    assert not any(event["type"] == "ppo_champion_restore" for event in events)
 
 
 def test_slower_complete_laps_do_not_stop_best_model_training(tmp_path, monkeypatch) -> None:
@@ -1121,6 +1472,51 @@ def test_tqc_warmup_replay_action_matches_executed_action(tmp_path) -> None:
         _, _, _, _, info = env.step(action[0])
         assert info["requested_control_duty"]["throttle"] == pytest.approx(max(0, action[0, 1]))
         assert info["requested_control_duty"]["brake"] == pytest.approx(max(0, -action[0, 1]))
+    finally:
+        env.close()
+
+
+def test_tqc_champion_replay_refill_uses_deterministic_policy(tmp_path) -> None:
+    config = configuration(tmp_path, "tqc")
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight",
+                       action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        observation, _ = env.reset(seed=17)
+        model._last_obs = observation.reshape(1, -1)
+        model._refill_replay_from_policy = True
+        expected, _ = model.predict(observation, deterministic=True)
+        action_a, replay_a = model._sample_action(config.tqc.learning_starts, n_envs=1)
+        action_b, replay_b = model._sample_action(config.tqc.learning_starts, n_envs=1)
+        np.testing.assert_allclose(action_a[0], expected, atol=1e-7)
+        np.testing.assert_array_equal(action_a, action_b)
+        np.testing.assert_array_equal(action_a, replay_a)
+        np.testing.assert_array_equal(action_a, replay_b)
+    finally:
+        env.close()
+
+
+def test_tqc_anchored_continuation_uses_deterministic_actions(tmp_path) -> None:
+    config = configuration(tmp_path, "tqc")
+    backend = backend_for("tqc")
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight",
+                       action_adapter=backend.action_adapter(config))
+    try:
+        model = backend.create_model(config, env, "cpu")
+        observation, _ = env.reset(seed=23)
+        model._last_obs = observation.reshape(1, -1)
+        model.num_timesteps = config.tqc.learning_starts + 1
+        model.anchor_to_current_policy(0.005)
+
+        expected, _ = model.predict(observation, deterministic=True)
+        action_a, replay_a = model._sample_action(config.tqc.learning_starts, n_envs=1)
+        action_b, replay_b = model._sample_action(config.tqc.learning_starts, n_envs=1)
+
+        np.testing.assert_allclose(action_a[0], expected, atol=1e-7)
+        np.testing.assert_array_equal(action_a, action_b)
+        np.testing.assert_array_equal(action_a, replay_a)
+        np.testing.assert_array_equal(action_a, replay_b)
     finally:
         env.close()
 

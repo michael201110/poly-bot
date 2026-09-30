@@ -14,7 +14,7 @@ from stable_baselines3.common.type_aliases import TrainFreq, TrainFrequencyUnit
 from stable_baselines3.common.utils import ConstantSchedule, polyak_update
 
 from polybot.algorithms.base import AlgorithmBackend
-from polybot.control.actions import ContinuousPwmActionAdapter
+from polybot.control.actions import ContinuousActionAdapter
 from polybot.training.config import ARCHITECTURES, TQCConfig
 
 if TYPE_CHECKING:
@@ -111,10 +111,56 @@ class SeededWarmupTQC(TQC):
                     self._air_brake_active = True
                     self._air_brake_base_action = np.array(adjusted, copy=True)
                     adjusted[..., 1] = np.where(
-                        airborne, -abs(float(layer.get("duty", 0.0))) * fade, adjusted[..., 1]
+                        airborne & (fade > 0),
+                        -abs(float(layer.get("duty", 0.0))) * fade,
+                        adjusted[..., 1],
                     )
         adjusted = np.clip(adjusted, -1.0, 1.0)
         return adjusted, state
+
+    def _apply_overlays_to_actions(self, actions: th.Tensor, observations: th.Tensor) -> th.Tensor:
+        """Apply the same smooth output overlays in TQC's differentiable Q path.
+
+        Replay actions are the post-overlay controls sent to the simulator. The
+        actor and target actor must therefore be evaluated at those same
+        controls while retaining gradients through bakeable overlays.
+        """
+        schedule = getattr(self, "speed_bias_schedule", ())
+        overlays = getattr(self, "policy_overlays", ())
+        if not schedule and not overlays:
+            return actions
+        if actions.ndim != 2 or observations.ndim != 2:
+            raise ValueError("overlay-aware TQC training expects batched flat actions and observations")
+        progress = observations[:, 12]
+        adjusted = actions.clone()
+        bias = th.zeros_like(progress)
+        for start, end, amount in schedule:
+            fade = th.minimum((progress - start) / 0.02, (end - progress) / 0.02)
+            bias = bias + float(amount) * fade.clamp(0.0, 1.0)
+        adjusted[:, 1] = (adjusted[:, 1] + bias).clamp(-1.0, 1.0)
+        for layer in overlays:
+            start, end = float(layer["start"]), float(layer["end"])
+            taper = min(float(layer.get("taper", 0.01)), max(end - start, 1e-9) / 2)
+            enter_x = ((progress - start) / max(taper, 1e-9)).clamp(0.0, 1.0)
+            leave_x = ((end - progress) / max(taper, 1e-9)).clamp(0.0, 1.0)
+            enter = enter_x.square() * (3.0 - 2.0 * enter_x)
+            leave = leave_x.square() * (3.0 - 2.0 * leave_x)
+            fade = th.minimum(enter, leave)
+            kind = layer["kind"]
+            amount = float(layer.get("amount", 0.0))
+            if kind == "steer_bias":
+                adjusted[:, 0] = adjusted[:, 0] + amount * fade
+            elif kind == "steer_gain":
+                adjusted[:, 0] = adjusted[:, 0] * (1.0 + (amount - 1.0) * fade)
+            elif kind == "drive_bias":
+                adjusted[:, 1] = adjusted[:, 1] + amount * fade
+            elif kind == "drive_gain":
+                adjusted[:, 1] = adjusted[:, 1] * (1.0 + (amount - 1.0) * fade)
+            elif kind == "air_brake":
+                airborne = (observations[:, 17:21] < 0.5).all(dim=1)
+                brake = -abs(float(layer.get("duty", 0.0))) * fade
+                adjusted[:, 1] = th.where(airborne & (fade > 0), brake, adjusted[:, 1])
+        return adjusted.clamp(-1.0, 1.0)
 
     def _sample_action(
         self, learning_starts: int, action_noise: Any = None, n_envs: int = 1
@@ -132,10 +178,28 @@ class SeededWarmupTQC(TQC):
             noisy = np.clip(noisy, -1.0, 1.0).astype(np.float32)
             self._adaptation_action_deviation.extend(np.abs(noisy - action).mean(axis=1).tolist())
             return noisy, self.policy.scale_action(noisy)
+        if self._champion_actor is not None:
+            # A resumed champion is already past the global learning_starts
+            # threshold, so SAC would otherwise immediately sample from its
+            # stochastic policy during pace-polish rollouts. That exploration
+            # noise can push a deterministic, fast champion off its proven
+            # line before the first early evaluation. Keep collection
+            # deterministic while the actor is anchored; gradients still use
+            # the replay buffer and _enforce_actor_anchor limits policy drift.
+            action, _ = self.predict(self._last_obs, deterministic=True)
+            action = np.asarray(action, dtype=np.float32).reshape(n_envs, -1)
+            return action, self.policy.scale_action(action)
         if self.num_timesteps >= learning_starts:
             return super()._sample_action(learning_starts, action_noise, n_envs)
         if getattr(self, "_refill_replay_from_policy", False):
-            return super()._sample_action(0, action_noise, n_envs)
+            # A resumed champion is known to finish deterministically. Sampling
+            # its SAC distribution during replay refill immediately drove it
+            # off its proven line before the first evaluation. Refill from the
+            # deterministic action so the new-reward buffer contains the saved
+            # trajectory before gradient updates resume.
+            action, _ = self.predict(self._last_obs, deterministic=True)
+            action = np.asarray(action, dtype=np.float32).reshape(n_envs, -1)
+            return action, self.policy.scale_action(action)
         steering = np.clip(
             self._warmup_rng.normal(0, self.warmup_steering_std, n_envs), -1, 1
         )
@@ -210,6 +274,83 @@ class SeededWarmupTQC(TQC):
         if self._adaptation_mode == "critic_only":
             self.train_critics(gradient_steps, batch_size)
             return
+        if not getattr(self, "policy_overlays", ()) and not getattr(self, "speed_bias_schedule", ()):
+            if self._champion_actor is None:
+                super().train(gradient_steps, batch_size)
+            else:
+                for _ in range(gradient_steps):
+                    super().train(1, batch_size)
+                    self._enforce_actor_anchor()
+            return
+        self.policy.set_training_mode(True)
+        optimizers = [self.actor.optimizer, self.critic.optimizer]
+        if self.ent_coef_optimizer is not None:
+            optimizers.append(self.ent_coef_optimizer)
+        self._update_learning_rate(optimizers)
+        ent_coef_losses, ent_coefs, actor_losses, critic_losses = [], [], [], []
+        for gradient_step in range(gradient_steps):
+            replay_data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
+            discounts = replay_data.discounts if replay_data.discounts is not None else self.gamma
+            if self.use_sde:
+                self.actor.reset_noise()
+            actions_pi, log_prob = self.actor.action_log_prob(replay_data.observations)
+            actions_pi = self._apply_overlays_to_actions(actions_pi, replay_data.observations)
+            log_prob = log_prob.reshape(-1, 1)
+            if self.ent_coef_optimizer is not None and self.log_ent_coef is not None:
+                ent_coef = th.exp(self.log_ent_coef.detach())
+                ent_coef_loss = -(
+                    self.log_ent_coef * (log_prob + self.target_entropy).detach()
+                ).mean()
+                ent_coef_losses.append(ent_coef_loss.item())
+            else:
+                ent_coef = self.ent_coef_tensor
+                ent_coef_loss = None
+            ent_coefs.append(ent_coef.item())
+            if ent_coef_loss is not None and self.ent_coef_optimizer is not None:
+                self.ent_coef_optimizer.zero_grad()
+                ent_coef_loss.backward()
+                self.ent_coef_optimizer.step()
+            with th.no_grad():
+                next_actions, next_log_prob = self.actor.action_log_prob(replay_data.next_observations)
+                next_actions = self._apply_overlays_to_actions(
+                    next_actions, replay_data.next_observations,
+                )
+                next_quantiles = self.critic_target(replay_data.next_observations, next_actions)
+                n_target_quantiles = (
+                    self.critic.quantiles_total
+                    - self.top_quantiles_to_drop_per_net * self.critic.n_critics
+                )
+                next_quantiles, _ = th.sort(next_quantiles.reshape(batch_size, -1))
+                next_quantiles = next_quantiles[:, :n_target_quantiles]
+                target_quantiles = next_quantiles - ent_coef * next_log_prob.reshape(-1, 1)
+                target_quantiles = replay_data.rewards + (1 - replay_data.dones) * discounts * target_quantiles
+                target_quantiles.unsqueeze_(dim=1)
+            current_quantiles = self.critic(replay_data.observations, replay_data.actions)
+            critic_loss = quantile_huber_loss(
+                current_quantiles, target_quantiles, sum_over_quantiles=False,
+            )
+            critic_losses.append(critic_loss.item())
+            self.critic.optimizer.zero_grad()
+            critic_loss.backward()
+            self.critic.optimizer.step()
+            qf_pi = self.critic(replay_data.observations, actions_pi).mean(dim=2).mean(dim=1, keepdim=True)
+            actor_loss = (ent_coef * log_prob - qf_pi).mean()
+            actor_losses.append(actor_loss.item())
+            self.actor.optimizer.zero_grad()
+            actor_loss.backward()
+            self.actor.optimizer.step()
+            if self._champion_actor is not None:
+                self._enforce_actor_anchor()
+            if gradient_step % self.target_update_interval == 0:
+                polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
+                polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
+        self._n_updates += gradient_steps
+        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self.logger.record("train/ent_coef", np.mean(ent_coefs))
+        self.logger.record("train/actor_loss", np.mean(actor_losses))
+        self.logger.record("train/critic_loss", np.mean(critic_losses))
+        if ent_coef_losses:
+            self.logger.record("train/ent_coef_loss", np.mean(ent_coef_losses))
         if self._champion_actor is None:
             super().train(gradient_steps, batch_size)
             return
@@ -241,6 +382,7 @@ class SeededWarmupTQC(TQC):
             discounts = batch.discounts if batch.discounts is not None else self.gamma
             with th.no_grad():
                 next_actions, next_log_prob = self.actor.action_log_prob(batch.next_observations)
+                next_actions = self._apply_overlays_to_actions(next_actions, batch.next_observations)
                 next_quantiles = self.critic_target(batch.next_observations, next_actions)
                 quantiles_per_sample = self.critic.quantiles_total - (
                     self.top_quantiles_to_drop_per_net * self.critic.n_critics
@@ -299,8 +441,8 @@ class TQCBackend(AlgorithmBackend):
         if config.tqc is None:
             config.tqc = TQCConfig()
 
-    def action_adapter(self, config: TrainingConfig) -> ContinuousPwmActionAdapter:
-        return ContinuousPwmActionAdapter()
+    def action_adapter(self, config: TrainingConfig) -> ContinuousActionAdapter:
+        return ContinuousActionAdapter()
 
     def architecture(self, config: TrainingConfig) -> str:
         assert config.tqc is not None

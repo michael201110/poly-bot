@@ -24,18 +24,17 @@ class PPOConfig:
     rollout_steps: int = 512
     batch_size: int = 128
     epochs: int = 5
-    pwm_levels: int = 41
     teacher_model: str | None = None
     teacher_kl_coefficient: float = 0.0
     imitation_coefficient: float = 0.0
     initial_forward_bias: float = 1.0
     initial_steering_bias: float = 0.5
+    target_lap_s: float = 22.0
+    target_kl: float = 0.01
 
     def __post_init__(self) -> None:
         if self.architecture not in ARCHITECTURES:
             raise ValueError("unknown PPO architecture")
-        if self.pwm_levels < 3 or self.pwm_levels % 2 != 1:
-            raise ValueError("PPO PWM levels must be odd and >= 3")
         if self.rollout_steps < 2 or not 2 <= self.batch_size <= self.rollout_steps:
             raise ValueError("invalid PPO rollout or batch size")
         if self.rollout_steps % self.batch_size or self.epochs < 1:
@@ -52,6 +51,10 @@ class PPOConfig:
             raise ValueError("PPO imitation coefficient cannot be negative")
         if min(self.initial_forward_bias, self.initial_steering_bias) < 0:
             raise ValueError("PPO initial action biases cannot be negative")
+        if self.target_lap_s < 0:
+            raise ValueError("PPO target lap must be nonnegative")
+        if self.target_kl <= 0:
+            raise ValueError("PPO target KL must be positive")
 
 
 @dataclass(slots=True)
@@ -293,5 +296,10 @@ class TrainingConfig:
         value["rewards"] = RewardConfig(**value["rewards"])
         for algorithm, config_type in (("ppo", PPOConfig), ("dqn", DQNConfig), ("tqc", TQCConfig)):
             if value.get(algorithm) is not None:
+                if algorithm == "ppo" and "pwm_levels" in value[algorithm]:
+                    raise ValueError(
+                        "legacy PPO pwm_levels is unsupported: PPO now uses continuous Box(2) actions; "
+                        "remove pwm_levels and start a fresh PPO model"
+                    )
                 value[algorithm] = config_type(**value[algorithm])
         return cls(**value)

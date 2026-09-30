@@ -8,7 +8,7 @@ from typing import Protocol
 import numpy as np
 from gymnasium import spaces
 
-from polybot.control.pwm import ContinuousPwmControls, PwmSteering, decode_pwm_level
+from polybot.control.pwm import ContinuousPwmControls
 from polybot.protocol import Action
 
 
@@ -69,32 +69,7 @@ class DigitalActionAdapter:
         return AppliedAction(ControlDemand.from_action(digital), [digital] * ticks)
 
 
-class DiscretePwmActionAdapter:
-    schema = "pwm-multidiscrete-v2"
-    sequence = True
-
-    def __init__(self, levels: int = 41) -> None:
-        if levels < 3 or levels % 2 != 1:
-            raise ValueError("PWM levels must be odd and >= 3")
-        self.levels = levels
-        self.action_space = spaces.MultiDiscrete(np.asarray([levels, 2, 2]))
-        self._steering = PwmSteering()
-
-    def reset(self) -> None:
-        self._steering.reset()
-
-    def apply(self, action: np.ndarray, ticks: int) -> AppliedAction:
-        level, throttle, brake = (int(value) for value in action)
-        steer = decode_pwm_level(level, self.levels)
-        brake = bool(brake)
-        throttle = bool(throttle) and not brake
-        return AppliedAction(
-            ControlDemand(steer, float(throttle), float(brake)),
-            [Action(tick_steer, throttle, brake) for tick_steer in self._steering.generate(steer, ticks)],
-        )
-
-
-class ContinuousPwmActionAdapter:
+class ContinuousActionAdapter:
     schema = "continuous-pwm-v2"
     sequence = True
 

@@ -36,12 +36,6 @@ class PwmSteering:
         return result
 
 
-def decode_pwm_level(level: int, levels: int) -> float:
-    if levels < 3 or levels % 2 == 0 or not 0 <= level < levels:
-        raise ValueError("invalid PWM level or resolution")
-    return -1.0 + 2.0 * level / (levels - 1)
-
-
 class ContinuousPwmControls:
     """Independent, deterministic steering and signed-longitudinal pulse streams."""
 

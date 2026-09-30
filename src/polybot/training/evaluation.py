@@ -55,6 +55,16 @@ class EvaluationResult:
             -self.stall_rate,
         )
 
+    def confirms_target_lap(self, target_lap_s: float) -> bool:
+        """Require a reliable full-track evaluation before stopping on pace."""
+        return (
+            target_lap_s > 0
+            and self.finish_rate == 1.0
+            and self.median_progress == 1.0
+            and self.best_lap_s is not None
+            and self.best_lap_s < target_lap_s
+        )
+
 
 def evaluate_model(
     model: Any, env_factory: Callable[[], Any], *, episodes: int, seed: int,

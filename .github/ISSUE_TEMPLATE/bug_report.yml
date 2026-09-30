@@ -1,0 +1,61 @@
+name: Bug report
+description: Report a reproducible problem in PolyBot.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Before submitting, search existing issues and remove secrets, personal data, and private model files from logs.
+  - type: input
+    id: version
+    attributes:
+      label: PolyBot version or commit
+      placeholder: "2.2.0 or commit SHA"
+    validations:
+      required: true
+  - type: input
+    id: game-version
+    attributes:
+      label: PolyTrack version
+      placeholder: "For example, 0.6.3; enter N/A if unrelated"
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - GUI
+        - Training or evaluation
+        - PPO
+        - QR-DQN
+        - TQC
+        - Rewards or controls
+        - PolyTrack/PML integration
+        - Documentation
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Include the command/settings and a minimal sequence of steps.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or screenshots
+      description: Redact tokens, account data, and unrelated private information.

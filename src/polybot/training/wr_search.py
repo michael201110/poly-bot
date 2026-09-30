@@ -16,10 +16,11 @@ from uuid import uuid4
 
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
-from polybot.models.registry import git_commit
+from polybot.models.registry import ModelRegistry, git_commit
 from polybot.training.config import TrainingConfig
 from polybot.training.evaluation import evaluate_model
 from polybot.training.lap_analysis import discover_airborne_regions, sector_delta_map
+from polybot.training.pace_config import champion_evaluation_config
 from polybot.training.pace_history import append_pace_history
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
@@ -92,22 +93,22 @@ def search(
         raise ValueError("unknown search parameter family")
     if region is not None and not (0 <= region[0] < region[1] <= 1):
         raise ValueError("search region must be an increasing progress window within [0, 1]")
-    config = TrainingConfig.from_dict(json.loads(config_path.read_text(encoding="utf-8-sig")))
-    if config.algorithm != "tqc" or config.backend != "websocket":
+    requested_config = TrainingConfig.from_dict(json.loads(config_path.read_text(encoding="utf-8-sig")))
+    if requested_config.algorithm != "tqc" or requested_config.backend != "websocket":
         raise ValueError("WR pace search requires live websocket TQC")
     if confirmation_episodes < 5 or micro_confirmation_episodes < confirmation_episodes:
         raise ValueError("promotion requires five laps; micro-gains require at least as many")
+    registry = ModelRegistry(requested_config.output_root)
+    champion_dir = registry.slot(requested_config.track_name, "tqc", "champion")
+    champion_meta = registry.read_metadata(champion_dir)
+    config = champion_evaluation_config(requested_config, champion_meta)
     runner = TrainingRunner(config)
-    champion_dir = runner.registry.slot(config.track_name, "tqc", "champion")
-    champion_meta = runner.registry.read_metadata(champion_dir)
     if champion_meta.evaluation is None or champion_meta.evaluation.get("median_lap_s") is None:
         raise ValueError("a fully evaluated champion is required")
     baseline_lap = float(champion_meta.evaluation["median_lap_s"])
     mock = PolyTrackEnv(MockSimulatorTransport(), action_adapter=runner.backend.action_adapter(config))
     try:
-        model = runner.backend.load_model(
-            champion_dir / "policy.zip", mock, "cpu", resume=True
-        )
+        model = runner.backend.load_model(champion_dir / "policy.zip", mock, "cpu")
     finally:
         mock.close()
     # WR search treats TQC as a read-only base policy. Its optimizers are never called.

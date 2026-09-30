@@ -5,7 +5,7 @@ import os
 from dataclasses import fields
 
 import pytest
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QLabel, QPushButton
 
 from polybot.gui.events import format_event
 from polybot.gui.log_viewer import LiveLogWindow
@@ -75,6 +75,17 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert not window.reward_scroll.isHidden()
     assert not window.pace_polish_section.isHidden()
     assert not window.adaptation_section.isHidden()
+    assert not window.distillation_section.isHidden()
+    assert not window.teacher_student_section.isHidden()
+    assert "below 22.000s" in window.teacher_student_section.findChild(QLabel).text()
+    assert window.dagger_rounds.value() == 3
+    assert window.dagger_episodes.value() == 8
+    assert window.dagger_nominal_weight.value() == pytest.approx(0.6)
+    assert window.dagger_recovery_weight.value() == pytest.approx(0.4)
+    assert any(button.text() == "Run DAgger cycle" for button in
+               window.teacher_student_section.findChildren(QPushButton))
+    assert any(button.text() == "Stop after current DAgger round" for button in
+               window.teacher_student_section.findChildren(QPushButton))
     assert not window.wr_search_section.isHidden()
     assert not window.section_optimizer_section.isHidden()
     assert {"Start 1 hour", "Start 4 hours", "Run until stopped", "Resume saved search", "Pause and save",
@@ -91,6 +102,8 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert window.adaptation_section.isHidden()
     assert window.wr_search_section.isHidden()
     assert window.section_optimizer_section.isHidden()
+    assert window.distillation_section.isHidden()
+    assert window.teacher_student_section.isHidden()
     window.algorithm.setCurrentText("dqn")
     assert window.algorithm_stack.currentWidget() is window.dqn_form
     assert window.ppo_form.isHidden() and window.tqc_form.isHidden()
@@ -102,6 +115,28 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert "tau" not in window.dqn_form.widgets
     assert window.configuration().dqn is not None
     assert window.configuration().ppo is None and window.configuration().tqc is None
+
+
+def test_distillation_summary_surfaces_live_bake_metrics() -> None:
+    summary = PolyBotWindow._distillation_summary("full", {
+        "collection": {"samples": 12000},
+        "training": {
+            "best_validation_loss": 0.0012,
+            "action_metrics": {"max_action_error": 0.08},
+            "bakeable_overlay_count": 3,
+            "retained_overlay_count": 1,
+        },
+        "validation": {
+            "accepted": True,
+            "lap_delta_s": 0.01,
+            "teacher": {"median_lap_s": 24.2},
+            "student": {"median_lap_s": 24.21},
+        },
+    })
+    assert "passes; staged for bake" in summary
+    assert "24.2s" in summary and "24.21s" in summary
+    assert "12,000 samples" in summary
+    assert "overlays baked 3, retained 1" in summary
 
 
 def test_adaptation_gui_preset_and_explicit_stage_controls(window) -> None:
@@ -117,6 +152,18 @@ def test_adaptation_gui_preset_and_explicit_stage_controls(window) -> None:
     assert "Validate & promote candidate" in labels
     assert "Experimental actor-gradient polish" in labels
     assert "Run full cycle" in labels
+
+
+def test_distillation_gui_has_explicit_snapshot_and_promotion_controls(window) -> None:
+    window.advanced.setChecked(True)
+    labels = {button.text() for button in window.distillation_section.findChildren(QPushButton)}
+    assert {
+        "Snapshot champion", "Collect teacher data", "Train actor student",
+        "Validate student", "Bake / promote", "Rollback bake", "Run full workflow",
+    } <= labels
+    assert window.distillation_episodes.value() == 20
+    assert window.distillation_validation_episodes.value() == 5
+    assert window.distillation_tolerance.value() == pytest.approx(0.02)
 
 
 def test_gui_exact_config_roundtrip_and_presets(window) -> None:

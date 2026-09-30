@@ -87,3 +87,15 @@ def test_summer_1_20s_pace_rewards_faster_finishes_and_claws_back_failures() -> 
     assert at_20 > at_29 + 2_900
     assert config.failure_progress_clawback_per_m == -config.progress_per_m
     assert config.failure_early_penalty < 0
+
+
+def test_summer_1_spin_control_profile_targets_grounded_yaw_spins() -> None:
+    config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load(
+        "Summer 1 - 20s pace spin control"
+    )
+
+    assert config.finish_target_s == 20.0
+    assert config.ground_spin_deadzone_radps == 5.0
+    assert config.ground_spin_penalty_per_rad_s == -12.0
+    assert config.ground_spin_min_grounded_wheels == 2
+    assert config.barrier_collision_impulse_threshold == 1e9

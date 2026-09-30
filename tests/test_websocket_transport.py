@@ -27,7 +27,8 @@ def test_websocket_transport_round_trip() -> None:
     transport.start()
 
     def adapter() -> None:
-        with connect(transport.endpoint) as websocket:
+        # This endpoint is loopback; bypass the machine's configured proxy.
+        with connect(transport.endpoint, proxy=None) as websocket:
             request = json.loads(websocket.recv())
             websocket.send(json.dumps(success_response(request, {"pong": True})))
 

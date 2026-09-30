@@ -63,7 +63,6 @@ def test_dqn_step_holds_left_throttle_for_all_thirty_ticks_without_pwm(monkeypat
 
     monkeypatch.setattr("polybot.control.pwm.PwmSteering.generate", fail)
     monkeypatch.setattr("polybot.control.pwm.ContinuousPwmControls.generate", fail)
-    monkeypatch.setattr("polybot.control.actions.decode_pwm_level", fail)
     transport = MockSimulatorTransport()
     env = PolyTrackEnv(
         transport, track_id="mock/straight", frame_skip=30,

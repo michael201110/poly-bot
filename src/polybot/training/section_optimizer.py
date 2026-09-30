@@ -21,6 +21,7 @@ from polybot.models.registry import git_commit
 from polybot.training.config import TrainingConfig
 from polybot.training.evaluation import evaluate_model
 from polybot.training.lap_analysis import discover_airborne_regions, sector_delta_map
+from polybot.training.pace_config import champion_evaluation_config
 from polybot.training.pace_history import append_pace_history
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
@@ -32,6 +33,8 @@ from polybot.training.wr_search import (
 
 LEVELS = (0.10, 0.05, 0.02, 0.01)
 TIMING_LAPS = 10
+COMBO_STEER_BIASES = (-0.005, -0.002, 0.002, 0.005)
+COMBO_DRIVE_BIASES = (-0.01, -0.005, 0.005, 0.01)
 
 
 def section_windows(level_index: int, refine_sections: list[dict[str, float]]) -> list[tuple[float, float]]:
@@ -77,11 +80,12 @@ class SectionOptimizer:
         max_runtime_seconds: float | None = None, stop_file: Path | None = None,
         state_path: Path | None = None, max_trials: int | None = None,
         skip_file: Path | None = None, refine_file: Path | None = None,
+        candidate_mode: str = "single", adaptive_profile: Path | None = None,
     ) -> None:
-        self.config = TrainingConfig.from_dict(
+        requested_config = TrainingConfig.from_dict(
             json.loads(config_path.read_text(encoding="utf-8-sig"))
         )
-        if self.config.algorithm != "tqc" or self.config.backend != "websocket":
+        if requested_config.algorithm != "tqc" or requested_config.backend != "websocket":
             raise ValueError("section optimizer requires a live websocket TQC champion")
         if max_runtime_seconds is not None and max_runtime_seconds <= 0:
             raise ValueError("runtime budget must be positive")
@@ -91,13 +95,34 @@ class SectionOptimizer:
         self.skip_file = skip_file
         self.refine_file = refine_file
         self.max_trials = max_trials
+        if candidate_mode not in {"single", "combo", "adaptive"}:
+            raise ValueError("candidate mode must be 'single', 'combo', or 'adaptive'")
+        self.candidate_mode = candidate_mode
+        self.adaptive_arms: list[dict[str, Any]] = []
+        self.adaptive_profile_data: dict[str, Any] | None = None
+        if candidate_mode == "adaptive":
+            if adaptive_profile is None:
+                raise ValueError("adaptive candidate mode requires --adaptive-profile")
+            self.adaptive_profile_data = json.loads(adaptive_profile.read_text(encoding="utf-8"))
+            self.adaptive_arms = self.adaptive_profile_data["arms"]
+            if not self.adaptive_arms:
+                raise ValueError("adaptive profile must contain at least one search arm")
+        initial_runner = TrainingRunner(requested_config)
+        initial_champion = initial_runner.registry.slot(requested_config.track_name, "tqc", "champion")
+        initial_metadata = initial_runner.registry.read_metadata(initial_champion)
+        self.config = champion_evaluation_config(requested_config, initial_metadata)
         self.runner = TrainingRunner(self.config)
         self.champion = self.runner.registry.slot(self.config.track_name, "tqc", "champion")
         self.root = self.champion.parent
+        if self.adaptive_profile_data is not None:
+            expected_hash = self.adaptive_profile_data.get("champion_reference", {}).get("policy_sha256")
+            if expected_hash and _hash(self.champion / "policy.zip") != expected_hash:
+                raise ValueError("adaptive profile was prepared for a different champion policy")
         self.state_path = state_path or self.root / "optimizer-state.json"
         self.history = self.root / "section-search-history.jsonl"
         self.started = time.monotonic()
         self.state = self._load_state()
+        self.state.setdefault("adaptive_memory", {})
         self.prior_runtime = float(self.state.get("runtime_seconds", 0.0))
         self.model = self._load_model()
         self.lap_traces: list[list[dict[str, Any]]] = []
@@ -108,7 +133,7 @@ class SectionOptimizer:
             action_adapter=self.runner.backend.action_adapter(self.config),
         )
         try:
-            model = self.runner.backend.load_model(self.champion / "policy.zip", mock, "cpu", resume=True)
+            model = self.runner.backend.load_model(self.champion / "policy.zip", mock, "cpu")
         finally:
             mock.close()
         model.policy.set_training_mode(False)
@@ -213,7 +238,65 @@ class SectionOptimizer:
                   std_lap_s=deviation, measurement_floor_s=floor, laps=TIMING_LAPS)
         self.checkpoint()
 
-    def _build_candidates(self, start: float, end: float) -> list[dict[str, Any]]:
+    def _adaptive_arm_for(self, start: float, end: float) -> dict[str, Any]:
+        matches = [
+            arm for arm in self.adaptive_arms
+            if float(arm["section"][0]) <= start + 1e-8
+            and float(arm["section"][1]) >= end - 1e-8
+        ]
+        if not matches:
+            raise ValueError(f"adaptive profile has no parent arm for section {start:.3f}-{end:.3f}")
+        return min(matches, key=lambda arm: float(arm["section"][1]) - float(arm["section"][0]))
+
+    def _adaptive_candidates(self, start: float, end: float) -> list[dict[str, Any]]:
+        arm = self._adaptive_arm_for(start, end)
+        kind = str(arm["kind"])
+        parameter = str(arm.get("parameter", "duty" if kind == "air_brake" else "amount"))
+        memory = self.state["adaptive_memory"].get(arm["id"], {})
+        if self.state["level_index"] == 0 and start == float(arm["section"][0]) \
+                and end == float(arm["section"][1]):
+            values = list(map(float, arm["values"]))
+        else:
+            default_center = arm.get("anchor", arm["values"][len(arm["values"]) // 2])
+            center = float(memory.get("best_parameter_value", default_center))
+            step = float(arm["step"]) / (2 ** max(1, self.state["level_index"]))
+            values = [center + offset * step for offset in (-2, -1, 0, 1, 2)]
+        taper = float(arm.get("window_taper", min(0.01, (end - start) / 2)))
+        base_start = float(arm.get("window_start", start))
+        base_end = float(arm.get("window_end", end))
+        candidates = []
+        for value in values:
+            candidate_start = value if parameter == "start" else base_start
+            candidate_end = value if parameter == "end" else base_end
+            if not 0.0 <= candidate_start < candidate_end <= 1.0:
+                raise ValueError(f"adaptive {parameter} candidate creates an invalid window")
+            candidates.append({
+                "kind": kind, "start": round(candidate_start, 8),
+                "end": round(candidate_end, 8),
+                "taper": min(taper, (candidate_end - candidate_start) / 2),
+            })
+            candidates[-1].update(arm.get("fixed_parameters", {}))
+            candidates[-1][parameter] = round(value, 8)
+        return candidates
+
+    def _build_candidates(self, start: float, end: float) -> list[Any]:
+        if self.candidate_mode == "adaptive":
+            return self._adaptive_candidates(start, end)
+        if self.candidate_mode == "combo":
+            # Test steering and longitudinal biases together: the current route
+            # can punish either change alone even when their joint trajectory is
+            # faster. Reuse the normal full-lap screen and confirmation gates.
+            taper = min(0.01, (end - start) / 2)
+            return [
+                [
+                    {"kind": "steer_bias", "start": start, "end": end,
+                     "amount": steer, "taper": taper},
+                    {"kind": "drive_bias", "start": start, "end": end,
+                     "amount": drive, "taper": taper},
+                ]
+                for steer in COMBO_STEER_BIASES
+                for drive in COMBO_DRIVE_BIASES
+            ]
         regions = [(start, end)]
         airborne = discover_airborne_regions(self.lap_traces)
         near = [r for r in airborne if r["start"] < end and r["end"] > start and r.get("landed", 0) >= 1]
@@ -247,6 +330,8 @@ class SectionOptimizer:
         return list(unique.values())
 
     def _sections(self) -> list[tuple[float, float]]:
+        if self.candidate_mode == "adaptive" and self.state["level_index"] == 0:
+            return [tuple(map(float, arm["section"])) for arm in self.adaptive_arms]
         return section_windows(int(self.state["level_index"]), self.state.get("refine_sections", []))
 
     def _promote(self, combined: list[dict[str, Any]], result, laps: list[list[dict[str, Any]]]) -> None:
@@ -260,6 +345,7 @@ class SectionOptimizer:
         self.runner.registry.write_metadata(stage, metadata)
         _write_json(stage / "best-pace-config.json", {
             "target_lap_s": self.target_s, "overlays": combined,
+            "speed_bias_schedule": self.model.speed_bias_schedule,
             "champion_lap_s": result.median_lap_s,
         })
         for filename in ("speed-search.json",):
@@ -271,6 +357,7 @@ class SectionOptimizer:
             champion_lap_s=float(result.median_lap_s),
             best_lap_s=min(float(self.state["best_lap_s"]), float(result.median_lap_s)),
             accepted_overlays=combined,
+            accepted_speed_bias_schedule=[list(item) for item in self.model.speed_bias_schedule],
         )
         append_pace_history(
             self.champion, source="section_policy_overlay_search", evaluation=result,
@@ -281,19 +368,37 @@ class SectionOptimizer:
         self.checkpoint()
         self.emit("champion_promoted", median_lap_s=result.median_lap_s, overlays=combined)
 
-    def _run_trial(self, start: float, end: float, candidate: dict[str, Any]) -> bool:
+    def _run_trial(self, start: float, end: float, candidate: Any) -> bool:
         before = deepcopy(self.model.policy_overlays)
-        combined = compose_overlay_stack(before, candidate)
+        before_schedule = deepcopy(self.model.speed_bias_schedule)
+        layers = candidate if isinstance(candidate, list) else [candidate]
+        combined = before
+        for layer in layers:
+            if layer.get("kind") == "speed_bias_schedule":
+                self.model.speed_bias_schedule.append(
+                    (float(layer["start"]), float(layer["end"]), float(layer["amount"]))
+                )
+            else:
+                combined = compose_overlay_stack(combined, layer)
         self.model.policy_overlays = combined
         trace: list[list[dict[str, Any]]] = []
         screened = self.evaluate(1, telemetry_sink=trace)
         self.state["total_laps"] += 1
         self.state["total_trials"] += 1
         deltas = (
-            sector_delta_map(self.lap_traces[0], trace[0], max(0.01, end - start))
+            sector_delta_map(
+                self.lap_traces[0], trace[0], min(0.05, max(0.01, end - start))
+            )
             if self.lap_traces and trace else []
         )
+        in_section = [row for row in deltas if row["start"] >= start - 1e-8
+                      and row["end"] <= end + 1e-8]
+        local_delta = sum(row["delta_s"] for row in in_section)
+        exit_rows = [row for row in deltas if row["start"] <= end + 1e-8
+                     and row["end"] >= end - 1e-8]
+        exit_speed_delta = exit_rows[-1]["speed_delta_mps"] if exit_rows else None
         base = float(self.state["champion_lap_s"])
+        lap_delta = float(screened.median_lap_s) - base if screened.median_lap_s is not None else None
         floor = float(self.state["timing_floor_s"] or 0.001)
         pass_screen = (
             screened.finish_rate == 1 and screened.median_progress == 1
@@ -326,8 +431,71 @@ class SectionOptimizer:
                 self.state["section_scores"][f"{start:.3f}-{end:.3f}"]["gains"] += 1
             else:
                 self.model.policy_overlays = before
+                self.model.speed_bias_schedule = before_schedule
         else:
             self.model.policy_overlays = before
+            self.model.speed_bias_schedule = before_schedule
+        score_key = f"{start:.3f}-{end:.3f}"
+        score = self.state["section_scores"].setdefault(score_key, {
+            "gains": 0, "near_misses": 0, "local_gains": 0, "safe_local_gains": 0, "trials": 0,
+            "best_full_delta_s": None, "best_local_delta_s": None,
+            "best_exit_speed_delta_mps": None,
+        })
+        score["trials"] += 1
+        if lap_delta is not None and (score["best_full_delta_s"] is None
+                                      or lap_delta < score["best_full_delta_s"]):
+            score["best_full_delta_s"] = lap_delta
+        if score["best_local_delta_s"] is None or local_delta < score["best_local_delta_s"]:
+            score["best_local_delta_s"] = local_delta
+        if exit_speed_delta is not None and (score["best_exit_speed_delta_mps"] is None
+                                             or exit_speed_delta > score["best_exit_speed_delta_mps"]):
+            score["best_exit_speed_delta_mps"] = exit_speed_delta
+        clean_finish = (
+            screened.finish_rate == 1 and screened.median_progress == 1
+            and screened.crash_rate == 0 and screened.off_track_rate == 0
+            and screened.stall_rate == 0
+        )
+        if local_delta < -0.005:
+            score["local_gains"] += 1
+            if clean_finish and lap_delta is not None and lap_delta <= 0.05:
+                score["safe_local_gains"] += 1
+        if screened.finish_rate == 1 and lap_delta is not None and 0 <= lap_delta <= 0.05:
+            score["near_misses"] += 1
+        if self.candidate_mode == "adaptive":
+            arm = self._adaptive_arm_for(start, end)
+            memory = self.state["adaptive_memory"].setdefault(arm["id"], {
+                "id": arm["id"], "section": arm["section"], "reason": arm.get("reason", ""),
+                "trials": 0, "best_full_delta_s": None, "best_local_delta_s": None,
+                "best_exit_speed_delta_mps": None, "trials_since_best": 0, "outcomes": [],
+            })
+            memory["trials"] += 1
+            value_key = str(arm.get("parameter", "duty" if arm["kind"] == "air_brake" else "amount"))
+            value = next((float(layer[value_key]) for layer in layers
+                          if layer.get("kind") == arm["kind"]), None)
+            outcome = {
+                "section": [start, end], "candidate": candidate,
+                "finished": screened.finish_rate == 1, "lap_delta_s": lap_delta,
+                "local_delta_s": local_delta, "exit_speed_delta_mps": exit_speed_delta,
+            }
+            memory["outcomes"].append(outcome)
+            if lap_delta is not None and (memory["best_full_delta_s"] is None
+                                          or lap_delta < memory["best_full_delta_s"]):
+                memory["best_full_delta_s"] = lap_delta
+                memory["trials_since_best"] = 0
+            else:
+                memory["trials_since_best"] += 1
+            safe_candidate = clean_finish and lap_delta is not None and lap_delta <= 0.05
+            if safe_candidate and (memory.get("best_safe_local_delta_s") is None
+                                   or local_delta < memory["best_safe_local_delta_s"]):
+                memory["best_safe_local_delta_s"] = local_delta
+                if value is not None:
+                    memory["best_parameter_value"] = value
+            if memory["best_local_delta_s"] is None or local_delta < memory["best_local_delta_s"]:
+                memory["best_local_delta_s"] = local_delta
+            if exit_speed_delta is not None and (memory["best_exit_speed_delta_mps"] is None
+                                                 or exit_speed_delta > memory["best_exit_speed_delta_mps"]):
+                memory["best_exit_speed_delta_mps"] = exit_speed_delta
+            self.checkpoint()
         if not accepted and pass_screen:
             self.state["section_scores"].setdefault(f"{start:.3f}-{end:.3f}", {"gains": 0, "near_misses": 0})
             self.state["section_scores"][f"{start:.3f}-{end:.3f}"]["near_misses"] += 1
@@ -336,6 +504,7 @@ class SectionOptimizer:
         self.emit("trial", section=[start, end], resolution=end-start, candidate=candidate,
                   screen_lap_s=screened.median_lap_s, confirmation=confirmation.to_dict() if confirmation else None,
                   accepted=accepted, rejection_reason=None if accepted else reason, sector_deltas=deltas,
+                  local_delta_s=local_delta, exit_speed_delta_mps=exit_speed_delta,
                   total_trials=self.state["total_trials"], total_laps=self.state["total_laps"])
         return accepted
 
@@ -368,7 +537,9 @@ class SectionOptimizer:
                     hot = []
                     for key, score in self.state["section_scores"].items():
                         start, end = (float(value) for value in key.split("-"))
-                        priority = score.get("gains", 0) * 2 + score.get("near_misses", 0)
+                        priority = (score.get("gains", 0) * 2
+                                    + score.get("near_misses", 0)
+                                    + score.get("safe_local_gains", 0))
                         if priority:
                             hot.append({"start": start, "end": end, "priority": priority})
                     if not hot:
@@ -409,7 +580,15 @@ class SectionOptimizer:
                 self.state["candidates"] = self._build_candidates(start, end)
                 self.state["candidate_index"] = 0
                 self.emit("section_started", section=[start, end], resolution=end-start,
-                          level=LEVELS[self.state["level_index"]], candidate_count=len(self.state["candidates"]))
+                          level=LEVELS[self.state["level_index"]], candidate_count=len(self.state["candidates"]),
+                          adaptive_arm=(
+                              self._adaptive_arm_for(start, end)
+                              if self.candidate_mode == "adaptive" else None
+                          ),
+                          prior_evidence=(
+                              self._adaptive_arm_for(start, end).get("evidence")
+                              if self.candidate_mode == "adaptive" else None
+                          ))
                 self.checkpoint()
             candidates = self.state["candidates"]
             if self.state["candidate_index"] >= len(candidates):
@@ -422,6 +601,21 @@ class SectionOptimizer:
                 self.state["candidate_index"] = 0
                 self.state["candidates"] = []
                 self.emit("section_completed", section=[start, end], score=self.state["section_scores"].get(key, {}))
+                if self.candidate_mode == "adaptive":
+                    score = self.state["section_scores"].get(key, {})
+                    if not any(score.get(metric, 0) for metric in ("gains", "near_misses", "safe_local_gains")):
+                        arm = self._adaptive_arm_for(start, end)
+                        memory = self.state["adaptive_memory"].get(arm["id"], {})
+                        lap_deltas = [row["lap_delta_s"] for row in memory.get("outcomes", [])
+                                      if row.get("lap_delta_s") is not None]
+                        self.emit("adaptive_arm_saturated", section=[start, end],
+                                  arm=arm,
+                                  trials=score.get("trials", 0),
+                                  best_full_delta_s=score.get("best_full_delta_s"),
+                                  best_local_delta_s=score.get("best_local_delta_s"),
+                                  best_exit_speed_delta_mps=score.get("best_exit_speed_delta_mps"),
+                                  median_candidate_delta_s=(statistics.median(lap_deltas) if lap_deltas else None),
+                                  trials_since_best=memory.get("trials_since_best", 0))
                 self.checkpoint()
                 continue
             if self.should_stop():
@@ -431,7 +625,7 @@ class SectionOptimizer:
             try:
                 self._run_trial(start, end, candidate)
             except (OSError, TimeoutError, ConnectionError, RuntimeError) as exc:
-                self.model.policy_overlays = list(self.meta.policy_overlays)
+                self.model = self._load_model()
                 self.emit("trial_error", section=[start, end], candidate=candidate, error=str(exc))
                 self.checkpoint()
                 raise
@@ -450,6 +644,10 @@ def main() -> None:
     parser.add_argument("--max-trials", type=int)
     parser.add_argument("--skip-file", type=Path)
     parser.add_argument("--refine-file", type=Path)
+    parser.add_argument("--candidate-mode", choices=("single", "combo", "adaptive"), default="single",
+                        help="search single overlays, paired biases, or data-derived adaptive arms")
+    parser.add_argument("--adaptive-profile", type=Path,
+                        help="JSON profile required by adaptive mode")
     args = parser.parse_args()
     budget = args.max_runtime_seconds if args.max_runtime_seconds is not None else (
         args.hours * 3600 if args.hours is not None else None
@@ -457,7 +655,9 @@ def main() -> None:
     result = SectionOptimizer(args.config, target_s=args.target, max_runtime_seconds=budget,
                               stop_file=args.stop_file, state_path=args.state,
                               max_trials=args.max_trials, skip_file=args.skip_file,
-                              refine_file=args.refine_file).run()
+                              refine_file=args.refine_file,
+                              candidate_mode=args.candidate_mode,
+                              adaptive_profile=args.adaptive_profile).run()
     print(json.dumps(result, indent=2), flush=True)
 
 

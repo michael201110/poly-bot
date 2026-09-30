@@ -20,6 +20,11 @@ def algorithm_presets(algorithm: str) -> dict[str, PPOConfig | DQNConfig | TQCCo
             "Fast training": replace(balanced, architecture="tiny", rollout_steps=256,
                                      batch_size=64, epochs=3),
             "Advanced": replace(balanced, architecture="standard"),
+            "Summer 1 - PPO from TQC Teacher": replace(
+                balanced, architecture="compact", learning_rate=3e-5,
+                rollout_steps=1024, batch_size=128, epochs=3,
+                entropy_coefficient=0.0001, target_lap_s=22.0,
+            ),
         }
     if algorithm == "dqn":
         balanced = DQNConfig()

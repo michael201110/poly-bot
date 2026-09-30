@@ -31,7 +31,7 @@ GENERAL_INFO = _info("General", {
     "track_id": "Simulator track identifier. 'current' uses the track open in PolyTrack.",
     "backend": "Mock is a fast local test track; WebSocket connects to PolyTrack in your browser.",
     "algorithm": (
-        "PPO uses fresh PWM rollouts; DQN uses QR-DQN with native digital actions and replay; "
+        "PPO uses fresh continuous-control rollouts; DQN uses QR-DQN with native digital actions and replay; "
         "TQC learns continuous controls from replay."
     ),
     "device": "Auto tries CUDA and explains a CPU fallback. PPO often runs well on CPU.",
@@ -57,12 +57,13 @@ PPO_INFO = _info("PPO", {
     "rollout_steps": "Fresh decisions PPO gathers before an update; it discards old rollout data.",
     "batch_size": "Decisions per optimizer minibatch. Must divide rollout steps exactly.",
     "epochs": "Number of passes over each fresh rollout. More passes cost time and may overfit.",
-    "pwm_levels": "Steering choices spread from full left to full right by digital pulses.",
-    "teacher_model": "Optional fixed PPO teacher checkpoint for imitation; leave empty for pure RL.",
+    "teacher_model": "Optional fixed PPO teacher checkpoint for a continuous Gaussian policy anchor.",
     "teacher_kl_coefficient": "How strongly PPO stays near the teacher's action distribution.",
     "imitation_coefficient": "Weight on matching ghost actions when the car is near its position.",
     "initial_forward_bias": "Starting PPO preference for throttle and no brake; learning can override it.",
-    "initial_steering_bias": "Starting PPO preference for straight steering; learning can override it.",
+    "initial_steering_bias": "Reduces initial steering exploration noise; PPO still outputs continuous steering.",
+    "target_lap_s": "Stop training after evaluation confirms a lap faster than this time; zero disables the target.",
+    "target_kl": "Stop a PPO update when its approximate KL drift exceeds 1.5 times this limit.",
 }, algorithm="ppo")
 
 DQN_INFO = _info("DQN", {
@@ -217,6 +218,15 @@ REWARD_DESCRIPTIONS = {
     "ground_slip_tolerance_rad": "Tyre slip angle allowed with four wheels grounded before cost begins.",
     "ground_slip_penalty_per_rad_s": (
         "Points per extra radian of ground slip each second; more negative punishes sliding."
+    ),
+    "ground_spin_deadzone_radps": (
+        "Ground yaw rate ignored before spin cost begins, in radians per second."
+    ),
+    "ground_spin_penalty_per_rad_s": (
+        "Points per excess grounded yaw radian per second; negative discourages wall spins."
+    ),
+    "ground_spin_min_grounded_wheels": (
+        "Minimum wheel contacts required before grounded spin cost applies; avoids flight penalties."
     ),
     "checkpoint_bonus": "Points awarded for each checkpoint reached.",
     "checkpoint_fast_bonus": "Extra checkpoint points when the split is faster than target.",

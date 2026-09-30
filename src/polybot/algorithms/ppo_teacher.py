@@ -10,64 +10,25 @@ import torch.nn.functional as F
 from gymnasium import spaces
 from stable_baselines3 import PPO
 from stable_baselines3.common.utils import explained_variance
-
-
-def policy_logits(policy: Any, observations: th.Tensor) -> th.Tensor:
-    """Return the concatenated MultiDiscrete action logits for a policy."""
-
-    features = policy.extract_features(observations)
-    latent_policy = policy.mlp_extractor.forward_actor(features)
-    return policy.action_net(latent_policy)
-
-
-def categorical_teacher_kl(
-    student_logits: th.Tensor,
-    teacher_logits: th.Tensor,
-    action_widths: tuple[int, ...],
-) -> th.Tensor:
-    """Mean KL(teacher || student) across MultiDiscrete action heads."""
-
-    losses = []
-    offset = 0
-    for width in action_widths:
-        student = student_logits[:, offset : offset + width]
-        teacher = teacher_logits[:, offset : offset + width]
-        losses.append(
-            F.kl_div(
-                F.log_softmax(student, dim=1),
-                F.softmax(teacher, dim=1),
-                reduction="batchmean",
-            )
-        )
-        offset += width
-    return th.stack(losses).mean()
+from torch.distributions import kl_divergence
 
 
 def expert_action_loss(
-    logits: th.Tensor,
+    mean_actions: th.Tensor,
     observations: th.Tensor,
-    action_widths: tuple[int, ...],
     *,
     expert_action_offset: int = 39,
 ) -> th.Tensor:
-    """Cross-entropy loss for the protocol-v2 ghost controls in observations."""
+    """Continuous regression loss for protocol-v2 ghost steering and pedals."""
 
-    if len(action_widths) != 3:
-        raise ValueError("ghost action imitation requires steer, throttle, and brake heads")
     expert = observations[:, expert_action_offset : expert_action_offset + 3]
     if expert.shape[1] != 3:
         raise ValueError("observations do not contain protocol-v2 expert actions")
-    steer_width = action_widths[0]
-    targets = (
-        ((expert[:, 0].clamp(-1, 1) + 1) * (steer_width - 1) / 2).round().long(),
-        expert[:, 1].round().clamp(0, action_widths[1] - 1).long(),
-        expert[:, 2].round().clamp(0, action_widths[2] - 1).long(),
+    target = th.stack(
+        (expert[:, 0].clamp(-1, 1), (expert[:, 1] - expert[:, 2]).clamp(-1, 1)),
+        dim=1,
     )
-    losses = []
-    offset = 0
-    for width, target in zip(action_widths, targets, strict=True):
-        losses.append(F.cross_entropy(logits[:, offset : offset + width], target, reduction="none"))
-        offset += width
+    per_sample = F.mse_loss(mean_actions, target, reduction="none").mean(dim=1)
     # Reference controls can teach acceleration from rest; use pose and heading to
     # decide whether the ghost action applies, not the speed the student has reached.
     position_m = observations[:, 34:37] * observations.new_tensor([50, 50, 100])
@@ -76,7 +37,7 @@ def expert_action_loss(
         -position_m.square().sum(1) / 8.0
         -heading_rad.square() / (2 * 0.35**2)
     ).detach()
-    return (th.stack(losses).mean(0) * confidence).mean()
+    return (per_sample * confidence).mean()
 
 
 class TeacherAnchoredPPO(PPO):
@@ -89,6 +50,11 @@ class TeacherAnchoredPPO(PPO):
     def set_teacher(self, teacher: PPO | None, coefficient: float = 0.0) -> None:
         if coefficient < 0:
             raise ValueError("teacher KL coefficient cannot be negative")
+        if teacher is not None and (
+            not isinstance(teacher.action_space, spaces.Box)
+            or teacher.action_space.shape != self.action_space.shape
+        ):
+            raise TypeError("PPO teacher must use the matching continuous Box(2) action schema")
         self.teacher_policy = None if teacher is None else teacher.policy
         self.teacher_kl_coefficient = coefficient
         if self.teacher_policy is not None:
@@ -99,8 +65,8 @@ class TeacherAnchoredPPO(PPO):
     def set_expert_imitation(self, coefficient: float = 0.0) -> None:
         if coefficient < 0:
             raise ValueError("expert imitation coefficient cannot be negative")
-        if coefficient and not isinstance(self.action_space, spaces.MultiDiscrete):
-            raise TypeError("expert imitation requires a MultiDiscrete action space")
+        if coefficient and not isinstance(self.action_space, spaces.Box):
+            raise TypeError("expert imitation requires a continuous Box action space")
         self.expert_imitation_coefficient = coefficient
 
     def _excluded_save_params(self) -> list[str]:
@@ -109,13 +75,12 @@ class TeacherAnchoredPPO(PPO):
     def _teacher_kl(self, observations: th.Tensor) -> th.Tensor:
         if self.teacher_policy is None or self.teacher_kl_coefficient <= 0:
             return th.zeros((), device=observations.device)
-        if not isinstance(self.action_space, spaces.MultiDiscrete):
-            raise TypeError("teacher anchoring currently requires a MultiDiscrete action space")
+        if not isinstance(self.action_space, spaces.Box):
+            raise TypeError("teacher anchoring requires a continuous Box action space")
         with th.no_grad():
-            teacher_logits = policy_logits(self.teacher_policy, observations)
-        student_logits = policy_logits(self.policy, observations)
-        widths = tuple(int(width) for width in self.action_space.nvec)
-        return categorical_teacher_kl(student_logits, teacher_logits, widths)
+            teacher_dist = self.teacher_policy.get_distribution(observations).distribution
+        student_dist = self.policy.get_distribution(observations).distribution
+        return kl_divergence(teacher_dist, student_dist).sum(dim=-1).mean()
 
     def train(self) -> None:
         """Run the normal PPO update with teacher KL included in every minibatch."""
@@ -176,10 +141,11 @@ class TeacherAnchoredPPO(PPO):
                 teacher_kls.append(teacher_kl.item())
                 expert_loss = th.zeros((), device=self.device)
                 if self.expert_imitation_coefficient > 0:
-                    student_logits = policy_logits(self.policy, rollout_data.observations)
-                    widths = tuple(int(width) for width in self.action_space.nvec)
+                    student_mean = self.policy.get_distribution(
+                        rollout_data.observations
+                    ).distribution.mean
                     expert_loss = expert_action_loss(
-                        student_logits, rollout_data.observations, widths
+                        student_mean, rollout_data.observations
                     )
                 expert_losses.append(expert_loss.item())
                 loss = (

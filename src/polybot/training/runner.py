@@ -17,10 +17,16 @@ from stable_baselines3.common.callbacks import BaseCallback
 
 from polybot.algorithms.registry import backend_for
 from polybot.environment.curriculum import CurriculumPhase, build_plan
-from polybot.environment.env import PolyTrackEnv
+from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
 from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 from polybot.mock import MockSimulatorTransport
-from polybot.models.registry import REWARD_SEMANTICS, ModelMetadata, ModelRegistry, track_slug
+from polybot.models.registry import (
+    PPO_ACTION_SEMANTICS,
+    REWARD_SEMANTICS,
+    ModelMetadata,
+    ModelRegistry,
+    track_slug,
+)
 from polybot.training.config import TrainingConfig
 from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, evaluate_model
@@ -70,6 +76,7 @@ class TrainingRunner:
         self._consecutive_rollbacks = 0
         self._last_rollback_severe = False
         self.sink: EventSink | None = None
+        self._ppo_air_brake_overlays: list[dict[str, Any]] = []
 
     def stop(self) -> None:
         self.stop_requested.set()
@@ -83,13 +90,20 @@ class TrainingRunner:
 
     def _environment(self, phase: CurriculumPhase | None = None) -> PolyTrackEnv:
         cfg = self.config
-        return PolyTrackEnv(
+        env = PolyTrackEnv(
             self._transport(), track_id=cfg.track_id, lookahead_count=cfg.lookahead_count,
             frame_skip=cfg.frame_skip, max_episode_steps=cfg.max_episode_steps,
             max_episode_s=cfg.max_episode_seconds, reward_config=cfg.rewards,
+            # A cold PML worker may replay the reference ghost for an entire lap
+            # before answering reset; keep that initialization from hitting the
+            # short per-step timeout used by local mock environments.
+            request_timeout_s=180.0 if cfg.backend == "websocket" else 10.0,
             action_adapter=self.backend.action_adapter(cfg),
             **(phase.env_kwargs() if phase is not None else {}),
         )
+        if cfg.algorithm == "ppo" and self._ppo_air_brake_overlays:
+            return AirBrakeActionWrapper(env, self._ppo_air_brake_overlays)
+        return env
 
     def _emit(self, event: dict[str, Any]) -> None:
         assert self.sink is not None
@@ -99,6 +113,10 @@ class TrainingRunner:
         cfg = self.config
         counts = self.backend.parameter_counts(self.model)
         assert self.device is not None
+        overlays = (
+            self._ppo_air_brake_overlays if cfg.algorithm == "ppo"
+            else list(getattr(self.model, "policy_overlays", []))
+        )
         return ModelMetadata(
             algorithm=cfg.algorithm, architecture=self.backend.architecture(cfg),
             actor_parameters=counts["actor"], critic_parameters=counts["critic"],
@@ -118,7 +136,11 @@ class TrainingRunner:
             critic_adaptation_required=bool(getattr(self.model, "critic_adaptation_required", False)),
             adaptation_stage=getattr(self.model, "adaptation_stage", None),
             adaptation_rollback_count=int(getattr(self.model, "adaptation_rollback_count", 0)),
-            policy_overlays=list(getattr(self.model, "policy_overlays", [])),
+            policy_overlays=list(overlays),
+            action_semantics=(
+                PPO_ACTION_SEMANTICS if cfg.algorithm in {"ppo", "tqc"}
+                else "native_digital_v2"
+            ),
         )
 
     def _save(self, name: str, evaluation: EvaluationResult | None = None) -> Path:
@@ -199,6 +221,62 @@ class TrainingRunner:
                     cfg.tqc.champion_action_drift_limit, observations
                 )
         return result
+
+    def _restore_ppo_champion_if_worse(
+        self, result: EvaluationResult, env: Any, *,
+        progress_tolerance: float = 0.0, lap_tolerance_s: float = 0.0,
+    ) -> bool:
+        cfg = self.config
+        champion_dir = self.registry.slot(cfg.track_name, "ppo", "champion")
+        metadata_path = champion_dir / "metadata.json"
+        if not metadata_path.is_file():
+            return False
+        payload = self.registry.read_metadata(champion_dir)
+        if not payload.evaluation:
+            return False
+        champion_result = EvaluationResult(**{
+            name: payload.evaluation[name]
+            for name in EvaluationResult.__dataclass_fields__
+            if name in payload.evaluation
+        })
+        if result.rank() >= champion_result.rank():
+            return False
+        if result.finish_rate >= champion_result.finish_rate:
+            progress_regression = (
+                result.median_progress < champion_result.median_progress - progress_tolerance
+            )
+            lap_regression = (
+                result.finish_rate > 0
+                and result.median_lap_s is not None
+                and champion_result.median_lap_s is not None
+                and result.median_lap_s > champion_result.median_lap_s + lap_tolerance_s
+            )
+            if not progress_regression and not lap_regression:
+                return False
+        current_steps = int(self.model.num_timesteps)
+        self.model = self.backend.load_model(
+            champion_dir / "policy.zip", env, self.device.resolved, resume=True
+        )
+        self.model.num_timesteps = current_steps
+        self.backend.configure_resume(self.model, cfg, self.device.resolved)
+        rng_seed = None
+        if cfg.algorithm == "ppo":
+            rng_seed = (int(cfg.seed) + current_steps) % (2**32 - 1)
+            self.model.set_random_seed(rng_seed)
+        self.last_evaluation = champion_result
+        self._last_rollback_severe = (
+            result.finish_rate < champion_result.finish_rate
+            or result.median_progress < champion_result.median_progress - 0.05
+        )
+        self._emit({
+            "type": "ppo_champion_restore", "timesteps": self.model.num_timesteps,
+            "candidate_median_lap_s": result.median_lap_s,
+            "champion_median_lap_s": champion_result.median_lap_s,
+            "candidate_finish_rate": result.finish_rate,
+            "champion_finish_rate": champion_result.finish_rate,
+            "rng_seed": rng_seed,
+        })
+        return True
 
     def _restore_champion_if_worse(
         self, result: EvaluationResult, training_env: Any,
@@ -298,8 +376,16 @@ class TrainingRunner:
     def run(
         self, *, resume: Path | None = None, fresh_replay: bool = False,
         rollback_to_champion: bool = False, pace_polish: bool = False,
+        freeze_ppo_actor: bool = False,
+        ppo_rollback_progress_tolerance: float = 0.0,
+        ppo_rollback_lap_tolerance_s: float = 0.0,
+        allow_ppo_reward_change: bool = False,
     ) -> Path:
         cfg = self.config
+        if freeze_ppo_actor and cfg.algorithm != "ppo":
+            raise ValueError("actor-frozen value warmup is only supported for PPO")
+        if ppo_rollback_progress_tolerance < 0 or ppo_rollback_lap_tolerance_s < 0:
+            raise ValueError("PPO rollback tolerances cannot be negative")
         if resume is not None and cfg.algorithm == "tqc":
             resume_metadata = self.registry.read_metadata(resume)
             if resume_metadata.critic_adaptation_required:
@@ -327,6 +413,7 @@ class TrainingRunner:
                     "phases": [asdict(phase) for phase in plan.phases]})
         first_env = self._environment(plan.phases[0])
         training_env: Any = ScaledTrainingReward(first_env, cfg.reward_scale)
+        resume_rng_seed: int | None = None
         try:
             if resume is None:
                 if fresh_replay:
@@ -337,10 +424,13 @@ class TrainingRunner:
                 self.registry.validate(metadata, cfg, self.backend.action_adapter(cfg).schema)
                 if metadata.architecture != self.backend.architecture(cfg):
                     raise ValueError("resume architecture differs from saved model")
-                if (
+                reward_changed = (
                     metadata.training_config["rewards"] != cfg.to_dict()["rewards"]
                     or (cfg.algorithm == "tqc" and metadata.reward_semantics != REWARD_SEMANTICS)
-                ) and not fresh_replay:
+                )
+                if reward_changed and not fresh_replay and not (
+                    allow_ppo_reward_change and cfg.algorithm == "ppo"
+                ):
                     raise ValueError("resume reward settings differ from saved replay rewards")
                 if fresh_replay and cfg.algorithm not in {"dqn", "tqc"}:
                     raise ValueError("fresh replay applies only to DQN and TQC")
@@ -350,9 +440,36 @@ class TrainingRunner:
                 )
                 if cfg.algorithm == "tqc":
                     self.model.policy_overlays = list(metadata.policy_overlays)
+                elif cfg.algorithm == "ppo":
+                    self._ppo_air_brake_overlays = [
+                        item for item in metadata.policy_overlays
+                        if item.get("kind") == "air_brake"
+                    ]
+                    self.model.policy_overlays = list(self._ppo_air_brake_overlays)
+                    if self._ppo_air_brake_overlays:
+                        training_env.close()
+                        training_env = ScaledTrainingReward(
+                            self._environment(plan.phases[0]), cfg.reward_scale
+                        )
+                        self.model.set_env(training_env)
                 self.backend.configure_resume(
                     self.model, cfg, self.device.resolved, fresh_replay=fresh_replay
                 )
+                if reward_changed and allow_ppo_reward_change and cfg.algorithm == "ppo":
+                    # PPO has no replay buffer. Discard stale Adam moments after a
+                    # deliberate reward-shaping change while keeping the policy/value weights.
+                    self.model.policy.optimizer.state.clear()
+                    self._emit({
+                        "type": "ppo_reward_change_resume",
+                        "source_reward_profile": metadata.training_config.get("reward_profile"),
+                        "target_reward_profile": cfg.reward_profile,
+                        "optimizer_state_reset": True,
+                    })
+                if cfg.algorithm == "ppo":
+                    resume_rng_seed = (
+                        int(cfg.seed) + int(self.model.num_timesteps)
+                    ) % (2**32 - 1)
+                    self.model.set_random_seed(resume_rng_seed)
                 if rollback_to_champion and cfg.algorithm == "tqc":
                     assert cfg.tqc is not None
                     self.model.anchor_to_current_policy(cfg.tqc.champion_action_drift_limit)
@@ -371,6 +488,7 @@ class TrainingRunner:
                 "parameters": self.backend.parameter_counts(self.model),
                 "log": str(log_path),
                 "resume_source": str(resume) if resume is not None else None,
+                "resume_rng_seed": resume_rng_seed,
                 "fresh_replay": fresh_replay,
                 "rollback_on_regression": rollback_to_champion,
                 "mode": "pace_polish" if pace_polish else "training",
@@ -378,6 +496,16 @@ class TrainingRunner:
                 "replay_size": self.model.replay_buffer.size()
                 if getattr(self.model, "replay_buffer", None) else None,
             })
+            if freeze_ppo_actor:
+                actor_modules = (
+                    self.model.policy.mlp_extractor.policy_net,
+                    self.model.policy.action_net,
+                )
+                for module in actor_modules:
+                    for parameter in module.parameters():
+                        parameter.requires_grad_(False)
+                self.model.policy.log_std.requires_grad_(False)
+                self._emit({"type": "value_warmup", "actor_frozen": True})
             if (
                 resume is not None and rollback_to_champion and cfg.algorithm == "tqc"
                 and cfg.tqc is not None and cfg.tqc.champion_action_drift_limit > 0
@@ -558,10 +686,18 @@ class TrainingRunner:
                         last_evaluated_steps = self.model.num_timesteps
                         next_eval = consumed + cfg.evaluation.interval_steps
                         training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
+                        ppo_restored = (
+                            rollback_to_champion and cfg.algorithm == "ppo"
+                            and self._restore_ppo_champion_if_worse(
+                                result, training_env,
+                                progress_tolerance=ppo_rollback_progress_tolerance,
+                                lap_tolerance_s=ppo_rollback_lap_tolerance_s,
+                            )
+                        )
                         restored = rollback_to_champion and self._restore_champion_if_worse(
                             result, training_env, phase_start=phase_start,
                             phase_steps=phase.steps,
-                        )
+                        ) if cfg.algorithm == "tqc" else ppo_restored
                         if restored:
                             self._consecutive_rollbacks = (
                                 self._consecutive_rollbacks + 1
@@ -579,6 +715,17 @@ class TrainingRunner:
                         if not restored:
                             self.model.set_env(training_env)
                         self._save("latest", self.last_evaluation)
+                        if (
+                            cfg.algorithm == "ppo" and cfg.ppo is not None
+                            and result.confirms_target_lap(cfg.ppo.target_lap_s)
+                        ):
+                            self._emit({
+                                "type": "target_reached", "algorithm": "ppo",
+                                "target_lap_s": cfg.ppo.target_lap_s,
+                                "confirmed_lap_s": result.best_lap_s,
+                                "timesteps": self.model.num_timesteps,
+                            })
+                            self.stop_requested.set()
                 if cfg.algorithm == "dqn":
                     self._emit({
                         "type": "phase_summary", "index": index + 1,
@@ -591,10 +738,27 @@ class TrainingRunner:
             if not self.stop_requested.is_set() and self.model.num_timesteps != last_evaluated_steps:
                 result = self._evaluate()
                 if rollback_to_champion:
-                    self._restore_champion_if_worse(
-                        result, training_env, phase_start=phase_start,
-                        phase_steps=phase.steps,
-                    )
+                    if cfg.algorithm == "tqc":
+                        self._restore_champion_if_worse(
+                            result, training_env, phase_start=phase_start,
+                            phase_steps=phase.steps,
+                        )
+                    elif cfg.algorithm == "ppo":
+                        self._restore_ppo_champion_if_worse(
+                            result, training_env,
+                            progress_tolerance=ppo_rollback_progress_tolerance,
+                            lap_tolerance_s=ppo_rollback_lap_tolerance_s,
+                        )
+                if (
+                    cfg.algorithm == "ppo" and cfg.ppo is not None
+                    and result.confirms_target_lap(cfg.ppo.target_lap_s)
+                ):
+                    self._emit({
+                        "type": "target_reached", "algorithm": "ppo",
+                        "target_lap_s": cfg.ppo.target_lap_s,
+                        "confirmed_lap_s": result.best_lap_s,
+                        "timesteps": self.model.num_timesteps,
+                    })
             latest = self._save("latest", self.last_evaluation)
             self._emit({"type": "stopped" if self.stop_requested.is_set() else "completed",
                         "path": str(latest), "timesteps": self.model.num_timesteps})

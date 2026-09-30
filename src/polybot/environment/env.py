@@ -33,6 +33,57 @@ from polybot.protocol import (
 from polybot.transport import SimulatorTransport
 
 
+def _mean_tick_demand(tick_controls: list[Action]) -> ControlDemand:
+    """Reduce mixed sub-frame controls to their signed mean policy demand."""
+    if not tick_controls:
+        return ControlDemand(0.0, 0.0, 0.0)
+    steer = float(np.mean([item.steer for item in tick_controls]))
+    longitudinal = float(np.mean([
+        float(item.throttle) - float(item.brake) for item in tick_controls
+    ]))
+    return ControlDemand.from_continuous(steer, longitudinal)
+
+
+class AirBrakeActionWrapper(gym.Wrapper):
+    """Keep sub-frame landing-aware air braking below a continuous policy."""
+
+    def __init__(self, env: gym.Env, overlays: list[dict[str, Any]]) -> None:
+        super().__init__(env)
+        self.overlays = [item for item in overlays if item.get("kind") == "air_brake"]
+        self._observation: np.ndarray | None = None
+
+    def reset(self, **kwargs: Any) -> tuple[np.ndarray, dict[str, Any]]:
+        observation, info = self.env.reset(**kwargs)
+        self._observation = np.asarray(observation)
+        return observation, info
+
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        requested = np.asarray(action, dtype=np.float32).reshape(2)
+        applied = requested.copy()
+        if self._observation is not None:
+            progress = float(self._observation[12])
+            airborne = bool(np.all(self._observation[17:21] < 0.5))
+            if airborne:
+                for overlay in self.overlays:
+                    start, end = float(overlay["start"]), float(overlay["end"])
+                    taper = min(float(overlay.get("taper", 0.01)), (end - start) / 2)
+                    enter = np.clip((progress - start) / max(taper, 1e-9), 0, 1)
+                    leave = np.clip((end - progress) / max(taper, 1e-9), 0, 1)
+                    fade = min(enter * enter * (3 - 2 * enter), leave * leave * (3 - 2 * leave))
+                    if fade > 0:
+                        # TQC applies overlay layers in order. With overlapping
+                        # air-brake windows, touchdown resumes the action before
+                        # the most recent layer, not the original actor action.
+                        base_before_layer = applied.copy()
+                        applied[1] = -abs(float(overlay.get("duty", 0.0))) * fade
+                        base_env = self.unwrapped
+                        base_env._air_brake_request = True
+                        base_env._air_brake_base_action = base_before_layer
+        result = self.env.step(applied)
+        self._observation = np.asarray(result[0])
+        return result
+
+
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
     """Synchronous Gymnasium wrapper around a PolyTrack simulator adapter."""
 
@@ -356,11 +407,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 landed = landed or any(contact >= 0.5 for contact in item.telemetry.wheel_contacts)
                 if "finish" in item.events or "crash" in item.events:
                     break
-            reward_action = ControlDemand(
-                float(np.mean([item.steer for item in tick_controls])),
-                float(np.mean([item.throttle for item in tick_controls])),
-                float(np.mean([item.brake for item in tick_controls])),
-            )
+            reward_action = _mean_tick_demand(tick_controls)
             applied = AppliedAction(reward_action, tick_controls)
         else:
             applied = self.action_adapter.apply(action, self.frame_skip)
@@ -437,11 +484,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             raise ProtocolViolation("simulator advanced more ticks than requested")
         executed = tick_controls[:transition.ticks_advanced]
         if executed:
-            reward_action = ControlDemand(
-                sum(item.steer for item in executed) / len(executed),
-                sum(item.throttle for item in executed) / len(executed),
-                sum(item.brake for item in executed) / len(executed),
-            )
+            reward_action = _mean_tick_demand(executed)
 
         dt = transition.ticks_advanced * float(self.simulator_capabilities["fixed_dt_s"])
         telemetry = transition.telemetry
@@ -597,6 +640,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             "throttle": applied.demand.throttle,
             "brake": applied.demand.brake,
         }
+        if getattr(self, "capture_tick_controls", False):
+            info["executed_tick_controls"] = [control.to_wire() for control in executed]
         if executed:
             info["applied_control_fraction"] = {
                 "steer": sum(item.steer for item in executed) / len(executed),

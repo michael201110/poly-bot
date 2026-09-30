@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QObject, QProcess, Qt, QTimer, Signal
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -178,6 +179,11 @@ class PolyBotWindow(QWidget):
         self.speed_search_process: QProcess | None = None
         self.adaptation_process: QProcess | None = None
         self.adaptation_stdout_buffer = ""
+        self.distillation_process: QProcess | None = None
+        self.distillation_stdout_buffer = ""
+        self.distillation_command: str | None = None
+        self.teacher_student_process: QProcess | None = None
+        self.teacher_student_stop_file: Path | None = None
         self.wr_search_process: QProcess | None = None
         self.section_optimizer_process: QProcess | None = None
         self.section_optimizer_stop_file: Path | None = None
@@ -524,6 +530,126 @@ class PolyBotWindow(QWidget):
             button.clicked.connect(lambda _checked=False, selected=stage: self._start_adaptation(selected))
             adaptation_actions.addWidget(button)
         page.addWidget(self.adaptation_section)
+        self.distillation_section = QWidget()
+        distill_layout = QVBoxLayout(self.distillation_section)
+        distill_layout.addWidget(QLabel("Bake proven TQC policy overlays into the actor (advanced)"))
+        distill_form = QFormLayout()
+        self.distillation_run_dir = QLineEdit()
+        self.distillation_run_dir.setPlaceholderText("Snapshot a champion to choose a run folder")
+        self.distillation_run_dir.setToolTip(
+            "Private snapshot and staged student directory; never edits the champion until Bake."
+        )
+        distill_form.addRow("Distillation run", self.distillation_run_dir)
+        self.distillation_episodes = QSpinBox()
+        self.distillation_episodes.setRange(2, 1000)
+        self.distillation_episodes.setValue(20)
+        self.distillation_episodes.setToolTip(
+            "Deterministic teacher laps recorded as final post-overlay action targets."
+        )
+        distill_form.addRow("Teacher laps", self.distillation_episodes)
+        self.distillation_validation_episodes = QSpinBox()
+        self.distillation_validation_episodes.setRange(5, 100)
+        self.distillation_validation_episodes.setValue(5)
+        distill_form.addRow("Validation laps", self.distillation_validation_episodes)
+        self.distillation_tolerance = QDoubleSpinBox()
+        self.distillation_tolerance.setRange(0.0, 1.0)
+        self.distillation_tolerance.setDecimals(3)
+        self.distillation_tolerance.setValue(0.02)
+        self.distillation_tolerance.setToolTip(
+            "Student must remain within this many seconds of the snapshotted teacher."
+        )
+        distill_form.addRow("Maximum lap loss (s)", self.distillation_tolerance)
+        self.distillation_bake_kinds = QLineEdit()
+        self.distillation_bake_kinds.setPlaceholderText("All smooth overlays and speed schedule")
+        self.distillation_bake_kinds.setToolTip(
+            "Optional comma-separated subset: steer_bias, steer_gain, drive_bias, drive_gain, "
+            "speed_bias_schedule. Air-brake handling is always retained."
+        )
+        distill_form.addRow("Bake kinds (optional)", self.distillation_bake_kinds)
+        distill_layout.addLayout(distill_form)
+        distill_actions = QHBoxLayout()
+        for label, command in (
+            ("Snapshot champion", "snapshot"), ("Collect teacher data", "collect"),
+            ("Train actor student", "train"), ("Validate student", "validate"),
+            ("Bake / promote", "bake"), ("Rollback bake", "rollback"),
+            ("Run full workflow", "full"),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, selected=command: self._start_distillation(selected))
+            distill_actions.addWidget(button)
+        distill_layout.addLayout(distill_actions)
+        self.distillation_status = QLabel("Air-brake controls remain low-level and are retained through baking.")
+        self.distillation_status.setWordWrap(True)
+        distill_layout.addWidget(self.distillation_status)
+        page.addWidget(self.distillation_section)
+        self.teacher_student_section = QWidget()
+        teacher_student_layout = QVBoxLayout(self.teacher_student_section)
+        teacher_student_layout.addWidget(QLabel(
+            "Train continuous PPO from the frozen 24.263s TQC champion; target a confirmed lap below 22.000s."
+        ))
+        teacher_student_form = QFormLayout()
+        self.teacher_student_teacher = QLineEdit(
+            "models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion"
+        )
+        self.teacher_student_dataset = QLineEdit("runs/teacher-student/summer-1-teacher.npz")
+        self.teacher_student_laps = QSpinBox()
+        self.teacher_student_laps.setRange(2, 100)
+        self.teacher_student_laps.setValue(20)
+        self.teacher_student_timesteps = QSpinBox()
+        self.teacher_student_timesteps.setRange(5_000, 50_000_000)
+        self.teacher_student_timesteps.setSingleStep(100_000)
+        self.teacher_student_timesteps.setValue(1_000_000)
+        self.dagger_rounds = QSpinBox()
+        self.dagger_rounds.setRange(1, 20)
+        self.dagger_rounds.setValue(3)
+        self.dagger_episodes = QSpinBox()
+        self.dagger_episodes.setRange(2, 100)
+        self.dagger_episodes.setValue(8)
+        self.dagger_nominal_weight = QDoubleSpinBox()
+        self.dagger_nominal_weight.setRange(0.0, 1.0)
+        self.dagger_nominal_weight.setSingleStep(0.05)
+        self.dagger_nominal_weight.setValue(0.6)
+        self.dagger_recovery_weight = QDoubleSpinBox()
+        self.dagger_recovery_weight.setRange(0.0, 1.0)
+        self.dagger_recovery_weight.setSingleStep(0.05)
+        self.dagger_recovery_weight.setValue(0.4)
+        self.dagger_until_finishing = QCheckBox("Repeat rounds until PPO finishes 5/5")
+        self.dagger_continue_rl = QCheckBox("After 5/5, value warmup then fine-tune to <22s")
+        teacher_student_form.addRow("Frozen TQC champion", self.teacher_student_teacher)
+        teacher_student_form.addRow("Teacher dataset", self.teacher_student_dataset)
+        teacher_student_form.addRow("Successful teacher laps", self.teacher_student_laps)
+        teacher_student_form.addRow("Fine-tuning block", self.teacher_student_timesteps)
+        teacher_student_form.addRow("DAgger rounds", self.dagger_rounds)
+        teacher_student_form.addRow("PPO episodes per round", self.dagger_episodes)
+        teacher_student_form.addRow("Nominal data weight", self.dagger_nominal_weight)
+        teacher_student_form.addRow("Recovery data weight", self.dagger_recovery_weight)
+        teacher_student_layout.addLayout(teacher_student_form)
+        teacher_student_layout.addWidget(self.dagger_until_finishing)
+        teacher_student_layout.addWidget(self.dagger_continue_rl)
+        teacher_student_actions = QHBoxLayout()
+        for label, stage in (
+            ("Collect", "collect"), ("Pretrain actor", "pretrain"),
+            ("Validate (5 laps)", "validate"), ("Value warmup", "value_warmup"),
+            ("Fine-tune block", "finetune"), ("Run DAgger cycle", "dagger"),
+            ("Full transfer pipeline", "full"),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(
+                lambda _checked=False, selected=stage: self._start_teacher_student(selected)
+            )
+            teacher_student_actions.addWidget(button)
+        teacher_student_layout.addLayout(teacher_student_actions)
+        stop_dagger_button = QPushButton("Stop after current DAgger round")
+        stop_dagger_button.clicked.connect(self._stop_teacher_student_after_round)
+        teacher_student_layout.addWidget(stop_dagger_button)
+        self.teacher_student_status = QLabel("TQC teacher remains frozen; PPO is evaluated and saved separately.")
+        self.teacher_student_status.setWordWrap(True)
+        teacher_student_layout.addWidget(self.teacher_student_status)
+        self.teacher_student_log = QTextEdit()
+        self.teacher_student_log.setReadOnly(True)
+        self.teacher_student_log.setMaximumHeight(100)
+        teacher_student_layout.addWidget(self.teacher_student_log)
+        page.addWidget(self.teacher_student_section)
         self.wr_search_section = QWidget()
         wr_layout = QVBoxLayout(self.wr_search_section)
         wr_layout.addWidget(QLabel("WR Pace Optimizer · frozen TQC policy · live lap-time search"))
@@ -723,6 +849,8 @@ class PolyBotWindow(QWidget):
         self.reward_scroll.setVisible(enabled)
         self.pace_polish_section.setVisible(enabled)
         self.adaptation_section.setVisible(enabled)
+        self.distillation_section.setVisible(enabled)
+        self.teacher_student_section.setVisible(enabled)
         self.wr_search_section.setVisible(enabled)
         self.section_optimizer_section.setVisible(enabled)
         for name in self.general_advanced:
@@ -745,7 +873,7 @@ class PolyBotWindow(QWidget):
         explanations = {
             "ppo": (
                 "PPO: on-policy. It learns from fresh rollouts, then discards them. "
-                "Steering uses discrete PWM pulses."
+                "It directly outputs continuous steering and signed throttle/brake demand."
             ),
             "dqn": (
                 "QR-DQN: off-policy. Its quantile network estimates a range of returns for each native digital "
@@ -860,7 +988,8 @@ class PolyBotWindow(QWidget):
         algorithm = _editor("tqc", GENERAL_INFO["algorithm"].description, ("ppo", "dqn", "tqc"))
         algorithm_layout.addRow("Algorithm", algorithm)
         explanation = QLabel(
-            "PPO uses PWM and fresh rollouts. DQN uses nine native digital actions and replay. "
+            "PPO uses continuous steering and signed longitudinal control with fresh rollouts. "
+            "DQN uses nine native digital actions and replay. "
             "TQC uses continuous controls and replay."
         )
         explanation.setWordWrap(True)
@@ -1083,6 +1212,9 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _start_adaptation(self, stage: str) -> None:
+        if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
+            self._error("Wait for distillation to finish before starting champion adaptation.")
+            return
         if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
             self._error("Stop the section optimizer before champion adaptation.")
             return
@@ -1162,7 +1294,316 @@ class PolyBotWindow(QWidget):
                         else f"Champion adaptation failed (exit {exit_code}).")
         self.adaptation_process = None
 
+    def _start_distillation(self, command: str) -> None:
+        from polybot.training.distillation import simulator_service_active
+
+        if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
+            self._error("A distillation command is already running.")
+            return
+        cfg = None
+        try:
+            cfg = self.configuration()
+            if cfg.algorithm != "tqc":
+                raise ValueError("Overlay distillation currently supports TQC champions only")
+            if command != "snapshot":
+                if self.worker is not None and self.worker.is_alive():
+                    raise RuntimeError("Wait for gradient training to finish before distillation")
+                if any(process is not None and process.state() != QProcess.NotRunning for process in (
+                    self.section_optimizer_process, self.wr_search_process, self.speed_search_process,
+                    self.adaptation_process,
+                )) or simulator_service_active():
+                    raise RuntimeError("The live search owns the simulator; snapshot now and collect after it stops")
+            stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+            cfg.log_root.mkdir(parents=True, exist_ok=True)
+            config_path = cfg.log_root / f"distillation-config-{stamp}.json"
+            config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
+            args = ["-m", "polybot.training.distillation", command]
+            if command in {"snapshot", "full"}:
+                args.extend(("--config", str(config_path)))
+            else:
+                run_text = self.distillation_run_dir.text().strip()
+                if not run_text:
+                    raise ValueError("Snapshot a champion first and select its distillation run folder")
+                args.extend(("--run-dir", run_text))
+            if command == "snapshot":
+                args.extend(("--run-id", f"gui-{stamp}"))
+            elif command == "collect":
+                args.extend(("--episodes", str(self.distillation_episodes.value())))
+            elif command == "validate":
+                args.extend(("--episodes", str(self.distillation_validation_episodes.value()),
+                             "--tolerance", str(self.distillation_tolerance.value())))
+            elif command == "train" and self.distillation_bake_kinds.text().strip():
+                kinds = [kind.strip() for kind in self.distillation_bake_kinds.text().split(",") if kind.strip()]
+                args.extend(("--bake-kinds", *kinds))
+            elif command == "bake":
+                args.extend(("--tolerance", str(self.distillation_tolerance.value())))
+            elif command == "full":
+                args.extend(("--episodes", str(self.distillation_episodes.value()),
+                             "--validation-episodes", str(self.distillation_validation_episodes.value()),
+                             "--tolerance", str(self.distillation_tolerance.value())))
+            process = QProcess(self)
+            process.setProgram(sys.executable)
+            process.setArguments(args)
+            process.setWorkingDirectory(str(Path.cwd()))
+            process.readyReadStandardOutput.connect(self._distillation_output)
+            process.readyReadStandardError.connect(self._distillation_error)
+            process.finished.connect(self._distillation_finished)
+            self.distillation_process = process
+            self.distillation_command = command
+            self.distillation_stdout_buffer = ""
+            self.distillation_status.setText(f"Distillation {command} running…")
+            process.start()
+            if not process.waitForStarted(3000):
+                raise RuntimeError(process.errorString())
+            self.tabs.setCurrentIndex(self.tabs.count() - 1)
+        except (ValueError, OSError, RuntimeError, FileNotFoundError) as exc:
+            self.distillation_process = None
+            self._error(str(exc))
+
+    def _distillation_output(self) -> None:
+        if self.distillation_process is None:
+            return
+        data = bytes(self.distillation_process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        self.distillation_stdout_buffer += data
+        for line in data.splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if event.get("type") == "distillation_progress":
+                self.distillation_status.setText(event.get("message", "Distillation running…"))
+
+    def _distillation_error(self) -> None:
+        if self.distillation_process is None:
+            return
+        error = bytes(self.distillation_process.readAllStandardError()).decode("utf-8", errors="replace")
+        if error.strip():
+            self.log.append(f"Distillation: {error[-1600:]}")
+
+    def _distillation_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
+        self._distillation_output()
+        self._distillation_error()
+        command = self.distillation_command
+        try:
+            result = json.loads(self.distillation_stdout_buffer.splitlines()[-1])
+        except json.JSONDecodeError:
+            result = None
+        if exit_code == 0 and isinstance(result, dict):
+            if command == "snapshot" and result.get("run_dir"):
+                self.distillation_run_dir.setText(result["run_dir"])
+            if command == "full" and result.get("run_dir"):
+                self.distillation_run_dir.setText(result["run_dir"])
+            if command == "validate":
+                accepted = bool(result.get("accepted"))
+                delta = result.get("lap_delta_s")
+                self.distillation_status.setText(
+                    f"Student {'passes' if accepted else 'fails'} lap gate; delta {delta!s}s."
+                )
+            else:
+                self.distillation_status.setText(self._distillation_summary(command or "", result))
+            self.log.append(f"Distillation {command}: {json.dumps(result, separators=(',', ':'))[:1600]}")
+        else:
+            self.distillation_status.setText(f"Distillation {command} failed (exit {exit_code}); see log.")
+            if self.distillation_stdout_buffer.strip():
+                self.log.append(self.distillation_stdout_buffer[-1600:])
+        self.distillation_process = None
+
+    def _start_teacher_student(self, stage: str) -> None:
+        if self.teacher_student_process is not None and self.teacher_student_process.state() != QProcess.NotRunning:
+            self._error("The PPO teacher-student pipeline is already running.")
+            return
+        if self.worker is not None and self.worker.is_alive():
+            self._error("Stop the active trainer before using the simulator for teacher-student transfer.")
+            return
+        if any(process is not None and process.state() != QProcess.NotRunning for process in (
+            self.adaptation_process, self.distillation_process, self.section_optimizer_process,
+            self.wr_search_process, self.speed_search_process,
+        )):
+            self._error("Stop the active model or search process before starting teacher-student transfer.")
+            return
+        teacher = self.teacher_student_teacher.text().strip()
+        dataset = self.teacher_student_dataset.text().strip()
+        if not teacher or not dataset:
+            self._error("Choose the frozen TQC champion and teacher dataset paths.")
+            return
+        args = [
+            "-m", "polybot.training.teacher_student", "--stage", stage,
+            "--teacher", teacher, "--dataset", dataset,
+            "--laps", str(self.teacher_student_laps.value()),
+            "--timesteps", str(self.teacher_student_timesteps.value()),
+            "--device", str(_value(self.general["device"])),
+        ]
+        if stage == "dagger":
+            stop_path = Path("runs/teacher-student/dagger.stop")
+            stop_path.parent.mkdir(parents=True, exist_ok=True)
+            stop_path.unlink(missing_ok=True)
+            self.teacher_student_stop_file = stop_path
+            args.extend((
+                "--rounds", str(self.dagger_rounds.value()),
+                "--episodes-per-round", str(self.dagger_episodes.value()),
+                "--nominal-weight", str(self.dagger_nominal_weight.value()),
+                "--recovery-weight", str(self.dagger_recovery_weight.value()),
+                "--stop-file", str(stop_path),
+            ))
+            if self.dagger_until_finishing.isChecked():
+                args.append("--until-finishing")
+            if self.dagger_continue_rl.isChecked():
+                args.append("--continue-to-rl")
+        if stage == "full":
+            args.extend(("--max-rounds", "0"))
+        process = QProcess(self)
+        process.setProgram(sys.executable)
+        process.setArguments(args)
+        process.setWorkingDirectory(str(Path.cwd()))
+        process.readyReadStandardOutput.connect(self._teacher_student_output)
+        process.readyReadStandardError.connect(self._teacher_student_error)
+        process.finished.connect(self._teacher_student_finished)
+        self.teacher_student_process = process
+        self.teacher_student_status.setText(f"TQC → PPO {stage} stage is starting.")
+        process.start()
+        if not process.waitForStarted(5000):
+            self.teacher_student_process = None
+            self._error("Could not start the teacher-student process: " + process.errorString())
+            return
+        self.tabs.setCurrentWidget(self.teacher_student_section.parentWidget())
+
+    def _stop_teacher_student_after_round(self) -> None:
+        process = self.teacher_student_process
+        if process is None or process.state() == QProcess.NotRunning:
+            self._error("No DAgger run is active.")
+            return
+        if self.teacher_student_stop_file is None:
+            self._error("The active teacher-student stage has no round-safe stop file.")
+            return
+        self.teacher_student_stop_file.parent.mkdir(parents=True, exist_ok=True)
+        self.teacher_student_stop_file.write_text("stop after this round\n", encoding="utf-8")
+        self.teacher_student_status.setText(
+            "Stop requested; DAgger will finish the current round and keep its checkpoint."
+        )
+
+    def _teacher_student_output(self) -> None:
+        if self.teacher_student_process is None:
+            return
+        data = bytes(self.teacher_student_process.readAllStandardOutput()).decode(
+            "utf-8", errors="replace"
+        )
+        if data:
+            self.teacher_student_log.moveCursor(QTextCursor.MoveOperation.End)
+            self.teacher_student_log.insertPlainText(data)
+            self.teacher_student_log.ensureCursorVisible()
+            for line in data.splitlines():
+                try:
+                    event = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if "best_lap_s" in event:
+                    self.teacher_student_status.setText(
+                        f"PPO best lap {event.get('best_lap_s')}s · "
+                        f"finish rate {event.get('finish_rate')} · target <22.000s"
+                    )
+                elif event.get("target_reached"):
+                    self.teacher_student_status.setText(
+                        f"PPO confirmed {event.get('lap_s')}s at {event.get('timesteps')} steps."
+                    )
+                elif "dagger_round" in event:
+                    error = event.get("action_error", {})
+                    divergence = error.get("first_major_divergence_progress")
+                    if divergence is not None:
+                        self.teacher_student_log.append(
+                            f"First measured PPO/TQC divergence: {divergence} progress"
+                        )
+                    self.teacher_student_status.setText(
+                        f"DAgger round {event['dagger_round']} · "
+                        f"{event.get('samples', 0)} recovery states · "
+                        f"finish rate {event.get('finish_rate', 0):.0%} · "
+                        f"median progress {event.get('median_progress', 0):.1%}"
+                    )
+                    failures = error.get("failure_progress", [])
+                    first_failure = failures[0].get("progress") if failures else None
+                    self.teacher_student_log.append(
+                        "Action error steering/longitudinal: "
+                        f"{error.get('mean_steering_error', 0):.4f}/"
+                        f"{error.get('mean_longitudinal_error', 0):.4f}; "
+                        f"first failed progress: {first_failure if first_failure is not None else 'none'}"
+                    )
+                elif event.get("dagger_stopped"):
+                    self.teacher_student_status.setText(
+                        f"DAgger stopped cleanly; ready to resume at round {event.get('next_round')}."
+                    )
+                elif event.get("reliability_gate_blocked"):
+                    self.teacher_student_status.setText(
+                        f"PPO finish rate {event.get('finish_rate', 0):.0%}; "
+                        "run DAgger until it reliably finishes before PPO fine-tuning."
+                    )
+
+    def _teacher_student_error(self) -> None:
+        if self.teacher_student_process is None:
+            return
+        data = bytes(self.teacher_student_process.readAllStandardError()).decode(
+            "utf-8", errors="replace"
+        )
+        if data.strip():
+            self.teacher_student_log.append(data.strip())
+
+    def _teacher_student_finished(self, exit_code: int, _status: QProcess.ExitStatus) -> None:
+        self._teacher_student_output()
+        self._teacher_student_error()
+        if exit_code == 0:
+            self.teacher_student_status.setText("Teacher-student stage completed; see its saved report above.")
+        else:
+            self.teacher_student_status.setText(f"Teacher-student stage failed (exit {exit_code}).")
+        self.teacher_student_process = None
+        self.teacher_student_stop_file = None
+        self.distillation_command = None
+        self.distillation_stdout_buffer = ""
+
+    @staticmethod
+    def _distillation_summary(command: str, result: dict[str, Any]) -> str:
+        """Keep the advanced tab useful by surfacing bake metrics at a glance."""
+        if command == "full":
+            collection = result.get("collection", {})
+            training = result.get("training", {})
+            validation = result.get("validation", {})
+            metrics = training.get("action_metrics", {})
+            teacher = validation.get("teacher", {})
+            student = validation.get("student", {})
+            delta = validation.get("lap_delta_s")
+            return (
+                f"Full workflow {'passes; staged for bake' if validation.get('accepted') else 'staged; gate failed'} · "
+                f"teacher {teacher.get('median_lap_s')}s, student {student.get('median_lap_s')}s "
+                f"(Δ {delta}s) · {collection.get('samples', 0):,} samples · "
+                f"val MSE {training.get('best_validation_loss')} · "
+                f"max action error {metrics.get('max_action_error')} · "
+                f"overlays baked {training.get('bakeable_overlay_count', 0)}, "
+                f"retained {training.get('retained_overlay_count', 0)}."
+            )
+        if command == "snapshot":
+            teacher = result.get("teacher", {})
+            return (
+                f"Teacher snapshotted at {teacher.get('champion_lap_s')}s · "
+                f"bakeable overlays {len(teacher.get('bakeable_overlays', []))} · "
+                f"retained {len(teacher.get('retained_overlays', []))}."
+            )
+        if command == "collect":
+            return (
+                f"Teacher data collected · {result.get('episodes', 0)} laps · "
+                f"{result.get('samples', 0):,} samples · "
+                f"{result.get('overlay_modified_samples', 0):,} overlay-modified."
+            )
+        if command == "train":
+            metrics = result.get("action_metrics", {})
+            return (
+                f"Actor student trained · val MSE {result.get('best_validation_loss')} · "
+                f"max action error {metrics.get('max_action_error')} · "
+                f"overlays baked {result.get('bakeable_overlay_count', 0)}, "
+                f"retained {result.get('retained_overlay_count', 0)}."
+            )
+        return f"Distillation {command} finished successfully."
+
     def _start(self, resume: bool, *, best: bool = False, pace_polish: bool = False) -> None:
+        if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
+            self._error("Wait for the current distillation command to finish before training.")
+            return
         if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
             self._error("Section optimizer is using the simulator. Stop it before starting training.")
             return
@@ -1243,6 +1684,9 @@ class PolyBotWindow(QWidget):
             self.log.append("Stopping after the current simulator step; latest will be saved.")
 
     def _start_wr_search(self, *, analyze_only: bool = False) -> None:
+        if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
+            self._error("Wait for distillation to finish before starting WR search.")
+            return
         if self.worker is not None and self.worker.is_alive():
             self._error("Stop gradient training before starting WR pace search.")
             return
@@ -1302,12 +1746,15 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _start_section_optimizer(self, hours: int | None) -> None:
+        if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
+            self._error("Wait for distillation to finish before starting the section optimizer.")
+            return
         if self.worker is not None and self.worker.is_alive():
             self._error("Stop gradient training before starting the section optimizer.")
             return
         if any(process is not None and process.state() != QProcess.NotRunning for process in
                (self.section_optimizer_process, self.wr_search_process, self.speed_search_process,
-                self.adaptation_process)):
+                self.adaptation_process, self.distillation_process)):
             self._error("Another live training or search process is using the simulator.")
             return
         try:
@@ -1505,6 +1952,9 @@ class PolyBotWindow(QWidget):
         self.wr_search_process = None
 
     def _start_speed_search(self) -> None:
+        if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
+            self._error("Wait for distillation to finish before starting speed search.")
+            return
         if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
             self._error("Stop the section optimizer before starting speed search.")
             return

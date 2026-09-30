@@ -47,6 +47,8 @@ The advanced **WR Pace Optimizer** uses the current TQC champion as a frozen dri
 
 The advanced **Section Optimizer** runs this direct overlay search as a resumable campaign: it sweeps ten 10%-of-track windows in order, evaluates each candidate from the start of a normal lap, and uses the newly promoted champion for every later window. Sections that produced gains or near-misses are split through 5%, 2%, and 1% windows. A 10-lap deterministic baseline estimates timing noise; candidates are screened over one lap and must beat the current champion by more than that noise floor across five clean confirmation laps (ten for small gains) before atomic promotion. The GUI offers one-hour, four-hour, or until-stopped runs, safe stop/resume, section skip, and forced refinement. Progress is checkpointed in `optimizer-state.json`; append-only trials go to `section-search-history.jsonl`. The CLI accepts `--hours`, `--max-runtime-seconds`, `--stop-file`, `--skip-file`, and `--refine-file`. Local RL is not used.
 
+The advanced **Bake overlays into model** workflow distills a frozen TQC champion plus its active smooth steering/drive overlays into an actor-only supervised student. It snapshots the champion and overlay stack first, records final post-overlay actions, weights overlay-modified samples more heavily, and leaves critics, entropy state, replay, and the live champion unchanged during training. Air-brake controls remain as low-level primitives. Run the separate stages with `python -m polybot.training.distillation snapshot --config path/to/config.json`, then `collect`, `train`, and `validate` with the printed run directory; use `bake` only after the deterministic live-lap gate accepts the student. The `full` command runs those stages but leaves even a passing student staged for review; promotion is always a separate explicit `bake` action. Candidate files stay under `models/<track>/tqc/distillation/<run-id>/`, and `rollback` can restore that run's snapshotted teacher after a promotion. The advanced GUI exposes the same explicit stages. A failed or slower validation never replaces the champion, and a promoted distilled actor is marked as requiring critic adaptation before RL continuation.
+
 The GUI Status tab shows short episode and evaluation summaries. Full reward diagnostics stay in the run's JSONL file. To follow a running log in a separate readable window, run `polybot-live-log logs/<run>.jsonl`. Use `polybot-live-log "logs/summer-1-tqc-*.jsonl" --follow-newest` to switch automatically when a new run starts. Closing this window does not stop training.
 
 ```powershell
@@ -55,6 +57,10 @@ The GUI Status tab shows short episode and evaluation summaries. Full reward dia
 ```
 
 See [training](docs/training.md), [game integration](docs/game-integration.md), and the [digital simulator protocol](docs/protocol.md). Validate changes with `python -m pytest`, `python -m ruff check .`, and `python tools/validate_pml_mod.py`.
+
+The [Summer 1 TQC-to-PPO diagnosis](docs/ppo-transfer-diagnosis.md) records the frozen teacher, student comparison, replay experiment, and the current transfer failure.
+
+Community contributions follow the [Code of Conduct](CODE_OF_CONDUCT.md). See [Contributing](CONTRIBUTING.md) for setup and review guidance, and [Security](SECURITY.md) for private vulnerability reports.
 
 ## Repository
 

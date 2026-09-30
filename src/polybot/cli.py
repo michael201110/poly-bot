@@ -66,7 +66,6 @@ def _algorithm_options(parser: argparse.ArgumentParser) -> None:
     ppo.add_argument("--ppo-gamma", type=float)
     ppo.add_argument("--ppo-gae-lambda", type=float)
     ppo.add_argument("--ppo-entropy", type=float)
-    ppo.add_argument("--ppo-pwm-levels", type=int)
     ppo.add_argument("--teacher-model")
     ppo.add_argument("--teacher-kl", type=float)
     ppo.add_argument("--ppo-imitation", type=float)
@@ -124,7 +123,6 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
             "rollout_steps": args.ppo_rollout, "epochs": args.ppo_epochs,
             "gae_lambda": args.ppo_gae_lambda,
             "entropy_coefficient": args.ppo_entropy,
-            "pwm_levels": args.ppo_pwm_levels,
             "teacher_model": args.teacher_model,
             "teacher_kl_coefficient": args.teacher_kl,
             "imitation_coefficient": args.ppo_imitation,

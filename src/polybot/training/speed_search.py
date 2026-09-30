@@ -22,9 +22,33 @@ from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import git_commit
 from polybot.training.config import TrainingConfig
 from polybot.training.evaluation import evaluate_model
+from polybot.training.pace_config import champion_evaluation_config
 from polybot.training.pace_history import append_pace_history
 from polybot.training.promotion import promote_directory
 from polybot.training.runner import TrainingRunner
+
+LAUNCH_WINDOWS = ((0.0, 0.05), (0.0, 0.10), (0.0, 0.20), (0.05, 0.15))
+LAUNCH_BIASES = (0.02, 0.05, 0.10, -0.02, -0.05, -0.10)
+PACE_WINDOWS = (
+    (0.34, 0.55), (0.55, 0.75), (0.75, 1.0),
+    (0.34, 1.0), (0.5, 1.0), (0.24, 0.36), (0.1, 0.22),
+)
+PACE_BIASES = (0.005, 0.01, -0.005, -0.01, 0.02, -0.02)
+
+
+def _section_probes() -> list[tuple[float, float, float]]:
+    """Prioritize the launch, then retain the established speed windows."""
+    launch = [
+        (start, end, amount)
+        for start, end in LAUNCH_WINDOWS
+        for amount in LAUNCH_BIASES
+    ]
+    pace = [
+        (start, end, amount)
+        for start, end in PACE_WINDOWS
+        for amount in PACE_BIASES
+    ]
+    return [*launch, *pace]
 
 
 def emit(path: Path, event: dict) -> None:
@@ -36,15 +60,19 @@ def emit(path: Path, event: dict) -> None:
 
 def search(
     config_path: Path, log_path: Path, max_trials: int, target_s: float,
-    stop_file: Path | None = None, mode: str = "global",
+    stop_file: Path | None = None, mode: str = "global", seed_offset: int = 0,
 ) -> None:
     if max_trials < 1 or target_s <= 0:
         raise ValueError("trials and target seconds must be positive")
     if mode not in {"global", "section"}:
         raise ValueError("search mode must be global or section")
-    config = TrainingConfig.from_dict(json.loads(config_path.read_text(encoding="utf-8-sig")))
-    if config.algorithm != "tqc" or config.backend != "websocket":
+    requested_config = TrainingConfig.from_dict(json.loads(config_path.read_text(encoding="utf-8-sig")))
+    if requested_config.algorithm != "tqc" or requested_config.backend != "websocket":
         raise ValueError("live speed search requires a websocket TQC profile")
+    requested_runner = TrainingRunner(requested_config)
+    requested_champion = requested_runner.registry.slot(requested_config.track_name, "tqc", "champion")
+    requested_metadata = requested_runner.registry.read_metadata(requested_champion)
+    config = champion_evaluation_config(requested_config, requested_metadata)
     runner = TrainingRunner(config)
     champion_dir = runner.registry.slot(config.track_name, "tqc", "champion")
     champion = runner.registry.read_metadata(champion_dir)
@@ -53,14 +81,17 @@ def search(
 
     mock = PolyTrackEnv(MockSimulatorTransport(), action_adapter=runner.backend.action_adapter(config))
     try:
-        model = runner.backend.load_model(champion_dir / "policy.zip", mock, "cpu", resume=True)
+        model = runner.backend.load_model(champion_dir / "policy.zip", mock, "cpu")
     finally:
         mock.close()
+    # Policy overlays live in ModelMetadata rather than the SB3 archive. Keep
+    # the real champion (especially its landing-aware air brake) in every trial.
+    model.policy_overlays = deepcopy(champion.policy_overlays)
 
     best_lap = float(champion.evaluation["median_lap_s"])
     best_actor = deepcopy(model.actor.state_dict())
     best_schedule = deepcopy(getattr(model, "speed_bias_schedule", []))
-    rng = random.Random(config.seed + 25)
+    rng = random.Random(config.seed + 25 + int(seed_offset))
     run_tag = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     # Prefer changes that preserve the existing route; exploration broadens later.
     probes = [
@@ -74,17 +105,11 @@ def search(
     ] + [
         (0.0, 0.0, 1.0, gain) for gain in (0.98, 0.99, 1.01, 1.02)
     ]
-    windows = (
-        (0.34, 0.55), (0.55, 0.75), (0.75, 1.0),
-        (0.34, 1.0), (0.5, 1.0), (0.24, 0.36), (0.1, 0.22),
-    )
-    section_probes = [
-        (start, end, amount)
-        for start, end in windows
-        for amount in (0.005, 0.01, -0.005, -0.01, 0.02, -0.02)
-    ]
+    windows = (*LAUNCH_WINDOWS, *PACE_WINDOWS)
+    section_probes = _section_probes()
     emit(log_path, {"type": "started", "champion_lap_s": best_lap,
-                    "target_s": target_s, "max_trials": max_trials, "mode": mode})
+                    "target_s": target_s, "max_trials": max_trials, "mode": mode,
+                    "seed_offset": int(seed_offset)})
 
     for trial in range(1, max_trials + 1):
         if best_lap <= target_s or (stop_file is not None and stop_file.exists()):
@@ -106,7 +131,8 @@ def search(
                 section = section_probes[trial - 1]
             else:
                 start, end = rng.choice(windows)
-                section = (start, end, rng.gauss(0, 0.03 if trial % 7 == 0 else 0.01))
+                spread = 0.08 if (start, end) in LAUNCH_WINDOWS else 0.03
+                section = (start, end, rng.gauss(0, spread if trial % 7 == 0 else spread / 3))
 
         model.actor.load_state_dict(best_actor)
         model.speed_bias_schedule = deepcopy(best_schedule)
@@ -193,8 +219,11 @@ def main() -> None:
     parser.add_argument("--target", type=float, default=25.0)
     parser.add_argument("--stop-file", type=Path)
     parser.add_argument("--mode", choices=("global", "section"), default="global")
+    parser.add_argument("--seed-offset", type=int, default=0,
+                        help="change the randomized search sequence for a later batch")
     args = parser.parse_args()
-    search(args.config, args.log, args.trials, args.target, args.stop_file, args.mode)
+    search(args.config, args.log, args.trials, args.target, args.stop_file, args.mode,
+           args.seed_offset)
 
 
 if __name__ == "__main__":

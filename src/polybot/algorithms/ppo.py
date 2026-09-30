@@ -1,4 +1,4 @@
-"""PPO backend with discrete PWM actions and optional fixed teacher."""
+"""Continuous-control PPO backend with optional fixed PPO teacher."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from polybot.algorithms.base import AlgorithmBackend
 from polybot.algorithms.ppo_initialization import apply_forward_bias
 from polybot.algorithms.ppo_teacher import TeacherAnchoredPPO
-from polybot.control.actions import DiscretePwmActionAdapter
+from polybot.control.actions import ContinuousActionAdapter
 from polybot.training.config import ARCHITECTURES, PPOConfig
 
 if TYPE_CHECKING:
@@ -24,9 +24,8 @@ class PPOBackend(AlgorithmBackend):
         if config.ppo is None:
             config.ppo = PPOConfig()
 
-    def action_adapter(self, config: TrainingConfig) -> DiscretePwmActionAdapter:
-        assert config.ppo is not None
-        return DiscretePwmActionAdapter(config.ppo.pwm_levels)
+    def action_adapter(self, config: TrainingConfig) -> ContinuousActionAdapter:
+        return ContinuousActionAdapter()
 
     def architecture(self, config: TrainingConfig) -> str:
         assert config.ppo is not None
@@ -41,6 +40,7 @@ class PPOBackend(AlgorithmBackend):
             learning_rate=p.learning_rate, gamma=p.gamma, gae_lambda=p.gae_lambda,
             ent_coef=p.entropy_coefficient, n_steps=p.rollout_steps,
             batch_size=p.batch_size, n_epochs=p.epochs,
+            target_kl=p.target_kl,
             policy_kwargs={"net_arch": {"pi": layers, "vf": layers}},
         )
         apply_forward_bias(
@@ -61,11 +61,29 @@ class PPOBackend(AlgorithmBackend):
     def configure_resume(
         self, model: Any, config: TrainingConfig, device: str, *, fresh_replay: bool = False
     ) -> None:
+        del fresh_replay
         assert config.ppo is not None
         p = config.ppo
+        if model.n_steps != p.rollout_steps:
+            raise ValueError(
+                "PPO rollout steps cannot change while resuming; start a fresh model "
+                "to change the rollout buffer size"
+            )
+        model.learning_rate = p.learning_rate
+        model._setup_lr_schedule()
+        for group in model.policy.optimizer.param_groups:
+            group["lr"] = p.learning_rate
+        model.ent_coef = p.entropy_coefficient
+        model.n_epochs = p.epochs
+        model.batch_size = p.batch_size
+        model.gamma = p.gamma
+        model.gae_lambda = p.gae_lambda
+        model.target_kl = p.target_kl
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
             model.set_teacher(teacher, p.teacher_kl_coefficient)
+        else:
+            model.set_teacher(None, 0.0)
         model.set_expert_imitation(p.imitation_coefficient)
 
     def parameter_counts(self, model: Any) -> dict[str, int]:
@@ -90,5 +108,6 @@ class PPOBackend(AlgorithmBackend):
             "entropy": values.get("train/entropy_loss"),
             "explained_variance": values.get("train/explained_variance"),
             "kl": values.get("train/approx_kl"),
+            "teacher_kl": values.get("train/teacher_kl"),
             "clip_fraction": values.get("train/clip_fraction"),
         }

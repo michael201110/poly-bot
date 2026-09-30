@@ -15,6 +15,7 @@ from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 MODEL_SCHEMA = "polybot.model.v2"
 POLYBOT_VERSION = "2.2.0"
 REWARD_SEMANTICS = "executed-controls-v1"
+PPO_ACTION_SEMANTICS = "steering_signed_longitudinal_v1"
 
 
 class IncompatibleModelError(ValueError):
@@ -64,6 +65,7 @@ class ModelMetadata:
     adaptation_stage: str | None = None
     adaptation_rollback_count: int = 0
     policy_overlays: list[dict[str, Any]] = field(default_factory=list)
+    action_semantics: str | None = None
     schema: str = MODEL_SCHEMA
     polybot_version: str = POLYBOT_VERSION
     git_commit: str = field(default_factory=git_commit)
@@ -102,6 +104,16 @@ class ModelRegistry:
         return ModelMetadata(**payload)
 
     def validate(self, metadata: ModelMetadata, config: Any, action_schema: str) -> None:
+        if metadata.algorithm == "ppo" and metadata.action_schema == "pwm-multidiscrete-v2":
+            raise IncompatibleModelError(
+                "legacy PPO checkpoint uses discrete PWM actions and cannot resume as continuous PPO; "
+                "start a new continuous model or distill a compatible TQC teacher"
+            )
+        if metadata.algorithm == "ppo" and metadata.action_semantics != PPO_ACTION_SEMANTICS:
+            raise IncompatibleModelError(
+                "PPO checkpoint does not declare continuous steering and signed longitudinal actions; "
+                "start a fresh model or use the TQC-to-PPO teacher pipeline"
+            )
         mismatches = []
         for name, actual, expected in (
             ("algorithm", metadata.algorithm, config.algorithm),

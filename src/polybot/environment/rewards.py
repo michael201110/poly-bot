@@ -57,6 +57,9 @@ class RewardConfig:
     airborne_roll_failure_penalty: float = 0.0
     ground_slip_tolerance_rad: float = 0.0872665  # 5 degrees
     ground_slip_penalty_per_rad_s: float = 0.0
+    ground_spin_deadzone_radps: float = 5.0
+    ground_spin_penalty_per_rad_s: float = 0.0
+    ground_spin_min_grounded_wheels: int = 2
     checkpoint_bonus: float = 0.0
     checkpoint_fast_bonus: float = 0.0
     checkpoint_target_s: float = 30.0
@@ -227,13 +230,13 @@ def summer_1_ghost_learning_reward_config() -> RewardConfig:
 
 
 def summer_1_recovery_reward_config() -> RewardConfig:
-    """Keep the ghost shaping, but only reward it during safe forward progress."""
+    """Use the loaded ghost to teach safe starts as well as fast forward progress."""
 
     return dataclass_replace(
         summer_1_ghost_learning_reward_config(),
-        guidance_reward_scale=0.05,
-        guidance_min_forward_speed_mps=5.0,
-        guidance_min_on_track_factor=0.5,
+        guidance_reward_scale=1.0,
+        guidance_min_forward_speed_mps=0.0,
+        guidance_min_on_track_factor=0.25,
         low_speed_penalty_per_s=-5.0,
         low_speed_grace_s=1.0,
     )
@@ -384,7 +387,6 @@ def _ghost_guidance_weight(
 ) -> float:
     if (
         incomplete_failure
-        or progress_delta <= 0.0
         or forward_speed < config.guidance_min_forward_speed_mps
         or on_track_factor < config.guidance_min_on_track_factor
     ):
@@ -443,6 +445,17 @@ def _ground_slip_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) 
     slip_angle = float(np.arctan2(lateral_speed, max(forward_speed, 1e-6)))
     excess_slip = max(0.0, slip_angle - config.ground_slip_tolerance_rad)
     return config.ground_slip_penalty_per_rad_s * excess_slip * dt
+
+
+def _ground_spin_penalty(telemetry: Telemetry, config: RewardConfig, dt: float) -> float:
+    """Penalize excessive yaw rotation while the car has firm ground contact."""
+
+    grounded = sum(contact >= 0.5 for contact in telemetry.wheel_contacts)
+    if grounded < config.ground_spin_min_grounded_wheels:
+        return 0.0
+    yaw_rate = abs(telemetry.angular_velocity_radps[1])
+    excess_spin = max(0.0, yaw_rate - config.ground_spin_deadzone_radps)
+    return config.ground_spin_penalty_per_rad_s * excess_spin * dt
 
 
 @dataclass(frozen=True, slots=True)
@@ -557,6 +570,7 @@ def _driving_terms(c: RewardContext) -> dict[str, float]:
         "unsafe_speed": p.unsafe_speed_penalty_per_m * c.distance_at_speed
         * (1.0 - c.on_track_factor),
         "ground_slip": _ground_slip_penalty(c.telemetry, p, c.dt),
+        "ground_spin": _ground_spin_penalty(c.telemetry, p, c.dt),
         "action_change": p.action_change_penalty * (
             abs(c.action.steer - c.previous_control.steer)
             + abs(c.action.throttle - c.previous_control.throttle)
