@@ -669,3 +669,23 @@ the teacher was 0.193 (maximum 0.402), while steering error remained about
 that the current DAgger dataset and loss do not yet teach the necessary
 closed-loop recovery. The zero-update graft remains the only validated PPO
 policy; the TQC teacher remains 24.263s. No sub-22s PPO lap has been confirmed.
+
+## Residual actor freeze after checkpoint load (30 September 2026)
+
+A late-track PPO probe gated the residual to progress 60–100%, but its first
+deterministic evaluation still failed at 56.6%. The run log showed 30,596
+trainable actor parameters at startup; the verified graft metadata lists only
+258 trainable actor parameters. The discrepancy identifies the cause: SB3
+checkpoints preserve tensor values and optimizer state, but not PyTorch
+`requires_grad` flags. The exact TQC trunk and mean head had been frozen when
+grafted, then silently became trainable when the PPO checkpoint was loaded.
+Consequently PPO changed the base actor before the gated residual could act.
+
+The PPO backend now re-freezes the base actor whenever it loads a
+`tqc_residual` checkpoint and again when configuring resumed training. The
+residual and value network remain trainable, while the TQC feature extractor,
+policy trunk and mean head stay fixed. A save/load regression test checks these
+parameter flags. The late-track probe was stopped after restoring the verified
+24.263s checkpoint; its interrupted candidate is not being reused. The next
+on-policy run must start from that exact checkpoint under the corrected load
+path and prove the actor count remains 258 before evaluating its pace.

@@ -197,6 +197,18 @@ def test_tqc_residual_ppo_graft_starts_exact_and_freezes_teacher_actor(tmp_path)
         loaded = backend_for("ppo").load_model(checkpoint, None, "cpu")
         restored, _ = loaded.predict(observations, deterministic=True)
         np.testing.assert_allclose(restored, bounded, atol=1e-7, rtol=0.0)
+        assert all(
+            not parameter.requires_grad
+            for module in (
+                loaded.policy.features_extractor,
+                loaded.policy.mlp_extractor.policy_net,
+                loaded.policy.action_net,
+            )
+            for parameter in module.parameters()
+        )
+        assert all(
+            parameter.requires_grad for parameter in loaded.policy.residual_action.parameters()
+        )
         assert np.all(np.isfinite(restored))
         assert np.all(restored >= -1.0) and np.all(restored <= 1.0)
     finally:

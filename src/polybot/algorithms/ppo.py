@@ -83,7 +83,12 @@ class PPOBackend(AlgorithmBackend):
     def load_model(
         self, path: Path, env: Any, device: str, *, resume: bool = False
     ) -> Any:
-        return TeacherAnchoredPPO.load(str(path), env=env, device=device)
+        model = TeacherAnchoredPPO.load(str(path), env=env, device=device)
+        if isinstance(model.policy, TQCResidualActorCriticPolicy):
+            # requires_grad flags are not serialized in SB3 checkpoints. Restore
+            # the defining residual-policy invariant whenever one is loaded.
+            model.policy.freeze_base_actor()
+        return model
 
     def configure_resume(
         self, model: Any, config: TrainingConfig, device: str, *, fresh_replay: bool = False
@@ -108,6 +113,7 @@ class PPOBackend(AlgorithmBackend):
         model.target_kl = p.target_kl
         self._configure_action_std(model, p.action_std)
         if hasattr(model.policy, "residual_action_limit"):
+            model.policy.freeze_base_actor()
             model.policy.residual_action_limit = p.residual_action_limit
             model.policy.set_residual_progress_window(
                 p.residual_progress_start, p.residual_progress_end,

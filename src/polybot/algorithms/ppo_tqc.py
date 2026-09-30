@@ -86,6 +86,14 @@ class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
         self.residual_progress_start = float(start)
         self.residual_progress_end = float(end)
 
+    def freeze_base_actor(self) -> None:
+        """Keep the grafted TQC mean fixed while PPO trains the residual."""
+        for module in (
+            self.features_extractor, self.mlp_extractor.policy_net, self.action_net,
+        ):
+            for parameter in module.parameters():
+                parameter.requires_grad_(False)
+
 
 def initialize_actor_from_tqc(ppo_model: Any, tqc_model: Any) -> dict[str, int]:
     """Copy an exactly shape-compatible TQC mean actor into a PPO policy.
@@ -143,11 +151,5 @@ def initialize_actor_from_tqc(ppo_model: Any, tqc_model: Any) -> dict[str, int]:
         if hasattr(target_policy, "residual_action"):
             nn.init.zeros_(target_policy.residual_action.weight)
             nn.init.zeros_(target_policy.residual_action.bias)
-            for module in (
-                target_policy.features_extractor,
-                target_policy.mlp_extractor.policy_net,
-                target_policy.action_net,
-            ):
-                for parameter in module.parameters():
-                    parameter.requires_grad_(False)
+            target_policy.freeze_base_actor()
     return copied
