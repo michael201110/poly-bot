@@ -383,6 +383,14 @@ def test_ppo_only_resumes_champion_after_a_material_regression() -> None:
     )
 
 
+def test_ppo_resume_gate_can_reject_any_measured_lap_slowdown() -> None:
+    candidate = {"finish_rate": 1.0, "median_progress": 1.0, "median_lap_s": 25.253}
+    champion = {"finish_rate": 1.0, "median_progress": 1.0, "median_lap_s": 25.025}
+
+    assert _should_resume_ppo_champion(candidate, champion, lap_tolerance_s=0.0)
+    assert not _should_resume_ppo_champion(candidate, champion, lap_tolerance_s=0.5)
+
+
 def test_ppo_resume_gate_rejects_a_thirteen_point_progress_regression() -> None:
     candidate = {"finish_rate": 0.0, "median_progress": 0.391}
     champion = {"finish_rate": 0.0, "median_progress": 0.523}

@@ -1149,6 +1149,10 @@ def main(argv: list[str] | None = None) -> int:
         "--ppo-rollback-progress-tolerance", type=float, default=0.02,
         help="allow this much median-progress loss before restoring the champion",
     )
+    parser.add_argument(
+        "--ppo-rollback-lap-tolerance", type=float, default=0.0,
+        help="allow this much median-lap slowdown before restoring the champion",
+    )
     parser.add_argument("--until-finishing", action="store_true")
     parser.add_argument("--continue-to-rl", action="store_true")
     parser.add_argument(
@@ -1189,6 +1193,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--ppo-anchor-kl must be finite and nonnegative")
     if not 0 <= args.ppo_rollback_progress_tolerance < 1:
         parser.error("--ppo-rollback-progress-tolerance must be in [0, 1)")
+    if not np.isfinite(args.ppo_rollback_lap_tolerance) or args.ppo_rollback_lap_tolerance < 0:
+        parser.error("--ppo-rollback-lap-tolerance must be finite and nonnegative")
     teacher_path = args.teacher.resolve()
     teacher, teacher_meta, config, teacher_runner = _teacher_and_config(
         teacher_path, args.output_root, args.device
@@ -1202,6 +1208,8 @@ def main(argv: list[str] | None = None) -> int:
     teacher_digest = tree_sha256(teacher_path)
     output = args.output_root / "summer-1" / "ppo" / "teacher-student"
     output.mkdir(parents=True, exist_ok=True)
+    registry = ModelRegistry(args.output_root)
+    global_registry = ModelRegistry()
     shutil.copy2(teacher_path / "metadata.json", output / "teacher-metadata.json")
     manifest_path = output / "teacher-manifest.json"
     teacher_manifest: dict[str, Any] = {
@@ -1227,7 +1235,6 @@ def main(argv: list[str] | None = None) -> int:
         nominal = TeacherDataset.load(args.dataset)
         if nominal.teacher_id != teacher_digest:
             raise ValueError("nominal teacher dataset does not match the frozen TQC teacher")
-        registry = ModelRegistry(args.output_root)
         dagger_root = output / args.dagger_run_name
         dagger_data_root = args.dataset.parent / args.dagger_run_name
         dagger_root.mkdir(parents=True, exist_ok=True)
@@ -1493,7 +1500,7 @@ def main(argv: list[str] | None = None) -> int:
                 resume_champion = bool(champion_evaluation) and _should_resume_ppo_champion(
                     latest_evaluation, champion_evaluation,
                     progress_tolerance=args.ppo_rollback_progress_tolerance,
-                    lap_tolerance_s=0.5,
+                    lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                 )
                 student_path = isolated_champion if resume_champion else isolated_latest
                 print(json.dumps({
@@ -1541,7 +1548,7 @@ def main(argv: list[str] | None = None) -> int:
                     runner, args.stop_file,
                     resume=student_path, rollback_to_champion=True,
                     ppo_rollback_progress_tolerance=args.ppo_rollback_progress_tolerance,
-                    ppo_rollback_lap_tolerance_s=0.5,
+                    ppo_rollback_lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                     allow_ppo_reward_change=args.reward_profile is not None,
                 )
                 latest_meta = rl_registry.read_metadata(latest)
@@ -1554,7 +1561,7 @@ def main(argv: list[str] | None = None) -> int:
                 resume_champion = _should_resume_ppo_champion(
                     evaluation, champion_evaluation,
                     progress_tolerance=args.ppo_rollback_progress_tolerance,
-                    lap_tolerance_s=0.5,
+                    lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                 )
                 promoted = _promote_ppo_champion_if_better(
                     rl_registry, registry, config.track_name,
@@ -1677,7 +1684,19 @@ def main(argv: list[str] | None = None) -> int:
             if args.stage in {"finetune", "full"}:
                 latest = args.output_root / "summer-1" / "ppo" / "latest"
                 if (latest / "metadata.json").is_file():
-                    student_dir = latest
+                    candidate_evaluation = registry.read_metadata(latest).evaluation or {}
+                    champion = registry.slot(config.track_name, "ppo", "champion")
+                    champion_evaluation = (
+                        registry.read_metadata(champion).evaluation or {}
+                        if (champion / "metadata.json").is_file() else {}
+                    )
+                    student_dir = (
+                        champion if champion_evaluation and _should_resume_ppo_champion(
+                            candidate_evaluation, champion_evaluation,
+                            progress_tolerance=args.ppo_rollback_progress_tolerance,
+                            lap_tolerance_s=args.ppo_rollback_lap_tolerance,
+                        ) else latest
+                    )
             student_path = student_dir / "policy.zip"
             if not student_path.is_file():
                 raise FileNotFoundError("PPO student checkpoint missing; run collect and pretrain first")
@@ -1694,17 +1713,41 @@ def main(argv: list[str] | None = None) -> int:
             if args.stage in {"finetune", "full"}:
                 rounds = args.max_rounds if args.max_rounds > 0 else None
                 round_index = 0
+                finetune_registry = ModelRegistry(args.output_root)
+                champion_path = finetune_registry.slot(config.track_name, "ppo", "champion")
+                if args.ppo_anchor_kl > 0:
+                    anchor_path = _ensure_ppo_teacher_anchor(
+                        args.output_root / "ppo-teacher-anchor", student_dir,
+                    )
+                    config.ppo.teacher_model = str(anchor_path.resolve())
+                    config.ppo.teacher_kl_coefficient = args.ppo_anchor_kl
+                else:
+                    config.ppo.teacher_model = None
+                    config.ppo.teacher_kl_coefficient = 0.0
                 while rounds is None or round_index < rounds:
+                    if args.stop_file is not None and args.stop_file.exists():
+                        print(json.dumps({
+                            "ppo_finetune_stopped": True,
+                            "checkpoint": str(student_dir),
+                            "timesteps": (
+                                finetune_registry.read_metadata(student_dir).training_timesteps
+                                if (student_dir / "metadata.json").is_file() else None
+                            ),
+                        }, separators=(",", ":")), flush=True)
+                        break
                     config.timesteps = args.timesteps
-                    config.ppo.learning_rate = 3e-5
+                    config.ppo.learning_rate = args.ppo_learning_rate
                     config.ppo.entropy_coefficient = 1e-4
-                    config.ppo.target_kl = 0.01
+                    config.ppo.target_kl = args.ppo_target_kl
                     runner = TrainingRunner(config)
-                    latest = runner.run(
+                    latest = _run_with_stop_file(
+                        runner, args.stop_file,
                         resume=student_dir, rollback_to_champion=True,
+                        ppo_rollback_progress_tolerance=args.ppo_rollback_progress_tolerance,
+                        ppo_rollback_lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                         allow_ppo_reward_change=args.reward_profile is not None,
                     )
-                    latest_meta = ModelRegistry(config.output_root).read_metadata(latest)
+                    latest_meta = finetune_registry.read_metadata(latest)
                     evaluation = latest_meta.evaluation or {}
                     best_lap = evaluation.get("best_lap_s")
                     if _evaluation_confirms_target(evaluation, 22.0):
@@ -1714,14 +1757,31 @@ def main(argv: list[str] | None = None) -> int:
                             "checkpoint": str(latest),
                         }, indent=2))
                         break
-                    student_dir = latest
+                    champion_evaluation = (
+                        finetune_registry.read_metadata(champion_path).evaluation or {}
+                        if (champion_path / "metadata.json").is_file() else {}
+                    )
+                    resume_champion = bool(champion_evaluation) and _should_resume_ppo_champion(
+                        evaluation, champion_evaluation,
+                        progress_tolerance=args.ppo_rollback_progress_tolerance,
+                        lap_tolerance_s=args.ppo_rollback_lap_tolerance,
+                    )
+                    promoted = _promote_ppo_champion_if_better(
+                        finetune_registry, global_registry, config.track_name,
+                    )
+                    student_dir = champion_path if resume_champion else latest
                     round_index += 1
                     print(json.dumps({
                         "target_reached": False, "round": round_index,
                         "best_lap_s": best_lap, "finish_rate": evaluation.get("finish_rate"),
                         "timesteps": latest_meta.training_timesteps,
-                        "checkpoint": str(latest),
-                    }, indent=2))
+                        "checkpoint": str(latest), "resuming_from_champion": resume_champion,
+                        "next_resume": str(student_dir),
+                        "promoted_to_main_champion": str(promoted) if promoted else None,
+                        "stopped_by_user": args.stop_file is not None and args.stop_file.exists(),
+                    }, indent=2), flush=True)
+                    if args.stop_file is not None and args.stop_file.exists():
+                        break
         if tree_sha256(teacher_path) != teacher_digest:
             raise RuntimeError("frozen TQC teacher changed during the student pipeline")
     finally:
