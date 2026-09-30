@@ -30,6 +30,8 @@ DQN_ARCHITECTURES = {
 class PPOConfig:
     architecture: str = "compact"
     residual_action_limit: float = 0.1
+    residual_progress_start: float = 0.0
+    residual_progress_end: float = 1.0
     learning_rate: float = 3e-4
     action_std: float | None = None
     gamma: float = 0.995
@@ -51,6 +53,12 @@ class PPOConfig:
             raise ValueError("unknown PPO architecture")
         if not math.isfinite(self.residual_action_limit) or not 0 <= self.residual_action_limit <= 1:
             raise ValueError("PPO residual action limit must be in [0, 1]")
+        if not (
+            math.isfinite(self.residual_progress_start)
+            and math.isfinite(self.residual_progress_end)
+            and 0 <= self.residual_progress_start <= self.residual_progress_end <= 1
+        ):
+            raise ValueError("PPO residual progress window must be within [0, 1]")
         if self.rollout_steps < 2 or not 2 <= self.batch_size <= self.rollout_steps:
             raise ValueError("invalid PPO rollout or batch size")
         if self.rollout_steps % self.batch_size or self.epochs < 1:

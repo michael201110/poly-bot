@@ -23,10 +23,19 @@ class TQCSquashedActorCriticPolicy(ActorCriticPolicy):
 class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
     """Freeze a grafted TQC mean actor and learn a bounded PPO residual."""
 
-    def __init__(self, *args: Any, residual_action_limit: float = 0.1, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, residual_action_limit: float = 0.1,
+        residual_progress_start: float = 0.0, residual_progress_end: float = 1.0,
+        **kwargs: Any,
+    ) -> None:
         if not 0.0 <= residual_action_limit <= 1.0:
             raise ValueError("residual action limit must be in [0, 1]")
+        if not 0.0 <= residual_progress_start <= residual_progress_end <= 1.0:
+            raise ValueError("residual progress window must be within [0, 1]")
         self.residual_action_limit = float(residual_action_limit)
+        self.residual_progress_start = float(residual_progress_start)
+        self.residual_progress_end = float(residual_progress_end)
+        self._residual_progress: th.Tensor | None = None
         super().__init__(*args, **kwargs)
 
     def _build_mlp_extractor(self) -> None:
@@ -39,10 +48,43 @@ class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
 
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor) -> Any:
         correction = self.residual_action_limit * th.tanh(self.residual_action(latent_pi))
+        if self._residual_progress is not None:
+            active = (
+                (self._residual_progress >= self.residual_progress_start)
+                & (self._residual_progress <= self.residual_progress_end)
+            ).to(dtype=correction.dtype).unsqueeze(-1)
+            correction = correction * active
         mean_actions = self.action_net(latent_pi) + correction
         return self.action_dist.proba_distribution(
             mean_actions, self.log_std,
         )
+
+    def forward(self, obs: th.Tensor, deterministic: bool = False) -> Any:
+        self._residual_progress = obs[:, 12]
+        try:
+            return super().forward(obs, deterministic=deterministic)
+        finally:
+            self._residual_progress = None
+
+    def get_distribution(self, obs: th.Tensor) -> Any:
+        self._residual_progress = obs[:, 12]
+        try:
+            return super().get_distribution(obs)
+        finally:
+            self._residual_progress = None
+
+    def evaluate_actions(self, obs: th.Tensor, actions: th.Tensor) -> Any:
+        self._residual_progress = obs[:, 12]
+        try:
+            return super().evaluate_actions(obs, actions)
+        finally:
+            self._residual_progress = None
+
+    def set_residual_progress_window(self, start: float, end: float) -> None:
+        if not 0.0 <= start <= end <= 1.0:
+            raise ValueError("residual progress window must be within [0, 1]")
+        self.residual_progress_start = float(start)
+        self.residual_progress_end = float(end)
 
 
 def initialize_actor_from_tqc(ppo_model: Any, tqc_model: Any) -> dict[str, int]:

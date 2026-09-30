@@ -59,6 +59,8 @@ PPO_INFO = _info("PPO", {
         "Maximum correction added to the frozen TQC mean for tqc_residual. A smaller limit "
         "protects teacher behavior; increase it gradually to search for pace."
     ),
+    "residual_progress_start": "Track progress where PPO residual corrections begin to apply.",
+    "residual_progress_end": "Track progress where PPO residual corrections stop applying.",
     "learning_rate": "Size of each network update. Around 0.0001–0.0003 is a common starting range.",
     "gamma": "How much future reward matters. Higher values look farther ahead.",
     "gae_lambda": "Balances smooth long-term advantage estimates against short-term accuracy.",

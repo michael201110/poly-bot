@@ -633,8 +633,10 @@ def test_weighted_sampling_does_not_square_recovery_source_weights() -> None:
             self.train(enabled)
 
         def get_distribution(self, observation: th.Tensor) -> SimpleNamespace:
+            mean = self.action_net(observation)
             return SimpleNamespace(
-                distribution=SimpleNamespace(mean=self.action_net(observation))
+                distribution=SimpleNamespace(mean=mean),
+                get_actions=lambda deterministic: th.tanh(mean),
             )
 
     class Model:
@@ -762,3 +764,111 @@ def test_actor_pretraining_reduces_offline_error_without_touching_critic(tmp_pat
     )
     state = model.policy.state_dict()
     assert all(th.equal(value, state[name]) for name, value in critic.items())
+
+
+def test_actor_pretraining_updates_tqc_residual_head_with_frozen_teacher_layers() -> None:
+    config = TrainingConfig(
+        algorithm="ppo", device="cpu", track_name="Summer 1", track_id="mock/straight",
+        ppo=PPOConfig(
+            architecture="tqc_residual", rollout_steps=32, batch_size=16, epochs=1,
+        ),
+    )
+    env = _gym_env(config, 105)
+    model = backend_for("ppo").create_model(config, env, "cpu")
+    try:
+        for module in (
+            model.policy.features_extractor,
+            model.policy.mlp_extractor.policy_net,
+            model.policy.action_net,
+        ):
+            for parameter in module.parameters():
+                parameter.requires_grad_(False)
+        rng = np.random.default_rng(9)
+        observations = np.zeros((4 * 32, 105), dtype=np.float32)
+        observations[:, :2] = rng.uniform(-1, 1, (len(observations), 2))
+        actions = np.tile(np.asarray([0.2, -0.1], dtype=np.float32), (len(observations), 1))
+        dataset = TeacherDataset(
+            observations=observations, raw_actions=actions.copy(), final_actions=actions,
+            driving_actions=actions.copy(), trajectory_ids=np.repeat(np.arange(4), 32),
+            progress=np.tile(np.linspace(0, 1, 32), 4), elapsed_s=np.zeros(len(observations)),
+            speed_mps=np.zeros(len(observations)), position_m=np.zeros((len(observations), 3)),
+            heading_error_rad=np.zeros(len(observations)), wheel_contacts=np.ones((len(observations), 4)),
+            overlay_active=np.zeros(len(observations), dtype=bool),
+            successful_trajectory_ids=[0, 1, 2, 3], teacher_id="test",
+        )
+        residual_before = {
+            name: value.detach().clone()
+            for name, value in model.policy.residual_action.state_dict().items()
+        }
+        indices = np.arange(len(observations))
+        before = imitation_metrics(model, dataset, indices)
+        report = pretrain_actor(
+            model, dataset, epochs=30, batch_size=64, patience=8, seed=0,
+            learning_rate=1e-3,
+        )
+        assert report["validation"]["steering_mse"] + report["validation"]["longitudinal_mse"] < (
+            before["steering_mse"] + before["longitudinal_mse"]
+        )
+        assert any(
+            not th.equal(value, model.policy.residual_action.state_dict()[name])
+            for name, value in residual_before.items()
+        )
+    finally:
+        env.close()
+
+
+def test_squashed_actor_pretraining_uses_deterministic_action_semantics() -> None:
+    config = TrainingConfig(
+        algorithm="ppo", device="cpu", track_name="Summer 1", track_id="mock/straight",
+        ppo=PPOConfig(
+            architecture="tqc_residual", rollout_steps=32, batch_size=16, epochs=1,
+        ),
+    )
+    env = _gym_env(config, 105)
+    model = backend_for("ppo").create_model(config, env, "cpu")
+    try:
+        for module in (
+            model.policy.features_extractor,
+            model.policy.mlp_extractor.policy_net,
+            model.policy.action_net,
+        ):
+            for parameter in module.parameters():
+                parameter.requires_grad_(False)
+        with th.no_grad():
+            model.policy.action_net.weight.zero_()
+            model.policy.action_net.bias.copy_(th.tensor([2.0, -2.0]))
+        observations = np.zeros((4 * 16, 105), dtype=np.float32)
+        observations[:, 12] = 0.5
+        actions, _ = model.predict(observations, deterministic=True)
+        final_actions = np.clip(
+            actions + np.asarray([0.0, 0.2], dtype=np.float32), -1.0, 1.0,
+        )
+        model.policy_overlays = [{
+            "kind": "drive_bias", "start": 0.0, "end": 1.0,
+            "amount": 0.2, "taper": 0.01,
+        }]
+        dataset = TeacherDataset(
+            observations=observations, raw_actions=actions.copy(), final_actions=final_actions,
+            driving_actions=actions.copy(), trajectory_ids=np.repeat(np.arange(4), 16),
+            progress=np.tile(np.linspace(0, 1, 16), 4), elapsed_s=np.zeros(len(observations)),
+            speed_mps=np.zeros(len(observations)), position_m=np.zeros((len(observations), 3)),
+            heading_error_rad=np.zeros(len(observations)), wheel_contacts=np.ones((len(observations), 4)),
+            overlay_active=np.zeros(len(observations), dtype=bool),
+            successful_trajectory_ids=[0, 1, 2, 3], teacher_id="test",
+        )
+        before = {
+            name: value.detach().clone()
+            for name, value in model.policy.residual_action.state_dict().items()
+        }
+        report = pretrain_actor(
+            model, dataset, epochs=5, batch_size=32, patience=5, seed=0,
+            learning_rate=1e-3,
+        )
+        assert report["validation"]["steering_mse"] < 1e-6
+        assert report["validation"]["longitudinal_mse"] < 1e-6
+        assert all(
+            th.equal(value, model.policy.residual_action.state_dict()[name])
+            for name, value in before.items()
+        )
+    finally:
+        env.close()

@@ -61,6 +61,10 @@ class PPOBackend(AlgorithmBackend):
                 **({"activation_fn": nn.ReLU} if tqc_compatible else {}),
                 **({"residual_action_limit": p.residual_action_limit}
                    if p.architecture == "tqc_residual" else {}),
+                **({
+                    "residual_progress_start": p.residual_progress_start,
+                    "residual_progress_end": p.residual_progress_end,
+                } if p.architecture == "tqc_residual" else {}),
             },
         )
         if not tqc_compatible:
@@ -105,6 +109,14 @@ class PPOBackend(AlgorithmBackend):
         self._configure_action_std(model, p.action_std)
         if hasattr(model.policy, "residual_action_limit"):
             model.policy.residual_action_limit = p.residual_action_limit
+            model.policy.set_residual_progress_window(
+                p.residual_progress_start, p.residual_progress_end,
+            )
+            model.policy_kwargs.update({
+                "residual_action_limit": p.residual_action_limit,
+                "residual_progress_start": p.residual_progress_start,
+                "residual_progress_end": p.residual_progress_end,
+            })
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
             self._configure_action_std(teacher, p.action_std)

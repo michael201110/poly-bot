@@ -201,3 +201,32 @@ def test_tqc_residual_ppo_graft_starts_exact_and_freezes_teacher_actor(tmp_path)
         assert np.all(restored >= -1.0) and np.all(restored <= 1.0)
     finally:
         env.close()
+
+
+def test_tqc_residual_can_be_gated_to_a_progress_window() -> None:
+    config = TrainingConfig(
+        algorithm="ppo", backend="mock", track_id="mock/straight", frame_skip=1,
+        timesteps=8, ppo=PPOConfig(
+            architecture="tqc_residual", rollout_steps=8, batch_size=8, epochs=1,
+            residual_progress_start=0.4, residual_progress_end=0.6,
+        ),
+    )
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight", frame_skip=1,
+        action_adapter=backend_for("ppo").action_adapter(config),
+    )
+    model = backend_for("ppo").create_model(config, env, "cpu")
+    try:
+        with th.no_grad():
+            model.policy.residual_action.bias.copy_(th.tensor([50.0, -50.0]))
+            observations = th.zeros((2, 105))
+            observations[0, 12] = 0.3
+            observations[1, 12] = 0.5
+            features = model.policy.extract_features(observations)
+            latent = model.policy.mlp_extractor.forward_actor(features)
+            base = th.tanh(model.policy.action_net(latent))
+        actions, _ = model.predict(observations.numpy(), deterministic=True)
+        np.testing.assert_allclose(actions[0], base[0].numpy(), atol=1e-7, rtol=0.0)
+        assert np.max(np.abs(actions[1] - base[1].numpy())) > 0.05
+    finally:
+        env.close()

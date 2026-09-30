@@ -345,7 +345,7 @@ def pretrain_actor(
     sample_weights: np.ndarray | None = None,
     initial_action_std: float = 0.15,
 ) -> dict[str, Any]:
-    """Regress the teacher action mean, preserve the critic, and calibrate PPO noise."""
+    """Regress raw deterministic teacher actions before overlays and calibrate PPO noise."""
     if train_indices is None or validation_indices is None:
         if dataset.sources is not None:
             train_indices, validation_indices = split_aggregated_trajectories(
@@ -367,6 +367,9 @@ def pretrain_actor(
         if np.any(weights < 0) or weights[train_indices].sum() <= 0:
             raise ValueError("training sample weights must be nonnegative with positive mass")
     actor_modules = [model.policy.mlp_extractor.policy_net, model.policy.action_net]
+    residual_action = getattr(model.policy, "residual_action", None)
+    if residual_action is not None:
+        actor_modules.append(residual_action)
     actor_parameters = [p for module in actor_modules for p in module.parameters()]
     actor_parameters.extend([model.policy.log_std])
     critic_before = {
@@ -401,9 +404,14 @@ def pretrain_actor(
             )
         for rows in batches:
             obs = th.as_tensor(dataset.observations[rows], device=model.device)
-            target = th.as_tensor(dataset.final_actions[rows], device=model.device)
-            mean = model.policy.get_distribution(obs).distribution.mean
-            per_sample = th.nn.functional.mse_loss(mean, target, reduction="none").mean(dim=1)
+            # Runtime wrappers apply bakeable overlays after the policy. Fit the
+            # policy to the teacher's raw normalized action, avoiding a second
+            # application of those offsets at inference time.
+            target = th.as_tensor(dataset.raw_actions[rows], device=model.device)
+            predicted_action = model.policy.get_distribution(obs).get_actions(deterministic=True)
+            per_sample = th.nn.functional.mse_loss(
+                predicted_action, target, reduction="none",
+            ).mean(dim=1)
             # Weighted rows were already sampled with probability proportional
             # to their sample weights. Multiplying the loss by those weights a
             # second time would square the intended source/error weighting.
@@ -1146,6 +1154,16 @@ def _seed_validated_ppo_champion(
 
 def _save_student(model: Any, config: TrainingConfig, directory: Path, *, report: dict[str, Any]) -> None:
     directory.mkdir(parents=True, exist_ok=True)
+    if config.ppo is not None and hasattr(model.policy, "set_residual_progress_window"):
+        model.policy.residual_action_limit = config.ppo.residual_action_limit
+        model.policy.set_residual_progress_window(
+            config.ppo.residual_progress_start, config.ppo.residual_progress_end,
+        )
+        model.policy_kwargs.update({
+            "residual_action_limit": config.ppo.residual_action_limit,
+            "residual_progress_start": config.ppo.residual_progress_start,
+            "residual_progress_end": config.ppo.residual_progress_end,
+        })
     model.save(str(directory / "policy.zip"))
     counts = backend_for("ppo").parameter_counts(model)
     registry = ModelRegistry(config.output_root)
@@ -1254,6 +1272,8 @@ def main(argv: list[str] | None = None) -> int:
         "--ppo-residual-action-limit", type=float, default=0.1,
         help="maximum absolute TQC-mean correction for residual PPO updates",
     )
+    parser.add_argument("--ppo-residual-progress-start", type=float)
+    parser.add_argument("--ppo-residual-progress-end", type=float)
     parser.add_argument("--ppo-rollout-steps", type=int)
     parser.add_argument("--ppo-batch-size", type=int)
     parser.add_argument("--ppo-epochs", type=int)
@@ -1323,6 +1343,18 @@ def main(argv: list[str] | None = None) -> int:
         config.ppo.action_std = args.ppo_action_std
     assert config.ppo is not None
     config.ppo.residual_action_limit = args.ppo_residual_action_limit
+    if args.ppo_residual_progress_start is not None or args.ppo_residual_progress_end is not None:
+        config.ppo = replace(
+            config.ppo,
+            residual_progress_start=(
+                config.ppo.residual_progress_start if args.ppo_residual_progress_start is None
+                else args.ppo_residual_progress_start
+            ),
+            residual_progress_end=(
+                config.ppo.residual_progress_end if args.ppo_residual_progress_end is None
+                else args.ppo_residual_progress_end
+            ),
+        )
     if any(value is not None for value in (
         args.ppo_rollout_steps, args.ppo_batch_size, args.ppo_epochs,
     )):
@@ -1414,6 +1446,15 @@ def main(argv: list[str] | None = None) -> int:
         student = backend_for("ppo").load_model(
             student_path / "policy.zip", _gym_env(config, nominal.observations.shape[1]), args.device
         )
+        if hasattr(student.policy, "set_residual_progress_window"):
+            student.policy.set_residual_progress_window(
+                config.ppo.residual_progress_start, config.ppo.residual_progress_end,
+            )
+            student.policy_kwargs.update({
+                "residual_action_limit": config.ppo.residual_action_limit,
+                "residual_progress_start": config.ppo.residual_progress_start,
+                "residual_progress_end": config.ppo.residual_progress_end,
+            })
         if args.reward_profile is not None:
             # This starting actor comes from the old reward objective; discard its
             # optimizer moments before either DAgger regression or value warmup.
@@ -1586,6 +1627,15 @@ def main(argv: list[str] | None = None) -> int:
                     best_student_path / "policy.zip",
                     _gym_env(config, nominal.observations.shape[1]), args.device,
                 )
+                if hasattr(student.policy, "set_residual_progress_window"):
+                    student.policy.set_residual_progress_window(
+                        config.ppo.residual_progress_start, config.ppo.residual_progress_end,
+                    )
+                    student.policy_kwargs.update({
+                        "residual_action_limit": config.ppo.residual_action_limit,
+                        "residual_progress_start": config.ppo.residual_progress_start,
+                        "residual_progress_end": config.ppo.residual_progress_end,
+                    })
                 student.policy.set_training_mode(False)
                 student_path = best_student_path
             round_index += 1

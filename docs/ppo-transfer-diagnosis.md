@@ -640,3 +640,32 @@ not resolve the failure. Continue from the validated checkpoint only; the
 next experiment should provide teacher-labeled recovery data or constrain
 updates to states where a deviation can be recovered, then confirm a complete
 PPO lap before increasing the search range.
+
+## DAgger transfer follow-up (30 September 2026)
+
+The bounded recovery DAgger run exposed two implementation defects in the
+supervised initialization path. The optimizer included the residual action head
+in the forward pass but did not update it; and its loss compared the raw,
+pre-squash Gaussian mean with teacher actions even though live `predict()` uses
+the squashed deterministic action. It also trained against overlay-adjusted
+targets while overlays are applied again after the policy at inference. The
+training loss now uses the policy's deterministic post-squash action and the
+teacher's raw action labels, and includes the residual head among trainable
+parameters.
+
+The progress window for residual corrections was also only held in runtime
+state. Saving/reloading a student silently dropped it. The window is now part
+of PPO policy kwargs and is restored when a DAgger student is loaded. Tests
+cover optimizer updates to the residual head, squashed-action/overlay label
+semantics, and persistence of the progress window.
+
+These fixes do not establish that DAgger can produce a viable policy. In the
+corrected v6 run, every one of eight recovery episodes in rounds 2–4 left the
+track at 56.7% progress. The round-3 student then had median validation
+progress 23.5%; round 4 recovered to 52.9%, still with zero finishes. In the
+55–60% recovery window, the student’s mean longitudinal action error against
+the teacher was 0.193 (maximum 0.402), while steering error remained about
+0.0045. This sharp error increase aligns with the failure region and suggests
+that the current DAgger dataset and loss do not yet teach the necessary
+closed-loop recovery. The zero-update graft remains the only validated PPO
+policy; the TQC teacher remains 24.263s. No sub-22s PPO lap has been confirmed.
