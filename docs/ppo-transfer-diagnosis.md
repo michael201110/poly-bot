@@ -887,4 +887,8 @@ move farther while preserving the same gate and rollback. The first four
 five-lap candidates were 24.370s, 24.446s, 24.370s, and 24.369s, all slower than
 the graft and rolled back. The next trial tests standard more exploratory PPO
 settings (learning rate `3e-4`, action standard deviation `0.02`, KL target
-`0.02`) with the same late-section gate and exact rollback.
+`0.02`) with the same late-section gate and exact rollback. Three candidates
+then finished 5/5 at 24.365s, 24.393s, and 24.363s, followed by 24.383s; each
+was rolled back. The late-only gate was too restrictive for learning from the
+early contact, so the next trial reopens the full track with much lower action
+noise (`0.005`) and retains exact-graft rollback.
