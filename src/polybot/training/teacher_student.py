@@ -1278,6 +1278,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ppo-batch-size", type=int)
     parser.add_argument("--ppo-epochs", type=int)
     parser.add_argument(
+        "--ppo-eval-interval-steps", type=int,
+        help="override evaluation spacing for guarded PPO fine-tuning",
+    )
+    parser.add_argument(
         "--ppo-rollback-progress-tolerance", type=float, default=0.02,
         help="allow this much median-progress loss before restoring the champion",
     )
@@ -1333,10 +1337,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--ppo-rollback-progress-tolerance must be in [0, 1)")
     if not np.isfinite(args.ppo_rollback_lap_tolerance) or args.ppo_rollback_lap_tolerance < 0:
         parser.error("--ppo-rollback-lap-tolerance must be finite and nonnegative")
+    if args.ppo_eval_interval_steps is not None and args.ppo_eval_interval_steps < 1:
+        parser.error("--ppo-eval-interval-steps must be positive")
     teacher_path = args.teacher.resolve()
     teacher, teacher_meta, config, teacher_runner = _teacher_and_config(
         teacher_path, args.output_root, args.device
     )
+    if args.ppo_eval_interval_steps is not None:
+        config.evaluation.interval_steps = args.ppo_eval_interval_steps
     _apply_reward_profile(config, args.reward_profile)
     if args.ppo_action_std is not None:
         assert config.ppo is not None

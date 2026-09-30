@@ -689,3 +689,17 @@ parameter flags. The late-track probe was stopped after restoring the verified
 24.263s checkpoint; its interrupted candidate is not being reused. The next
 on-policy run must start from that exact checkpoint under the corrected load
 path and prove the actor count remains 258 before evaluating its pace.
+
+The corrected gated probe reported exactly 258 trainable actor parameters.
+Three 5-episode evaluations at steps 8,192, 16,384 and 24,576 completed 5/5
+but measured 24.276s, 24.316s and 24.385s; each was rejected and the 24.263s
+champion restored. A second probe raised the learning rate from 3e-7 to 1e-5
+and target KL from 1e-4 to 1e-3, with anchor coefficient 0.1. Its candidates
+were 24.340s, 24.331s and 24.385s, also 5/5 and slower, so they were rolled
+back. These runs confirm stable early-track imitation but do not show a pace
+gain. Because 5,000-step evaluation spacing yielded checks only every 8,192
+PPO decisions with a 4,096-step rollout, the next run increases the evaluation
+spacing to 20,000 decisions and tolerates up to 0.5s slowdown for continued
+training. Promotion remains strict: only an actually faster champion replaces
+the 24.263s seed, and a loss of more than 0.5s or completion stability still
+restores it.
