@@ -913,3 +913,13 @@ gate cannot learn the early contact, the next curriculum pass opens PPO only
 from 8% to 15%, preserving the graft elsewhere while letting the policy learn
 freely in the early contact region. This is a training window, not an action
 prescription.
+
+The first isolated early-section collection pass trained from 0% to 15% with
+the learned residual active from 8% to 15%. In 8,192 steps it completed the
+section in 45 of 48 rollouts; three ended in airborne-roll failures. It still
+observed a mean 2.13 collision-impulse steps per rollout, concentrated at
+9.3%–9.6%, so the stronger penalty has not reduced the contact rate yet. The
+subsequent full-track evaluation could not start because the WebSocket
+keepalive timed out and no simulator client remained connected. That pass
+produced no evaluated checkpoint; the available latest and champion remain at
+24.263s. Resume training after the game adapter reconnects.
