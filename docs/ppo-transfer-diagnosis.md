@@ -627,3 +627,16 @@ been confirmed. Future progress needs a rollout strategy that avoids letting
 microscopic PWM phase changes destabilize the teacher's high-sensitivity
 steering states, while still allowing larger corrections in recoverable
 states.
+
+The next bounded search tried smaller exploration noise and longer PPO
+rollouts. Action standard deviation 0.0001 caused a non-finite policy-loss
+metric and aborted before saving; 0.005 remained finite but its candidate
+failed at 53.4% progress (20.0% airborne braking). A fresh exact graft using
+4,096-step rollouts, batch size 256, and three epochs passed the same 5/5
+24.263s initialization gate. After 20,480 training steps, its rejected
+candidates finished 0/5 at 58.9%, 55.5%, and 23.5% progress, with airborne
+braking between 0.8% and 9.7%. Longer rollouts and lower exploration alone do
+not resolve the failure. Continue from the validated checkpoint only; the
+next experiment should provide teacher-labeled recovery data or constrain
+updates to states where a deviation can be recovered, then confirm a complete
+PPO lap before increasing the search range.

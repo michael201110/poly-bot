@@ -7,7 +7,7 @@ import hashlib
 import json
 import shutil
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -1254,6 +1254,9 @@ def main(argv: list[str] | None = None) -> int:
         "--ppo-residual-action-limit", type=float, default=0.1,
         help="maximum absolute TQC-mean correction for residual PPO updates",
     )
+    parser.add_argument("--ppo-rollout-steps", type=int)
+    parser.add_argument("--ppo-batch-size", type=int)
+    parser.add_argument("--ppo-epochs", type=int)
     parser.add_argument(
         "--ppo-rollback-progress-tolerance", type=float, default=0.02,
         help="allow this much median-progress loss before restoring the champion",
@@ -1320,6 +1323,15 @@ def main(argv: list[str] | None = None) -> int:
         config.ppo.action_std = args.ppo_action_std
     assert config.ppo is not None
     config.ppo.residual_action_limit = args.ppo_residual_action_limit
+    if any(value is not None for value in (
+        args.ppo_rollout_steps, args.ppo_batch_size, args.ppo_epochs,
+    )):
+        config.ppo = replace(
+            config.ppo,
+            rollout_steps=args.ppo_rollout_steps or config.ppo.rollout_steps,
+            batch_size=args.ppo_batch_size or config.ppo.batch_size,
+            epochs=args.ppo_epochs or config.ppo.epochs,
+        )
     if args.tqc_actor_init:
         if args.stage != "pretrain":
             parser.error("--tqc-actor-init currently requires --stage pretrain")
