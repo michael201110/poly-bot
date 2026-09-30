@@ -10,7 +10,10 @@ continuation evaluated a slower 24.716-second candidate at 57,344 steps, then
 rejected five candidates at 61,440, 65,536, 69,632, 73,728, and 77,824 steps
 (0/5 finishes each). The 24.263-second champion was restored after every
 regression. A stop request was honored after the final evaluated checkpoint;
-no training remains active, and the champion was not replaced.
+that run is no longer active, and the champion was not replaced. A separate
+stagewise residual PPO run is now active from the same teacher initialization.
+At 90,112 steps its latest candidate evaluates at 24.332s with 5/5 finishes;
+the isolated 24.263s champion remains intact and no sub-22s lap is confirmed.
 
 ## Reproduce
 
@@ -816,3 +819,24 @@ for ordinary Gaussian policies. For both tested PPO architectures the maximum
 difference is zero. The previous report field had compared an unsquashed
 policy's clipped output against its *unclipped* mode and mislabeled that as a
 clipped-mean discrepancy. A regression test now covers both transforms.
+
+## Stagewise residual continuation (30 September 2026)
+
+The residual progress gate originally masked its learned mean correction but
+still sampled Gaussian exploration noise before the gate. Even an inactive
+standard deviation of `1e-4` could change PWM pulse phase and cause early
+airborne failures; reducing it to near zero made PPO's squashed-Gaussian
+likelihood numerically unusable. The policy now uses the exact deterministic
+mean for rollout actions outside the residual window, while retaining a finite
+likelihood for the PPO update. A regression test checks exact inactive actions,
+active stochastic actions, and a finite on-policy PPO update.
+
+The exact TQC actor graft with a 75%-progress gate passed five live laps at
+24.263s. After guarded residual updates its best evaluated candidate reached
+24.300s, still slower than the teacher. Widening the gate to 60% passed an
+independent 5/5 live check at 24.362s. On-policy evaluation at 81,920 steps
+slowed to 24.435s and was rolled back; later 5/5 candidates evaluated at
+24.318s at 86,016 steps and 24.332s at 90,112 steps. The run continues from
+the isolated best PPO checkpoint. Rollout episodes now finish consistently,
+but no candidate has yet beaten the 24.263s baseline or reached the 22-second
+target.
