@@ -883,4 +883,8 @@ window while keeping rollback strict. Four 5/5 candidates then evaluated at
 24.373s, 24.341s, 24.390s, and 24.330s, still slower than baseline; mean late
 action drift remained about `2.4e-4`. The next trial raises the learning rate to
 `1e-4`, the KL target to `0.01`, and PPO epochs to five to let on-policy updates
-move farther while preserving the same gate and rollback.
+move farther while preserving the same gate and rollback. The first four
+five-lap candidates were 24.370s, 24.446s, 24.370s, and 24.369s, all slower than
+the graft and rolled back. The next trial tests standard more exploratory PPO
+settings (learning rate `3e-4`, action standard deviation `0.02`, KL target
+`0.02`) with the same late-section gate and exact rollback.
