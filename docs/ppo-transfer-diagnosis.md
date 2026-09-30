@@ -846,12 +846,17 @@ target.
 The stagewise run stopped at 118,784 steps with the exact graft still the best
 policy (24.263s). Its 60%-progress gate could not learn from the early contact,
 and its actor residual remained narrowly bounded. A new isolated PPO experiment
-starts from the frozen TQC actor graft with a full-track progress window, a
-larger but bounded residual, and more PPO exploration. The objective remains
-lap time and completion; no section has prescribed actions.
+starts from the frozen TQC actor graft with a full-track progress window and a
+larger but bounded residual. The objective remains lap time and completion; no
+section has prescribed actions.
 
 The `Summer 1 - 20s pace impact` profile adds a small global cost for collision
 impulses above threshold, excluding landing transitions. Such an impact is now
 nonterminal so the policy can learn from what follows and complete the lap. The
-fresh actor graft passed 5/5 live validation at 24.263s before PPO updates. It
-has not yet produced a faster candidate.
+fresh actor graft passed 5/5 live validation at 24.263s before PPO updates. The
+first five blocks used action standard deviation 0.02. Every candidate either
+failed the five-lap reliability evaluation or ran slower, so guarded rollback
+restored the graft each time; the best remains 24.263s at 49,152 timesteps. This
+exploration scale was too disruptive for the sensitive route. The next blocks
+use 0.01 action standard deviation and a 0.05 residual limit, still across the
+full track, to test a smaller on-policy search while keeping exact rollback.
