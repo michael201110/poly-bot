@@ -879,4 +879,8 @@ the actor can make a larger state-dependent correction in the late section.
 Two candidates with the 0.1 residual limit still finished 5/5 at 24.373s and
 24.341s, slower than the graft. Their changes were small, so the next trial
 raises action standard deviation from 0.005 to 0.01 within the same 58%-to-finish
-window while keeping rollback strict.
+window while keeping rollback strict. Four 5/5 candidates then evaluated at
+24.373s, 24.341s, 24.390s, and 24.330s, still slower than baseline; mean late
+action drift remained about `2.4e-4`. The next trial raises the learning rate to
+`1e-4`, the KL target to `0.01`, and PPO epochs to five to let on-policy updates
+move farther while preserving the same gate and rollback.
