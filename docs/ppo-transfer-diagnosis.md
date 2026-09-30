@@ -258,3 +258,11 @@ Training has since reached 278,528 steps without beating 24.971s. The
 273,408 and 278,528 steps finished 0/5 (median progress 23.4% and 57.0%), and
 were rolled back. The first of those had off-track failures in every evaluation
 episode. The run remains live from the isolated 24.971s champion.
+
+A stochastic recovery-DAgger round from the 24.971s champion collected 2,493
+states across 10 episodes. Eight episodes encountered crash, off-track, or stall
+outcomes, mostly between 18.6% and 52.8% progress. The resulting distilled
+candidate achieved only 0/5 finishes and 23.6% median progress, so it was not
+used as the PPO seed. The pipeline retained the independently validated
+24.971s baseline and began a new PPO run in
+`models/experiments/ppo-transfer-rl-recovery-20261003`.
