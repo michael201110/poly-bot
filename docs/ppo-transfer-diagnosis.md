@@ -252,3 +252,9 @@ The comparison used teacher SHA-256
 champion SHA-256 `7A3C8CB59646276A783F57D9861DFA0A091CF20769970801F43073D1515EEB6B`,
 and teacher dataset SHA-256
 `CDE4DD766FE9FFEF62D0231C6AF1D6FC01EC0BD4C9B7AAD3E540EBDC439FC12D`.
+
+Training has since reached 278,528 steps without beating 24.971s. The
+268,288-step candidate finished at 25.673s and was not promoted; candidates at
+273,408 and 278,528 steps finished 0/5 (median progress 23.4% and 57.0%), and
+were rolled back. The first of those had off-track failures in every evaluation
+episode. The run remains live from the isolated 24.971s champion.
