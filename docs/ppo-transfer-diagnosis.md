@@ -460,6 +460,10 @@ training episodes under that noise frequently crashed or left the track. A
 single on-policy update with a fixed 0.05 action standard deviation instead
 completed 5/5 at 25.859s, still slower than the champion but stable enough to
 continue searching. The trainer now exposes a fixed PPO action-standard-
-deviation setting; the next sustained run uses 0.05 noise, the 3e-7 learning
-rate, target KL 0.0001, and the 24.675s hash-matched anchor. The sub-22s
-criterion remains open.
+deviation setting. Its first full-run check found a mismatch: the actor used
+0.05 noise while its anchor retained 0.15, driving measured teacher KL to 5.8.
+The backend now applies the same fixed standard deviation to the in-memory
+anchor, keeping the mean-action anchor aligned; a regression test covers both
+policies. The next sustained run uses 0.05 noise, the 3e-7 learning rate, target
+KL 0.0001, and the 24.675s hash-matched anchor. The sub-22s criterion remains
+open.

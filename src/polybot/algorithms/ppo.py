@@ -53,6 +53,7 @@ class PPOBackend(AlgorithmBackend):
         self._configure_action_std(model, p.action_std)
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
+            self._configure_action_std(teacher, p.action_std)
             model.set_teacher(teacher, p.teacher_kl_coefficient)
         model.set_expert_imitation(p.imitation_coefficient)
         return model
@@ -86,6 +87,7 @@ class PPOBackend(AlgorithmBackend):
         self._configure_action_std(model, p.action_std)
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
+            self._configure_action_std(teacher, p.action_std)
             model.set_teacher(teacher, p.teacher_kl_coefficient)
         else:
             model.set_teacher(None, 0.0)

@@ -532,9 +532,28 @@ def test_ppo_action_std_can_be_fixed_for_fine_tuning(tmp_path) -> None:
         model = backend.create_model(config, env, "cpu")
         assert th.allclose(model.policy.log_std.detach().exp(), th.full_like(model.policy.log_std, 0.05))
         assert not model.policy.log_std.requires_grad
+        anchor_config = configuration(tmp_path / "anchor", "ppo")
+        anchor_env = PolyTrackEnv(
+            MockSimulatorTransport(), track_id=anchor_config.track_id,
+            action_adapter=backend.action_adapter(anchor_config),
+        )
+        try:
+            anchor = backend.create_model(anchor_config, anchor_env, "cpu")
+            anchor_path = tmp_path / "anchor" / "policy.zip"
+            anchor_path.parent.mkdir(parents=True, exist_ok=True)
+            anchor.save(str(anchor_path))
+        finally:
+            anchor_env.close()
+        config.ppo.teacher_model = str(anchor_path)
+        config.ppo.teacher_kl_coefficient = 0.5
         backend.configure_resume(model, config, "cpu")
         assert th.allclose(model.policy.log_std.detach().exp(), th.full_like(model.policy.log_std, 0.05))
         assert not model.policy.log_std.requires_grad
+        assert model.teacher_policy is not None
+        assert th.allclose(
+            model.teacher_policy.log_std.detach().exp(),
+            th.full_like(model.teacher_policy.log_std, 0.05),
+        )
     finally:
         env.close()
 
