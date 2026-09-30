@@ -10,8 +10,15 @@ from typing import Any
 from polybot.environment.rewards import RewardConfig, summer_1_reward_config
 
 CONFIG_SCHEMA = "polybot.config.v2"
-ARCHITECTURES = {"tiny": (64, 64), "compact": (128, 128), "standard": (256, 256)}
-DQN_ARCHITECTURES = {**ARCHITECTURES, "yosh_2020": (64, 16)}
+ARCHITECTURES = {
+    "tiny": (64, 64), "compact": (128, 128), "standard": (256, 256),
+    # Match the current TQC actor: two 128-wide ReLU layers and tanh-squashed actions.
+    "tqc_compatible": (128, 128),
+}
+DQN_ARCHITECTURES = {
+    **{name: shape for name, shape in ARCHITECTURES.items() if name != "tqc_compatible"},
+    "yosh_2020": (64, 16),
+}
 
 
 @dataclass(slots=True)

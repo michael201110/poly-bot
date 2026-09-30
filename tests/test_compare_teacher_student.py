@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import gymnasium as gym
 import numpy as np
+import torch as th
+from stable_baselines3.common.torch_layers import FlattenExtractor
+from torch import nn
 
+from polybot.algorithms.ppo_tqc import initialize_actor_from_tqc
 from polybot.algorithms.registry import backend_for
 from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
@@ -87,3 +93,82 @@ def test_overlapping_air_brake_resumes_previous_layer_on_touchdown() -> None:
     assert base._air_brake_request
     np.testing.assert_allclose(base.action, [0.25, -1.0])
     np.testing.assert_allclose(base.base, [0.25, -0.02])
+
+
+def test_ppo_action_wrapper_replays_tqc_speed_schedule_and_bias_layers() -> None:
+    class CaptureEnv(gym.Env):
+        def __init__(self) -> None:
+            self._air_brake_request = False
+            self._air_brake_base_action = None
+
+        def reset(self, *, seed=None, options=None):
+            del seed, options
+            observation = np.zeros(105, dtype=np.float32)
+            return observation, {}
+
+        def step(self, action):
+            del action
+            return np.zeros(105, dtype=np.float32), 0.0, False, False, {}
+
+    env = CaptureEnv()
+    wrapper = AirBrakeActionWrapper(
+        env,
+        [
+            {"kind": "steer_bias", "start": 0.5, "end": 0.6, "amount": 0.02},
+            {"kind": "drive_gain", "start": 0.5, "end": 0.6, "amount": 0.5},
+            {"kind": "drive_bias", "start": 0.5, "end": 0.6, "amount": -0.1},
+        ],
+        [[0.5, 0.75, 0.1]],
+    )
+    observation = np.zeros(105, dtype=np.float32)
+    observation[12] = 0.55
+    observation[17:21] = 1.0
+    np.testing.assert_allclose(
+        wrapper.transform_action(np.asarray([0.2, 0.8]), observation),
+        [0.22, 0.35], atol=1e-7,
+    )
+    wrapper._observation = observation
+    _, _, _, _, info = wrapper.step(np.asarray([0.2, 0.8]))
+    np.testing.assert_allclose(info["raw_policy_action"], [0.2, 0.8], atol=1e-7)
+    np.testing.assert_allclose(info["transformed_policy_action"], [0.22, 0.35], atol=1e-7)
+
+
+def test_tqc_compatible_ppo_actor_graft_matches_squashed_tqc_mean(tmp_path) -> None:
+    config = TrainingConfig(
+        algorithm="ppo", backend="mock", track_id="mock/straight", frame_skip=1,
+        timesteps=8, ppo=PPOConfig(
+            architecture="tqc_compatible", rollout_steps=8, batch_size=8, epochs=1,
+        ),
+    )
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight", frame_skip=1,
+        action_adapter=backend_for("ppo").action_adapter(config),
+    )
+    model = backend_for("ppo").create_model(config, env, "cpu")
+    actor = SimpleNamespace(
+        features_extractor=FlattenExtractor(model.observation_space),
+        latent_pi=nn.Sequential(nn.Linear(105, 128), nn.ReLU(), nn.Linear(128, 128), nn.ReLU()),
+        mu=nn.Linear(128, 2),
+    )
+    teacher = SimpleNamespace(actor=actor)
+    try:
+        copied = initialize_actor_from_tqc(model, teacher)
+        assert copied["parameters"] > 0
+        observations = np.random.default_rng(12).normal(size=(64, 105)).astype(np.float32)
+        with th.no_grad():
+            source = th.tanh(actor.mu(actor.latent_pi(th.as_tensor(observations)))).numpy()
+        student, _ = model.predict(observations, deterministic=True)
+        np.testing.assert_allclose(student, source, atol=1e-7, rtol=0.0)
+
+        model.learn(total_timesteps=8)
+        sampled, _ = model.predict(observations, deterministic=False)
+        assert np.all(np.isfinite(sampled))
+        assert np.all(sampled >= -1.0) and np.all(sampled <= 1.0)
+        checkpoint = tmp_path / "policy.zip"
+        model.save(str(checkpoint))
+        loaded = backend_for("ppo").load_model(checkpoint, None, "cpu")
+        restored, _ = loaded.predict(observations, deterministic=True)
+        assert np.all(np.isfinite(restored))
+        assert np.all(restored >= -1.0) and np.all(restored <= 1.0)
+    finally:
+        env.close()

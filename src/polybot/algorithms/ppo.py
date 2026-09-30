@@ -7,10 +7,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import torch as th
+from torch import nn
 
 from polybot.algorithms.base import AlgorithmBackend
 from polybot.algorithms.ppo_initialization import apply_forward_bias
 from polybot.algorithms.ppo_teacher import TeacherAnchoredPPO
+from polybot.algorithms.ppo_tqc import TQCSquashedActorCriticPolicy
 from polybot.control.actions import ContinuousActionAdapter
 from polybot.training.config import ARCHITECTURES, PPOConfig
 
@@ -38,18 +40,24 @@ class PPOBackend(AlgorithmBackend):
         assert config.ppo is not None
         p = config.ppo
         layers = list(ARCHITECTURES[p.architecture])
+        tqc_compatible = p.architecture == "tqc_compatible"
         model = TeacherAnchoredPPO(
-            "MlpPolicy", env, seed=config.seed, device=device, verbose=0,
+            TQCSquashedActorCriticPolicy if tqc_compatible else "MlpPolicy",
+            env, seed=config.seed, device=device, verbose=0,
             learning_rate=p.learning_rate, gamma=p.gamma, gae_lambda=p.gae_lambda,
             ent_coef=p.entropy_coefficient, n_steps=p.rollout_steps,
             batch_size=p.batch_size, n_epochs=p.epochs,
             target_kl=p.target_kl,
-            policy_kwargs={"net_arch": {"pi": layers, "vf": layers}},
+            policy_kwargs={
+                "net_arch": {"pi": layers, "vf": layers},
+                **({"activation_fn": nn.ReLU} if tqc_compatible else {}),
+            },
         )
-        apply_forward_bias(
-            model, p.initial_forward_bias,
-            steering_strength=p.initial_steering_bias,
-        )
+        if not tqc_compatible:
+            apply_forward_bias(
+                model, p.initial_forward_bias,
+                steering_strength=p.initial_steering_bias,
+            )
         self._configure_action_std(model, p.action_std)
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)

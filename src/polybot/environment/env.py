@@ -45,11 +45,15 @@ def _mean_tick_demand(tick_controls: list[Action]) -> ControlDemand:
 
 
 class AirBrakeActionWrapper(gym.Wrapper):
-    """Keep sub-frame landing-aware air braking below a continuous policy."""
+    """Apply a TQC-compatible progress overlay stack below a continuous policy."""
 
-    def __init__(self, env: gym.Env, overlays: list[dict[str, Any]]) -> None:
+    def __init__(
+        self, env: gym.Env, overlays: list[dict[str, Any]],
+        speed_bias_schedule: list[list[float]] | None = None,
+    ) -> None:
         super().__init__(env)
-        self.overlays = [item for item in overlays if item.get("kind") == "air_brake"]
+        self.overlays = list(overlays)
+        self.speed_bias_schedule = list(speed_bias_schedule or [])
         self._observation: np.ndarray | None = None
 
     def reset(self, **kwargs: Any) -> tuple[np.ndarray, dict[str, Any]]:
@@ -57,31 +61,65 @@ class AirBrakeActionWrapper(gym.Wrapper):
         self._observation = np.asarray(observation)
         return observation, info
 
-    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+    def transform_action(
+        self, action: np.ndarray, observation: np.ndarray | None = None, *,
+        include_air_brake: bool = True,
+    ) -> np.ndarray:
+        """Apply the teacher's output transforms for one observation/action pair."""
         requested = np.asarray(action, dtype=np.float32).reshape(2)
         applied = requested.copy()
-        if self._observation is not None:
-            progress = float(self._observation[12])
-            airborne = bool(np.all(self._observation[17:21] < 0.5))
-            if airborne:
-                for overlay in self.overlays:
-                    start, end = float(overlay["start"]), float(overlay["end"])
-                    taper = min(float(overlay.get("taper", 0.01)), (end - start) / 2)
-                    enter = np.clip((progress - start) / max(taper, 1e-9), 0, 1)
-                    leave = np.clip((end - progress) / max(taper, 1e-9), 0, 1)
-                    fade = min(enter * enter * (3 - 2 * enter), leave * leave * (3 - 2 * leave))
-                    if fade > 0:
-                        # TQC applies overlay layers in order. With overlapping
-                        # air-brake windows, touchdown resumes the action before
-                        # the most recent layer, not the original actor action.
-                        base_before_layer = applied.copy()
-                        applied[1] = -abs(float(overlay.get("duty", 0.0))) * fade
-                        base_env = self.unwrapped
-                        base_env._air_brake_request = True
-                        base_env._air_brake_base_action = base_before_layer
+        current_observation = self._observation if observation is None else observation
+        if current_observation is not None:
+            # Keep the simulator's float32 progress precision. TQC computes
+            # overlay thresholds directly from this feature; promoting it to
+            # Python float can turn a rounded-at-start zero fade into a tiny
+            # positive air-brake request that changes a whole frame-skip block.
+            progress = np.asarray(current_observation, dtype=np.float32)[12]
+            airborne = bool(np.all(current_observation[17:21] < 0.5))
+            bias = sum(
+                amount * np.clip(min((progress - start) / 0.02, (end - progress) / 0.02), 0, 1)
+                for start, end, amount in self.speed_bias_schedule
+            )
+            applied[1] = np.clip(applied[1] + bias, -1.0, 1.0)
+            base_env = self.unwrapped
+            base_env._air_brake_request = False
+            base_env._air_brake_base_action = None
+            for overlay in self.overlays:
+                start, end = float(overlay["start"]), float(overlay["end"])
+                taper = min(float(overlay.get("taper", 0.01)), (end - start) / 2)
+                enter = np.clip((progress - start) / max(taper, 1e-9), 0, 1)
+                leave = np.clip((end - progress) / max(taper, 1e-9), 0, 1)
+                fade = min(enter * enter * (3 - 2 * enter), leave * leave * (3 - 2 * leave))
+                kind = overlay.get("kind")
+                amount = float(overlay.get("amount", 0.0))
+                if kind == "steer_bias":
+                    applied[0] += amount * fade
+                elif kind == "steer_gain":
+                    applied[0] *= 1.0 + (amount - 1.0) * fade
+                elif kind == "drive_bias":
+                    applied[1] += amount * fade
+                elif kind == "drive_gain":
+                    applied[1] *= 1.0 + (amount - 1.0) * fade
+                elif kind == "air_brake" and include_air_brake and airborne and fade > 0:
+                    # TQC applies overlay layers in order. With overlapping
+                    # air-brake windows, touchdown resumes the action before
+                    # the most recent layer, not the original actor action.
+                    base_before_layer = applied.copy()
+                    applied[1] = -abs(float(overlay.get("duty", 0.0))) * fade
+                    base_env._air_brake_request = True
+                    base_env._air_brake_base_action = base_before_layer
+            applied = np.clip(applied, -1.0, 1.0)
+        return applied
+
+    def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
+        requested = np.asarray(action, dtype=np.float32).reshape(2)
+        applied = self.transform_action(action)
         result = self.env.step(applied)
         self._observation = np.asarray(result[0])
-        return result
+        info = dict(result[4])
+        info["raw_policy_action"] = requested.tolist()
+        info["transformed_policy_action"] = applied.tolist()
+        return result[0], result[1], result[2], result[3], info
 
 
 class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):

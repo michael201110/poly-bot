@@ -525,3 +525,35 @@ first produce a much closer initial actor match and gate it on repeated
 same-start closed-loop tests; ordinary PPO updates at the current safe-region
 scale remain too disruptive to justify running blindly. The under-22s goal is
 still open.
+
+## Exact actor graft and live parity result (30 September 2026)
+
+The audit exposed two transfer gaps that the earlier comparison did not
+isolate. First, the teacher's TQC actor is two 128-unit ReLU layers, while the
+PPO architecture label saved for earlier students resolved to two 256-unit
+Tanh layers. Second, TQC carries a learned speed-bias schedule as well as its
+overlay stack. The previous PPO path neither copied the actor weights nor
+applied the complete saved schedule. A new `tqc_compatible` PPO policy uses a
+squashed Gaussian with the same 128x128 ReLU actor, and the transfer command
+can now copy TQC actor parameters exactly while keeping PPO's trainable critic
+and action distribution.
+
+The resulting zero-update graft, with the teacher's speed schedule and overlays
+applied, matches all 16,180 successful teacher observations to maximum action
+error 2.265e-6 (steering MAE 3.35e-7; longitudinal MAE 1.96e-7). The first live
+paired test still differed at one air-brake window boundary. Its cause was a
+precision mismatch: the PPO wrapper promoted float32 progress to Python
+float64 before computing the overlay fade. At a boundary, that produced a tiny
+positive fade where TQC's float32 calculation produced zero. Since the wrapper
+then changed the whole frame-skip block to per-tick braking, this tiny numeric
+difference caused a real control change. The wrapper now keeps progress in
+float32, matching TQC.
+
+After that fix, the same-seed live test completed 809 decisions on both
+policies. TQC and grafted PPO each finished in 24.263s at progress 0.999935;
+the traces had no action, position, heading, wheel-contact, speed, or steering
+divergence at any recorded threshold. This verifies that the earlier student
+failures came from a large actor/transfer mismatch, not inherent inability of
+PPO to reproduce this teacher. It does not yet meet the sub-22s criterion: the
+validated PPO is currently a faithful 24.263s initialization, and fine-tuning
+should proceed only from this parity checkpoint with evaluation safeguards.

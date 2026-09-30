@@ -130,10 +130,12 @@ class ParameterForm(QWidget):
             metadata = info[field.name]
             current = getattr(instance, field.name)
             if field.name == "architecture":
-                choices = (
-                    ("tiny", "compact", "standard", "yosh_2020")
-                    if isinstance(instance, DQNConfig) else ("tiny", "compact", "standard")
-                )
+                if isinstance(instance, DQNConfig):
+                    choices = ("tiny", "compact", "standard", "yosh_2020")
+                elif isinstance(instance, PPOConfig):
+                    choices = ("tiny", "compact", "standard", "tqc_compatible")
+                else:
+                    choices = ("tiny", "compact", "standard")
             elif field.name == "action_set":
                 choices = ("full", "no_brake")
             else:

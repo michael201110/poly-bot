@@ -65,6 +65,7 @@ class ModelMetadata:
     adaptation_stage: str | None = None
     adaptation_rollback_count: int = 0
     policy_overlays: list[dict[str, Any]] = field(default_factory=list)
+    speed_bias_schedule: list[list[float]] = field(default_factory=list)
     action_semantics: str | None = None
     schema: str = MODEL_SCHEMA
     polybot_version: str = POLYBOT_VERSION

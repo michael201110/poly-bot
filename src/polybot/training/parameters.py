@@ -49,7 +49,10 @@ GENERAL_INFO = _info("General", {
 })
 
 PPO_INFO = _info("PPO", {
-    "architecture": "Neural network width. Larger networks can learn complex behaviour but update slower.",
+    "architecture": (
+        "Network size. tqc_compatible uses a 128×128 ReLU actor and tanh-squashed controls "
+        "so a TQC actor can be copied exactly into PPO."
+    ),
     "action_std": "Fixed exploration noise during PPO fine-tuning; blank keeps the learned standard deviation.",
     "learning_rate": "Size of each network update. Around 0.0001–0.0003 is a common starting range.",
     "gamma": "How much future reward matters. Higher values look farther ahead.",

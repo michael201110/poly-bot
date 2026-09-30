@@ -16,7 +16,9 @@ from typing import Any
 import numpy as np
 
 from polybot.algorithms.registry import backend_for
-from polybot.environment.env import AirBrakeActionWrapper
+from polybot.control.actions import ContinuousActionAdapter
+from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
+from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import ModelRegistry
 from polybot.training.config import TrainingConfig
 from polybot.training.runner import TrainingRunner
@@ -51,6 +53,8 @@ def _error_summary(error: np.ndarray) -> dict[str, float | int]:
 
 def compare_same_observations(
     teacher: Any, student: Any, dataset: TeacherDataset,
+    student_overlays: list[dict[str, Any]] | None = None,
+    student_speed_bias_schedule: list[list[float]] | None = None,
 ) -> tuple[dict[str, Any], dict[str, np.ndarray]]:
     """Compare both actors on precisely the same successful teacher states."""
     mask = np.isin(dataset.trajectory_ids, dataset.successful_trajectory_ids)
@@ -65,7 +69,23 @@ def compare_same_observations(
         raw_actions.append(np.asarray(raw, dtype=np.float32))
         student_actions.append(np.asarray(predicted, dtype=np.float32))
     raw = np.concatenate(raw_actions)
-    predicted = np.concatenate(student_actions)
+    raw_student = np.concatenate(student_actions)
+    overlays = list(student_overlays or [])
+    speed_bias_schedule = list(student_speed_bias_schedule or [])
+    predicted = raw_student
+    if overlays or speed_bias_schedule:
+        transform_env = PolyTrackEnv(
+            MockSimulatorTransport(), track_id="mock/straight", frame_skip=1,
+            action_adapter=ContinuousActionAdapter(),
+        )
+        wrapper = AirBrakeActionWrapper(transform_env, overlays, speed_bias_schedule)
+        try:
+            predicted = np.stack([
+                wrapper.transform_action(action, observation, include_air_brake=False)
+                for observation, action in zip(obs, raw_student, strict=True)
+            ])
+        finally:
+            transform_env.close()
     # Air-brake overrides are intentionally below the distilled actor. Compare
     # student against the bakeable teacher target, and audit that target itself.
     calculated = np.stack([
@@ -99,12 +119,12 @@ def compare_same_observations(
         "longitudinal": _error_summary(errors[:, 1]),
         "teacher_target_max_difference": float(np.max(np.abs(calculated - target))),
         "student_deterministic_repeat_max_difference": float(
-            np.max(np.abs(predicted[:min(512, len(obs))] - np.asarray(
+            np.max(np.abs(raw_student[:min(512, len(obs))] - np.asarray(
                 student.predict(obs[:min(512, len(obs))], deterministic=True)[0]
             )))
         ),
         "student_predict_vs_clipped_mean_max_difference": float(
-            np.max(np.abs(predicted - _deterministic_mean(student, obs)))
+            np.max(np.abs(raw_student - _deterministic_mean(student, obs)))
         ),
         "sections": sections,
         "regimes": {
@@ -117,7 +137,8 @@ def compare_same_observations(
     }
     return report, {
         "observations": obs, "teacher_raw": raw,
-        "teacher_targets": target, "student": predicted, "progress": progress,
+        "teacher_targets": target, "student": predicted,
+        "student_raw": raw_student, "progress": progress,
     }
 
 
@@ -193,7 +214,11 @@ def run_episode(env: Any, model: Any, other: Any, *, seed: int, teacher: bool) -
             env._air_brake_base_action = model._air_brake_base_action
         air_brake_base = getattr(env.unwrapped, "_air_brake_base_action", None)
         next_observation, _, terminated, truncated, info = env.step(action)
-        records.append(_record(len(records), observation, action, info, raw=raw,
+        executed_action = np.asarray(
+            info.get("transformed_policy_action", action), dtype=np.float32,
+        )
+        raw_action = info.get("raw_policy_action", raw)
+        records.append(_record(len(records), observation, executed_action, info, raw=raw_action,
                                comparison=other_action, air_brake_base=air_brake_base))
         observation = next_observation
         if terminated or truncated:
@@ -262,15 +287,20 @@ def main(argv: list[str] | None = None) -> int:
     teacher = backend_for("tqc").load_model(args.teacher / "policy.zip", None, "cpu")
     student = backend_for("ppo").load_model(args.student / "policy.zip", None, "cpu")
     teacher.policy_overlays = list(teacher_metadata.policy_overlays)
+    teacher.speed_bias_schedule = list(teacher.speed_bias_schedule)
     dataset = TeacherDataset.load(args.dataset)
     args.output.mkdir(parents=True, exist_ok=True)
-    report, arrays = compare_same_observations(teacher, student, dataset)
+    report, arrays = compare_same_observations(
+        teacher, student, dataset, student_metadata.policy_overlays,
+        student_metadata.speed_bias_schedule,
+    )
     report["checkpoints"] = {
         "teacher": str(args.teacher), "teacher_sha256": _sha256(args.teacher / "policy.zip"),
         "student": str(args.student), "student_sha256": _sha256(args.student / "policy.zip"),
         "dataset": str(args.dataset), "dataset_sha256": _sha256(args.dataset),
         "teacher_frame_skip": teacher_metadata.training_config["frame_skip"],
         "student_frame_skip": student_metadata.training_config["frame_skip"],
+        "teacher_speed_bias_schedule": list(teacher.speed_bias_schedule),
         "teacher_action_schema": teacher_metadata.action_schema,
         "student_action_schema": student_metadata.action_schema,
         "teacher_observation_schema": teacher_metadata.observation_schema,
@@ -282,7 +312,10 @@ def main(argv: list[str] | None = None) -> int:
         runner = TrainingRunner(config)
         env = runner._environment()
         env.capture_tick_controls = True
-        student_env = AirBrakeActionWrapper(env, list(student_metadata.policy_overlays))
+        student_env = AirBrakeActionWrapper(
+            env, list(student_metadata.policy_overlays),
+            list(student_metadata.speed_bias_schedule),
+        )
         try:
             reference = run_episode(env, teacher, student, seed=args.seed, teacher=True)
             candidate = run_episode(student_env, student, teacher, seed=args.seed, teacher=False)

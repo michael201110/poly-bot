@@ -58,7 +58,9 @@ def _common(parser: argparse.ArgumentParser) -> None:
 
 def _algorithm_options(parser: argparse.ArgumentParser) -> None:
     ppo = parser.add_argument_group("PPO")
-    ppo.add_argument("--ppo-architecture", choices=("tiny", "compact", "standard"))
+    ppo.add_argument(
+        "--ppo-architecture", choices=("tiny", "compact", "standard", "tqc_compatible"),
+    )
     ppo.add_argument("--ppo-lr", type=float)
     ppo.add_argument("--ppo-rollout", type=int)
     ppo.add_argument("--ppo-batch", type=int)

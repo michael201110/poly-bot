@@ -16,8 +16,12 @@ import gymnasium as gym
 import numpy as np
 import torch as th
 
+from polybot.algorithms.ppo_tqc import initialize_actor_from_tqc
 from polybot.algorithms.registry import backend_for
+from polybot.control.actions import ContinuousActionAdapter
+from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
 from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
+from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import PPO_ACTION_SEMANTICS, ModelMetadata, ModelRegistry
 from polybot.training.config import EvaluationConfig, PPOConfig, TrainingConfig
 from polybot.training.evaluation import EvaluationResult, evaluate_model
@@ -239,8 +243,17 @@ def _deterministic_mean(model: Any, observations: np.ndarray, batch_size: int = 
     with th.no_grad():
         for start in range(0, len(observations), batch_size):
             obs = th.as_tensor(observations[start:start + batch_size], device=model.device)
-            distribution = model.policy.get_distribution(obs).distribution
-            outputs.append(distribution.mean.clamp(-1.0, 1.0).cpu().numpy())
+            distribution = model.policy.get_distribution(obs)
+            if hasattr(distribution, "get_actions"):
+                actions = distribution.get_actions(deterministic=True)
+                outputs.append(actions.cpu().numpy())
+            else:
+                # Small test/dummy policies may expose only predict(). Keep the
+                # metric aligned with the public policy API in that case.
+                actions, _ = model.predict(
+                    observations[start:start + batch_size], deterministic=True
+                )
+                outputs.append(np.asarray(actions, dtype=np.float32))
     return np.concatenate(outputs, axis=0) if outputs else np.empty((0, 2), dtype=np.float32)
 
 
@@ -277,6 +290,23 @@ def imitation_metrics(
     model: Any, dataset: TeacherDataset, indices: np.ndarray
 ) -> dict[str, Any]:
     predicted = _deterministic_mean(model, dataset.observations[indices])
+    overlays = list(getattr(model, "policy_overlays", ()))
+    speed_bias_schedule = list(getattr(model, "speed_bias_schedule", ()))
+    if overlays or speed_bias_schedule:
+        transform_env = PolyTrackEnv(
+            MockSimulatorTransport(), track_id="mock/straight", frame_skip=1,
+            action_adapter=ContinuousActionAdapter(),
+        )
+        wrapper = AirBrakeActionWrapper(transform_env, overlays, speed_bias_schedule)
+        try:
+            predicted = np.stack([
+                wrapper.transform_action(action, observation, include_air_brake=False)
+                for observation, action in zip(
+                    dataset.observations[indices], predicted, strict=True,
+                )
+            ])
+        finally:
+            transform_env.close()
     target = dataset.final_actions[indices]
     error = np.abs(predicted - target)
     sections = {}
@@ -1075,10 +1105,13 @@ def _save_student(model: Any, config: TrainingConfig, directory: Path, *, report
         reward_profile=config.reward_profile, curriculum=asdict(config.curriculum),
         training_config=config.to_dict(), training_timesteps=int(model.num_timesteps),
         simulator_ticks=0, wall_seconds=0.0, seed=config.seed, device=config.device,
-        finishes=0, crashes=0, policy_overlays=[
-            layer for layer in report.get("teacher_overlays", [])
-            if layer.get("kind") == "air_brake"
-        ],
+        finishes=0, crashes=0, policy_overlays=report.get(
+            "student_overlays", [
+                layer for layer in report.get("teacher_overlays", [])
+                if layer.get("kind") == "air_brake"
+            ],
+        ),
+        speed_bias_schedule=report.get("teacher_speed_bias_schedule", []),
     )
     registry.write_metadata(directory, metadata)
     (directory / "teacher-student.json").write_text(
@@ -1113,8 +1146,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--epochs", type=int, default=100)
     parser.add_argument("--supervised-learning-rate", type=float, default=1e-4)
     parser.add_argument(
-        "--student-architecture", choices=("tiny", "compact", "standard"),
+        "--student-architecture", choices=("tiny", "compact", "standard", "tqc_compatible"),
         help="override the distilled PPO student's network size",
+    )
+    parser.add_argument(
+        "--tqc-actor-init", action="store_true",
+        help="initialize a TQC-compatible squashed PPO actor by exact weight transfer",
     )
     parser.add_argument("--timesteps", type=int, default=10_000_000)
     parser.add_argument("--warmup-steps", type=int, default=2_048)
@@ -1220,6 +1257,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.ppo_action_std is not None:
         assert config.ppo is not None
         config.ppo.action_std = args.ppo_action_std
+    if args.tqc_actor_init:
+        if args.stage != "pretrain":
+            parser.error("--tqc-actor-init currently requires --stage pretrain")
+        if args.student_architecture is not None:
+            parser.error("--tqc-actor-init selects its compatible architecture automatically")
+        assert config.ppo is not None
+        config.ppo.architecture = "tqc_compatible"
+        config.ppo.action_std = args.initial_action_std
     if args.student_architecture is not None:
         if config.ppo is None:
             config.ppo = PPOConfig(architecture=args.student_architecture)
@@ -1238,6 +1283,7 @@ def main(argv: list[str] | None = None) -> int:
         "teacher_metadata": json.loads((teacher_path / "metadata.json").read_text(encoding="utf-8")),
         "teacher_overlay_stack": teacher_meta.policy_overlays,
         "teacher_action_semantics": teacher_meta.action_semantics or ACTION_SEMANTICS,
+        "teacher_speed_bias_schedule": list(teacher.speed_bias_schedule),
         "observation_schema": teacher_meta.observation_schema,
         "lookahead_count": teacher_meta.lookahead_count,
         "recorded_best_lap_s": (teacher_meta.evaluation or {}).get("best_lap_s"),
@@ -1642,12 +1688,72 @@ def main(argv: list[str] | None = None) -> int:
                 if args.stage == "validate" and student_path.is_file()
                 else _new_student(config, dataset.observations.shape[1])
             )
+            if args.stage == "validate":
+                student_metadata = registry.read_metadata(output / "pretrained")
+                student.policy_overlays = list(student_metadata.policy_overlays)
+                student.speed_bias_schedule = list(student_metadata.speed_bias_schedule)
             if args.stage != "validate":
-                report = pretrain_actor(
-                    student, dataset, epochs=args.epochs, seed=args.seed,
-                    learning_rate=args.supervised_learning_rate,
-                    initial_action_std=args.initial_action_std,
-                )
+                if args.tqc_actor_init:
+                    graft = initialize_actor_from_tqc(student, teacher)
+                    student.policy_overlays = list(teacher_meta.policy_overlays)
+                    student.speed_bias_schedule = list(teacher.speed_bias_schedule)
+                    raw_observations = dataset.observations[
+                        np.isin(dataset.trajectory_ids, dataset.successful_trajectory_ids)
+                    ]
+                    with th.no_grad():
+                        teacher_raw = teacher.policy.predict(
+                            raw_observations, deterministic=True,
+                        )[0]
+                    student_raw = student.predict(
+                        raw_observations, deterministic=True,
+                    )[0]
+                    transform_env = PolyTrackEnv(
+                        MockSimulatorTransport(), track_id="mock/straight",
+                        frame_skip=config.frame_skip,
+                        action_adapter=backend_for("ppo").action_adapter(config),
+                    )
+                    transform_wrapper = AirBrakeActionWrapper(
+                        transform_env, list(teacher_meta.policy_overlays),
+                        list(teacher.speed_bias_schedule),
+                    )
+                    try:
+                        student_final = np.stack([
+                            transform_wrapper.transform_action(
+                                action, observation, include_air_brake=False,
+                            )
+                            for observation, action in zip(
+                                raw_observations, student_raw, strict=True,
+                            )
+                        ])
+                    finally:
+                        transform_env.close()
+                    teacher_final = np.stack([
+                        _high_level_teacher_action(source, observation, action)
+                        for source, observation, action in zip(
+                            [teacher] * len(raw_observations), raw_observations,
+                            teacher_raw, strict=True,
+                        )
+                    ])
+                    report = {
+                        "initialization": "exact_tqc_actor_graft",
+                        "copied_actor_parameters": graft["parameters"],
+                        "teacher_raw_student_action_max_error": float(
+                            np.max(np.abs(np.asarray(teacher_raw) - np.asarray(student_raw)))
+                        ),
+                        "teacher_final_student_action_max_error": float(
+                            np.max(np.abs(np.asarray(teacher_final) - student_final))
+                        ),
+                        "teacher_overlays": list(teacher_meta.policy_overlays),
+                        "student_overlays": list(teacher_meta.policy_overlays),
+                        "teacher_speed_bias_schedule": list(teacher.speed_bias_schedule),
+                        "action_std": [args.initial_action_std, args.initial_action_std],
+                    }
+                else:
+                    report = pretrain_actor(
+                        student, dataset, epochs=args.epochs, seed=args.seed,
+                        learning_rate=args.supervised_learning_rate,
+                        initial_action_std=args.initial_action_std,
+                    )
                 report.update({
                     "teacher_path": str(teacher_path), "teacher_sha256": teacher_digest,
                     "teacher_lap_s": (teacher_meta.evaluation or {}).get("best_lap_s"),
@@ -1665,10 +1771,10 @@ def main(argv: list[str] | None = None) -> int:
             print(json.dumps(offline_validate(student, dataset), indent=2))
             if args.stage in {"validate", "full"}:
                 student_runner = TrainingRunner(config)
-                student_runner._ppo_air_brake_overlays = [
-                    layer for layer in teacher_meta.policy_overlays
-                    if layer.get("kind") == "air_brake"
-                ]
+                student_runner._ppo_air_brake_overlays = list(student_metadata.policy_overlays)
+                student_runner._ppo_speed_bias_schedule = list(
+                    student_metadata.speed_bias_schedule
+                )
                 live = evaluate_model(
                     student, lambda: student_runner._environment(), episodes=5,
                     seed=args.seed + 10_000,

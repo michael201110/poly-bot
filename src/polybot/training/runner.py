@@ -84,6 +84,7 @@ class TrainingRunner:
         self._last_rollback_severe = False
         self.sink: EventSink | None = None
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
+        self._ppo_speed_bias_schedule: list[list[float]] = []
 
     def stop(self) -> None:
         self.stop_requested.set()
@@ -108,8 +109,12 @@ class TrainingRunner:
             action_adapter=self.backend.action_adapter(cfg),
             **(phase.env_kwargs() if phase is not None else {}),
         )
-        if cfg.algorithm == "ppo" and self._ppo_air_brake_overlays:
-            return AirBrakeActionWrapper(env, self._ppo_air_brake_overlays)
+        if cfg.algorithm == "ppo" and (
+            self._ppo_air_brake_overlays or self._ppo_speed_bias_schedule
+        ):
+            return AirBrakeActionWrapper(
+                env, self._ppo_air_brake_overlays, self._ppo_speed_bias_schedule,
+            )
         return env
 
     def _emit(self, event: dict[str, Any]) -> None:
@@ -123,6 +128,10 @@ class TrainingRunner:
         overlays = (
             self._ppo_air_brake_overlays if cfg.algorithm == "ppo"
             else list(getattr(self.model, "policy_overlays", []))
+        )
+        speed_bias_schedule = (
+            self._ppo_speed_bias_schedule if cfg.algorithm == "ppo"
+            else list(getattr(self.model, "speed_bias_schedule", []))
         )
         return ModelMetadata(
             algorithm=cfg.algorithm, architecture=self.backend.architecture(cfg),
@@ -144,6 +153,7 @@ class TrainingRunner:
             adaptation_stage=getattr(self.model, "adaptation_stage", None),
             adaptation_rollback_count=int(getattr(self.model, "adaptation_rollback_count", 0)),
             policy_overlays=list(overlays),
+            speed_bias_schedule=list(speed_bias_schedule),
             action_semantics=(
                 PPO_ACTION_SEMANTICS if cfg.algorithm in {"ppo", "tqc"}
                 else "native_digital_v2"
@@ -448,12 +458,11 @@ class TrainingRunner:
                 if cfg.algorithm == "tqc":
                     self.model.policy_overlays = list(metadata.policy_overlays)
                 elif cfg.algorithm == "ppo":
-                    self._ppo_air_brake_overlays = [
-                        item for item in metadata.policy_overlays
-                        if item.get("kind") == "air_brake"
-                    ]
+                    self._ppo_air_brake_overlays = list(metadata.policy_overlays)
+                    self._ppo_speed_bias_schedule = list(metadata.speed_bias_schedule)
                     self.model.policy_overlays = list(self._ppo_air_brake_overlays)
-                    if self._ppo_air_brake_overlays:
+                    self.model.speed_bias_schedule = list(self._ppo_speed_bias_schedule)
+                    if self._ppo_air_brake_overlays or self._ppo_speed_bias_schedule:
                         training_env.close()
                         training_env = ScaledTrainingReward(
                             self._environment(plan.phases[0]), cfg.reward_scale
