@@ -23,7 +23,7 @@ from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
 from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import PPO_ACTION_SEMANTICS, ModelMetadata, ModelRegistry
-from polybot.training.config import EvaluationConfig, PPOConfig, TrainingConfig
+from polybot.training.config import CurriculumConfig, EvaluationConfig, PPOConfig, TrainingConfig
 from polybot.training.evaluation import EvaluationResult, evaluate_model
 from polybot.training.promotion import promote_directory
 from polybot.training.reward_profiles import RewardProfileStore
@@ -913,6 +913,22 @@ def _apply_reward_profile(config: TrainingConfig, profile: str | None) -> Traini
     return config
 
 
+def _apply_ppo_training_section(
+    config: TrainingConfig, start_ratio: float | None, end_ratio: float | None,
+    lead_in_ratio: float = 0.05,
+) -> TrainingConfig:
+    """Limit PPO collection to a physical track section; evaluation stays full-track."""
+    if start_ratio is None and end_ratio is None:
+        return config
+    if start_ratio is None or end_ratio is None:
+        raise ValueError("both PPO training section bounds are required")
+    config.curriculum = CurriculumConfig(
+        mode="section", start_ratio=start_ratio, end_ratio=end_ratio,
+        lead_in_ratio=lead_in_ratio,
+    )
+    return config
+
+
 def _gym_env(config: TrainingConfig, observation_size: int) -> gym.Env:
     """Provide shape-correct spaces without opening the live simulator for cloning."""
     env = gym.Env()
@@ -1298,6 +1314,18 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--ppo-residual-progress-start", type=float)
     parser.add_argument("--ppo-residual-progress-end", type=float)
+    parser.add_argument(
+        "--ppo-training-section-start-ratio", type=float,
+        help="limit PPO rollouts to a physical progress section; evaluation remains full-track",
+    )
+    parser.add_argument(
+        "--ppo-training-section-end-ratio", type=float,
+        help="end progress ratio for the PPO training section",
+    )
+    parser.add_argument(
+        "--ppo-training-section-lead-in-ratio", type=float, default=0.05,
+        help="physical lead-in before the PPO section start (default: 0.05)",
+    )
     parser.add_argument("--ppo-rollout-steps", type=int)
     parser.add_argument("--ppo-batch-size", type=int)
     parser.add_argument("--ppo-epochs", type=int)
@@ -1370,6 +1398,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.ppo_eval_interval_steps is not None:
         config.evaluation.interval_steps = args.ppo_eval_interval_steps
     _apply_reward_profile(config, args.reward_profile)
+    try:
+        _apply_ppo_training_section(
+            config, args.ppo_training_section_start_ratio,
+            args.ppo_training_section_end_ratio,
+            args.ppo_training_section_lead_in_ratio,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.ppo_action_std is not None:
         assert config.ppo is not None
         config.ppo.action_std = args.ppo_action_std

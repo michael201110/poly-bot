@@ -12,12 +12,14 @@ import torch as th
 from gymnasium import spaces
 
 from polybot.algorithms.registry import backend_for
+from polybot.environment.curriculum import build_plan
 from polybot.training.config import PPOConfig, TrainingConfig
 from polybot.training.evaluation import EvaluationResult
 from polybot.training.teacher_student import (
     DaggerDataset,
     TeacherDataset,
     _align_ppo_config_to_checkpoint,
+    _apply_ppo_training_section,
     _apply_reward_profile,
     _dagger_rounds_remain_after_reliable_gate,
     _dagger_seed_student,
@@ -76,6 +78,19 @@ def test_ppo_continuation_uses_checkpoint_architecture_and_action_noise() -> Non
     assert config.ppo.action_std == 0.02
     with pytest.raises(ValueError, match="rollout steps cannot change"):
         _align_ppo_config_to_checkpoint(config, metadata, rollout_steps=2048)
+
+
+def test_ppo_training_section_changes_collection_not_full_track_evaluation() -> None:
+    config = TrainingConfig(algorithm="ppo", ppo=PPOConfig())
+
+    _apply_ppo_training_section(config, 0.0, 0.15, lead_in_ratio=0.05)
+
+    phase = build_plan(config.curriculum, 8192).phases[0]
+    assert (phase.mode, phase.spawn_ratio, phase.start_ratio, phase.end_ratio) == (
+        "section", 0.0, 0.0, 0.15,
+    )
+    with pytest.raises(ValueError, match="both PPO training section bounds"):
+        _apply_ppo_training_section(config, 0.0, None)
 
 
 def test_exact_tqc_actor_init_can_select_full_trainable_compatible_policy() -> None:
