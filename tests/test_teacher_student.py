@@ -22,6 +22,7 @@ from polybot.training.teacher_student import (
     _gym_env,
     _initial_dagger_student,
     _partial_progress_gate_passed,
+    _ppo_teacher_anchor_dir_for_source,
     _promote_ppo_champion_if_better,
     _run_with_stop_file,
     _should_resume_ppo_champion,
@@ -349,6 +350,21 @@ def test_ppo_teacher_anchor_is_an_immutable_snapshot(tmp_path) -> None:
     assert anchor == anchor_dir / "policy.zip"
     assert _ensure_ppo_teacher_anchor(anchor_dir, next_candidate) == anchor
     assert anchor.read_text(encoding="utf-8") == "baseline policy"
+
+
+def test_ppo_teacher_anchor_path_tracks_the_starting_policy(tmp_path) -> None:
+    base = tmp_path / "run" / "ppo-teacher-anchor"
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    for folder, policy in ((first, b"first policy"), (second, b"second policy")):
+        folder.mkdir()
+        (folder / "policy.zip").write_bytes(policy)
+
+    first_anchor = _ppo_teacher_anchor_dir_for_source(base, first)
+    same_anchor = _ppo_teacher_anchor_dir_for_source(base, first)
+    second_anchor = _ppo_teacher_anchor_dir_for_source(base, second)
+    assert first_anchor == same_anchor
+    assert first_anchor != second_anchor
 
 
 def test_dagger_checkpoint_rank_prefers_progress_until_finishes_then_pace() -> None:

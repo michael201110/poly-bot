@@ -938,6 +938,15 @@ def _ensure_ppo_teacher_anchor(anchor_dir: Path, source: Path) -> Path:
     return anchor_policy
 
 
+def _ppo_teacher_anchor_dir_for_source(anchor_base: Path, source: Path) -> Path:
+    """Give each distinct starting PPO policy its own immutable KL anchor."""
+    policy = source / "policy.zip"
+    if not policy.is_file():
+        raise FileNotFoundError(f"PPO teacher anchor source is missing {policy}")
+    digest = hashlib.sha256(policy.read_bytes()).hexdigest()[:16]
+    return anchor_base.with_name(f"{anchor_base.name}-{digest}")
+
+
 def _evaluation_rank(evaluation: dict[str, Any]) -> tuple[float, float, float]:
     """Rank reliable finishes first, then pace; use progress before first finish."""
     finish_rate = float(evaluation.get("finish_rate", 0.0) or 0.0)
@@ -1518,8 +1527,11 @@ def main(argv: list[str] | None = None) -> int:
                     allow_ppo_reward_change=args.reward_profile is not None,
                 )
             if args.ppo_anchor_kl > 0:
-                anchor_policy = _ensure_ppo_teacher_anchor(
+                anchor_dir = _ppo_teacher_anchor_dir_for_source(
                     rl_output_root / "ppo-teacher-anchor", student_path,
+                )
+                anchor_policy = _ensure_ppo_teacher_anchor(
+                    anchor_dir, student_path,
                 )
                 config.ppo.teacher_model = str(anchor_policy.resolve())
                 config.ppo.teacher_kl_coefficient = args.ppo_anchor_kl
@@ -1716,8 +1728,11 @@ def main(argv: list[str] | None = None) -> int:
                 finetune_registry = ModelRegistry(args.output_root)
                 champion_path = finetune_registry.slot(config.track_name, "ppo", "champion")
                 if args.ppo_anchor_kl > 0:
-                    anchor_path = _ensure_ppo_teacher_anchor(
+                    anchor_dir = _ppo_teacher_anchor_dir_for_source(
                         args.output_root / "ppo-teacher-anchor", student_dir,
+                    )
+                    anchor_path = _ensure_ppo_teacher_anchor(
+                        anchor_dir, student_dir,
                     )
                     config.ppo.teacher_model = str(anchor_path.resolve())
                     config.ppo.teacher_kl_coefficient = args.ppo_anchor_kl

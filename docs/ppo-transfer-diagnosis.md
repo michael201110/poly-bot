@@ -440,6 +440,11 @@ target KL 0.001, and champion-anchor KL 0.25. That update failed three
 consecutive evaluations at roughly 23%, 53%, and 57% progress, so the regression
 guard stopped it and restored the champion. The exact saved champion was also
 re-evaluated on the newer run's seed and passed 5/5, confirming the loss belongs
-to updated policies rather than that seed. The next continuation uses an even
-smaller learning rate (3e-7), target KL 0.0001, and champion-anchor KL 0.5. The
-sub-22s criterion remains open.
+to updated policies rather than that seed. A second anchoring defect was found:
+the fine-tuning jobs reused a 2,048-step PPO snapshot with no successful
+evaluation as their KL reference, even after the 24.675s champion had improved.
+Anchor directories are now versioned by their starting policy hash, so each new
+continuation is anchored to the exact validated champion it resumes. The next
+run keeps the conservative 3e-7 learning rate, 0.0001 target KL, and 0.5 anchor
+coefficient, now with the correct 24.675s anchor. The sub-22s criterion remains
+open.
