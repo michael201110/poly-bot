@@ -435,6 +435,11 @@ The runner now omits evaluation metadata from `latest` whenever its policy has
 advanced past the last evaluation. The continuation gate then recognizes it as
 unverified and selects the evaluated champion. A regression test covers that
 metadata rule. The unverified local `latest` was marked as unevaluated, and PPO
-fine-tuning is being restarted from the verified champion with learning rate
-3e-6, target KL 0.001, and champion-anchor KL 0.25. The sub-22s criterion remains
-open.
+fine-tuning was restarted from the verified champion with learning rate 3e-6,
+target KL 0.001, and champion-anchor KL 0.25. That update failed three
+consecutive evaluations at roughly 23%, 53%, and 57% progress, so the regression
+guard stopped it and restored the champion. The exact saved champion was also
+re-evaluated on the newer run's seed and passed 5/5, confirming the loss belongs
+to updated policies rather than that seed. The next continuation uses an even
+smaller learning rate (3e-7), target KL 0.0001, and champion-anchor KL 0.5. The
+sub-22s criterion remains open.
