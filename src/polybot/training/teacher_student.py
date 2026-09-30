@@ -519,6 +519,9 @@ def collect_dagger_data(
     """Let PPO drive while the frozen TQC labels each exact student observation."""
     if episodes < 1 or dagger_round < 1 or failure_window_s <= 0:
         raise ValueError("DAgger episodes and round must be positive")
+    seed_sampler = getattr(student, "set_random_seed", None)
+    if callable(seed_sampler):
+        seed_sampler(seed)
     names = (
         "observations", "student_actions", "teacher_raw_actions", "teacher_actions",
         "teacher_driving_actions", "action_errors", "progress", "episode_ids",

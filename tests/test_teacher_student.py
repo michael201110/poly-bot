@@ -244,6 +244,31 @@ def test_stochastic_dagger_collection_is_explicit_and_recorded() -> None:
     assert student.deterministic_flags == [False] * 6
 
 
+def test_stochastic_dagger_seed_controls_student_action_sampling() -> None:
+    class SeededStudent(_Student):
+        def set_random_seed(self, seed: int) -> None:
+            self.rng = np.random.default_rng(seed)
+
+        def predict(
+            self, observation: np.ndarray, *, deterministic: bool,
+        ) -> tuple[np.ndarray, None]:
+            super().predict(observation, deterministic=deterministic)
+            if deterministic:
+                return np.array([0.75, 0.25], dtype=np.float32), None
+            return self.rng.uniform(-1, 1, size=2).astype(np.float32), None
+
+    first = collect_dagger_data(
+        SeededStudent(), _Teacher(), _DaggerFailureEnv(), episodes=1,
+        dagger_round=1, seed=10, teacher_id="frozen-teacher", deterministic=False,
+    )
+    second = collect_dagger_data(
+        SeededStudent(), _Teacher(), _DaggerFailureEnv(), episodes=1,
+        dagger_round=2, seed=11, teacher_id="frozen-teacher", deterministic=False,
+    )
+
+    assert not np.array_equal(first.student_actions, second.student_actions)
+
+
 def test_dagger_failure_window_retains_the_longer_lead_in() -> None:
     dataset = collect_dagger_data(
         _Student(), _Teacher(), _DaggerFailureEnv(), episodes=2,
