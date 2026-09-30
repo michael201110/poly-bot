@@ -225,3 +225,8 @@ reliable pace gain: the 25.086s lap at 114,688 remains the champion; three later
 candidates finished at slower 26.414s, 25.785s, and 26.534s. The other seven
 reached only 18.8–57.0% median progress and were rolled back. The isolated
 champion remains intact, and PPO fine-tuning continues.
+
+At 222,208 steps PPO established a new 24.971s champion, confirmed across five
+finishes with no off-track episodes. This is 0.708s behind the frozen TQC
+baseline and 2.971s above the 22s target. The 227,328-step candidate regressed
+to 27.209s and was rolled back; subsequent fine-tuning continues from 24.971s.
