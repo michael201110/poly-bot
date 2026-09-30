@@ -883,3 +883,31 @@ def test_squashed_actor_pretraining_uses_deterministic_action_semantics() -> Non
         )
     finally:
         env.close()
+
+
+def test_tqc_residual_gates_policy_exploration_outside_progress_window() -> None:
+    config = TrainingConfig(
+        algorithm="ppo", device="cpu", track_name="Summer 1", track_id="mock/straight",
+        ppo=PPOConfig(
+            architecture="tqc_residual", residual_progress_start=0.6,
+            residual_progress_end=1.0, action_std=0.02,
+            rollout_steps=32, batch_size=16, epochs=1,
+        ),
+    )
+    env = _gym_env(config, 105)
+    model = backend_for("ppo").create_model(config, env, "cpu")
+    try:
+        observations = th.zeros((3, 105), dtype=th.float32)
+        observations[:, 12] = th.tensor([0.59, 0.6, 0.8])
+        distribution = model.policy.get_distribution(observations).distribution
+        stddev = distribution.stddev
+
+        assert th.all(stddev[0] < 1e-8)
+        assert th.allclose(stddev[1:], th.full_like(stddev[1:], 0.02), atol=1e-7)
+
+        sampled_actions, _, _ = model.policy(observations, deterministic=False)
+        mean_actions, _, _ = model.policy(observations, deterministic=True)
+        assert th.equal(sampled_actions[0], mean_actions[0])
+        assert th.isfinite(model.policy.evaluate_actions(observations, sampled_actions)[1]).all()
+    finally:
+        env.close()

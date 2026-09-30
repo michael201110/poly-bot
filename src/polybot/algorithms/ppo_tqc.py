@@ -48,15 +48,20 @@ class TQCResidualActorCriticPolicy(TQCSquashedActorCriticPolicy):
 
     def _get_action_dist_from_latent(self, latent_pi: th.Tensor) -> Any:
         correction = self.residual_action_limit * th.tanh(self.residual_action(latent_pi))
+        log_std = self.log_std
         if self._residual_progress is not None:
             active = (
                 (self._residual_progress >= self.residual_progress_start)
                 & (self._residual_progress <= self.residual_progress_end)
             ).to(dtype=correction.dtype).unsqueeze(-1)
             correction = correction * active
+            # A gated residual must leave the frozen teacher's full behavior
+            # unchanged outside its window. Masking only the mean still lets
+            # PPO's Gaussian exploration perturb the teacher everywhere.
+            log_std = th.where(active.bool(), self.log_std, th.full_like(correction, -30.0))
         mean_actions = self.action_net(latent_pi) + correction
         return self.action_dist.proba_distribution(
-            mean_actions, self.log_std,
+            mean_actions, log_std,
         )
 
     def forward(self, obs: th.Tensor, deterministic: bool = False) -> Any:
