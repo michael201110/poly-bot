@@ -872,3 +872,7 @@ median lap times of 24.347s, 24.405s, 24.375s, and 24.321s. Each was rolled
 back because it remained slower than 24.263s. PPO's approximate KL stayed near
 `6.7e-6`, well below the `0.001` target, so the next trial raises the learning
 rate and update epochs while retaining the same gate and rollback protection.
+With the higher rate, four more 5/5 candidates evaluated at 24.394s, 24.362s,
+24.364s, and 24.442s. The larger update rate increased KL but did not
+produce a faster policy. The next trial widens the bounded residual to 0.1 so
+the actor can make a larger state-dependent correction in the late section.
