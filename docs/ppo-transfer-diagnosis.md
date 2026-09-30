@@ -412,5 +412,11 @@ and committed on `main`.
 
 Subsequent fine-tune evaluations at 334,848, 339,968, and 345,088 steps were
 0/5 at 57.2%, 5/5 at 26.566s, and 0/5 at 24.2% progress. Strict rollback
-restored the 24.838s champion each time. Fine-tuning remains active from the
-champion; the confirmed sub-22s target is still unmet.
+restored the 24.838s champion each time. Fine-tuning then produced a **24.675s
+champion, 5/5 finishes** at 360,448 total timesteps, improving the best by
+0.163s. The evaluation reported no crashes, off-track laps, or stalls. This
+checkpoint is preserved at
+`models/experiments/ppo-transfer-rl-20260930/summer-1/ppo/verified-champions/ppo-24.675`,
+with policy SHA-256
+`CEF598297A97ABCC471C9F06156FE597F88776186E2D777B76B875752FBD8AE8`.
+The confirmed sub-22s target is still unmet.
