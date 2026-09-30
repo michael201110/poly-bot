@@ -399,3 +399,18 @@ resulting student completed **5/5** independent validation laps at median
 reliable, isolated starting point for continuous PPO search; the original
 24.971s PPO champion and 24.263s TQC teacher remain unchanged. The sub-22s
 success criterion has not yet been met.
+
+The lower-rate PPO search was then restarted from the faster existing
+24.971s 5/5 PPO checkpoint, using learning rate 1e-5, target KL 0.003, anchor
+KL 0.1, and zero lap-slowdown tolerance. At 329,728 total timesteps it
+produced a **24.838s PPO champion, 5/5 finishes**, 0.133s faster than the
+previous best. The policy SHA-256 is
+`68782998A1EE6A99034535105D5973F983ACF4706E0121F765DDB9A0C9D927ED`. The
+checkpoint is preserved at
+`models/experiments/ppo-transfer-rl-20260930/summer-1/ppo/verified-champions/ppo-24.838`
+and committed on `main`.
+
+Subsequent fine-tune evaluations at 334,848, 339,968, and 345,088 steps were
+0/5 at 57.2%, 5/5 at 26.566s, and 0/5 at 24.2% progress. Strict rollback
+restored the 24.838s champion each time. Fine-tuning remains active from the
+champion; the confirmed sub-22s target is still unmet.
