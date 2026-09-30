@@ -961,6 +961,15 @@ def _evaluation_confirms_target(
     evaluation: dict[str, Any], target_lap_s: float,
 ) -> bool:
     fields = EvaluationResult.__dataclass_fields__
+    required = {
+        "episodes", "finish_rate", "median_progress", "mean_progress",
+        "best_lap_s", "median_lap_s", "crash_rate", "off_track_rate", "stall_rate",
+    }
+    # A clean stop can leave a partial evaluation summary in the latest
+    # checkpoint metadata. It cannot confirm a target lap without every core
+    # metric; treating it as a non-confirmation lets the stop path exit cleanly.
+    if not required.issubset(evaluation):
+        return False
     result = EvaluationResult(**{
         name: evaluation[name] for name in fields if name in evaluation
     })

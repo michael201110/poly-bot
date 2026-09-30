@@ -288,3 +288,88 @@ full-airborne guard produced 0/5 finishes, 53.6% median progress, and a 100%
 crash rate. That guard was rejected. The r4 run was cleanly stopped at a saved
 boundary with the 24.971s champion preserved; the next PPO search uses a
 moderately larger update size with rollback still enabled.
+
+## Direct TQC-to-PPO transfer diagnosis (30 September 2026)
+
+The transfer investigation supersedes the planned PPO update-size trial: no more
+DAgger or PPO fine-tuning should run until the mismatch is understood. A
+10-episode stochastic DAgger round was already underway when this instruction
+arrived. It completed and was preserved (7,372 samples); the follow-on PPO job
+was stopped at its next saved checkpoint. Its `latest` checkpoint has no
+evaluation result, while the isolated 24.971s champion is unchanged. The stop
+path exposed a bug: target confirmation constructed an `EvaluationResult` from
+that incomplete metadata and raised `TypeError`. `_evaluation_confirms_target`
+now treats missing core metrics as a non-confirmation, with regression tests.
+
+The exact frozen TQC teacher is
+`models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion`, policy SHA-256
+`FFBEA4CA57116CD2586C17CCEC4FC761600E0D1EE5C6D94E31B98122220DAECE`. The
+directly distilled PPO seed is
+`models/experiments/ppo-transfer-fidelity-20260930/summer-1/ppo/teacher-student/pretrained`,
+policy SHA-256 `22B8500CA5C1588183EFDC2F3B6AD672F2863F6BA023E4F859B2ADD4B2942A2E`.
+Both use the 105-value `polybot.observation.v2` observation, the
+`continuous-pwm-v2` action schema, Summer 1, and frame skip 30. The saved
+teacher dataset hash is
+`CDE4DD766FE9FFEF62D0231C6AF1D6FC01EC0BD4C9B7AAD3E540EBDC439FC12D`.
+
+A fresh matched-seed live comparison reconfirmed the teacher at 24.263s and
+finished, while the direct PPO seed went off track at 24.9% progress after
+14.07s. In the decision-aligned traces, PPO's action first differed by more
+than 0.001 at decision 0 and by more than 0.05 at decision 3. Heading differed
+by over 0.1 degrees at decision 8, position by over 1 cm at decision 14, and
+wheel contact at decision 126. Speed differed on the first transition. Thus
+meaningful control error appears before the observed route separation; it is
+not solely a case where two identical action streams somehow produce different
+simulator outcomes.
+
+On the same 16,180 successful teacher observations, the direct PPO seed has
+steering MAE 0.0369 (p95 0.1192) and longitudinal MAE 0.0168 (p95 0.0662).
+In the first 5% of the track, steering MAE is 0.0745 and p95 is 0.2212. Around
+the early jump at 20-30%, steering MAE is 0.0204-0.0466 and p95 is
+0.0581-0.0985. The high-speed-state steering MAE is 0.0328. This is a
+materially imperfect clone, especially in steering, rather than near-exact
+imitation. A separate PPO recovery collection also shows its largest teacher
+action errors immediately before its early off-track/crash states.
+
+The checks rule out several suspected transfer defects for these checkpoints:
+
+- The calculated overlay-inclusive teacher action matches saved teacher labels
+  to 2.3e-6 maximum error. The teacher's non-air-brake progress overlays are
+  represented in those labels; the PPO keeps only the tick-level air-brake
+  wrapper because the remaining action overlays are baked into the actor.
+- Deterministic PPO prediction is repeatable and equals the clipped policy
+  mean exactly. There is no stochastic evaluation, PWM bucketing, or extra
+  action noise in the PPO prediction path.
+- The teacher and student schemas and frame skips match. Both use the same
+  environment and continuous action adapter; a regression test confirms that
+  equal actions produce equal low-level tick sequences for both backends.
+- Replaying the teacher's recorded actions from the same seed reproduced its
+  complete 24.263s run with no measured position, heading, contact, speed, or
+  action divergence. That run was deterministic under this seed.
+
+There is also direct evidence of closed-loop sensitivity: in the earlier
+controlled TQC experiment, persistent signed perturbations as small as
+0.0001 in one action channel changed whether the fixed-seed run finished or
+failed. This was a per-decision perturbation experiment, not a one-step
+counterfactual, so it demonstrates accumulated sensitivity rather than proving
+that a single tiny error causes a crash. The global-air-brake experiment also
+showed that imposing full brake in every airborne state makes performance
+worse, so no such controller change is indicated.
+
+Root-cause classification: **G (behavioral-cloning error is still too large)
+and H (closed-loop driving is sensitive to accumulated action error)** are
+supported. A, B, C, D, E, F, and I have no supporting evidence in these
+comparisons; the matching schemas, label audit, deterministic output test,
+shared adapter test, and exact teacher replay specifically reduce those
+suspicions. The diagnosis does not identify a proven observation/action-path
+implementation defect, so the PPO seed was not re-distilled and training was
+not restarted. Future work should measure supervised holdout error by route
+section and high-speed steering before spending more simulator time; improved
+clone fidelity is the next hypothesis to test, not a guaranteed fix.
+
+The final artifacts are in the ignored run directory
+`runs/teacher-student/transfer-diagnosis-final` (report and teacher/student
+JSONL trajectories). The corrected DAgger round is in
+`runs/teacher-student/rl-lr3e5-kl01/round-001.npz` and its candidate model is
+preserved under `models/experiments/ppo-transfer-dagger-20260930`. Neither
+changes the saved TQC teacher nor the validated 24.971s PPO champion.

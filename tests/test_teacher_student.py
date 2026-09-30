@@ -17,6 +17,7 @@ from polybot.training.teacher_student import (
     _dagger_rounds_remain_after_reliable_gate,
     _dagger_seed_student,
     _ensure_ppo_teacher_anchor,
+    _evaluation_confirms_target,
     _evaluation_rank,
     _gym_env,
     _initial_dagger_student,
@@ -33,6 +34,21 @@ from polybot.training.teacher_student import (
     split_aggregated_trajectories,
     split_trajectories,
 )
+
+
+def test_partial_stopped_evaluation_cannot_confirm_target_lap() -> None:
+    assert not _evaluation_confirms_target({"target_reached": False}, 22.0)
+
+
+def test_complete_evaluation_confirms_target_only_with_reliable_fast_lap() -> None:
+    evaluation = {
+        "episodes": 5, "finish_rate": 1.0, "median_progress": 1.0,
+        "mean_progress": 1.0, "best_lap_s": 21.9, "median_lap_s": 22.0,
+        "crash_rate": 0.0, "off_track_rate": 0.0, "stall_rate": 0.0,
+    }
+    assert _evaluation_confirms_target(evaluation, 22.0)
+    evaluation["finish_rate"] = 0.8
+    assert not _evaluation_confirms_target(evaluation, 22.0)
 
 
 def test_teacher_student_stop_file_interrupts_active_training(tmp_path: Path) -> None:
