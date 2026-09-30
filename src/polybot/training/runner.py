@@ -280,15 +280,62 @@ class TrainingRunner:
             "median_lap_s": result.median_lap_s,
         })
         current_steps = int(self.model.num_timesteps)
-        self.model = self.backend.load_model(
-            champion_dir / "policy.zip", env, self.device.resolved, resume=True
-        )
-        self.model.num_timesteps = current_steps
-        self.backend.configure_resume(self.model, cfg, self.device.resolved)
-        rng_seed = None
-        if cfg.algorithm == "ppo":
+        if cfg.ppo is not None and cfg.ppo.architecture in {
+            "tqc_compatible", "tqc_residual",
+        }:
+            # Keep the critic's on-policy learning when a policy update breaks
+            # the verified driving line. Restoring the whole checkpoint would
+            # throw away both the critic fit and its optimizer state, causing
+            # every retry to relearn values from scratch. These actor modules
+            # define deterministic controls; the shared feature extractor is
+            # included so the restored actor is exact. Reset only their Adam
+            # moments, since those moments describe the rejected actor.
+            champion_model = self.backend.load_model(
+                champion_dir / "policy.zip", None, self.device.resolved, resume=True,
+            )
+            actor_modules = [
+                (self.model.policy.features_extractor,
+                 champion_model.policy.features_extractor),
+                (self.model.policy.mlp_extractor.policy_net,
+                 champion_model.policy.mlp_extractor.policy_net),
+                (self.model.policy.action_net, champion_model.policy.action_net),
+            ]
+            if hasattr(self.model.policy, "residual_action"):
+                actor_modules.append((
+                    self.model.policy.residual_action,
+                    champion_model.policy.residual_action,
+                ))
+            actor_parameters: dict[int, Any] = {}
+            for current_module, champion_module in actor_modules:
+                current_module.load_state_dict(champion_module.state_dict(), strict=True)
+                for parameter in current_module.parameters():
+                    actor_parameters[id(parameter)] = parameter
+            optimizer = self.model.policy.optimizer
+            for parameter in actor_parameters.values():
+                optimizer.state.pop(parameter, None)
+            if hasattr(self.model.policy, "freeze_base_actor"):
+                self.model.policy.freeze_base_actor()
+            self.model.num_timesteps = current_steps
+            self.model.set_env(env)
             rng_seed = (int(cfg.seed) + current_steps) % (2**32 - 1)
             self.model.set_random_seed(rng_seed)
+            self._emit({
+                "type": "ppo_actor_restored_critic_retained",
+                "timesteps": current_steps,
+                "actor_parameters": len(actor_parameters),
+                "critic_updates_retained": int(self.model._n_updates),
+                "actor_optimizer_state_reset": True,
+            })
+        else:
+            self.model = self.backend.load_model(
+                champion_dir / "policy.zip", env, self.device.resolved, resume=True
+            )
+            self.model.num_timesteps = current_steps
+            self.backend.configure_resume(self.model, cfg, self.device.resolved)
+            rng_seed = None
+            if cfg.algorithm == "ppo":
+                rng_seed = (int(cfg.seed) + current_steps) % (2**32 - 1)
+                self.model.set_random_seed(rng_seed)
         self.last_evaluation = champion_result
         self._last_rollback_severe = (
             result.finish_rate < champion_result.finish_rate

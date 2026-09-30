@@ -1391,6 +1391,47 @@ def test_ppo_regression_restores_consistent_champion_and_stops_after_three_weake
     assert events[-1]["type"] == "stopped"
 
 
+def test_tqc_compatible_ppo_rollback_restores_actor_but_keeps_critic(tmp_path, monkeypatch) -> None:
+    import polybot.training.runner as runner_module
+
+    base = configuration(tmp_path, "ppo")
+    config = replace(
+        base, timesteps=64, evaluation=EvaluationConfig(32, 1), checkpoint_interval=0,
+        ppo=replace(base.ppo, architecture="tqc_compatible"),
+    )
+    strong = EvaluationResult(1, 1.0, 1.0, 1.0, 24.263, 24.263, 0.0, 0.0, 0.0)
+    weak = EvaluationResult(1, 0.0, 0.2, 0.2, None, None, 1.0, 0.0, 0.0)
+    evaluations = iter((strong, weak))
+    monkeypatch.setattr(runner_module, "evaluate_model", lambda *args, **kwargs: next(evaluations))
+    events: list[dict] = []
+    latest = TrainingRunner(config, events.append).run(rollback_to_champion=True)
+
+    registry = ModelRegistry(config.output_root)
+    champion = registry.slot(config.track_name, "ppo", "champion")
+    rejected = registry.slot(config.track_name, "ppo", "checkpoints/step-64-rejected")
+    backend = backend_for("ppo")
+    champ_model = backend.load_model(champion / "policy.zip", None, "cpu")
+    latest_model = backend.load_model(latest / "policy.zip", None, "cpu")
+    rejected_model = backend.load_model(rejected / "policy.zip", None, "cpu")
+    for name in ("features_extractor", "mlp_extractor.policy_net", "action_net"):
+        champ_module = champ_model.policy.get_submodule(name)
+        latest_module = latest_model.policy.get_submodule(name)
+        assert all(
+            th.equal(champ_module.state_dict()[key], latest_module.state_dict()[key])
+            for key in champ_module.state_dict()
+        )
+    for name in ("mlp_extractor.value_net", "value_net"):
+        latest_module = latest_model.policy.get_submodule(name)
+        rejected_module = rejected_model.policy.get_submodule(name)
+        assert all(
+            th.equal(latest_module.state_dict()[key], rejected_module.state_dict()[key])
+            for key in latest_module.state_dict()
+        )
+    assert registry.read_metadata(latest).evaluation["finish_rate"] == 1.0
+    assert any(event["type"] == "ppo_actor_restored_critic_retained" for event in events)
+    assert any(event["type"] == "ppo_champion_restore" for event in events)
+
+
 def test_ppo_small_progress_dips_keep_learning_but_preserve_champion(tmp_path, monkeypatch) -> None:
     import polybot.training.runner as runner_module
 
