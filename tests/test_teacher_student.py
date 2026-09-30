@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ import torch as th
 
 from polybot.algorithms.registry import backend_for
 from polybot.training.config import PPOConfig, TrainingConfig
+from polybot.training.evaluation import EvaluationResult
 from polybot.training.teacher_student import (
     DaggerDataset,
     TeacherDataset,
@@ -25,6 +27,7 @@ from polybot.training.teacher_student import (
     _ppo_teacher_anchor_dir_for_source,
     _promote_ppo_champion_if_better,
     _run_with_stop_file,
+    _seed_validated_ppo_champion,
     _should_resume_ppo_champion,
     aggregate_teacher_datasets,
     collect_dagger_data,
@@ -471,6 +474,56 @@ def test_isolated_ppo_promotion_requires_better_evaluation(
     assert (promoted is not None) is expected_promoted
     expected_contents = b"candidate" if expected_promoted else b"incumbent"
     assert (destination / "policy.zip").read_bytes() == expected_contents
+
+
+def test_validated_ppo_seed_requires_all_configured_finishes(tmp_path: Path) -> None:
+    class Registry:
+        def __init__(self, root: Path) -> None:
+            self.root = root
+            self.source_metadata = SimpleNamespace(
+                algorithm="ppo", track_name="Summer 1", evaluation=None,
+                finishes=0, crashes=0,
+            )
+
+        def slot(self, track: str, algorithm: str, name: str) -> Path:
+            return self.root / "summer-1" / algorithm / name
+
+        def read_metadata(self, _path: Path) -> SimpleNamespace:
+            return self.source_metadata
+
+        def write_metadata(self, path: Path, metadata: SimpleNamespace) -> None:
+            (path / "metadata.json").write_text(json.dumps({
+                "evaluation": metadata.evaluation,
+                "finishes": metadata.finishes,
+                "crashes": metadata.crashes,
+            }), encoding="utf-8")
+
+    root = tmp_path / "isolated"
+    registry = Registry(root)
+    source = root / "summer-1" / "ppo" / "teacher-student" / "pretrained"
+    source.mkdir(parents=True)
+    (source / "policy.zip").write_bytes(b"grafted policy")
+    (source / "metadata.json").write_text("{}", encoding="utf-8")
+    evaluation = EvaluationResult(
+        episodes=5, finish_rate=1.0, median_progress=1.0, mean_progress=1.0,
+        best_lap_s=24.263, median_lap_s=24.263, crash_rate=0.0,
+        off_track_rate=0.0, stall_rate=0.0,
+    )
+
+    champion = _seed_validated_ppo_champion(registry, source, evaluation)
+
+    assert champion == root / "summer-1" / "ppo" / "champion"
+    saved = json.loads((champion / "metadata.json").read_text(encoding="utf-8"))
+    assert saved["finishes"] == 5
+    assert saved["evaluation"]["median_lap_s"] == 24.263
+    assert (champion / "policy.zip").read_bytes() == b"grafted policy"
+
+    unreliable = EvaluationResult(
+        episodes=5, finish_rate=0.8, median_progress=0.9, mean_progress=0.9,
+        best_lap_s=24.263, median_lap_s=24.263, crash_rate=0.2,
+        off_track_rate=0.0, stall_rate=0.0,
+    )
+    assert _seed_validated_ppo_champion(registry, source, unreliable) is None
 
 
 def test_dagger_archive_and_error_report_preserve_recovery_telemetry(tmp_path) -> None:

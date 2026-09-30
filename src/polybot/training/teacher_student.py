@@ -1090,6 +1090,45 @@ def _promote_ppo_champion_if_better(
     return destination
 
 
+def _seed_validated_ppo_champion(
+    registry: ModelRegistry, source: Path, evaluation: EvaluationResult,
+    *, required_finishes: int = 5,
+) -> Path | None:
+    """Register an exact-transfer seed only after a reliable full-lap evaluation."""
+    if (
+        evaluation.episodes < required_finishes
+        or evaluation.finish_rate < required_finishes / evaluation.episodes
+        or evaluation.median_progress < 1.0
+    ):
+        return None
+    metadata = registry.read_metadata(source)
+    if metadata.algorithm != "ppo":
+        raise ValueError("only a PPO checkpoint can seed the PPO champion")
+    metadata.evaluation = evaluation.to_dict()
+    metadata.finishes = int(round(evaluation.finish_rate * evaluation.episodes))
+    metadata.crashes = int(round(evaluation.crash_rate * evaluation.episodes))
+    destination = registry.slot(metadata.track_name, "ppo", "champion")
+    if destination.is_dir():
+        incumbent_path = destination / "metadata.json"
+        if incumbent_path.is_file():
+            incumbent = registry.read_metadata(destination)
+            if incumbent.evaluation and (
+                _runner_evaluation_rank(incumbent.evaluation)
+                >= evaluation.rank()
+            ):
+                return None
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    staging = destination.parent / f".{destination.name}-staging-{uuid4().hex}"
+    try:
+        shutil.copytree(source, staging)
+        registry.write_metadata(staging, metadata)
+        promote_directory(staging, destination)
+    finally:
+        if staging.exists():
+            shutil.rmtree(staging)
+    return destination
+
+
 def _save_student(model: Any, config: TrainingConfig, directory: Path, *, report: dict[str, Any]) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     model.save(str(directory / "policy.zip"))
@@ -1786,6 +1825,20 @@ def main(argv: list[str] | None = None) -> int:
                     json.dumps(teacher_manifest, indent=2) + "\n", encoding="utf-8"
                 )
                 print(json.dumps({"live_validation": live.to_dict()}, indent=2))
+                if args.stage == "validate":
+                    seeded = _seed_validated_ppo_champion(
+                        registry, output / "pretrained", live,
+                        required_finishes=args.reliability_finishes,
+                    )
+                    promoted = (
+                        _promote_ppo_champion_if_better(registry, global_registry, config.track_name)
+                        if seeded is not None else None
+                    )
+                    print(json.dumps({
+                        "validated_ppo_champion": str(seeded) if seeded else None,
+                        "promoted_to_main_champion": str(promoted) if promoted else None,
+                        "required_finishes": args.reliability_finishes,
+                    }, indent=2), flush=True)
         if args.stage in {"value_warmup", "finetune", "full"}:
             if args.stage == "full":
                 live = json.loads((output / "live-validation.json").read_text(encoding="utf-8"))
