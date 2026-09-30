@@ -230,3 +230,5 @@ At 222,208 steps PPO established a new 24.971s champion, confirmed across five
 finishes with no off-track episodes. This is 0.708s behind the frozen TQC
 baseline and 2.971s above the 22s target. The 227,328-step candidate regressed
 to 27.209s and was rolled back; subsequent fine-tuning continues from 24.971s.
+The next two evaluations, at 232,448 and 237,568 steps, also failed to finish
+(median progress 58.8% and 52.6%) and were rolled back to that champion.
