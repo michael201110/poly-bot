@@ -156,3 +156,40 @@ student on repeated identical starts before any PPO fine-tuning. If sub-0.001
 actor differences still derail the line, an actor with teacher-assisted
 closed-loop correction or a less brittle trajectory is needed. The 22-second
 goal remains unverified; no PPO finish was produced by this direct student.
+
+## Continued goal work (30 September 2026)
+
+The 100-epoch supervised fit was still improving at its final epoch. Extending
+the original `3e-4` fit to 400 epochs reduced same-observation errors to
+0.0369 steering MAE and 0.0168 longitudinal MAE (held-out validation 0.0384
+and 0.0188). It still went off track 5/5 times at about 24.9% progress. Its
+paired trace shows the PPO steering right while TQC requests left as early as
+18.7% progress on the PPO's own observations; near the failure PPO saturates
+at +1 while teacher actions switch rapidly. This is consistent with compounding
+state-distribution error at a sharp transition rather than a simple global
+action bias.
+
+Three supervised DAgger attempts started from this stronger clone:
+
+| Candidate | Median progress | Result |
+| --- | ---: | --- |
+| Deterministic round 1 | 52.9% | Passed the first difficult transition; all five evaluations crashed at the new point. |
+| Deterministic round 2 | 53.9% | Best checkpoint; all five evaluations crashed during an airborne 360 at the next transition. |
+| Deterministic round 3 | 15.9% | Regressed; kept out of champion slot. |
+| Stochastic round 1 (`std=0.02`) | 53.3% | Added trajectory variety but did not beat the deterministic round-two checkpoint. |
+
+DAgger error on the states specifically visited near 25% fell below 0.004 in
+round one. The remaining airborne 360 at 53.9% still shows a large online
+teacher/student action gap despite low held-out DAgger error, so a low offline
+mean error alone is not a reliable success gate.
+
+A short anchored PPO run was then launched from the deterministic round-two
+student in the isolated registry
+`models/experiments/ppo-transfer-rl-20260930`. It uses a 0.1 KL anchor, learning
+rate `1e-5`, and rollback to the saved best evaluation when a candidate
+regresses. At 12,288 steps it produced a clean 25.419s lap, 5/5 finishes. A
+later candidate regressed to 29.5% progress and was rolled back. At 27,648
+steps it improved to a clean 25.358s lap, again 5/5; this remains the best
+observed PPO result. Blocks have continued automatically from the champion,
+with no confirmed sub-22 lap yet. This registry is isolated from the normal
+track PPO champion until a candidate is faster and reliable.
