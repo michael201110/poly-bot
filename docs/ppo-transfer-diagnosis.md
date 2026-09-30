@@ -232,3 +232,23 @@ baseline and 2.971s above the 22s target. The 227,328-step candidate regressed
 to 27.209s and was rolled back; subsequent fine-tuning continues from 24.971s.
 The next two evaluations, at 232,448 and 237,568 steps, also failed to finish
 (median progress 58.8% and 52.6%) and were rolled back to that champion.
+
+An offline same-observation comparison was then run between the frozen TQC
+teacher and the 24.971s PPO champion on 16,180 successful teacher states. Both
+checkpoints use the same 105-feature observation schema, continuous action
+schema, and frame skip 30. PPO deterministic prediction exactly matched its
+clipped policy mean; recalculating the overlay-inclusive teacher labels matched
+the saved targets within 2.3e-6. The student's errors against those targets
+were 0.0246 steering MAE (0.0685 p95) and 0.0219 longitudinal MAE (0.0738 p95).
+In the 20-30% track interval around the early jump, steering MAE was 0.0195-
+0.0252 and p95 was 0.0492-0.0767. These results rule out a deterministic
+predict-path error and a teacher-label mismatch in this dataset; they show a
+remaining closed-loop action gap but do not alone prove its trajectory effect.
+Recent PPO training episodes often ended with `airborne_roll_failure`, so the
+early-flight recovery states merit targeted follow-up.
+
+The comparison used teacher SHA-256
+`FFBEA4CA57116CD2586C17CCEC4FC761600E0D1EE5C6D94E31B98122220DAECE`, PPO
+champion SHA-256 `7A3C8CB59646276A783F57D9861DFA0A091CF20769970801F43073D1515EEB6B`,
+and teacher dataset SHA-256
+`CDE4DD766FE9FFEF62D0231C6AF1D6FC01EC0BD4C9B7AAD3E540EBDC439FC12D`.
