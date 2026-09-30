@@ -1,0 +1,254 @@
+{
+  "dagger_round": 1,
+  "dagger_run_name": "bc-refined-r1",
+  "collection_deterministic": true,
+  "failure_window_s": 3.0,
+  "dataset": "runs\\teacher-student\\bc-refined-r1\\round-001.npz",
+  "samples": 1000,
+  "failure_progress": [
+    {
+      "episode_id": 0,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 1,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 2,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 3,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 4,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 5,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 6,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 7,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 8,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    },
+    {
+      "episode_id": 9,
+      "outcome": "crash",
+      "progress": 0.5507335066795349
+    }
+  ],
+  "action_error": {
+    "samples": 1000,
+    "first_major_divergence_progress": [
+      0.55,
+      0.6000000000000001
+    ],
+    "failure_progress": [
+      {
+        "episode_id": 0,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 1,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 2,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 3,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 4,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 5,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 6,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 7,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 8,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      },
+      {
+        "episode_id": 9,
+        "outcome": "crash",
+        "progress": 0.5507335066795349
+      }
+    ],
+    "mean_steering_error": 0.28942033648490906,
+    "mean_longitudinal_error": 0.25780999660491943,
+    "windows_5_percent": {
+      "40-45%": {
+        "samples": 100,
+        "mean_action_error": 0.03734290972352028,
+        "max_action_error": 0.08491593599319458,
+        "mean_steering_error": 0.019002640619874,
+        "max_steering_error": 0.060639262199401855,
+        "mean_longitudinal_error": 0.018340270966291428,
+        "max_longitudinal_error": 0.03345596790313721
+      },
+      "45-50%": {
+        "samples": 420,
+        "mean_action_error": 0.050006456673145294,
+        "max_action_error": 0.2227991819381714,
+        "mean_steering_error": 0.03555269166827202,
+        "max_steering_error": 0.11966544389724731,
+        "mean_longitudinal_error": 0.014453765004873276,
+        "max_longitudinal_error": 0.10313373804092407
+      },
+      "50-55%": {
+        "samples": 470,
+        "mean_action_error": 1.0553662776947021,
+        "max_action_error": 3.0873539447784424,
+        "mean_steering_error": 0.5377246737480164,
+        "max_steering_error": 1.9770143032073975,
+        "mean_longitudinal_error": 0.5176416039466858,
+        "max_longitudinal_error": 1.133867621421814
+      },
+      "55-60%": {
+        "samples": 10,
+        "mean_action_error": 2.6471168994903564,
+        "max_action_error": 2.6471166610717773,
+        "mean_steering_error": 1.9857343435287476,
+        "max_steering_error": 1.985734224319458,
+        "mean_longitudinal_error": 0.6613825559616089,
+        "max_longitudinal_error": 0.6613825559616089
+      }
+    }
+  },
+  "nominal_validation": {
+    "samples": 1618,
+    "steering_mse": 0.0007549331057816744,
+    "longitudinal_mse": 0.00033437294769100845,
+    "steering_mae": 0.01978696882724762,
+    "longitudinal_mae": 0.010273078456521034,
+    "max_steering_error": 0.15565547347068787,
+    "max_longitudinal_error": 0.15473619103431702,
+    "max_action_error": 0.15565547347068787,
+    "overlay_steering_mae": 0.020954057574272156,
+    "overlay_longitudinal_mae": 0.011128977872431278,
+    "sections": {
+      "00-10%": {
+        "steering_mae": 0.025639716535806656,
+        "longitudinal_mae": 0.005142451263964176,
+        "samples": 264
+      },
+      "10-20%": {
+        "steering_mae": 0.015694409608840942,
+        "longitudinal_mae": 0.011328985914587975,
+        "samples": 156
+      },
+      "20-30%": {
+        "steering_mae": 0.018416479229927063,
+        "longitudinal_mae": 0.006375542841851711,
+        "samples": 168
+      },
+      "30-40%": {
+        "steering_mae": 0.018314003944396973,
+        "longitudinal_mae": 0.013791334815323353,
+        "samples": 136
+      },
+      "40-50%": {
+        "steering_mae": 0.015030319802463055,
+        "longitudinal_mae": 0.009216091595590115,
+        "samples": 164
+      },
+      "50-60%": {
+        "steering_mae": 0.026749586686491966,
+        "longitudinal_mae": 0.027106698602437973,
+        "samples": 152
+      },
+      "60-70%": {
+        "steering_mae": 0.011178535409271717,
+        "longitudinal_mae": 0.011115405708551407,
+        "samples": 136
+      },
+      "70-80%": {
+        "steering_mae": 0.02359444834291935,
+        "longitudinal_mae": 0.0032296376302838326,
+        "samples": 146
+      },
+      "80-90%": {
+        "steering_mae": 0.024012604728341103,
+        "longitudinal_mae": 0.008160931058228016,
+        "samples": 160
+      },
+      "90-100%": {
+        "steering_mae": 0.013789959251880646,
+        "longitudinal_mae": 0.01198213268071413,
+        "samples": 136
+      }
+    }
+  },
+  "dagger_validation": {
+    "samples": 100,
+    "steering_mse": 0.00038124629645608366,
+    "longitudinal_mse": 0.00011920260294573382,
+    "steering_mae": 0.014692271128296852,
+    "longitudinal_mae": 0.008237916976213455,
+    "max_steering_error": 0.06243491172790527,
+    "max_longitudinal_error": 0.03699764609336853,
+    "max_action_error": 0.06243491172790527,
+    "overlay_steering_mae": 0.011178620159626007,
+    "overlay_longitudinal_mae": 0.010250702500343323,
+    "sections": {
+      "40-50%": {
+        "steering_mae": 0.01793564110994339,
+        "longitudinal_mae": 0.006379961036145687,
+        "samples": 52
+      },
+      "50-60%": {
+        "steering_mae": 0.011178620159626007,
+        "longitudinal_mae": 0.010250702500343323,
+        "samples": 48
+      }
+    }
+  },
+  "finish_rate": 1.0,
+  "median_progress": 1.0,
+  "median_lap_s": 25.025000000000002,
+  "crashes": 0.0,
+  "off_track": 0.0,
+  "stalls": 0.0,
+  "student_checkpoint": "models\\experiments\\ppo-transfer-dagger-bc-refine-20260930\\summer-1\\ppo\\teacher-student\\bc-refined-r1\\round-001\\student"
+}
