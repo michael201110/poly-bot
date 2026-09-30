@@ -219,3 +219,9 @@ five-episode candidate completed at 26.148s and was not promoted. The reliable
 
 At 176,128 steps the run still had a 100% finish rate but no lap faster than
 25.086s. The simulator worker remained active, so training was left running.
+
+Evaluations from 114,688 through 217,088 steps confirm a plateau rather than a
+reliable pace gain: the 25.086s lap at 114,688 remains the champion; three later
+candidates finished at slower 26.414s, 25.785s, and 26.534s. The other seven
+reached only 18.8–57.0% median progress and were rolled back. The isolated
+champion remains intact, and PPO fine-tuning continues.
