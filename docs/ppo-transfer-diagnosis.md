@@ -896,3 +896,15 @@ so small on-policy changes could not accumulate. The next trial returns to the
 reliable 58% gate and permits candidates within 0.25s of the graft to continue
 learning. The exact TQC graft stays the champion and rollback point; larger
 regressions still restore it.
+
+The first accumulation blocks then evaluated at 24.338s, 24.394s, and
+24.349s, each 5/5 finishes. They remain slower than the graft, and their
+episode summaries reported zero `barrier_contact` reward. The existing -50
+impact cost was weak relative to the roughly 5,000-point finish reward, and it
+did not appear in those logged rollouts. The profile now uses a global -1,000
+cost for detected non-landing impacts, without ending an episode or choosing
+any control action. Training episode records also report raw collision-impulse
+peak/count, split into landing and non-landing peaks. A fresh run from the
+exact graft will show whether the simulator sends impact signals for the
+visually observed barrier contacts before PPO is judged on whether it learns to
+avoid them.

@@ -106,5 +106,5 @@ def test_summer_1_impact_pace_profile_keeps_contacts_nonterminal() -> None:
         "Summer 1 - 20s pace impact"
     )
     assert config.barrier_collision_impulse_threshold == 0.0
-    assert config.barrier_contact_penalty == -50.0
+    assert config.barrier_contact_penalty == -1000.0
     assert config.finish_target_s == 20.0

@@ -274,6 +274,9 @@ def test_collision_impact_cost_does_not_end_the_episode() -> None:
         )
         assert "barrier_contact" in info["events"]
         assert info["reward_terms"]["barrier_contact"] == pytest.approx(-50.0)
+        assert info["collision_impulse_peak"] == pytest.approx(1.0)
+        assert info["collision_impulse_steps"] > 0
+        assert info["nonlanding_impulse_peak"] == pytest.approx(1.0)
         assert not terminated
         assert not truncated
     finally:

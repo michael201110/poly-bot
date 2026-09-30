@@ -1,6 +1,6 @@
 {
     "name":  "Summer 1 - 20s pace impact",
-    "description":  "Same pace objective with a small global cost for non-landing collision impacts; impacts do not end the episode.",
+    "description":  "Same pace objective with a substantial global cost for non-landing collision impacts; impacts do not end the episode.",
     "track":  null,
     "level":  "advanced",
     "algorithm_neutral":  true,
@@ -28,7 +28,7 @@
                     "low_speed_penalty_per_s":  -2.0,
                     "low_speed_grace_s":  1.0,
                     "unsafe_speed_penalty_per_m":  -0.2,
-                    "barrier_contact_penalty":  -50.0,
+                    "barrier_contact_penalty":  -1000.0,
                     "barrier_early_penalty":  0.0,
                     "barrier_collision_impulse_threshold":  0,
                     "failure_progress_clawback_per_m":  -3.0,

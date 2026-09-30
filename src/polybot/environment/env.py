@@ -243,6 +243,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._barrier_contact_s = 0.0
+        self._episode_collision_impulse_peak = 0.0
+        self._episode_collision_impulse_steps = 0
+        self._episode_landing_impulse_peak = 0.0
+        self._episode_nonlanding_impulse_peak = 0.0
         self._airborne_roll_s = 0.0
         self._landing_grace_s = 0.0
         self._was_airborne = False
@@ -375,6 +379,10 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._stationary_s = 0.0
         self._off_track_s = 0.0
         self._barrier_contact_s = 0.0
+        self._episode_collision_impulse_peak = 0.0
+        self._episode_collision_impulse_steps = 0
+        self._episode_landing_impulse_peak = 0.0
+        self._episode_nonlanding_impulse_peak = 0.0
         self._airborne_roll_s = 0.0
         self._landing_grace_s = 0.0
         self._was_airborne = False
@@ -569,6 +577,19 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             collision_impulse = 0.0
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
+        self._episode_collision_impulse_peak = max(
+            self._episode_collision_impulse_peak, collision_impulse
+        )
+        if collision_impulse > 0.0:
+            self._episode_collision_impulse_steps += 1
+            if landed_this_step:
+                self._episode_landing_impulse_peak = max(
+                    self._episode_landing_impulse_peak, collision_impulse
+                )
+            else:
+                self._episode_nonlanding_impulse_peak = max(
+                    self._episode_nonlanding_impulse_peak, collision_impulse
+                )
         # The simulator reports an untyped collision impulse. A touchdown can
         # produce one even when no barrier was hit, so exclude the landing
         # transition. Other impacts receive a reward cost but remain nonterminal:
@@ -666,6 +687,14 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
         observation = self._policy_observation(transition.telemetry)
         info = self._info(transition, reward_terms=reward_terms)
+        # The simulator's impulse field is untyped: it can describe either a
+        # barrier hit or touchdown. Keep raw episode diagnostics so a missing
+        # barrier penalty can be distinguished from an impact signal that never
+        # reached the trainer.
+        info["collision_impulse_peak"] = self._episode_collision_impulse_peak
+        info["collision_impulse_steps"] = self._episode_collision_impulse_steps
+        info["landing_impulse_peak"] = self._episode_landing_impulse_peak
+        info["nonlanding_impulse_peak"] = self._episode_nonlanding_impulse_peak
         self._add_curriculum_info(info, telemetry.route_progress_m)
         if self._episode_steps == 1 and self._curriculum_reset_diagnostics is not None:
             info["curriculum_reset_diagnostics"] = self._curriculum_reset_diagnostics
