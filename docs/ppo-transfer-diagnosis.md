@@ -876,3 +876,7 @@ With the higher rate, four more 5/5 candidates evaluated at 24.394s, 24.362s,
 24.364s, and 24.442s. The larger update rate increased KL but did not
 produce a faster policy. The next trial widens the bounded residual to 0.1 so
 the actor can make a larger state-dependent correction in the late section.
+Two candidates with the 0.1 residual limit still finished 5/5 at 24.373s and
+24.341s, slower than the graft. Their changes were small, so the next trial
+raises action standard deviation from 0.005 to 0.01 within the same 58%-to-finish
+window while keeping rollback strict.
