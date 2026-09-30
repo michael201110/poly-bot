@@ -467,3 +467,61 @@ anchor, keeping the mean-action anchor aligned; a regression test covers both
 policies. The next sustained run uses 0.05 noise, the 3e-7 learning rate, target
 KL 0.0001, and the 24.675s hash-matched anchor. The sub-22s criterion remains
 open.
+
+## Frozen-transfer audit follow-up (30 September 2026)
+
+The active PPO continuation was stopped cleanly at 371,912 steps after its
+first five-seed candidate evaluation at 365,568 steps finished 0/5 (median
+progress 23.0%). The runner restored the saved 24.675s, 5/5 champion before
+stopping. No teacher, dataset, or champion files were changed. Further PPO
+training is paused until the transfer audit is understood.
+
+I reran the offline same-observation comparison against the exact frozen
+teacher and saved reports under the ignored
+`runs/teacher-student/transfer-diagnosis-current-*` folders. The teacher policy
+hash is still
+`FFBEA4CA57116CD2586C17CCEC4FC761600E0D1EE5C6D94E31B98122220DAECE`; its
+metadata specifies Summer 1/current, observation schema v2 with 105 float32
+features, 12 lookahead samples, frame skip 30, continuous action schema v2,
+and seven overlays. The teacher dataset hash is unchanged. Its action labels
+recomputed from the raw actor plus the bakeable overlays still agree within
+2.3e-6.
+
+The directly distilled, zero-PPO-step model remains a poor copy on the 16,180
+successful teacher observations: steering MAE 0.1092 (p95 0.3384) and
+longitudinal MAE 0.0684 (p95 0.3178). The live paired run already recorded for
+this exact checkpoint has the teacher finishing at 24.263s while the student
+fails at 26.0% progress. Its steering differs by 0.098 on the very first
+decision, before the cars move apart. This is a measured behavioral-cloning
+fidelity failure, not just an inference from lap outcomes.
+
+The current fine-tuned 24.675s PPO champion is closer but still not identical
+to TQC on those teacher states: steering MAE 0.0286 (p95 0.0755) and
+longitudinal MAE 0.0178 (p95 0.0541). Its `predict()` output is deterministic
+(repeat difference 0), equals the clipped Gaussian mean, and uses the same
+105-value observation schema, 30-tick decision interval, continuous action
+adapter, and saved air-brake overlays. The TQC and PPO backends return the same
+tick-control sequence for identical continuous actions in the adapter
+regression test. No distinct PPO action bucketing, rounding, exploration noise,
+frame-skip mismatch, or observation-normalization layer was found.
+
+The archived same-seed direct-student trace and teacher-action replay add the
+closed-loop evidence: the teacher's exact action sequence reproduces its
+24.263s lap, with no difference crossing the smallest measured position,
+heading, speed, contact, or action threshold. In contrast, persistent
+teacher-steering offsets as small as 0.0001 caused failures on some signs and
+seeds, though outcomes were nonmonotonic and this is only a single-seed
+sensitivity experiment. The student's initial 0.098 steering error is vastly
+larger. Taken together, this supports **G (cloning error too large)** and **H
+(extreme closed-loop sensitivity)**; the evidence does not support a hidden
+observation/action conversion defect as the primary cause.
+
+The current live game worker was not listening after the safe stop, so I did
+not claim a new paired lap for the 24.675s champion. The 24.263s teacher result
+and direct-student trace above are the existing matched-seed live comparison
+for the same frozen teacher hash. No implementation fix was justified by this
+follow-up, and no training or re-distillation was started. Next work should
+first produce a much closer initial actor match and gate it on repeated
+same-start closed-loop tests; ordinary PPO updates at the current safe-region
+scale remain too disruptive to justify running blindly. The under-22s goal is
+still open.
