@@ -15,6 +15,7 @@ from polybot.training.evaluation import EvaluationResult
 from polybot.training.teacher_student import (
     DaggerDataset,
     TeacherDataset,
+    _align_ppo_config_to_checkpoint,
     _apply_reward_profile,
     _dagger_rounds_remain_after_reliable_gate,
     _dagger_seed_student,
@@ -53,6 +54,22 @@ def test_complete_evaluation_confirms_target_only_with_reliable_fast_lap() -> No
     assert _evaluation_confirms_target(evaluation, 22.0)
     evaluation["finish_rate"] = 0.8
     assert not _evaluation_confirms_target(evaluation, 22.0)
+
+
+def test_ppo_continuation_uses_checkpoint_architecture_and_action_noise() -> None:
+    config = TrainingConfig(algorithm="ppo", ppo=PPOConfig(architecture="standard"))
+    metadata = SimpleNamespace(
+        algorithm="ppo", architecture="tqc_compatible",
+        training_config={"ppo": {"action_std": 0.05}},
+    )
+
+    _align_ppo_config_to_checkpoint(config, metadata)
+
+    assert config.ppo.architecture == "tqc_compatible"
+    assert config.ppo.action_std == 0.05
+
+    _align_ppo_config_to_checkpoint(config, metadata, action_std=0.02)
+    assert config.ppo.action_std == 0.02
 
 
 def test_teacher_student_stop_file_interrupts_active_training(tmp_path: Path) -> None:

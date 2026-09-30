@@ -860,6 +860,21 @@ def _config_from_teacher(metadata: ModelMetadata, output_root: Path, *, device: 
     return TrainingConfig.from_dict(value)
 
 
+def _align_ppo_config_to_checkpoint(
+    config: TrainingConfig, metadata: ModelMetadata, *, action_std: float | None = None,
+) -> None:
+    """Use the selected PPO checkpoint's policy architecture and saved noise."""
+    if config.ppo is None or metadata.algorithm != "ppo":
+        raise ValueError("PPO continuation requires a PPO config and checkpoint")
+    config.ppo.architecture = metadata.architecture
+    if action_std is not None:
+        config.ppo.action_std = action_std
+    else:
+        saved_ppo = metadata.training_config.get("ppo") or {}
+        saved_std = saved_ppo.get("action_std")
+        config.ppo.action_std = float(saved_std) if saved_std is not None else None
+
+
 def _apply_reward_profile(config: TrainingConfig, profile: str | None) -> TrainingConfig:
     """Override the teacher's inherited shaping when a run names a profile."""
 
@@ -1729,6 +1744,9 @@ def main(argv: list[str] | None = None) -> int:
             )
             if args.stage == "validate":
                 student_metadata = registry.read_metadata(output / "pretrained")
+                _align_ppo_config_to_checkpoint(
+                    config, student_metadata, action_std=args.ppo_action_std,
+                )
                 student.policy_overlays = list(student_metadata.policy_overlays)
                 student.speed_bias_schedule = list(student_metadata.speed_bias_schedule)
             if args.stage != "validate":
@@ -1897,6 +1915,10 @@ def main(argv: list[str] | None = None) -> int:
                 round_index = 0
                 finetune_registry = ModelRegistry(args.output_root)
                 champion_path = finetune_registry.slot(config.track_name, "ppo", "champion")
+                _align_ppo_config_to_checkpoint(
+                    config, finetune_registry.read_metadata(student_dir),
+                    action_std=args.ppo_action_std,
+                )
                 if args.ppo_anchor_kl > 0:
                     anchor_dir = _ppo_teacher_anchor_dir_for_source(
                         args.output_root / "ppo-teacher-anchor", student_dir,
