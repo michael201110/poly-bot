@@ -216,3 +216,6 @@ the 25.086s champion; the sub-22s target remains unmet.
 The next PPO block ended at 155,648 steps without a faster lap. One intervening
 five-episode candidate completed at 26.148s and was not promoted. The reliable
 25.086s champion remains the resume point while training continues.
+
+At 176,128 steps the run still had a 100% finish rate but no lap faster than
+25.086s. The simulator worker remained active, so training was left running.
