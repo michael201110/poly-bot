@@ -61,16 +61,19 @@ def test_ppo_continuation_uses_checkpoint_architecture_and_action_noise() -> Non
     config = TrainingConfig(algorithm="ppo", ppo=PPOConfig(architecture="standard"))
     metadata = SimpleNamespace(
         algorithm="ppo", architecture="tqc_compatible",
-        training_config={"ppo": {"action_std": 0.05}},
+        training_config={"ppo": {"action_std": 0.05, "rollout_steps": 4096}},
     )
 
     _align_ppo_config_to_checkpoint(config, metadata)
 
     assert config.ppo.architecture == "tqc_compatible"
     assert config.ppo.action_std == 0.05
+    assert config.ppo.rollout_steps == 4096
 
     _align_ppo_config_to_checkpoint(config, metadata, action_std=0.02)
     assert config.ppo.action_std == 0.02
+    with pytest.raises(ValueError, match="rollout steps cannot change"):
+        _align_ppo_config_to_checkpoint(config, metadata, rollout_steps=2048)
 
 
 def test_exact_tqc_actor_init_can_select_full_trainable_compatible_policy() -> None:

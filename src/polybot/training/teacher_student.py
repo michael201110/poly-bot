@@ -870,15 +870,25 @@ def _config_from_teacher(metadata: ModelMetadata, output_root: Path, *, device: 
 
 def _align_ppo_config_to_checkpoint(
     config: TrainingConfig, metadata: ModelMetadata, *, action_std: float | None = None,
+    rollout_steps: int | None = None,
 ) -> None:
-    """Use the selected PPO checkpoint's policy architecture and saved noise."""
+    """Use PPO checkpoint architecture, rollout length, and saved noise."""
     if config.ppo is None or metadata.algorithm != "ppo":
         raise ValueError("PPO continuation requires a PPO config and checkpoint")
     config.ppo.architecture = metadata.architecture
+    saved_ppo = metadata.training_config.get("ppo") or {}
+    saved_rollout_steps = saved_ppo.get("rollout_steps")
+    if saved_rollout_steps is not None:
+        saved_rollout_steps = int(saved_rollout_steps)
+        if rollout_steps is not None and rollout_steps != saved_rollout_steps:
+            raise ValueError(
+                "PPO rollout steps cannot change while resuming; start a fresh model "
+                "to change the rollout buffer size"
+            )
+        config.ppo.rollout_steps = saved_rollout_steps
     if action_std is not None:
         config.ppo.action_std = action_std
     else:
-        saved_ppo = metadata.training_config.get("ppo") or {}
         saved_std = saved_ppo.get("action_std")
         config.ppo.action_std = float(saved_std) if saved_std is not None else None
 
@@ -1840,6 +1850,7 @@ def main(argv: list[str] | None = None) -> int:
                 student_metadata = registry.read_metadata(output / "pretrained")
                 _align_ppo_config_to_checkpoint(
                     config, student_metadata, action_std=args.ppo_action_std,
+                    rollout_steps=args.ppo_rollout_steps,
                 )
                 student.policy_overlays = list(student_metadata.policy_overlays)
                 student.speed_bias_schedule = list(student_metadata.speed_bias_schedule)
@@ -1998,6 +2009,7 @@ def main(argv: list[str] | None = None) -> int:
             resume_metadata = finetune_registry.read_metadata(student_dir)
             _align_ppo_config_to_checkpoint(
                 config, resume_metadata, action_std=args.ppo_action_std,
+                rollout_steps=args.ppo_rollout_steps,
             )
             # Live stages are launched through TrainingRunner to preserve the normal
             # evaluation, checkpoint, rollback, and champion promotion guarantees.
