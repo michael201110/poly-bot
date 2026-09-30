@@ -4,8 +4,10 @@ The directly distilled PPO student does **not** reproduce the frozen TQC
 teacher's actions accurately enough to stay on its line. This is visible before
 the two cars separate. The simulator is also highly sensitive to even much
 smaller persistent action changes, so ordinary behavioral cloning error is a
-poor initialization for this particular 24.263-second path. No additional
-DAgger or PPO training was run during this diagnosis.
+poor initialization for this particular 24.263-second path. A guarded PPO probe
+that was already running when this diagnosis resumed was stopped at its safe
+boundary at 130,143 steps; it saved `latest` and did not replace the champion.
+No training was started as part of the diagnosis.
 
 ## Reproduce
 
@@ -703,3 +705,71 @@ spacing to 20,000 decisions and tolerates up to 0.5s slowdown for continued
 training. Promotion remains strict: only an actually faster champion replaces
 the 24.263s seed, and a loss of more than 0.5s or completion stability still
 restores it.
+
+## Transfer isolation recheck (30 September 2026)
+
+The current frozen teacher and saved teacher dataset were rechecked against
+three PPO artifacts using the same 16,180 teacher observations. The teacher
+`policy.zip` SHA-256 is
+`FFBEA4CA57116CD2586C17CCEC4FC761600E0D1EE5C6D94E31B98122220DAECE`; its
+metadata reports 24.263s and a 100% finish rate. Recomputed high-level teacher
+targets differ from the saved post-overlay labels by at most `2.27e-6`, so the
+dataset labels are correct.
+
+The ordinary PPO student at
+`models/experiments/ppo-transfer-fidelity-20260930/summer-1/ppo/teacher-student/pretrained`
+has SHA-256
+`22B8500CA5C1588183EFDC2F3B6AD672F2863F6BA023E4F859B2ADD4B2942A2E`. Its
+same-observation action error is smaller than the older wall-spin checkpoint,
+but still measurable on most decisions: steering MAE/RMSE are `0.0369`/`0.0538`
+(p99 `0.1851`), and longitudinal MAE/RMSE are `0.0168`/`0.0327` (p99
+`0.1428`). Behavior cloning reduces, but does not eliminate, the control error.
+The later refined checkpoint reduces those to steering MAE `0.0175` (p99
+`0.0844`) and longitudinal MAE `0.0085` (p99 `0.0590`), yet its same-seed
+live run still ends in an airborne-roll failure at 55.1% progress after 14.82s.
+
+The actor-copy control at
+`models/experiments/ppo-tqc-actor-graft-20260930/summer-1/ppo/teacher-student/pretrained`
+has SHA-256
+`A4C48A885A054836801AAA9F9BE2583FAFDC404F644E4D9D2F98427E8CB42C0F`. Its
+same-observation action MAE is below `3.4e-7` steering and `2.0e-7`
+longitudinal. In the saved same-seed live traces it finishes in 24.263s just
+like TQC: all 809 observation vectors and tick-control sequences match exactly,
+and the maximum position difference is zero. This is direct evidence against an
+observation-pipeline, frame-skip, overlay, air-brake, PWM, or simulator-replay
+mismatch in the shared path.
+
+For the ordinary PPO student, action differences appear first: the first
+steering difference above `0.01` is decision 1, and the combined action
+difference exceeds `0.05` by decision 3. Heading differs by `0.1°` at decision
+8; position differs by 1cm at decision 14. The same-seed episode fails
+off-track at 24.9% progress after 14.07s. The refined student's first action
+differences above `0.005` also occur by decision 3, before its position differs
+by 1cm at decision 20. These
+results answer the ordering question: the cloned actors already choose
+different controls before the car paths visibly separate.
+
+The ordinary PPO artifact uses SB3's unsquashed Gaussian policy, whose public
+`predict()` clips deterministic means to `[-1, 1]`; the TQC-compatible PPO
+control uses the same tanh-squashed deterministic mean as TQC. The ordinary
+student is deterministic and repeatable at inference, but its pre-clip mean
+can differ from the clipped action by as much as `0.0759`. This is a real
+policy-output transform difference to account for in training and validation,
+though the live comparison already uses the clipped public prediction. It does
+not explain the whole failure: even a `0.0001` fixed TQC action offset can
+derail a live lap, while exact replay of the unmodified TQC actions reproduces
+the finish. In a separate early residual probe, a `5e-6` requested steering
+difference moved two PWM pulses to different ticks; the state was only
+`6e-6m` apart then, before a later state-dependent steering response amplified
+the trajectory difference.
+
+The updated classification is **G: behavioral cloning error too large** and
+**H: extreme closed-loop sensitivity**, with an additional policy-output
+transform difference for unsquashed standard PPO. The shared simulator control
+path itself is verified by the exact actor-copy control and exact action replay.
+Do not resume ordinary BC/DAgger or unconstrained PPO updates on the failed
+student. If training resumes toward the sub-22s goal, start from the validated
+TQC-compatible actor-copy checkpoint; use bounded updates with deterministic
+teacher comparisons and reject a candidate at the first repeatable pulse-phase
+or trajectory regression. The current 24.263s actor-copy PPO has zero on-policy
+updates and is not a sub-22s result.
