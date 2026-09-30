@@ -247,6 +247,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_collision_impulse_steps = 0
         self._episode_landing_impulse_peak = 0.0
         self._episode_nonlanding_impulse_peak = 0.0
+        self._episode_collision_impulse_progress: list[float] = []
+        self._episode_barrier_contact_progress: list[float] = []
         self._airborne_roll_s = 0.0
         self._landing_grace_s = 0.0
         self._was_airborne = False
@@ -383,6 +385,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_collision_impulse_steps = 0
         self._episode_landing_impulse_peak = 0.0
         self._episode_nonlanding_impulse_peak = 0.0
+        self._episode_collision_impulse_progress = []
+        self._episode_barrier_contact_progress = []
         self._airborne_roll_s = 0.0
         self._landing_grace_s = 0.0
         self._was_airborne = False
@@ -577,11 +581,19 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             collision_impulse = 0.0
         if not np.isfinite(collision_impulse):
             collision_impulse = 0.0
+        impact_progress = float(
+            np.clip(
+                telemetry.route_progress_m / max(1.0, telemetry.track_length_m),
+                0.0,
+                1.0,
+            )
+        )
         self._episode_collision_impulse_peak = max(
             self._episode_collision_impulse_peak, collision_impulse
         )
         if collision_impulse > 0.0:
             self._episode_collision_impulse_steps += 1
+            self._episode_collision_impulse_progress.append(impact_progress)
             if landed_this_step:
                 self._episode_landing_impulse_peak = max(
                     self._episode_landing_impulse_peak, collision_impulse
@@ -599,6 +611,8 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             and collision_impulse > self.reward_config.barrier_collision_impulse_threshold
         )
         self._barrier_contact_s = dt if barrier_contact else 0.0
+        if barrier_contact:
+            self._episode_barrier_contact_progress.append(impact_progress)
 
         fully_airborne = grounded_wheels == 0
         if fully_airborne and abs(telemetry.roll_rad) >= self.reward_config.airborne_roll_limit_rad:
@@ -695,6 +709,12 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         info["collision_impulse_steps"] = self._episode_collision_impulse_steps
         info["landing_impulse_peak"] = self._episode_landing_impulse_peak
         info["nonlanding_impulse_peak"] = self._episode_nonlanding_impulse_peak
+        info["collision_impulse_progress"] = list(
+            self._episode_collision_impulse_progress
+        )
+        info["barrier_contact_progress"] = list(
+            self._episode_barrier_contact_progress
+        )
         self._add_curriculum_info(info, telemetry.route_progress_m)
         if self._episode_steps == 1 and self._curriculum_reset_diagnostics is not None:
             info["curriculum_reset_diagnostics"] = self._curriculum_reset_diagnostics

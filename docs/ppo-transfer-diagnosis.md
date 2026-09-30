@@ -904,7 +904,10 @@ show that the impacts were absent. Raw diagnostics from the fresh graft run
 showed two or three non-landing collision impulses per lap, with peaks around
 7,100–8,900. The global detected-impact penalty is now -1,000 rather than -50,
 and remains nonterminal with no prescribed action. The first 8,192-step block
-under this profile evaluated at 24.381s (5/5 finishes), still slower than the
-24.263s graft but within the 0.25s accumulation window. Episode records now
-retain raw impact peak/count and landing/non-landing peaks so subsequent
-blocks can show whether PPO reduces contacts as it learns.
+under this profile evaluated at 24.381s (5/5 finishes), the next at 24.401s,
+and the third at 24.328s, all 5/5. Each remained within the 0.25s accumulation
+window; none beat the 24.263s graft. Raw contacts remained at two or three per
+lap in the first two blocks. Episode records retain raw impact peak/count and
+landing/non-landing peaks. They now also record contact progress ratios so the
+curriculum gate can be aligned with observed contacts while leaving the policy
+free to learn its own actions.

@@ -700,6 +700,8 @@ class TrainingRunner:
                             "collision_impulse_steps": info.get("collision_impulse_steps", 0),
                             "landing_impulse_peak": info.get("landing_impulse_peak", 0.0),
                             "nonlanding_impulse_peak": info.get("nonlanding_impulse_peak", 0.0),
+                            "collision_impulse_progress": info.get("collision_impulse_progress", []),
+                            "barrier_contact_progress": info.get("barrier_contact_progress", []),
                             "air_brake_summary": info.get("air_brake_summary", {}),
                         })
                         self.episode_reward = 0.0
