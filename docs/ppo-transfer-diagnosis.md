@@ -420,3 +420,21 @@ checkpoint is preserved at
 with policy SHA-256
 `CEF598297A97ABCC471C9F06156FE597F88776186E2D777B76B875752FBD8AE8`.
 The confirmed sub-22s target is still unmet.
+
+## PPO continuation checkpoint validation
+
+Repeated early crashes near 23% progress were traced to an unverified continuation
+checkpoint, not the saved 24.675s champion or a new evaluation seed. A run stopped
+between evaluations had written partially updated weights to `latest` while
+retaining the previous champion's 24.675s 5/5 evaluation in its metadata. The
+next run saw that stale evaluation tied with the champion and resumed the newer,
+untested weights. Directly evaluating the saved champion on the newer run's exact
+five seeds still produced 5/5 finishes at 24.675s.
+
+The runner now omits evaluation metadata from `latest` whenever its policy has
+advanced past the last evaluation. The continuation gate then recognizes it as
+unverified and selects the evaluated champion. A regression test covers that
+metadata rule. The unverified local `latest` was marked as unevaluated, and PPO
+fine-tuning is being restarted from the verified champion with learning rate
+3e-6, target KL 0.001, and champion-anchor KL 0.25. The sub-22s criterion remains
+open.

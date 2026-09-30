@@ -36,6 +36,13 @@ from polybot.training.promotion import promote_directory
 from polybot.transport import WebSocketServerTransport
 
 
+def _evaluation_for_current_checkpoint(
+    evaluation: EvaluationResult | None, *, current_steps: int, evaluated_steps: int,
+) -> EvaluationResult | None:
+    """Keep latest metadata honest when a run stops between policy evaluations."""
+    return evaluation if evaluation is not None and current_steps == evaluated_steps else None
+
+
 class ScaledTrainingReward(gym.RewardWrapper):
     def __init__(self, env: gym.Env, scale: float) -> None:
         super().__init__(env)
@@ -759,7 +766,12 @@ class TrainingRunner:
                         "confirmed_lap_s": result.best_lap_s,
                         "timesteps": self.model.num_timesteps,
                     })
-            latest = self._save("latest", self.last_evaluation)
+            latest_evaluation = _evaluation_for_current_checkpoint(
+                self.last_evaluation,
+                current_steps=int(self.model.num_timesteps),
+                evaluated_steps=last_evaluated_steps,
+            )
+            latest = self._save("latest", latest_evaluation)
             self._emit({"type": "stopped" if self.stop_requested.is_set() else "completed",
                         "path": str(latest), "timesteps": self.model.num_timesteps})
             return latest

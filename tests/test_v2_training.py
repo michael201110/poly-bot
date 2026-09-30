@@ -30,7 +30,7 @@ from polybot.training.evaluation import EvaluationResult, evaluate_model
 from polybot.training.lap_analysis import discover_airborne_regions, sector_delta_map
 from polybot.training.pace_config import champion_evaluation_config
 from polybot.training.promotion import promote_directory
-from polybot.training.runner import TrainingRunner
+from polybot.training.runner import TrainingRunner, _evaluation_for_current_checkpoint
 from polybot.training.section_optimizer import SectionOptimizer, section_windows, write_checkpoint
 from polybot.training.wr_search import (
     _candidate_grid,
@@ -503,6 +503,21 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
     with pytest.raises(IncompatibleModelError, match="track"):
         registry.validate(metadata, replace(config, track_id="mock/gentle-s"),
                           backend_for(algorithm).action_adapter(config).schema)
+
+
+def test_latest_checkpoint_drops_stale_evaluation_after_unvalidated_updates() -> None:
+    result = EvaluationResult(
+        episodes=5, finish_rate=1.0, median_progress=1.0, mean_progress=1.0,
+        best_lap_s=24.675, median_lap_s=24.675, crash_rate=0.0,
+        off_track_rate=0.0, stall_rate=0.0,
+    )
+
+    assert _evaluation_for_current_checkpoint(
+        result, current_steps=100, evaluated_steps=100,
+    ) is result
+    assert _evaluation_for_current_checkpoint(
+        result, current_steps=101, evaluated_steps=100,
+    ) is None
 
 
 def test_older_tqc_champion_without_replay_can_continue(tmp_path) -> None:
