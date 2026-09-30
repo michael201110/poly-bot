@@ -277,3 +277,14 @@ fine-tuning restarted from the validated 24.971s baseline; at 234,496 steps its
 first two candidates both finished 0/5 at 23.2% and 22.8% median progress and
 were rolled back. The new run remains active in
 `models/experiments/ppo-transfer-rl-recovery-20261003-r4`.
+
+The r4 PPO run reached 285,696 steps without beating 24.971s. Its 244,736-step
+candidate completed at 25.233s, a later full candidate at 260,096 steps took
+32.589s, and the other recent evaluations failed around 54-59% progress. To test
+the logged air-roll failures, the 24.971s champion was evaluated on matched
+seeds with its existing progress-window air-brake overlays and with an added
+full-airborne brake. The baseline reconfirmed 5/5 finishes at 24.971s; the
+full-airborne guard produced 0/5 finishes, 53.6% median progress, and a 100%
+crash rate. That guard was rejected. The r4 run was cleanly stopped at a saved
+boundary with the 24.971s champion preserved; the next PPO search uses a
+moderately larger update size with rollback still enabled.
