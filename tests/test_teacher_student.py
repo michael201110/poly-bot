@@ -14,6 +14,7 @@ from polybot.training.teacher_student import (
     DaggerDataset,
     TeacherDataset,
     _apply_reward_profile,
+    _dagger_rounds_remain_after_reliable_gate,
     _dagger_seed_student,
     _ensure_ppo_teacher_anchor,
     _evaluation_rank,
@@ -74,6 +75,25 @@ def test_named_reward_profile_overrides_teacher_reward_configuration() -> None:
     assert config.rewards.barrier_collision_impulse_threshold == 1e9
 
 
+@pytest.mark.parametrize(
+    ("continue_after_reliable", "first_round", "next_round", "rounds_to_run", "expected"),
+    [
+        (False, 1, 2, 3, False),
+        (True, 1, 2, 3, True),
+        (True, 1, 4, 3, False),
+        (True, 1, 2, None, False),
+    ],
+)
+def test_reliable_dagger_baseline_does_not_skip_requested_rounds(
+    continue_after_reliable: bool, first_round: int, next_round: int,
+    rounds_to_run: int | None, expected: bool,
+) -> None:
+    assert _dagger_rounds_remain_after_reliable_gate(
+        continue_after_reliable=continue_after_reliable,
+        first_round=first_round,
+        next_round=next_round,
+        rounds_to_run=rounds_to_run,
+    ) is expected
 class _TeacherPolicy:
     def __init__(self) -> None:
         self.observations: list[np.ndarray] = []

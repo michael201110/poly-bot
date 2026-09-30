@@ -970,6 +970,18 @@ def _partial_progress_gate_passed(
     return float(evaluation.get("median_progress", 0.0) or 0.0) >= minimum_progress
 
 
+def _dagger_rounds_remain_after_reliable_gate(
+    *, continue_after_reliable: bool, first_round: int,
+    next_round: int, rounds_to_run: int | None,
+) -> bool:
+    """Whether to keep collecting requested recovery data before PPO fine-tuning."""
+    return bool(
+        continue_after_reliable
+        and rounds_to_run is not None
+        and next_round < first_round + rounds_to_run
+    )
+
+
 def _should_resume_ppo_champion(
     candidate: dict[str, Any], champion: dict[str, Any], *,
     progress_tolerance: float = 0.05, lap_tolerance_s: float = 0.5,
@@ -1130,6 +1142,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--continue-to-rl-on-partial", action="store_true",
         help="allow continuous PPO fine-tuning once the best student reaches the progress gate",
+    )
+    parser.add_argument(
+        "--continue-dagger-after-reliable", action="store_true",
+        help="complete all configured DAgger rounds before PPO fine-tuning, even if the current best already finishes",
     )
     parser.add_argument(
         "--partial-rl-min-progress", type=float, default=0.35,
@@ -1414,10 +1430,22 @@ def main(argv: list[str] | None = None) -> int:
                 student_path = best_student_path
             round_index += 1
             if _evaluation_rank(best_evaluation)[0] >= args.reliability_finishes / 5:
-                print(json.dumps({"reliability_gate_passed": True,
-                                  "finish_rate": best_evaluation.get("finish_rate"),
-                                  "student_checkpoint": str(student_path)}, separators=(",", ":")), flush=True)
-                break
+                if not _dagger_rounds_remain_after_reliable_gate(
+                    continue_after_reliable=args.continue_dagger_after_reliable,
+                    first_round=first_round, next_round=round_index,
+                    rounds_to_run=rounds_to_run,
+                ):
+                    print(json.dumps({"reliability_gate_passed": True,
+                                      "finish_rate": best_evaluation.get("finish_rate"),
+                                      "student_checkpoint": str(student_path)}, separators=(",", ":")), flush=True)
+                    break
+                print(json.dumps({
+                    "reliability_gate_passed": True,
+                    "continuing_configured_dagger_rounds": True,
+                    "finish_rate": best_evaluation.get("finish_rate"),
+                    "student_checkpoint": str(student_path),
+                    "next_round": round_index,
+                }, separators=(",", ":")), flush=True)
             partial_rl_gate_passed = (
                 args.continue_to_rl and args.continue_to_rl_on_partial
                 and _partial_progress_gate_passed(best_evaluation, args.partial_rl_min_progress)
