@@ -753,6 +753,7 @@ class TrainingRunner:
             training_env.close()
             if not self.stop_requested.is_set() and self.model.num_timesteps != last_evaluated_steps:
                 result = self._evaluate()
+                last_evaluated_steps = self.model.num_timesteps
                 if rollback_to_champion:
                     if cfg.algorithm == "tqc":
                         self._restore_champion_if_worse(
