@@ -2072,8 +2072,11 @@ def main(argv: list[str] | None = None) -> int:
                         if (champion / "metadata.json").is_file() else {}
                     )
                     student_dir = (
-                        champion if champion_evaluation and _should_resume_ppo_champion(
+                        champion if champion_evaluation and _should_resume_ppo_candidate(
                             candidate_evaluation, champion_evaluation,
+                            consecutive_incomplete_blocks=0,
+                            rollback_patience_blocks=args.ppo_rollback_patience_blocks,
+                            minimum_progress=args.ppo_min_progress_to_continue,
                             progress_tolerance=args.ppo_rollback_progress_tolerance,
                             lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                         ) else latest
