@@ -270,9 +270,13 @@ def _configure_saved_overlays(
     elif runner.config.algorithm == "tqc":
         if model is not None:
             model.policy_overlays = list(metadata.policy_overlays)
-            model.speed_bias_schedule = [
-                list(row) for row in metadata.speed_bias_schedule
-            ]
+            # Older TQC saves kept this schedule in the policy archive before
+            # it was added to metadata. An empty metadata default must not
+            # erase that serialized runtime state.
+            if metadata.speed_bias_schedule:
+                model.speed_bias_schedule = [
+                    list(row) for row in metadata.speed_bias_schedule
+                ]
 
 
 def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Path, Any]:
