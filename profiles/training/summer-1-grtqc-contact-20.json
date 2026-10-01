@@ -16,12 +16,25 @@
   "output_root": "models/experiments/grtqc-contact20-20261001",
   "log_root": "logs",
   "curriculum": {
-    "mode": "full",
+    "mode": "custom",
     "start_ratio": null,
     "end_ratio": null,
     "start_s": null,
     "end_s": null,
-    "phases": [],
+    "phases": [
+      {
+        "mode": "section",
+        "steps": 100000,
+        "start_ratio": 0.07,
+        "end_ratio": 0.12,
+        "lead_in_ratio": 0.05
+      },
+      {
+        "mode": "full",
+        "steps": 1900000,
+        "lead_in_ratio": 0.05
+      }
+    ],
     "lead_in_ratio": 0.05
   },
   "evaluation": {
@@ -131,7 +144,7 @@
     "adaptation_max_heading_deviation_rad": 0.75,
     "adaptation_max_action_disagreement": 0.05,
     "disagreement_coefficient": 0.01,
-    "critic_warmup_updates": 15000,
+    "critic_warmup_updates": 6500,
     "critic_readiness_window": 200,
     "critic_readiness_relative_change": 0.1,
     "target_lap_s": 22.0,
