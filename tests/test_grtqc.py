@@ -141,6 +141,43 @@ def test_promotion_uses_measured_frame_skip_reference(tmp_path, monkeypatch) -> 
     assert saved == ["champion"]
 
 
+def test_grtqc_promotes_reliable_contact_reduction_within_pace_tolerance(tmp_path, monkeypatch) -> None:
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    assert config.grtqc is not None
+    config.grtqc.reference_lap_s = 24.616
+    config.grtqc.champion_lap_tolerance_s = 0.15
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=5000)
+    previous = EvaluationResult(
+        5, 1.0, 1.0, 1.0, 24.616, 24.616, 0.0, 0.0, 0.0,
+        barrier_contact_steps=20,
+    )
+    current = EvaluationResult(
+        5, 1.0, 1.0, 1.0, 24.621, 24.621, 0.0, 0.0, 0.0,
+        barrier_contact_steps=5,
+    )
+    champion_dir = runner.registry.slot(config.track_name, "grtqc", "champion")
+    champion_dir.mkdir(parents=True)
+    (champion_dir / "metadata.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(
+        runner.registry, "read_metadata",
+        lambda _path: SimpleNamespace(
+            training_config={"rewards": config.to_dict()["rewards"]},
+            reward_semantics="executed-controls-v1", evaluation=previous.to_dict(),
+        ),
+    )
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: current)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    saved = []
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path)
+    runner._grtqc_weak_evaluations = 2
+
+    runner._evaluate()
+
+    assert saved == ["champion"]
+    assert runner._grtqc_weak_evaluations == 0
+
+
 def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_path, monkeypatch) -> None:
     config = replace(_config("grtqc"), output_root=tmp_path / "models")
     runner = TrainingRunner(config)

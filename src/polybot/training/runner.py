@@ -294,13 +294,27 @@ class TrainingRunner:
                 and result.median_progress == 1.0
                 and result.median_lap_s is not None
             )
-            if reliable and result.median_lap_s < best_verified:
+            contact_improved = (
+                reliable and champion is not None
+                and result.barrier_contact_steps < champion.barrier_contact_steps
+            )
+            within_pace_tolerance = (
+                reliable
+                and result.median_lap_s <= best_verified + cfg.grtqc.champion_lap_tolerance_s
+            )
+            contact_promotion = contact_improved and within_pace_tolerance
+            faster_promotion = reliable and result.median_lap_s < best_verified
+            if faster_promotion or contact_promotion:
                 self._grtqc_weak_evaluations = 0
                 path = self._save("champion", result)
                 self._emit({
                     "type": "champion", "path": str(path),
                     "timesteps": self.model.num_timesteps,
                     "median_lap_s": result.median_lap_s,
+                    "promotion_reason": (
+                        "faster_lap" if faster_promotion else "fewer_barrier_contacts"
+                    ),
+                    "barrier_contact_steps": result.barrier_contact_steps,
                 })
             else:
                 path = self._save(f"checkpoints/step-{self.model.num_timesteps}-rejected", result)
@@ -313,7 +327,11 @@ class TrainingRunner:
                 })
                 if (
                     getattr(self.model, "actor_unlocked", False)
-                    and (not reliable or result.median_lap_s > best_verified)
+                    and (
+                        not reliable
+                        or result.median_lap_s
+                        > best_verified + cfg.grtqc.champion_lap_tolerance_s
+                    )
                 ):
                     self._grtqc_weak_evaluations += 1
                     if self._grtqc_weak_evaluations >= 3:
