@@ -190,7 +190,12 @@ class TrainingRunner:
             directory.parent / f".{directory.name}-staging-{uuid4().hex}"
             if name == "champion" else directory
         )
-        self.backend.save_model(self.model, staging, resume=True)
+        # Rejected evaluations can occur every 1,000 decisions. Their policy
+        # and metadata are useful for diagnosis, but duplicating the full
+        # replay at that cadence would exhaust disk during long runs.
+        self.backend.save_model(
+            self.model, staging, resume=not name.endswith("-rejected"),
+        )
         self.registry.write_metadata(staging, self._metadata(evaluation))
         if name == "champion":
             search_metadata = directory / "speed-search.json"

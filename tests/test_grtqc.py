@@ -164,3 +164,19 @@ def test_grtqc_waits_for_three_weak_evaluations_before_recovery(tmp_path, monkey
     assert not recovered
     runner._evaluate()
     assert len(recovered) == 1
+
+
+def test_rejected_grtqc_checkpoint_does_not_duplicate_replay(tmp_path, monkeypatch) -> None:
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace()
+    monkeypatch.setattr(runner, "_metadata", lambda evaluation: None)
+    monkeypatch.setattr(runner.registry, "write_metadata", lambda directory, metadata: None)
+    flags = []
+    monkeypatch.setattr(
+        runner.backend, "save_model",
+        lambda model, directory, *, resume: flags.append(resume),
+    )
+    runner._save("checkpoints/step-100-rejected")
+    runner._save("latest")
+    assert flags == [False, True]
