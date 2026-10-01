@@ -37,6 +37,9 @@ class EvaluationResult:
     max_speed_deviation_mps: float = 0.0
     max_progress_deviation_m: float = 0.0
     lap_time_delta_s: float | None = None
+    barrier_contact_steps: int = 0
+    max_barrier_impulse: float = 0.0
+    barrier_contact_progress: tuple[float, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -83,6 +86,9 @@ def evaluate_model(
     laps: list[float] = []
     crashes = off_tracks = stalls = 0
     airborne_time = air_brake_time = air_brake_reward = 0.0
+    barrier_contact_steps = 0
+    max_barrier_impulse = 0.0
+    barrier_contact_progress: list[float] = []
     steer_drift: list[float] = []
     longitudinal_drift: list[float] = []
     position_drift: list[float] = []
@@ -173,6 +179,13 @@ def evaluate_model(
             )
             off_tracks += int("off_track" in events)
             stalls += int("stalled" in events)
+            contacts = info.get("barrier_contact_progress", ())
+            barrier_contact_steps += len(contacts)
+            barrier_contact_progress.extend(float(value) for value in contacts)
+            max_barrier_impulse = max(
+                max_barrier_impulse,
+                float(info.get("nonlanding_impulse_peak", 0.0)),
+            )
             summary = info.get("air_brake_summary", {})
             airborne_time += float(summary.get("airborne_time_s", 0.0))
             air_brake_time += float(summary.get("air_brake_time_s", 0.0))
@@ -196,6 +209,7 @@ def evaluate_model(
         max(position_drift, default=0.0), float(np.median(position_drift)) if position_drift else 0.0,
         max(heading_drift, default=0.0), max(speed_drift, default=0.0),
         max(progress_drift, default=0.0), float(np.median(lap_deltas)) if lap_deltas else None,
+        barrier_contact_steps, max_barrier_impulse, tuple(barrier_contact_progress),
     )
 
 

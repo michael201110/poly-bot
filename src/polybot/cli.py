@@ -253,7 +253,29 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Path]:
+def _configure_saved_overlays(
+    runner: TrainingRunner, model: Any, metadata: Any,
+) -> None:
+    """Restore checkpoint overlays for standalone evaluation and playback."""
+    if runner.config.algorithm == "ppo":
+        runner._ppo_air_brake_overlays = list(metadata.policy_overlays)
+        runner._ppo_speed_bias_schedule = [
+            list(row) for row in metadata.speed_bias_schedule
+        ]
+        if model is not None:
+            model.policy_overlays = list(metadata.policy_overlays)
+            model.speed_bias_schedule = [
+                list(row) for row in metadata.speed_bias_schedule
+            ]
+    elif runner.config.algorithm == "tqc":
+        if model is not None:
+            model.policy_overlays = list(metadata.policy_overlays)
+            model.speed_bias_schedule = [
+                list(row) for row in metadata.speed_bias_schedule
+            ]
+
+
+def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Path, Any]:
     registry = ModelRegistry(args.output_root)
     directory = registry.slot(args.track_name, args.algorithm, args.slot)
     metadata = registry.read_metadata(directory)
@@ -263,15 +285,15 @@ def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Pa
     backend = backend_for(cfg.algorithm)
     registry.validate(metadata, cfg, backend.action_adapter(cfg).schema)
     runner = TrainingRunner(cfg)
+    _configure_saved_overlays(runner, None, metadata)
     env = runner._environment()
     try:
         device = resolve_device(cfg.device, algorithm=cfg.algorithm)
         model = backend.load_model(directory / "policy.zip", env, device.resolved)
-        if cfg.algorithm == "tqc":
-            model.policy_overlays = list(metadata.policy_overlays)
+        _configure_saved_overlays(runner, model, metadata)
     finally:
         env.close()
-    return cfg, backend, model, directory
+    return cfg, backend, model, directory, metadata
 
 
 def _model_parser(description: str) -> argparse.ArgumentParser:
@@ -290,8 +312,9 @@ def evaluate_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--episodes", type=int)
     args = parser.parse_args(argv)
     try:
-        cfg, _, model, _ = _saved_model(args)
+        cfg, _, model, _, metadata = _saved_model(args)
         runner = TrainingRunner(cfg)
+        _configure_saved_overlays(runner, model, metadata)
         result = evaluate_model(
             model, runner._environment, episodes=args.episodes or cfg.evaluation.episodes,
             seed=cfg.seed + 1_000_000,
@@ -307,8 +330,10 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--realtime", action="store_true")
     args = parser.parse_args(argv)
     try:
-        cfg, _, model, _ = _saved_model(args)
-        env = TrainingRunner(cfg)._environment()
+        cfg, _, model, _, metadata = _saved_model(args)
+        runner = TrainingRunner(cfg)
+        _configure_saved_overlays(runner, model, metadata)
+        env = runner._environment()
         try:
             observation, _ = env.reset(seed=cfg.seed)
             while True:

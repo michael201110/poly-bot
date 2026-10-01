@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from polybot.training.evaluation import EvaluationResult
+from polybot.training.evaluation import EvaluationResult, evaluate_model
 
 
 def test_target_lap_requires_reliable_full_track_completion() -> None:
@@ -23,3 +23,39 @@ def test_target_lap_requires_reliable_full_track_completion() -> None:
     assert reliable_sub_target.confirms_target_lap(22.0)
     assert not unreliable_fast_outlier.confirms_target_lap(22.0)
     assert not exact_target.confirms_target_lap(22.0)
+
+
+def test_evaluation_records_barrier_contacts_and_progress() -> None:
+    class Policy:
+        def set_training_mode(self, training: bool) -> None:
+            pass
+
+    class Model:
+        policy = Policy()
+
+        def predict(self, observation, deterministic: bool):
+            return [0.0, 1.0], None
+
+    class Env:
+        def reset(self, *, seed: int):
+            return [0.0], {}
+
+        def step(self, action):
+            return [0.0], 0.0, True, False, {
+                "events": ("finish",),
+                "route_progress_m": 100.0,
+                "track_length_m": 100.0,
+                "elapsed_s": 24.0,
+                "barrier_contact_progress": [0.1, 0.99],
+                "nonlanding_impulse_peak": 8_000.0,
+                "air_brake_summary": {},
+            }
+
+        def close(self) -> None:
+            pass
+
+    result = evaluate_model(Model(), Env, episodes=1, seed=1)
+
+    assert result.barrier_contact_steps == 2
+    assert result.max_barrier_impulse == 8_000.0
+    assert result.barrier_contact_progress == (0.1, 0.99)
