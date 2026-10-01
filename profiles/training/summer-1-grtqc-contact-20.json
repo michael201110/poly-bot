@@ -24,14 +24,14 @@
     "phases": [
       {
         "mode": "section",
-        "steps": 25000,
+        "steps": 1000,
         "start_ratio": 0.07,
         "end_ratio": 0.12,
         "lead_in_ratio": 0.05
       },
       {
         "mode": "full",
-        "steps": 1975000,
+        "steps": 1999000,
         "lead_in_ratio": 0.05
       }
     ],
