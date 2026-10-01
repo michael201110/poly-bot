@@ -290,6 +290,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "actor_reference_drift_limit": (
         "Maximum cumulative action drift from the verified full-lap policy; 0 disables the permanent cap."
     ),
+    "policy_std_limit": (
+        "Smooth bound on stochastic actor and critic-target standard deviation before tanh; 0 disables it."
+    ),
+    "target_entropy": "Desired policy entropy; use a lower value when bounding training variance tightly.",
     "recovery_critic_cooldown_updates": "Minimum critic updates after actor recovery before learning resumes.",
 }, algorithm="grtqc")}
 
@@ -309,6 +313,7 @@ METRIC_INFO = _info("Status", {
     ),
     "critic_loss": "Change to TQC's value estimates; spikes can signal instability.",
     "critic_disagreement": "Mean variance across GRTQC critics at matching quantiles.",
+    "policy_training_std_max": "Largest stochastic policy standard deviation used inside GRTQC updates before tanh.",
     "disagreement_penalty": "Weighted disagreement added to the GRTQC critic loss.",
     "quantile_mean": "Mean current GRTQC critic quantile estimate.",
     "target_mean": "Mean bootstrapped GRTQC target quantile value.",

@@ -777,6 +777,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
     def _policy_observation(self, telemetry: Telemetry) -> np.ndarray:
         return observe(telemetry)
 
+    def request_air_brake(self, base_action: np.ndarray) -> None:
+        """Release an existing policy air-brake overlay at touchdown within a block."""
+        self._air_brake_request = True
+        self._air_brake_base_action = np.asarray(base_action, dtype=np.float32).reshape(2).copy()
+
     def _add_curriculum_info(self, info: dict[str, Any], progress_m: float) -> None:
         if self._episode_curriculum_end_ratio is None:
             info["curriculum_stage"] = "full track"

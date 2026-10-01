@@ -146,6 +146,47 @@ def test_correlated_exploration_resets_at_episode_end(monkeypatch) -> None:
         env.close()
 
 
+def test_bounded_training_distribution_preserves_mean_and_variance_gradients() -> None:
+    config = _config("grtqc")
+    config.grtqc.policy_std_limit = 0.02
+    model, env = _model(config)
+    try:
+        model.learn(8)
+        observations = th.zeros((16, model.observation_space.shape[0]))
+        before = model.actor(observations, deterministic=True).detach().clone()
+        actions, log_probability = model._training_actions_log_prob(observations)
+        distribution = model.actor.action_dist.distribution
+        assert float(distribution.stddev.detach().max()) <= 0.02
+        expected_probability = model.actor.action_dist.log_prob(actions)
+        th.testing.assert_close(log_probability, expected_probability)
+        th.testing.assert_close(model.actor(observations, deterministic=True), before, rtol=0, atol=0)
+        model.actor.optimizer.zero_grad()
+        (actions.mean() + log_probability.mean()).backward()
+        variance_gradient = model.actor.log_std.bias.grad
+        assert th.isfinite(variance_gradient).all()
+        assert th.count_nonzero(variance_gradient) > 0
+    finally:
+        env.close()
+
+
+def test_rollout_passes_air_brake_touchdown_release_to_wrapped_environment() -> None:
+    config = _config("grtqc")
+    config.grtqc.critic_collection_std = 0.0
+    model, env = _model(config)
+    try:
+        model.policy_overlays = [{"kind": "air_brake", "start": 0.2, "end": 0.8, "duty": 0.05}]
+        observation = model.env.reset()
+        observation[0, 12] = 0.5
+        observation[0, 17:21] = 0
+        model._last_obs = observation
+        action, _ = model._sample_action(0)
+        assert action[0, 1] == pytest.approx(-0.05)
+        assert env._air_brake_request
+        np.testing.assert_array_equal(env._air_brake_base_action, model._air_brake_base_action[0])
+    finally:
+        env.close()
+
+
 @pytest.mark.parametrize(
     ("laps", "expected"),
     [((24.2,) * 5, "champion"), ((24.3,) * 5, "rejected"), ((24.1,) * 4, "rejected")],

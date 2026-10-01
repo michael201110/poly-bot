@@ -160,7 +160,9 @@
     "actor_reference_drift_limit": 0.0,
     "reference_lap_s": 24.263,
     "recovery_critic_cooldown_updates": 1000,
-    "exploration_correlation": 0.9
+    "exploration_correlation": 0.9,
+    "policy_std_limit": 0.02,
+    "target_entropy": -10.0
   },
   "schema": "polybot.config.v2"
 }

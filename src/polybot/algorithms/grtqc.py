@@ -8,6 +8,7 @@ at corresponding quantile indices, averaged across the batch and quantiles.
 from __future__ import annotations
 
 from collections import deque
+from math import log
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +78,7 @@ class GRTQC(SeededWarmupTQC):
         critic_readiness_relative_change: float = 0.1,
         exploration_std: float = 0.0001, critic_collection_std: float = 0.001,
         exploration_correlation: float = 0.0,
+        policy_std_limit: float = 0.0,
         actor_step_action_limit: float = 1e-5,
         actor_reference_drift_limit: float = 0.01,
         **kwargs: Any,
@@ -88,6 +90,7 @@ class GRTQC(SeededWarmupTQC):
         self.exploration_std = exploration_std
         self.critic_collection_std = critic_collection_std
         self.exploration_correlation = exploration_correlation
+        self.policy_std_limit = policy_std_limit
         self._exploration_noise: np.ndarray | None = None
         self.actor_step_action_limit = actor_step_action_limit
         self.actor_reference_drift_limit = actor_reference_drift_limit
@@ -134,6 +137,15 @@ class GRTQC(SeededWarmupTQC):
         noise = self._rollout_noise(action.shape, noise_std)
         if noise_std:
             action = np.clip(action + noise, -1.0, 1.0).astype(np.float32)
+        if self._air_brake_active and self.env is not None:
+            observations = np.asarray(self._last_obs).reshape(n_envs, -1)
+            base = np.asarray(self._air_brake_base_action, dtype=np.float32).reshape(n_envs, -1)
+            for index in range(n_envs):
+                airborne = np.all(observations[index, 17:21] < 0.5)
+                if airborne and action[index, 1] != base[index, 1] + noise[index, 1]:
+                    self.env.env_method(
+                        "request_air_brake", np.clip(base[index] + noise[index], -1, 1), indices=index,
+                    )
         return action, self.policy.scale_action(action)
 
     def _rollout_noise(self, shape: tuple[int, int], std: float) -> np.ndarray:
@@ -179,6 +191,20 @@ class GRTQC(SeededWarmupTQC):
                 return False
         return True
 
+    def _training_actions_log_prob(self, observations: th.Tensor) -> tuple[th.Tensor, th.Tensor]:
+        """Keep critic targets and actor sampling near collected actions.
+
+        Smoothly bound the Gaussian standard deviation without changing the
+        deterministic mean or discarding gradients through learned variance.
+        The log probability uses this same bounded distribution.
+        """
+        if self.policy_std_limit == 0:
+            return self.actor.action_log_prob(observations)
+        mean, log_std, kwargs = self.actor.get_action_dist_params(observations)
+        log_std = log_std - th.nn.functional.softplus(log_std - log(self.policy_std_limit))
+        self.logger.record("train/policy_training_std_max", float(log_std.detach().exp().max().item()))
+        return self.actor.action_dist.log_prob_from_params(mean, log_std, **kwargs)
+
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         if self.replay_buffer is None:
             raise RuntimeError("GRTQC needs replay before training")
@@ -192,7 +218,7 @@ class GRTQC(SeededWarmupTQC):
             discounts = data.discounts if data.discounts is not None else self.gamma
             if self.use_sde:
                 self.actor.reset_noise()
-            actions_pi, log_prob = self.actor.action_log_prob(data.observations)
+            actions_pi, log_prob = self._training_actions_log_prob(data.observations)
             actions_pi = self._apply_overlays_to_actions(actions_pi, data.observations)
             log_prob = log_prob.reshape(-1, 1)
             ent_coef = (
@@ -201,7 +227,7 @@ class GRTQC(SeededWarmupTQC):
                 else self.ent_coef_tensor
             )
             with th.no_grad():
-                next_actions, next_log_prob = self.actor.action_log_prob(data.next_observations)
+                next_actions, next_log_prob = self._training_actions_log_prob(data.next_observations)
                 next_actions = self._apply_overlays_to_actions(next_actions, data.next_observations)
                 next_quantiles = self.critic_target(data.next_observations, next_actions)
                 keep = self.critic.quantiles_total - self.top_quantiles_to_drop_per_net * self.critic.n_critics
@@ -374,6 +400,7 @@ class GRTQCBackend(TQCBackend):
             learning_starts=p.learning_starts, batch_size=p.batch_size,
             gamma=p.gamma, tau=p.tau, train_freq=p.train_frequency,
             gradient_steps=p.gradient_steps, ent_coef=p.entropy,
+            target_entropy=p.target_entropy,
             warmup_forward_fraction=p.warmup_forward_fraction,
             warmup_steering_std=p.warmup_steering_std,
             disagreement_coefficient=p.disagreement_coefficient,
@@ -383,6 +410,7 @@ class GRTQCBackend(TQCBackend):
             exploration_std=p.exploration_std,
             critic_collection_std=p.critic_collection_std,
             exploration_correlation=p.exploration_correlation,
+            policy_std_limit=p.policy_std_limit,
             actor_step_action_limit=p.actor_step_action_limit,
             actor_reference_drift_limit=p.actor_reference_drift_limit,
             policy_kwargs={"net_arch": {"pi": layers, "qf": layers}},
@@ -417,6 +445,11 @@ class GRTQCBackend(TQCBackend):
         model.exploration_std = config.grtqc.exploration_std
         model.critic_collection_std = config.grtqc.critic_collection_std
         model.exploration_correlation = config.grtqc.exploration_correlation
+        model.policy_std_limit = config.grtqc.policy_std_limit
+        model.target_entropy = (
+            -float(np.prod(model.action_space.shape))
+            if config.grtqc.target_entropy == "auto" else float(config.grtqc.target_entropy)
+        )
         model._exploration_noise = None
         model.actor_step_action_limit = config.grtqc.actor_step_action_limit
         model.actor_reference_drift_limit = config.grtqc.actor_reference_drift_limit
@@ -430,6 +463,7 @@ class GRTQCBackend(TQCBackend):
             "quantile_mean": values.get("train/quantile_mean"),
             "target_mean": values.get("train/target_mean"),
             "critic_warmup_updates": model.critic_updates_since_transfer,
+            "policy_training_std_max": values.get("train/policy_training_std_max"),
             "actor_unlocked": int(model.actor_unlocked),
             "actor_proposed_action_drift": values.get("train/actor_proposed_action_drift"),
             "actor_executed_action_drift": values.get("train/actor_executed_action_drift"),
