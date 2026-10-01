@@ -885,6 +885,12 @@ class TrainingRunner:
                         training_env.close()
                         result = self._evaluate()
                         last_evaluated_steps = self.model.num_timesteps
+                        if cfg.algorithm == "grtqc" and self.model.actor_unlocked:
+                            # A regular evaluation may land on the same update
+                            # that unlocked the actor. Count it as the unlock
+                            # check so the next decision is not evaluated again.
+                            self._actor_unlock_seen = True
+                            self._actor_unlock_event_pending = False
                         next_eval = consumed + (
                             min(1_000, cfg.evaluation.interval_steps)
                             if cfg.algorithm == "grtqc" and self.model.actor_unlocked
