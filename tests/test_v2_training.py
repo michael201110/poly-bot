@@ -522,7 +522,10 @@ def test_latest_checkpoint_drops_stale_evaluation_after_unvalidated_updates() ->
 
 def test_ppo_action_std_can_be_fixed_for_fine_tuning(tmp_path) -> None:
     config = configuration(tmp_path, "ppo")
+    config.ppo.architecture = "tqc_residual"
     config.ppo.action_std = 0.05
+    config.ppo.residual_progress_start = 0.075
+    config.ppo.residual_progress_end = 0.12
     backend = backend_for("ppo")
     env = PolyTrackEnv(
         MockSimulatorTransport(), track_id=config.track_id,
@@ -533,12 +536,14 @@ def test_ppo_action_std_can_be_fixed_for_fine_tuning(tmp_path) -> None:
         assert th.allclose(model.policy.log_std.detach().exp(), th.full_like(model.policy.log_std, 0.05))
         assert not model.policy.log_std.requires_grad
         anchor_config = configuration(tmp_path / "anchor", "ppo")
+        anchor_config.ppo.architecture = "tqc_residual"
         anchor_env = PolyTrackEnv(
             MockSimulatorTransport(), track_id=anchor_config.track_id,
             action_adapter=backend.action_adapter(anchor_config),
         )
         try:
             anchor = backend.create_model(anchor_config, anchor_env, "cpu")
+            anchor.policy.load_state_dict(model.policy.state_dict())
             anchor_path = tmp_path / "anchor" / "policy.zip"
             anchor_path.parent.mkdir(parents=True, exist_ok=True)
             anchor.save(str(anchor_path))
@@ -554,6 +559,16 @@ def test_ppo_action_std_can_be_fixed_for_fine_tuning(tmp_path) -> None:
             model.teacher_policy.log_std.detach().exp(),
             th.full_like(model.teacher_policy.log_std, 0.05),
         )
+        assert model.teacher_policy.residual_progress_start == pytest.approx(0.075)
+        assert model.teacher_policy.residual_progress_end == pytest.approx(0.12)
+        observations = th.zeros((3, *model.observation_space.shape))
+        observations[:, 12] = th.tensor([0.05, 0.10, 0.50])
+        student_dist = model.policy.get_distribution(observations).distribution
+        teacher_dist = model.teacher_policy.get_distribution(observations).distribution
+        initial_kl = th.distributions.kl_divergence(
+            teacher_dist, student_dist,
+        ).sum(dim=-1)
+        assert th.max(initial_kl).item() < 1e-5
     finally:
         env.close()
 

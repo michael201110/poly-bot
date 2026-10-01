@@ -76,6 +76,7 @@ class PPOBackend(AlgorithmBackend):
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
             self._configure_action_std(teacher, p.action_std)
+            self._align_teacher_residual_policy(model, teacher, p)
             model.set_teacher(teacher, p.teacher_kl_coefficient)
         model.set_expert_imitation(p.imitation_coefficient)
         return model
@@ -126,10 +127,37 @@ class PPOBackend(AlgorithmBackend):
         if p.teacher_model:
             teacher = TeacherAnchoredPPO.load(p.teacher_model, device=device)
             self._configure_action_std(teacher, p.action_std)
+            self._align_teacher_residual_policy(model, teacher, p)
             model.set_teacher(teacher, p.teacher_kl_coefficient)
         else:
             model.set_teacher(None, 0.0)
         model.set_expert_imitation(p.imitation_coefficient)
+
+    @staticmethod
+    def _align_teacher_residual_policy(
+        student: Any, teacher: Any, config: PPOConfig,
+    ) -> None:
+        """Keep a residual PPO anchor's action mask identical to the student.
+
+        A cloned PPO anchor may carry a different progress gate from the current
+        fine-tuning run. That changes its Gaussian variance outside the gate and
+        can make the KL penalty enormous before the student has learned anything.
+        Aligning the gate and residual bound preserves an apples-to-apples anchor.
+        """
+        if not (
+            isinstance(getattr(student, "policy", None), TQCResidualActorCriticPolicy)
+            and isinstance(getattr(teacher, "policy", None), TQCResidualActorCriticPolicy)
+        ):
+            return
+        teacher.policy.residual_action_limit = config.residual_action_limit
+        teacher.policy.set_residual_progress_window(
+            config.residual_progress_start, config.residual_progress_end,
+        )
+        teacher.policy_kwargs.update({
+            "residual_action_limit": config.residual_action_limit,
+            "residual_progress_start": config.residual_progress_start,
+            "residual_progress_end": config.residual_progress_end,
+        })
 
     @staticmethod
     def _configure_action_std(model: Any, action_std: float | None) -> None:
