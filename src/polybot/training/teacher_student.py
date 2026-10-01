@@ -1117,6 +1117,32 @@ def _should_resume_ppo_champion(
     return False
 
 
+def _should_resume_ppo_candidate(
+    candidate: dict[str, Any], champion: dict[str, Any], *,
+    consecutive_incomplete_blocks: int, rollback_patience_blocks: int = 3,
+    minimum_progress: float = 0.15, progress_tolerance: float = 0.05,
+    lap_tolerance_s: float = 0.5,
+) -> bool:
+    """Keep recoverable on-policy candidates long enough to learn from failures.
+
+    The champion stays separately checkpointed and is still the only model that
+    can be promoted. A candidate that stops finishing gets a few update blocks
+    when it continues making meaningful progress, but an early collapse or a
+    persistent completion regression returns training to the champion.
+    """
+    candidate_finish = float(candidate.get("finish_rate", 0.0) or 0.0)
+    champion_finish = float(champion.get("finish_rate", 0.0) or 0.0)
+    if candidate_finish < champion_finish:
+        candidate_progress = candidate.get("median_progress")
+        if candidate_progress is None or float(candidate_progress) < minimum_progress:
+            return True
+        return consecutive_incomplete_blocks >= rollback_patience_blocks
+    return _should_resume_ppo_champion(
+        candidate, champion, progress_tolerance=progress_tolerance,
+        lap_tolerance_s=lap_tolerance_s,
+    )
+
+
 def _promote_ppo_champion_if_better(
     source_registry: ModelRegistry, destination_registry: ModelRegistry, track_name: str,
 ) -> Path | None:
@@ -1341,6 +1367,14 @@ def main(argv: list[str] | None = None) -> int:
         "--ppo-rollback-lap-tolerance", type=float, default=0.0,
         help="allow this much median-lap slowdown before restoring the champion",
     )
+    parser.add_argument(
+        "--ppo-rollback-patience-blocks", type=int, default=3,
+        help="incomplete PPO update blocks allowed before resuming the champion",
+    )
+    parser.add_argument(
+        "--ppo-min-progress-to-continue", type=float, default=0.15,
+        help="restore the champion immediately below this candidate median progress",
+    )
     parser.add_argument("--until-finishing", action="store_true")
     parser.add_argument("--continue-to-rl", action="store_true")
     parser.add_argument(
@@ -1389,6 +1423,12 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--ppo-rollback-progress-tolerance must be in [0, 1)")
     if not np.isfinite(args.ppo_rollback_lap_tolerance) or args.ppo_rollback_lap_tolerance < 0:
         parser.error("--ppo-rollback-lap-tolerance must be finite and nonnegative")
+    if args.ppo_rollback_patience_blocks < 1:
+        parser.error("--ppo-rollback-patience-blocks must be positive")
+    if not np.isfinite(args.ppo_min_progress_to_continue) or not (
+        0.0 <= args.ppo_min_progress_to_continue <= 1.0
+    ):
+        parser.error("--ppo-min-progress-to-continue must be in [0, 1]")
     if args.ppo_eval_interval_steps is not None and args.ppo_eval_interval_steps < 1:
         parser.error("--ppo-eval-interval-steps must be positive")
     teacher_path = args.teacher.resolve()
@@ -2047,8 +2087,8 @@ def main(argv: list[str] | None = None) -> int:
                 config, resume_metadata, action_std=args.ppo_action_std,
                 rollout_steps=args.ppo_rollout_steps,
             )
-            # Live stages are launched through TrainingRunner to preserve the normal
-            # evaluation, checkpoint, rollback, and champion promotion guarantees.
+            # Live stages use TrainingRunner for normal evaluation and checkpointing;
+            # this outer loop owns candidate rollback patience and promotion.
             if args.stage in {"value_warmup", "full"}:
                 config.timesteps = args.warmup_steps
                 warmup_runner = TrainingRunner(config)
@@ -2060,6 +2100,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.stage in {"finetune", "full"}:
                 rounds = args.max_rounds if args.max_rounds > 0 else None
                 round_index = 0
+                incomplete_blocks = 0
                 champion_path = finetune_registry.slot(config.track_name, "ppo", "champion")
                 if args.ppo_anchor_kl > 0:
                     anchor_dir = _ppo_teacher_anchor_dir_for_source(
@@ -2094,7 +2135,7 @@ def main(argv: list[str] | None = None) -> int:
                     # mid-buffer would save a checkpoint with no fresh evaluation
                     # and could discard the critic retained by actor rollback.
                     latest = runner.run(
-                        resume=student_dir, rollback_to_champion=True,
+                        resume=student_dir, rollback_to_champion=False,
                         ppo_rollback_progress_tolerance=args.ppo_rollback_progress_tolerance,
                         ppo_rollback_lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                         allow_ppo_reward_change=args.reward_profile is not None,
@@ -2113,8 +2154,17 @@ def main(argv: list[str] | None = None) -> int:
                         finetune_registry.read_metadata(champion_path).evaluation or {}
                         if (champion_path / "metadata.json").is_file() else {}
                     )
-                    resume_champion = bool(champion_evaluation) and _should_resume_ppo_champion(
+                    if champion_evaluation and float(evaluation.get("finish_rate", 0.0) or 0.0) < float(
+                        champion_evaluation.get("finish_rate", 0.0) or 0.0
+                    ):
+                        incomplete_blocks += 1
+                    else:
+                        incomplete_blocks = 0
+                    resume_champion = bool(champion_evaluation) and _should_resume_ppo_candidate(
                         evaluation, champion_evaluation,
+                        consecutive_incomplete_blocks=incomplete_blocks,
+                        rollback_patience_blocks=args.ppo_rollback_patience_blocks,
+                        minimum_progress=args.ppo_min_progress_to_continue,
                         progress_tolerance=args.ppo_rollback_progress_tolerance,
                         lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                     )
@@ -2122,6 +2172,8 @@ def main(argv: list[str] | None = None) -> int:
                         finetune_registry, global_registry, config.track_name,
                     )
                     student_dir = champion_path if resume_champion else latest
+                    if resume_champion:
+                        incomplete_blocks = 0
                     round_index += 1
                     print(json.dumps({
                         "target_reached": False, "round": round_index,

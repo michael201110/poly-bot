@@ -34,6 +34,7 @@ from polybot.training.teacher_student import (
     _promote_ppo_champion_if_better,
     _run_with_stop_file,
     _seed_validated_ppo_champion,
+    _should_resume_ppo_candidate,
     _should_resume_ppo_champion,
     _tqc_actor_graft_architecture,
     aggregate_teacher_datasets,
@@ -448,6 +449,24 @@ def test_ppo_only_resumes_champion_after_a_material_regression() -> None:
     )
     assert _should_resume_ppo_champion(
         {}, {"finish_rate": 1.0, "median_progress": 1.0, "median_lap_s": 24.675},
+    )
+
+
+def test_ppo_candidate_gets_recovery_blocks_before_champion_rollback() -> None:
+    candidate = {"finish_rate": 0.0, "median_progress": 0.53}
+    champion = {"finish_rate": 1.0, "median_progress": 1.0, "median_lap_s": 24.263}
+    assert not _should_resume_ppo_candidate(
+        candidate, champion, consecutive_incomplete_blocks=1,
+    )
+    assert not _should_resume_ppo_candidate(
+        candidate, champion, consecutive_incomplete_blocks=2,
+    )
+    assert _should_resume_ppo_candidate(
+        candidate, champion, consecutive_incomplete_blocks=3,
+    )
+    assert _should_resume_ppo_candidate(
+        {"finish_rate": 0.0, "median_progress": 0.14}, champion,
+        consecutive_incomplete_blocks=1,
     )
 
 
