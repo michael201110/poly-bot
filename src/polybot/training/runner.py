@@ -745,7 +745,9 @@ class TrainingRunner:
                 )
                 if result.finish_rate != 1.0:
                     raise RuntimeError("GRTQC initialization failed to produce a reference lap")
-                self.model.set_actor_reference_observations(np.asarray(observations))
+                self.model.set_actor_reference_observations(
+                    np.asarray(observations), reference_model=reference,
+                )
                 self._emit({
                     "type": "actor_reference_states",
                     "source": "transferred_initialization",

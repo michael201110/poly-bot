@@ -280,6 +280,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "Maximum deterministic action change per actor update across replay samples "
         "and fixed full-lap reference states."
     ),
+    "actor_reference_drift_limit": (
+        "Maximum cumulative deterministic action drift from the transferred full-lap "
+        "policy."
+    ),
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {

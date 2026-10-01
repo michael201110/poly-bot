@@ -96,6 +96,9 @@ def test_actor_step_backtracks_large_action_change() -> None:
         assert metrics["actor_proposed_action_drift"] > config.grtqc.actor_step_action_limit
         assert metrics["actor_executed_action_drift"] <= 1.1e-5
         assert metrics["actor_reference_action_drift"] <= 1.1e-5
+        assert metrics["actor_reference_cumulative_action_drift"] <= (
+            config.grtqc.actor_reference_drift_limit
+        )
     finally:
         env.close()
 

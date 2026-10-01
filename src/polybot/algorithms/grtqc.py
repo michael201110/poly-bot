@@ -77,6 +77,7 @@ class GRTQC(SeededWarmupTQC):
         critic_readiness_relative_change: float = 0.1,
         exploration_std: float = 0.0001, critic_collection_std: float = 0.001,
         actor_step_action_limit: float = 1e-5,
+        actor_reference_drift_limit: float = 0.01,
         **kwargs: Any,
     ) -> None:
         self.disagreement_coefficient = disagreement_coefficient
@@ -86,14 +87,19 @@ class GRTQC(SeededWarmupTQC):
         self.exploration_std = exploration_std
         self.critic_collection_std = critic_collection_std
         self.actor_step_action_limit = actor_step_action_limit
+        self.actor_reference_drift_limit = actor_reference_drift_limit
         self.critic_updates_since_transfer = 0
         self.actor_unlocked = False
         self._critic_loss_history: deque[float] = deque(maxlen=critic_readiness_window)
         self._disagreement_history: deque[float] = deque(maxlen=critic_readiness_window)
         self._actor_reference_observations: th.Tensor | None = None
+        self._actor_reference_actions: th.Tensor | None = None
         super().__init__(*args, **kwargs)
 
-    def set_actor_reference_observations(self, observations: np.ndarray, *, max_samples: int = 512) -> None:
+    def set_actor_reference_observations(
+        self, observations: np.ndarray, *, reference_model: Any | None = None,
+        max_samples: int = 512,
+    ) -> None:
         """Anchor each actor update at representative states from a full lap."""
         values = np.asarray(observations, dtype=np.float32)
         if values.ndim != 2 or values.shape[1] != int(np.prod(self.observation_space.shape)):
@@ -108,6 +114,11 @@ class GRTQC(SeededWarmupTQC):
         self._actor_reference_observations = th.as_tensor(
             values, dtype=th.float32, device=self.device,
         )
+        reference_actor = reference_model.actor if reference_model is not None else self.actor
+        with th.no_grad():
+            self._actor_reference_actions = reference_actor(
+                self._actor_reference_observations, deterministic=True,
+            ).detach().clone()
 
     def _sample_action(
         self, learning_starts: int, action_noise: Any = None, n_envs: int = 1,
@@ -224,8 +235,15 @@ class GRTQC(SeededWarmupTQC):
                         float((reference_after - reference_before).abs().max().item())
                         if reference_after is not None and reference_before is not None else 0.0
                     )
+                    proposed_reference_cumulative_drift = (
+                        float((reference_after - self._actor_reference_actions).abs().max().item())
+                        if reference_after is not None and self._actor_reference_actions is not None else 0.0
+                    )
                     proposed_drift = max(local_proposed_drift, reference_proposed_drift)
-                    if proposed_drift > self.actor_step_action_limit:
+                    if (
+                        proposed_drift > self.actor_step_action_limit
+                        or proposed_reference_cumulative_drift > self.actor_reference_drift_limit
+                    ):
                         proposed_parameters = [parameter.detach().clone() for parameter in self.actor.parameters()]
                         low, high = 0.0, 1.0
                         for _ in range(12):
@@ -244,7 +262,18 @@ class GRTQC(SeededWarmupTQC):
                                 ).abs().max().item())
                                 if reference_before is not None else 0.0
                             )
-                            if max(local_drift, reference_drift) <= self.actor_step_action_limit:
+                            reference_cumulative_drift = (
+                                float((
+                                    self.actor(self._actor_reference_observations, deterministic=True)
+                                    - self._actor_reference_actions
+                                ).abs().max().item())
+                                if self._actor_reference_observations is not None
+                                and self._actor_reference_actions is not None else 0.0
+                            )
+                            if (
+                                max(local_drift, reference_drift) <= self.actor_step_action_limit
+                                and reference_cumulative_drift <= self.actor_reference_drift_limit
+                            ):
                                 low = fraction
                             else:
                                 high = fraction
@@ -262,11 +291,23 @@ class GRTQC(SeededWarmupTQC):
                         ).abs().max().item())
                         if reference_before is not None else 0.0
                     )
+                    executed_reference_cumulative_drift = (
+                        float((
+                            self.actor(self._actor_reference_observations, deterministic=True)
+                            - self._actor_reference_actions
+                        ).abs().max().item())
+                        if self._actor_reference_observations is not None
+                        and self._actor_reference_actions is not None else 0.0
+                    )
                     executed_drift = max(executed_local_drift, executed_reference_drift)
                 self.logger.record("train/actor_loss", float(actor_loss.item()))
                 self.logger.record("train/actor_proposed_action_drift", proposed_drift)
                 self.logger.record("train/actor_executed_action_drift", executed_drift)
                 self.logger.record("train/actor_reference_action_drift", executed_reference_drift)
+                self.logger.record(
+                    "train/actor_reference_cumulative_action_drift",
+                    executed_reference_cumulative_drift,
+                )
             if gradient_step % self.target_update_interval == 0:
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
@@ -307,6 +348,7 @@ class GRTQCBackend(TQCBackend):
             exploration_std=p.exploration_std,
             critic_collection_std=p.critic_collection_std,
             actor_step_action_limit=p.actor_step_action_limit,
+            actor_reference_drift_limit=p.actor_reference_drift_limit,
             policy_kwargs={"net_arch": {"pi": layers, "qf": layers}},
         )
         model.actor_lr = p.actor_learning_rate or p.learning_rate
@@ -339,6 +381,7 @@ class GRTQCBackend(TQCBackend):
         model.exploration_std = config.grtqc.exploration_std
         model.critic_collection_std = config.grtqc.critic_collection_std
         model.actor_step_action_limit = config.grtqc.actor_step_action_limit
+        model.actor_reference_drift_limit = config.grtqc.actor_reference_drift_limit
 
     def metrics(self, model: GRTQC) -> dict[str, float | int | None]:
         metrics = super().metrics(model)
@@ -353,5 +396,8 @@ class GRTQCBackend(TQCBackend):
             "actor_proposed_action_drift": values.get("train/actor_proposed_action_drift"),
             "actor_executed_action_drift": values.get("train/actor_executed_action_drift"),
             "actor_reference_action_drift": values.get("train/actor_reference_action_drift"),
+            "actor_reference_cumulative_action_drift": values.get(
+                "train/actor_reference_cumulative_action_drift"
+            ),
         })
         return metrics

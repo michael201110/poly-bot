@@ -151,6 +151,7 @@
     "exploration_std": 0.0001,
     "critic_collection_std": 0.001,
     "actor_step_action_limit": 1e-05,
+    "actor_reference_drift_limit": 0.01,
     "reference_lap_s": 24.616
   },
   "schema": "polybot.config.v2"
