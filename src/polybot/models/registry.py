@@ -88,7 +88,9 @@ class ModelRegistry:
         return self.root / track_slug(track_name) / algorithm
 
     def slot(self, track_name: str, algorithm: str, name: str) -> Path:
-        if name not in {"initialization", "latest", "champion"} and not name.startswith("checkpoints/step-"):
+        if name not in {"initialization", "latest", "champion", "contact-candidate"} and not name.startswith(
+            "checkpoints/step-"
+        ):
             raise ValueError("unknown v2 model slot")
         return self.algorithm_dir(track_name, algorithm) / name
 

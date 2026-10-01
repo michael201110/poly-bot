@@ -141,7 +141,7 @@ def test_promotion_uses_measured_frame_skip_reference(tmp_path, monkeypatch) -> 
     assert saved == ["champion"]
 
 
-def test_grtqc_promotes_reliable_contact_reduction_within_pace_tolerance(tmp_path, monkeypatch) -> None:
+def test_grtqc_keeps_contact_reduction_as_candidate_within_pace_tolerance(tmp_path, monkeypatch) -> None:
     config = replace(_config("grtqc"), output_root=tmp_path / "models")
     assert config.grtqc is not None
     config.grtqc.reference_lap_s = 24.616
@@ -174,7 +174,7 @@ def test_grtqc_promotes_reliable_contact_reduction_within_pace_tolerance(tmp_pat
 
     runner._evaluate()
 
-    assert saved == ["champion"]
+    assert saved == ["contact-candidate"]
     assert runner._grtqc_weak_evaluations == 0
 
 

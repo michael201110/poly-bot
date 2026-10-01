@@ -304,17 +304,26 @@ class TrainingRunner:
             )
             contact_promotion = contact_improved and within_pace_tolerance
             faster_promotion = reliable and result.median_lap_s < best_verified
-            if faster_promotion or contact_promotion:
+            if faster_promotion:
                 self._grtqc_weak_evaluations = 0
                 path = self._save("champion", result)
                 self._emit({
                     "type": "champion", "path": str(path),
                     "timesteps": self.model.num_timesteps,
                     "median_lap_s": result.median_lap_s,
-                    "promotion_reason": (
-                        "faster_lap" if faster_promotion else "fewer_barrier_contacts"
-                    ),
+                    "promotion_reason": "faster_lap",
                     "barrier_contact_steps": result.barrier_contact_steps,
+                })
+            elif contact_promotion:
+                self._grtqc_weak_evaluations = 0
+                path = self._save("contact-candidate", result)
+                self._emit({
+                    "type": "contact_candidate", "path": str(path),
+                    "timesteps": self.model.num_timesteps,
+                    "median_lap_s": result.median_lap_s,
+                    "champion_lap_s": best_verified,
+                    "barrier_contact_steps": result.barrier_contact_steps,
+                    "champion_barrier_contact_steps": champion.barrier_contact_steps,
                 })
             else:
                 path = self._save(f"checkpoints/step-{self.model.num_timesteps}-rejected", result)
@@ -387,6 +396,21 @@ class TrainingRunner:
             champion if (champion / "metadata.json").is_file()
             else self.registry.slot(cfg.track_name, "grtqc", "initialization")
         )
+        contact_candidate = self.registry.slot(cfg.track_name, "grtqc", "contact-candidate")
+        if (contact_candidate / "metadata.json").is_file() and (champion / "metadata.json").is_file():
+            candidate_metadata = self.registry.read_metadata(contact_candidate)
+            champion_metadata = self.registry.read_metadata(champion)
+            candidate_evaluation = candidate_metadata.evaluation or {}
+            champion_evaluation = champion_metadata.evaluation or {}
+            candidate_lap = candidate_evaluation.get("median_lap_s")
+            if (
+                candidate_evaluation.get("finish_rate") == 1.0
+                and candidate_lap is not None
+                and candidate_lap <= cfg.grtqc.reference_lap_s + cfg.grtqc.champion_lap_tolerance_s
+                and candidate_evaluation.get("barrier_contact_steps", 0)
+                < champion_evaluation.get("barrier_contact_steps", 0)
+            ):
+                source = contact_candidate
         verified = self.backend.load_model(source / "policy.zip", None, self.device.resolved)
         self.model.actor.load_state_dict(verified.actor.state_dict())
         self.model.actor.optimizer.state.clear()
