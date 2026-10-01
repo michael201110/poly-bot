@@ -686,10 +686,12 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             or stalled
             or off_track
             or airborne_roll_failure
-            or curriculum_section_complete
         )
         truncated = (
             "time_limit" in events
+            # Section bounds shorten collection, not the full-lap value task.
+            # Preserve bootstrap from terminal_observation in replay and PPO.
+            or (curriculum_section_complete and not terminated)
             or self._episode_steps >= self.max_episode_steps
             or (self.max_episode_s is not None and telemetry.elapsed_s >= self.max_episode_s)
         )

@@ -187,6 +187,36 @@ def test_rollout_passes_air_brake_touchdown_release_to_wrapped_environment() -> 
         env.close()
 
 
+def test_curriculum_boundary_keeps_full_lap_bootstrap_in_replay() -> None:
+    config = _config("grtqc")
+    backend = GRTQCBackend()
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight", frame_skip=4,
+        curriculum_start_ratio=0, curriculum_end_ratio=0.01,
+        action_adapter=backend.action_adapter(config),
+    )
+    model = backend.create_model(config, env, "cpu")
+    try:
+        observations = model.env.reset()
+        action = np.array([[0, 1]], dtype=np.float32)
+        for _ in range(200):
+            next_observations, rewards, dones, infos = model.env.step(action)
+            if dones[0]:
+                assert "curriculum_section_complete" in infos[0]["events"]
+                assert infos[0]["TimeLimit.truncated"] is True
+                terminal = infos[0]["terminal_observation"][None]
+                model.replay_buffer.add(observations, terminal, action, rewards, dones, infos)
+                sample = model.replay_buffer.sample(1)
+                assert float(sample.dones[0]) == 0.0
+                th.testing.assert_close(sample.next_observations[0], th.as_tensor(terminal[0]))
+                break
+            observations = next_observations
+        else:
+            pytest.fail("mock driver never reached the curriculum boundary")
+    finally:
+        env.close()
+
+
 @pytest.mark.parametrize(
     ("laps", "expected"),
     [((24.2,) * 5, "champion"), ((24.3,) * 5, "rejected"), ((24.1,) * 4, "rejected")],
