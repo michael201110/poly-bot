@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import statistics
@@ -224,6 +225,27 @@ class TrainingRunner:
             "checkpoint": str(path),
             "error": str(error),
         })
+
+    def _preserve_grtqc_initialization(self, source: Path) -> Path:
+        """Keep an external transfer seed in this experiment for future resumes."""
+        target = self.registry.slot(self.config.track_name, "grtqc", "initialization")
+        source = source.resolve()
+        target = target.resolve()
+        if source == target:
+            return target
+        if target.exists():
+            source_policy = source / "policy.zip"
+            target_policy = target / "policy.zip"
+            if not source_policy.is_file() or not target_policy.is_file():
+                raise FileExistsError(f"GRTQC initialization already exists at {target}")
+            source_hash = hashlib.sha256(source_policy.read_bytes()).digest()
+            target_hash = hashlib.sha256(target_policy.read_bytes()).digest()
+            if source_hash != target_hash:
+                raise FileExistsError(f"GRTQC initialization differs at {target}")
+            return target
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(source, target)
+        return target
 
     def _verify_grtqc_initialization(self, directory: Path) -> EvaluationResult:
         """Block all RL updates until the transferred policy reproduces its source."""
@@ -805,7 +827,8 @@ class TrainingRunner:
             })
             if cfg.algorithm == "grtqc" and resume is not None and resume.name == "initialization":
                 training_env.close()
-                self._verify_grtqc_initialization(resume)
+                initialization = self._preserve_grtqc_initialization(resume)
+                self._verify_grtqc_initialization(initialization)
                 training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
                 self.model.set_env(training_env)
             elif cfg.algorithm == "grtqc" and resume is not None:

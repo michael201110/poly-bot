@@ -258,3 +258,24 @@ def test_transport_disconnect_checkpoints_current_model(tmp_path, monkeypatch) -
         "type": "transport_disconnected", "timesteps": 1234,
         "checkpoint": str(tmp_path), "error": "player left race",
     }]
+
+
+def test_external_grtqc_initialization_is_kept_for_future_resumes(tmp_path) -> None:
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    runner = TrainingRunner(config)
+    source = tmp_path / "prior-experiment" / "summer-1" / "grtqc" / "initialization"
+    source.mkdir(parents=True)
+    (source / "policy.zip").write_bytes(b"transferred-policy")
+    (source / "metadata.json").write_text("{}", encoding="utf-8")
+    (source / "transfer.json").write_text("{}", encoding="utf-8")
+
+    preserved = runner._preserve_grtqc_initialization(source)
+
+    assert preserved == runner.registry.slot(config.track_name, "grtqc", "initialization")
+    assert (preserved / "policy.zip").read_bytes() == b"transferred-policy"
+    assert (preserved / "transfer.json").is_file()
+    assert runner._preserve_grtqc_initialization(source) == preserved
+
+    (source / "policy.zip").write_bytes(b"different-policy")
+    with pytest.raises(FileExistsError, match="GRTQC initialization differs"):
+        runner._preserve_grtqc_initialization(source)
