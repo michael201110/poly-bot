@@ -31,6 +31,8 @@ The first run resumes `models/experiments/grtqc-contact-20261001/summer-1/grtqc/
 
 GRTQC warms its newly initialized critics while the transferred actor is frozen. Actor updates begin only after the minimum warmup and a stable recent window of quantile loss and critic disagreement. The trainer logs quantile, target, and disagreement statistics in `logs/*.jsonl`. See the [training guide](docs/training.md) and [GRTQC experiment record](docs/grtqc-experiment.md) for the implementation, validation gate, and measured status.
 
+The separate `profiles/training/summer-1-grtqc-contact-20.json` tests more frequent control at 20 ticks per decision. Its transferred source completes 5/5 laps at 24.616 seconds; the 30-tick, 24.263-second reference remains preserved.
+
 To check the local mock environment without the game, run the legacy TQC smoke test or the GRTQC device smoke test:
 
 ```powershell

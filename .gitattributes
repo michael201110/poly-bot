@@ -4,3 +4,4 @@ models/**/latest.zip filter=lfs diff=lfs merge=lfs -text
 models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/replay.pkl filter=lfs diff=lfs merge=lfs -text
 models/summer-1/grtqc/initialization/policy.zip filter=lfs diff=lfs merge=lfs -text
 models/experiments/grtqc-contact-20261001/summer-1/grtqc/initialization/policy.zip filter=lfs diff=lfs merge=lfs -text
+models/experiments/grtqc-contact20-20261001/summer-1/grtqc/initialization/policy.zip filter=lfs diff=lfs merge=lfs -text

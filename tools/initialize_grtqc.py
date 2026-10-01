@@ -22,6 +22,7 @@ from polybot.training.config import EvaluationConfig, GRTQCConfig, TrainingConfi
 def initialize(
     source: Path, destination: Path, *, device: str = "cpu",
     training_config: TrainingConfig | None = None,
+    allow_frame_skip_change: bool = False,
 ) -> dict[str, float | int | str]:
     if destination.exists():
         raise FileExistsError(f"initialization checkpoint already exists: {destination}")
@@ -59,9 +60,16 @@ def initialize(
         raise ValueError("initialization config must use GRTQC")
     if config.output_root.resolve() != destination.parents[2].resolve():
         raise ValueError("initialization destination must be under the config output root")
-    for key in ("track_id", "track_name", "lookahead_count", "frame_skip"):
+    for key in ("track_id", "track_name", "lookahead_count"):
         if getattr(config, key) != getattr(source_config, key):
             raise ValueError(f"transfer config differs from source in {key}")
+    if config.frame_skip != source_config.frame_skip and not allow_frame_skip_change:
+        raise ValueError("frame skip differs; explicitly allow it after measuring the source lap")
+    if (
+        config.frame_skip != source_config.frame_skip
+        and config.grtqc.reference_lap_s == 24.263
+    ):
+        raise ValueError("set the measured source lap for the changed frame skip")
     source_model = TQCBackend().load_model(source / "policy.zip", None, device, resume=False)
     source_model.policy_overlays = list(source_metadata.policy_overlays)
     # Older champions persisted this schedule in policy.zip but left metadata
@@ -130,6 +138,7 @@ def initialize(
         "new_gate_tensors": len(transfer.missing_keys),
         "raw_action_max_abs_error": raw_max,
         "executed_action_max_abs_error": executed_max,
+        "expected_reference_lap_s": config.grtqc.reference_lap_s,
         "live_validation": "pending",
     }
     (destination / "transfer.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
@@ -146,6 +155,7 @@ def main() -> None:
     ))
     parser.add_argument("--device", default="cpu")
     parser.add_argument("--config", type=Path, help="GRTQC training profile for this transfer")
+    parser.add_argument("--allow-frame-skip-change", action="store_true")
     args = parser.parse_args()
     config = (
         TrainingConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8")))
@@ -153,6 +163,7 @@ def main() -> None:
     )
     print(json.dumps(initialize(
         args.source, args.destination, device=args.device, training_config=config,
+        allow_frame_skip_change=args.allow_frame_skip_change,
     ), indent=2))
 
 

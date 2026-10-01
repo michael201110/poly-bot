@@ -206,6 +206,7 @@ class TrainingRunner:
 
     def _verify_grtqc_initialization(self, directory: Path) -> EvaluationResult:
         """Block all RL updates until the transferred policy reproduces its source."""
+        assert self.config.grtqc is not None
         transfer = json.loads((directory / "transfer.json").read_text(encoding="utf-8"))
         source = Path(transfer["source"])
         source_metadata = ModelRegistry(source.parents[2]).read_metadata(source)
@@ -234,7 +235,7 @@ class TrainingRunner:
         self._emit({"type": "transfer_validation", **result.to_dict()})
         if (
             len(reference_laps) != 5
-            or abs(statistics.median(reference_laps) - 24.263) > 0.15
+            or abs(statistics.median(reference_laps) - self.config.grtqc.reference_lap_s) > 0.15
             or result.finish_rate != 1.0 or result.median_progress != 1.0
             or result.max_steering_disagreement > 1e-4
             or result.max_longitudinal_disagreement > 1e-4
@@ -272,7 +273,8 @@ class TrainingRunner:
             if previous is not None:
                 champion = EvaluationResult(**previous)
         if cfg.algorithm == "grtqc":
-            reference_lap_s = 24.263
+            assert cfg.grtqc is not None
+            reference_lap_s = cfg.grtqc.reference_lap_s
             best_verified = (
                 min(reference_lap_s, champion.median_lap_s)
                 if champion is not None and champion.finish_rate == 1.0

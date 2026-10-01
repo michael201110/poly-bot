@@ -12,6 +12,8 @@ The GUI, CLI, and saved metadata use the same typed `TrainingConfig`. GRTQC is t
 
 The active Summer 1 contact profile keeps the reference's track, frame skip (30 physics ticks per action), observation/action schemas and saved overlays. It changes only the previously disabled contact reward: an impulse above 500 outside landing grace costs 300 raw reward points and remains nonterminal. GRTQC uses fresh replay so older reward values are never mixed into this run. The known wall contacts are observations about the policy, not prescribed steering or braking actions.
 
+For a separate 20-tick experiment, run `python tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-contact-20.json --allow-frame-skip-change --destination models/experiments/grtqc-contact20-20261001/summer-1/grtqc/initialization`, then train with that profile. Its five-lap source baseline is 24.616 seconds. The profile preserves reward and action semantics, adjusts discount and update cadence for the shorter control interval, and keeps its models in a distinct output directory.
+
 Resume the most recent checkpoint with `polybot-train --config profiles/training/summer-1-grtqc-contact.json --resume latest`. The GUI's **Continue best model** chooses the best verified GRTQC champion if one exists, otherwise latest. The source TQC checkpoint is never overwritten by GRTQC. `latest/` keeps the current resumable learner state; `champion/` keeps the fastest reliable policy; `checkpoints/step-*-rejected/` keeps weaker evaluated candidates.
 
 ## Algorithm details

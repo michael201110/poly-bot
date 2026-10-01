@@ -118,6 +118,21 @@ def test_promotion_requires_five_reliable_faster_laps(tmp_path, monkeypatch, lap
     assert expected in saved[0]
 
 
+def test_promotion_uses_measured_frame_skip_reference(tmp_path, monkeypatch) -> None:
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    assert config.grtqc is not None
+    config.grtqc.reference_lap_s = 24.616
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=5000)
+    result = EvaluationResult(5, 1.0, 1.0, 1.0, 24.5, 24.5, 0.0, 0.0, 0.0)
+    saved = []
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: result)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path)
+    runner._evaluate()
+    assert saved == ["champion"]
+
+
 def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_path, monkeypatch) -> None:
     config = replace(_config("grtqc"), output_root=tmp_path / "models")
     runner = TrainingRunner(config)
