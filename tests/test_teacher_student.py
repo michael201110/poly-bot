@@ -15,6 +15,7 @@ from polybot.algorithms.registry import backend_for
 from polybot.environment.curriculum import build_plan
 from polybot.training.config import PPOConfig, TrainingConfig
 from polybot.training.evaluation import EvaluationResult
+from polybot.training.runner import _freeze_ppo_actor
 from polybot.training.teacher_student import (
     DaggerDataset,
     TeacherDataset,
@@ -897,6 +898,41 @@ def test_squashed_actor_pretraining_uses_deterministic_action_semantics() -> Non
         assert all(
             th.equal(value, model.policy.residual_action.state_dict()[name])
             for name, value in before.items()
+        )
+    finally:
+        env.close()
+
+
+def test_value_warmup_freezes_residual_actor_but_keeps_critic_trainable() -> None:
+    config = TrainingConfig(
+        algorithm="ppo", device="cpu", track_name="Summer 1", track_id="mock/straight",
+        ppo=PPOConfig(
+            architecture="tqc_residual", rollout_steps=32, batch_size=16, epochs=1,
+        ),
+    )
+    env = _gym_env(config, 105)
+    model = backend_for("ppo").create_model(config, env, "cpu")
+    try:
+        assert any(
+            parameter.requires_grad for parameter in model.policy.residual_action.parameters()
+        )
+        _freeze_ppo_actor(model)
+
+        actor_modules = (
+            model.policy.features_extractor,
+            model.policy.mlp_extractor.policy_net,
+            model.policy.action_net,
+            model.policy.residual_action,
+        )
+        assert all(
+            not parameter.requires_grad
+            for module in actor_modules for parameter in module.parameters()
+        )
+        assert not model.policy.log_std.requires_grad
+        assert any(
+            parameter.requires_grad
+            for module in (model.policy.mlp_extractor.value_net, model.policy.value_net)
+            for parameter in module.parameters()
         )
     finally:
         env.close()

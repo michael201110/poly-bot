@@ -43,6 +43,25 @@ def _evaluation_for_current_checkpoint(
     return evaluation if evaluation is not None and current_steps == evaluated_steps else None
 
 
+def _freeze_ppo_actor(model: Any) -> None:
+    """Freeze every parameter that can change PPO actions during value warm-up."""
+    policy = model.policy
+    actor_modules = [
+        policy.features_extractor,
+        policy.mlp_extractor.policy_net,
+        policy.action_net,
+    ]
+    residual_action = getattr(policy, "residual_action", None)
+    if residual_action is not None:
+        actor_modules.append(residual_action)
+    for module in actor_modules:
+        for parameter in module.parameters():
+            parameter.requires_grad_(False)
+    log_std = getattr(policy, "log_std", None)
+    if log_std is not None:
+        log_std.requires_grad_(False)
+
+
 class ScaledTrainingReward(gym.RewardWrapper):
     def __init__(self, env: gym.Env, scale: float) -> None:
         super().__init__(env)
@@ -569,14 +588,7 @@ class TrainingRunner:
                 if getattr(self.model, "replay_buffer", None) else None,
             })
             if freeze_ppo_actor:
-                actor_modules = (
-                    self.model.policy.mlp_extractor.policy_net,
-                    self.model.policy.action_net,
-                )
-                for module in actor_modules:
-                    for parameter in module.parameters():
-                        parameter.requires_grad_(False)
-                self.model.policy.log_std.requires_grad_(False)
+                _freeze_ppo_actor(self.model)
                 self._emit({"type": "value_warmup", "actor_frozen": True})
             if (
                 resume is not None and rollback_to_champion and cfg.algorithm == "tqc"
