@@ -42,6 +42,7 @@ def initialize(source: Path, destination: Path, *, device: str = "cpu") -> dict[
         "target_lap_s": 22.0,
         "exploration_std": 0.0001,
         "critic_collection_std": 0.001,
+        "actor_step_action_limit": 1e-5,
     })
     config = replace(
         source_config, algorithm="grtqc", tqc=None,

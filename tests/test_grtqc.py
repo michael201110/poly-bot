@@ -77,6 +77,24 @@ def test_critic_updates_keep_transferred_actor_frozen_until_ready() -> None:
         env.close()
 
 
+def test_actor_step_backtracks_large_action_change() -> None:
+    config = _config("grtqc")
+    assert config.grtqc is not None
+    config.grtqc.actor_learning_rate = 1e-3
+    config.grtqc.actor_step_action_limit = 1e-5
+    model, env = _model(config)
+    try:
+        model.actor_unlocked = True
+        model.learn(16)
+        metrics = GRTQCBackend().metrics(model)
+        assert metrics["actor_proposed_action_drift"] is not None
+        assert metrics["actor_executed_action_drift"] is not None
+        assert metrics["actor_proposed_action_drift"] > config.grtqc.actor_step_action_limit
+        assert metrics["actor_executed_action_drift"] <= 1.1e-5
+    finally:
+        env.close()
+
+
 @pytest.mark.parametrize(
     ("laps", "expected"),
     [((24.2,) * 5, "champion"), ((24.3,) * 5, "rejected"), ((24.1,) * 4, "rejected")],

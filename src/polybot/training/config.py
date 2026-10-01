@@ -158,6 +158,7 @@ class GRTQCConfig(TQCConfig):
     target_lap_s: float = 22.0
     exploration_std: float = 0.0001
     critic_collection_std: float = 0.001
+    actor_step_action_limit: float = 1e-5
 
     def __post_init__(self) -> None:
         TQCConfig.__post_init__(self)
@@ -173,6 +174,8 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC exploration standard deviation must be in [0, 0.1]")
         if not 0 <= self.critic_collection_std <= 0.1:
             raise ValueError("GRTQC critic collection standard deviation must be in [0, 0.1]")
+        if not 0 < self.actor_step_action_limit <= 0.1:
+            raise ValueError("GRTQC actor step action limit must be in (0, 0.1]")
 
 
 @dataclass(slots=True)

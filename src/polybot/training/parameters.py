@@ -275,6 +275,7 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "target_lap_s": "Verified target lap time in seconds.",
     "exploration_std": "Small Gaussian perturbation around deterministic rollout actions.",
     "critic_collection_std": "Gaussian rollout perturbation while only GRTQC critics update.",
+    "actor_step_action_limit": "Maximum deterministic action change on the replay batch from one actor update.",
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {

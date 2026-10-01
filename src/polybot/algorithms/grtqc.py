@@ -76,6 +76,7 @@ class GRTQC(SeededWarmupTQC):
         critic_warmup_updates: int = 10_000, critic_readiness_window: int = 200,
         critic_readiness_relative_change: float = 0.1,
         exploration_std: float = 0.0001, critic_collection_std: float = 0.001,
+        actor_step_action_limit: float = 1e-5,
         **kwargs: Any,
     ) -> None:
         self.disagreement_coefficient = disagreement_coefficient
@@ -84,6 +85,7 @@ class GRTQC(SeededWarmupTQC):
         self.critic_readiness_relative_change = critic_readiness_relative_change
         self.exploration_std = exploration_std
         self.critic_collection_std = critic_collection_std
+        self.actor_step_action_limit = actor_step_action_limit
         self.critic_updates_since_transfer = 0
         self.actor_unlocked = False
         self._critic_loss_history: deque[float] = deque(maxlen=critic_readiness_window)
@@ -184,10 +186,27 @@ class GRTQC(SeededWarmupTQC):
                     self.ent_coef_optimizer.step()
                 q_pi = self.critic(data.observations, actions_pi).mean(dim=(1, 2), keepdim=False).reshape(-1, 1)
                 actor_loss = (ent_coef * log_prob - q_pi).mean()
+                with th.no_grad():
+                    before_actions = self.actor(data.observations, deterministic=True).detach()
+                    before_parameters = [parameter.detach().clone() for parameter in self.actor.parameters()]
                 self.actor.optimizer.zero_grad()
                 actor_loss.backward()
                 self.actor.optimizer.step()
+                with th.no_grad():
+                    after_actions = self.actor(data.observations, deterministic=True)
+                    proposed_drift = float((after_actions - before_actions).abs().max().item())
+                    if proposed_drift > self.actor_step_action_limit:
+                        fraction = self.actor_step_action_limit / proposed_drift
+                        for parameter, previous in zip(
+                            self.actor.parameters(), before_parameters, strict=True,
+                        ):
+                            parameter.copy_(previous + fraction * (parameter - previous))
+                    executed_drift = float((
+                        self.actor(data.observations, deterministic=True) - before_actions
+                    ).abs().max().item())
                 self.logger.record("train/actor_loss", float(actor_loss.item()))
+                self.logger.record("train/actor_proposed_action_drift", proposed_drift)
+                self.logger.record("train/actor_executed_action_drift", executed_drift)
             if gradient_step % self.target_update_interval == 0:
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
@@ -227,6 +246,7 @@ class GRTQCBackend(TQCBackend):
             critic_readiness_relative_change=p.critic_readiness_relative_change,
             exploration_std=p.exploration_std,
             critic_collection_std=p.critic_collection_std,
+            actor_step_action_limit=p.actor_step_action_limit,
             policy_kwargs={"net_arch": {"pi": layers, "qf": layers}},
         )
         model.actor_lr = p.actor_learning_rate or p.learning_rate
@@ -258,6 +278,7 @@ class GRTQCBackend(TQCBackend):
         model.critic_readiness_relative_change = config.grtqc.critic_readiness_relative_change
         model.exploration_std = config.grtqc.exploration_std
         model.critic_collection_std = config.grtqc.critic_collection_std
+        model.actor_step_action_limit = config.grtqc.actor_step_action_limit
 
     def metrics(self, model: GRTQC) -> dict[str, float | int | None]:
         metrics = super().metrics(model)
@@ -269,5 +290,7 @@ class GRTQCBackend(TQCBackend):
             "target_mean": values.get("train/target_mean"),
             "critic_warmup_updates": model.critic_updates_since_transfer,
             "actor_unlocked": int(model.actor_unlocked),
+            "actor_proposed_action_drift": values.get("train/actor_proposed_action_drift"),
+            "actor_executed_action_drift": values.get("train/actor_executed_action_drift"),
         })
         return metrics
