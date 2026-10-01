@@ -65,7 +65,7 @@ def test_every_training_field_has_plain_language_help(window) -> None:
 
 def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert window.algorithm.currentText() == "grtqc"
-    assert window.configuration().rewards.barrier_collision_impulse_threshold == 500.0
+    assert window.configuration().rewards.barrier_collision_impulse_threshold == 250.0
     assert window.algorithm_stack.currentWidget() is window.grtqc_form
     assert window.ppo_form.widgets["gamma"].isHidden()
     window.algorithm.setCurrentText("ppo")

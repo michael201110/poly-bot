@@ -238,7 +238,7 @@ class PolyBotWindow(QWidget):
         self.algorithm.currentTextChanged.connect(self._algorithm_changed)
         self._algorithm_changed(self.algorithm.currentText())
         self._toggle_advanced(False)
-        contact_profile = Path("profiles/training/summer-1-grtqc-contact.json")
+        contact_profile = Path("profiles/training/summer-1-grtqc-pace-30.json")
         if contact_profile.is_file():
             self.load_configuration(TrainingConfig.from_dict(
                 json.loads(contact_profile.read_text(encoding="utf-8"))

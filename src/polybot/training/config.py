@@ -160,8 +160,10 @@ class GRTQCConfig(TQCConfig):
     contact_candidate_lap_tolerance_s: float = 0.5
     exploration_std: float = 0.0001
     critic_collection_std: float = 0.001
+    exploration_correlation: float = 0.0
     actor_step_action_limit: float = 1e-5
     actor_reference_drift_limit: float = 0.01
+    recovery_critic_cooldown_updates: int = 1000
 
     def __post_init__(self) -> None:
         TQCConfig.__post_init__(self)
@@ -181,10 +183,14 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC exploration standard deviation must be in [0, 0.1]")
         if not 0 <= self.critic_collection_std <= 0.1:
             raise ValueError("GRTQC critic collection standard deviation must be in [0, 0.1]")
+        if not 0 <= self.exploration_correlation < 1:
+            raise ValueError("GRTQC exploration correlation must be in [0, 1)")
+        if self.recovery_critic_cooldown_updates < 1:
+            raise ValueError("GRTQC recovery critic cooldown must be positive")
         if not 0 < self.actor_step_action_limit <= 0.1:
             raise ValueError("GRTQC actor step action limit must be in (0, 0.1]")
-        if not 0 < self.actor_reference_drift_limit <= 0.1:
-            raise ValueError("GRTQC cumulative reference action limit must be in (0, 0.1]")
+        if not 0 <= self.actor_reference_drift_limit <= 0.1:
+            raise ValueError("GRTQC cumulative reference action limit must be in [0, 0.1]; 0 disables it")
 
 
 @dataclass(slots=True)

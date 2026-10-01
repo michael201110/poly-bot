@@ -76,6 +76,7 @@ class GRTQC(SeededWarmupTQC):
         critic_warmup_updates: int = 10_000, critic_readiness_window: int = 200,
         critic_readiness_relative_change: float = 0.1,
         exploration_std: float = 0.0001, critic_collection_std: float = 0.001,
+        exploration_correlation: float = 0.0,
         actor_step_action_limit: float = 1e-5,
         actor_reference_drift_limit: float = 0.01,
         **kwargs: Any,
@@ -86,6 +87,8 @@ class GRTQC(SeededWarmupTQC):
         self.critic_readiness_relative_change = critic_readiness_relative_change
         self.exploration_std = exploration_std
         self.critic_collection_std = critic_collection_std
+        self.exploration_correlation = exploration_correlation
+        self._exploration_noise: np.ndarray | None = None
         self.actor_step_action_limit = actor_step_action_limit
         self.actor_reference_drift_limit = actor_reference_drift_limit
         self.critic_updates_since_transfer = 0
@@ -123,17 +126,43 @@ class GRTQC(SeededWarmupTQC):
     def _sample_action(
         self, learning_starts: int, action_noise: Any = None, n_envs: int = 1,
     ) -> tuple[np.ndarray, np.ndarray]:
-        # Stay near the verified transferred policy while learning values and
-        # searching for pace. Critic/actor gradient paths remain stochastic.
+        # Keep rollout exploration separate from the stochastic critic target
+        # and smooth it over time rather than injecting independent PWM jitter.
         action, _ = self.predict(self._last_obs, deterministic=True)
         action = np.asarray(action, dtype=np.float32).reshape(n_envs, -1)
         noise_std = self.exploration_std if self.actor_unlocked else self.critic_collection_std
+        noise = self._rollout_noise(action.shape, noise_std)
         if noise_std:
-            action = np.clip(
-                action + self._warmup_rng.normal(0, noise_std, action.shape),
-                -1.0, 1.0,
-            ).astype(np.float32)
+            action = np.clip(action + noise, -1.0, 1.0).astype(np.float32)
         return action, self.policy.scale_action(action)
+
+    def _rollout_noise(self, shape: tuple[int, int], std: float) -> np.ndarray:
+        if self._exploration_noise is None or self._exploration_noise.shape != shape:
+            self._exploration_noise = np.zeros(shape, dtype=np.float32)
+        if std == 0:
+            self._exploration_noise.fill(0.0)
+            return self._exploration_noise.copy()
+        correlation = self.exploration_correlation
+        innovation = self._warmup_rng.normal(0.0, std, shape).astype(np.float32)
+        self._exploration_noise = (
+            correlation * self._exploration_noise
+            + np.sqrt(1.0 - correlation * correlation) * innovation
+        ).astype(np.float32)
+        return self._exploration_noise.copy()
+
+    def _store_transition(
+        self, replay_buffer: Any, buffer_action: np.ndarray, new_obs: Any,
+        reward: np.ndarray, dones: np.ndarray, infos: list[dict[str, Any]],
+    ) -> None:
+        super()._store_transition(replay_buffer, buffer_action, new_obs, reward, dones, infos)
+        # OffPolicyAlgorithm does not update _last_episode_starts. VecEnv has
+        # already reset each finished environment, so reset its noise here.
+        if self._exploration_noise is not None:
+            self._exploration_noise[np.asarray(dones, dtype=bool)] = 0.0
+
+    def set_env(self, env: Any, force_reset: bool = True) -> None:
+        self._exploration_noise = None
+        super().set_env(env, force_reset=force_reset)
 
     def _critic_ready(self) -> bool:
         if self.critic_updates_since_transfer < self.critic_warmup_updates:
@@ -242,7 +271,10 @@ class GRTQC(SeededWarmupTQC):
                     proposed_drift = max(local_proposed_drift, reference_proposed_drift)
                     if (
                         proposed_drift > self.actor_step_action_limit
-                        or proposed_reference_cumulative_drift > self.actor_reference_drift_limit
+                        or (
+                            self.actor_reference_drift_limit > 0
+                            and proposed_reference_cumulative_drift > self.actor_reference_drift_limit
+                        )
                     ):
                         proposed_parameters = [parameter.detach().clone() for parameter in self.actor.parameters()]
                         low, high = 0.0, 1.0
@@ -272,7 +304,10 @@ class GRTQC(SeededWarmupTQC):
                             )
                             if (
                                 max(local_drift, reference_drift) <= self.actor_step_action_limit
-                                and reference_cumulative_drift <= self.actor_reference_drift_limit
+                                and (
+                                    self.actor_reference_drift_limit == 0
+                                    or reference_cumulative_drift <= self.actor_reference_drift_limit
+                                )
                             ):
                                 low = fraction
                             else:
@@ -347,6 +382,7 @@ class GRTQCBackend(TQCBackend):
             critic_readiness_relative_change=p.critic_readiness_relative_change,
             exploration_std=p.exploration_std,
             critic_collection_std=p.critic_collection_std,
+            exploration_correlation=p.exploration_correlation,
             actor_step_action_limit=p.actor_step_action_limit,
             actor_reference_drift_limit=p.actor_reference_drift_limit,
             policy_kwargs={"net_arch": {"pi": layers, "qf": layers}},
@@ -380,6 +416,8 @@ class GRTQCBackend(TQCBackend):
         model.critic_readiness_relative_change = config.grtqc.critic_readiness_relative_change
         model.exploration_std = config.grtqc.exploration_std
         model.critic_collection_std = config.grtqc.critic_collection_std
+        model.exploration_correlation = config.grtqc.exploration_correlation
+        model._exploration_noise = None
         model.actor_step_action_limit = config.grtqc.actor_step_action_limit
         model.actor_reference_drift_limit = config.grtqc.actor_reference_drift_limit
 

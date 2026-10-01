@@ -31,6 +31,7 @@ from polybot.models.registry import (
     ModelRegistry,
     track_slug,
 )
+from polybot.protocol import ProtocolViolation
 from polybot.training.config import TrainingConfig
 from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, evaluate_model
@@ -302,13 +303,26 @@ class TrainingRunner:
     def _evaluate(self) -> EvaluationResult:
         cfg = self.config
         observations: list[Any] | None = (
-            [] if cfg.algorithm == "tqc" and self.model._champion_actor is not None else None
+            [] if cfg.algorithm == "grtqc"
+            or (cfg.algorithm == "tqc" and self.model._champion_actor is not None) else None
         )
-        result = evaluate_model(
-            self.model, self._environment, episodes=cfg.evaluation.episodes,
-            seed=cfg.seed + 1_000_000,
-            observation_sink=observations,
-        )
+        for attempt in range(2):
+            try:
+                result = evaluate_model(
+                    self.model, self._environment, episodes=cfg.evaluation.episodes,
+                    seed=cfg.seed + 1_000_000,
+                    observation_sink=observations,
+                )
+                break
+            except ProtocolViolation as exc:
+                if attempt or not str(exc).startswith("stale_episode:"):
+                    raise
+                if observations is not None:
+                    observations.clear()
+                self._emit({
+                    "type": "evaluation_retry", "timesteps": self.model.num_timesteps,
+                    "reason": str(exc),
+                })
         self.last_evaluation = result
         self._emit({"type": "evaluation", "timesteps": self.model.num_timesteps, **result.to_dict()})
         champion_dir = self.registry.slot(cfg.track_name, cfg.algorithm, "champion")
@@ -332,6 +346,11 @@ class TrainingRunner:
                 and champion.median_lap_s is not None else reference_lap_s
             )
             contact_reference = champion
+            initialization = self.registry.slot(cfg.track_name, "grtqc", "initialization")
+            if contact_reference is None and (initialization / "metadata.json").is_file():
+                initial_evaluation = self.registry.read_metadata(initialization).evaluation
+                if initial_evaluation is not None:
+                    contact_reference = EvaluationResult(**initial_evaluation)
             contact_candidate_dir = self.registry.slot(
                 cfg.track_name, "grtqc", "contact-candidate",
             )
@@ -362,6 +381,8 @@ class TrainingRunner:
             )
             contact_promotion = contact_improved and within_pace_tolerance
             faster_promotion = reliable and result.median_lap_s < best_verified
+            if (faster_promotion or contact_promotion) and observations:
+                self.model.set_actor_reference_observations(np.asarray(observations))
             if faster_promotion:
                 self._grtqc_weak_evaluations = 0
                 path = self._save("champion", result)
@@ -445,8 +466,8 @@ class TrainingRunner:
                 )
         return result
 
-    def _recover_grtqc_actor(self, result: EvaluationResult, rejected: Path) -> None:
-        """Keep trained critics/replay while restoring a verified GRTQC driver."""
+    def _grtqc_verified_actor_source(self) -> Path:
+        """Use a reliable cleaner candidate even before the first faster champion."""
         cfg = self.config
         assert cfg.grtqc is not None
         champion = self.registry.slot(cfg.track_name, "grtqc", "champion")
@@ -455,34 +476,55 @@ class TrainingRunner:
             else self.registry.slot(cfg.track_name, "grtqc", "initialization")
         )
         contact_candidate = self.registry.slot(cfg.track_name, "grtqc", "contact-candidate")
-        if (contact_candidate / "metadata.json").is_file() and (champion / "metadata.json").is_file():
+        if (contact_candidate / "metadata.json").is_file() and (source / "metadata.json").is_file():
             candidate_metadata = self.registry.read_metadata(contact_candidate)
-            champion_metadata = self.registry.read_metadata(champion)
+            verified_metadata = self.registry.read_metadata(source)
             candidate_evaluation = candidate_metadata.evaluation or {}
-            champion_evaluation = champion_metadata.evaluation or {}
+            verified_evaluation = verified_metadata.evaluation or {}
             candidate_lap = candidate_evaluation.get("median_lap_s")
+            verified_lap = verified_evaluation.get("median_lap_s")
             if (
-                candidate_evaluation.get("finish_rate") == 1.0
+                candidate_evaluation.get("episodes", 0) >= 5
+                and candidate_evaluation.get("median_progress") == 1.0
+                and candidate_evaluation.get("finish_rate") == 1.0
                 and candidate_lap is not None
                 and candidate_lap
-                <= cfg.grtqc.reference_lap_s + cfg.grtqc.contact_candidate_lap_tolerance_s
+                <= min(cfg.grtqc.reference_lap_s, verified_lap or cfg.grtqc.reference_lap_s)
+                + cfg.grtqc.contact_candidate_lap_tolerance_s
                 and candidate_evaluation.get("barrier_contact_steps", 0)
-                < champion_evaluation.get("barrier_contact_steps", 0)
+                < verified_evaluation.get("barrier_contact_steps", 0)
             ):
                 source = contact_candidate
+        return source
+
+    def _recover_grtqc_actor(self, result: EvaluationResult, rejected: Path) -> None:
+        """Keep trained critics/replay while restoring a verified GRTQC driver."""
+        cfg = self.config
+        assert cfg.grtqc is not None
+        source = self._grtqc_verified_actor_source()
         verified = self.backend.load_model(source / "policy.zip", None, self.device.resolved)
         self.model.actor.load_state_dict(verified.actor.state_dict())
         self.model.actor.optimizer.state.clear()
+        reference_observations = getattr(self.model, "_actor_reference_observations", None)
+        if reference_observations is not None:
+            self.model.set_actor_reference_observations(
+                reference_observations.cpu().numpy(), reference_model=verified,
+            )
         if self.model.log_ent_coef is not None and verified.log_ent_coef is not None:
             self.model.log_ent_coef.data.copy_(verified.log_ent_coef.data)
             if self.model.ent_coef_optimizer is not None:
                 self.model.ent_coef_optimizer.state.clear()
-        self.model.actor_lr = max(1e-8, self.model.actor_lr * 0.5)
-        cfg.grtqc.actor_learning_rate = self.model.actor_lr
         self.model.actor_unlocked = False
-        self.model.critic_updates_since_transfer = 0
+        cooldown = min(
+            self.model.critic_warmup_updates,
+            cfg.grtqc.recovery_critic_cooldown_updates,
+        )
+        self.model.critic_updates_since_transfer = (
+            self.model.critic_warmup_updates - cooldown
+        )
         self.model._critic_loss_history.clear()
         self.model._disagreement_history.clear()
+        self.model._exploration_noise = None
         self._actor_unlock_seen = False
         self._grtqc_weak_evaluations = 0
         self.last_evaluation = None
@@ -492,6 +534,7 @@ class TrainingRunner:
             "rejected_finish_rate": result.finish_rate,
             "rejected_median_lap_s": result.median_lap_s,
             "actor_learning_rate": self.model.actor_lr,
+            "critic_cooldown_updates": cooldown,
             "critic_replay_preserved": True,
         })
 
@@ -833,10 +876,10 @@ class TrainingRunner:
                 self.model.set_env(training_env)
             elif cfg.algorithm == "grtqc" and resume is not None:
                 training_env.close()
-                initialization = self.registry.slot(cfg.track_name, "grtqc", "initialization")
-                reference_metadata = self.registry.read_metadata(initialization)
+                reference_directory = self._grtqc_verified_actor_source()
+                reference_metadata = self.registry.read_metadata(reference_directory)
                 reference = self.backend.load_model(
-                    initialization / "policy.zip", None, self.device.resolved,
+                    reference_directory / "policy.zip", None, self.device.resolved,
                 )
                 reference.policy_overlays = list(reference_metadata.policy_overlays)
                 reference.speed_bias_schedule = list(reference_metadata.speed_bias_schedule)
@@ -846,13 +889,13 @@ class TrainingRunner:
                     seed=cfg.seed + 1_000_000, observation_sink=observations,
                 )
                 if result.finish_rate != 1.0:
-                    raise RuntimeError("GRTQC initialization failed to produce a reference lap")
+                    raise RuntimeError("verified GRTQC anchor failed to produce a reference lap")
                 self.model.set_actor_reference_observations(
                     np.asarray(observations), reference_model=reference,
                 )
                 self._emit({
                     "type": "actor_reference_states",
-                    "source": "transferred_initialization",
+                    "source": str(reference_directory),
                     "observations": len(observations),
                     "guard_samples": min(512, len(observations)),
                 })
@@ -1139,6 +1182,10 @@ class TrainingRunner:
             return latest
         except (ConnectionError, TimeoutError) as exc:
             self._checkpoint_after_transport_failure(exc)
+            raise
+        except ProtocolViolation as exc:
+            if str(exc).startswith("stale_episode:"):
+                self._checkpoint_after_transport_failure(exc)
             raise
         finally:
             training_env.close()

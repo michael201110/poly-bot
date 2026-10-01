@@ -177,7 +177,9 @@ REWARD_DESCRIPTIONS = {
     "low_speed_penalty_per_s": "Points per slow second after the grace period; negative discourages crawling.",
     "low_speed_grace_s": "Seconds of low speed allowed before its penalty starts.",
     "unsafe_speed_penalty_per_m": "Points per fast metre away from a safe centered line; negative punishes it.",
-    "barrier_contact_penalty": "Points applied once when a verified barrier impact ends an attempt.",
+    "barrier_contact_penalty": (
+        "Points charged for each verified barrier impact; contact alone does not end an attempt."
+    ),
     "barrier_early_penalty": "Extra points weighted toward an early barrier impact.",
     "barrier_collision_impulse_threshold": (
         "Minimum untyped impact impulse treated as a barrier contact; landing can also cause impulse."
@@ -280,14 +282,15 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     ),
     "exploration_std": "Small Gaussian perturbation around deterministic rollout actions.",
     "critic_collection_std": "Gaussian rollout perturbation while only GRTQC critics update.",
+    "exploration_correlation": "Persistence of rollout noise between decisions; 0 gives independent noise.",
     "actor_step_action_limit": (
         "Maximum deterministic action change per actor update across replay samples "
         "and fixed full-lap reference states."
     ),
     "actor_reference_drift_limit": (
-        "Maximum cumulative deterministic action drift from the transferred full-lap "
-        "policy."
+        "Maximum cumulative action drift from the verified full-lap policy; 0 disables the permanent cap."
     ),
+    "recovery_critic_cooldown_updates": "Minimum critic updates after actor recovery before learning resumes.",
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {
