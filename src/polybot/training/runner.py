@@ -15,6 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 import gymnasium as gym
+import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 
 from polybot.algorithms.registry import backend_for
@@ -217,11 +218,19 @@ class TrainingRunner:
         if source_metadata.speed_bias_schedule:
             reference.speed_bias_schedule = list(source_metadata.speed_bias_schedule)
         reference_paths: list[list[dict[str, Any]]] = []
+        observations: list[np.ndarray] = []
         result = evaluate_model(
             self.model, self._environment, episodes=5,
             seed=self.config.seed + 1_000_000, reference_model=reference,
-            reference_telemetry_sink=reference_paths,
+            reference_telemetry_sink=reference_paths, observation_sink=observations,
         )
+        self.model.set_actor_reference_observations(np.asarray(observations))
+        self._emit({
+            "type": "actor_reference_states",
+            "source": "transferred_initialization",
+            "observations": len(observations),
+            "guard_samples": min(512, len(observations)),
+        })
         reference_laps = [
             float(path[-1]["elapsed_s"])
             for path in reference_paths
@@ -718,6 +727,31 @@ class TrainingRunner:
             if cfg.algorithm == "grtqc" and resume is not None and resume.name == "initialization":
                 training_env.close()
                 self._verify_grtqc_initialization(resume)
+                training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
+                self.model.set_env(training_env)
+            elif cfg.algorithm == "grtqc" and resume is not None:
+                training_env.close()
+                initialization = self.registry.slot(cfg.track_name, "grtqc", "initialization")
+                reference_metadata = self.registry.read_metadata(initialization)
+                reference = self.backend.load_model(
+                    initialization / "policy.zip", None, self.device.resolved,
+                )
+                reference.policy_overlays = list(reference_metadata.policy_overlays)
+                reference.speed_bias_schedule = list(reference_metadata.speed_bias_schedule)
+                observations: list[np.ndarray] = []
+                result = evaluate_model(
+                    reference, self._environment, episodes=1,
+                    seed=cfg.seed + 1_000_000, observation_sink=observations,
+                )
+                if result.finish_rate != 1.0:
+                    raise RuntimeError("GRTQC initialization failed to produce a reference lap")
+                self.model.set_actor_reference_observations(np.asarray(observations))
+                self._emit({
+                    "type": "actor_reference_states",
+                    "source": "transferred_initialization",
+                    "observations": len(observations),
+                    "guard_samples": min(512, len(observations)),
+                })
                 training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
                 self.model.set_env(training_env)
             if freeze_ppo_actor:

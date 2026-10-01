@@ -84,6 +84,10 @@ def test_actor_step_backtracks_large_action_change() -> None:
     config.grtqc.actor_step_action_limit = 1e-5
     model, env = _model(config)
     try:
+        reference_observations = np.random.default_rng(11).normal(
+            size=(256, model.observation_space.shape[0]),
+        ).astype(np.float32)
+        model.set_actor_reference_observations(reference_observations)
         model.actor_unlocked = True
         model.learn(16)
         metrics = GRTQCBackend().metrics(model)
@@ -91,6 +95,7 @@ def test_actor_step_backtracks_large_action_change() -> None:
         assert metrics["actor_executed_action_drift"] is not None
         assert metrics["actor_proposed_action_drift"] > config.grtqc.actor_step_action_limit
         assert metrics["actor_executed_action_drift"] <= 1.1e-5
+        assert metrics["actor_reference_action_drift"] <= 1.1e-5
     finally:
         env.close()
 

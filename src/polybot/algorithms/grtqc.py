@@ -90,7 +90,24 @@ class GRTQC(SeededWarmupTQC):
         self.actor_unlocked = False
         self._critic_loss_history: deque[float] = deque(maxlen=critic_readiness_window)
         self._disagreement_history: deque[float] = deque(maxlen=critic_readiness_window)
+        self._actor_reference_observations: th.Tensor | None = None
         super().__init__(*args, **kwargs)
+
+    def set_actor_reference_observations(self, observations: np.ndarray, *, max_samples: int = 512) -> None:
+        """Anchor each actor update at representative states from a full lap."""
+        values = np.asarray(observations, dtype=np.float32)
+        if values.ndim != 2 or values.shape[1] != int(np.prod(self.observation_space.shape)):
+            raise ValueError("actor reference observations have an incompatible shape")
+        if len(values) == 0:
+            raise ValueError("actor reference observations cannot be empty")
+        if max_samples < 1:
+            raise ValueError("max_samples must be positive")
+        if len(values) > max_samples:
+            indices = np.linspace(0, len(values) - 1, max_samples, dtype=np.int64)
+            values = values[indices]
+        self._actor_reference_observations = th.as_tensor(
+            values, dtype=th.float32, device=self.device,
+        )
 
     def _sample_action(
         self, learning_starts: int, action_noise: Any = None, n_envs: int = 1,
@@ -188,25 +205,68 @@ class GRTQC(SeededWarmupTQC):
                 actor_loss = (ent_coef * log_prob - q_pi).mean()
                 with th.no_grad():
                     before_actions = self.actor(data.observations, deterministic=True).detach()
+                    reference_before = (
+                        self.actor(self._actor_reference_observations, deterministic=True).detach()
+                        if self._actor_reference_observations is not None else None
+                    )
                     before_parameters = [parameter.detach().clone() for parameter in self.actor.parameters()]
                 self.actor.optimizer.zero_grad()
                 actor_loss.backward()
                 self.actor.optimizer.step()
                 with th.no_grad():
                     after_actions = self.actor(data.observations, deterministic=True)
-                    proposed_drift = float((after_actions - before_actions).abs().max().item())
+                    reference_after = (
+                        self.actor(self._actor_reference_observations, deterministic=True)
+                        if self._actor_reference_observations is not None else None
+                    )
+                    local_proposed_drift = float((after_actions - before_actions).abs().max().item())
+                    reference_proposed_drift = (
+                        float((reference_after - reference_before).abs().max().item())
+                        if reference_after is not None and reference_before is not None else 0.0
+                    )
+                    proposed_drift = max(local_proposed_drift, reference_proposed_drift)
                     if proposed_drift > self.actor_step_action_limit:
-                        fraction = self.actor_step_action_limit / proposed_drift
-                        for parameter, previous in zip(
-                            self.actor.parameters(), before_parameters, strict=True,
+                        proposed_parameters = [parameter.detach().clone() for parameter in self.actor.parameters()]
+                        low, high = 0.0, 1.0
+                        for _ in range(12):
+                            fraction = (low + high) / 2
+                            for parameter, previous, proposed in zip(
+                                self.actor.parameters(), before_parameters, proposed_parameters, strict=True,
+                            ):
+                                parameter.copy_(previous + fraction * (proposed - previous))
+                            local_drift = float((
+                                self.actor(data.observations, deterministic=True) - before_actions
+                            ).abs().max().item())
+                            reference_drift = (
+                                float((
+                                    self.actor(self._actor_reference_observations, deterministic=True)
+                                    - reference_before
+                                ).abs().max().item())
+                                if reference_before is not None else 0.0
+                            )
+                            if max(local_drift, reference_drift) <= self.actor_step_action_limit:
+                                low = fraction
+                            else:
+                                high = fraction
+                        for parameter, previous, proposed in zip(
+                            self.actor.parameters(), before_parameters, proposed_parameters, strict=True,
                         ):
-                            parameter.copy_(previous + fraction * (parameter - previous))
-                    executed_drift = float((
+                            parameter.copy_(previous + low * (proposed - previous))
+                    executed_local_drift = float((
                         self.actor(data.observations, deterministic=True) - before_actions
                     ).abs().max().item())
+                    executed_reference_drift = (
+                        float((
+                            self.actor(self._actor_reference_observations, deterministic=True)
+                            - reference_before
+                        ).abs().max().item())
+                        if reference_before is not None else 0.0
+                    )
+                    executed_drift = max(executed_local_drift, executed_reference_drift)
                 self.logger.record("train/actor_loss", float(actor_loss.item()))
                 self.logger.record("train/actor_proposed_action_drift", proposed_drift)
                 self.logger.record("train/actor_executed_action_drift", executed_drift)
+                self.logger.record("train/actor_reference_action_drift", executed_reference_drift)
             if gradient_step % self.target_update_interval == 0:
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
@@ -292,5 +352,6 @@ class GRTQCBackend(TQCBackend):
             "actor_unlocked": int(model.actor_unlocked),
             "actor_proposed_action_drift": values.get("train/actor_proposed_action_drift"),
             "actor_executed_action_drift": values.get("train/actor_executed_action_drift"),
+            "actor_reference_action_drift": values.get("train/actor_reference_action_drift"),
         })
         return metrics

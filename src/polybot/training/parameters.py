@@ -276,7 +276,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "reference_lap_s": "Measured five-lap time of the transferred source at this frame skip.",
     "exploration_std": "Small Gaussian perturbation around deterministic rollout actions.",
     "critic_collection_std": "Gaussian rollout perturbation while only GRTQC critics update.",
-    "actor_step_action_limit": "Maximum deterministic action change on the replay batch from one actor update.",
+    "actor_step_action_limit": (
+        "Maximum deterministic action change per actor update across replay samples "
+        "and fixed full-lap reference states."
+    ),
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {
