@@ -436,8 +436,8 @@ class TQCBackend(AlgorithmBackend):
     name = "tqc"
 
     def validate_config(self, config: TrainingConfig) -> None:
-        if config.ppo is not None or config.dqn is not None:
-            raise ValueError("TQC config cannot contain PPO or DQN settings")
+        if config.ppo is not None or config.grtqc is not None:
+            raise ValueError("TQC config cannot contain other algorithm settings")
         if config.tqc is None:
             config.tqc = TQCConfig()
 

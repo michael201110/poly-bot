@@ -47,8 +47,8 @@ from polybot.models.registry import REWARD_SEMANTICS, ModelRegistry
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
-    DQNConfig,
     EvaluationConfig,
+    GRTQCConfig,
     PPOConfig,
     TQCConfig,
     TrainingConfig,
@@ -56,9 +56,9 @@ from polybot.training.config import (
 from polybot.training.evaluation import EvaluationResult
 from polybot.training.parameters import (
     CURRICULUM_INFO,
-    DQN_INFO,
     EVALUATION_INFO,
     GENERAL_INFO,
+    GRTQC_INFO,
     METRIC_INFO,
     PPO_INFO,
     REWARD_INFO,
@@ -130,16 +130,12 @@ class ParameterForm(QWidget):
             metadata = info[field.name]
             current = getattr(instance, field.name)
             if field.name == "architecture":
-                if isinstance(instance, DQNConfig):
-                    choices = ("tiny", "compact", "standard", "yosh_2020")
-                elif isinstance(instance, PPOConfig):
+                if isinstance(instance, PPOConfig):
                     choices = (
                         "tiny", "compact", "standard", "tqc_compatible", "tqc_residual",
                     )
                 else:
                     choices = ("tiny", "compact", "standard")
-            elif field.name == "action_set":
-                choices = ("full", "no_brake")
             else:
                 choices = ()
             widget = _editor(current, metadata.description, choices)
@@ -242,6 +238,10 @@ class PolyBotWindow(QWidget):
         self.algorithm.currentTextChanged.connect(self._algorithm_changed)
         self._algorithm_changed(self.algorithm.currentText())
         self._toggle_advanced(False)
+        initialization = ModelRegistry().algorithm_dir("Summer 1", "grtqc") / "initialization"
+        if (initialization / "metadata.json").is_file():
+            saved = ModelRegistry().read_metadata(initialization)
+            self.load_configuration(TrainingConfig.from_dict(saved.training_config))
         self.speed_search_watch = QTimer(self)
         self.speed_search_watch.timeout.connect(self._poll_speed_search_log)
         self.speed_search_watch.start(2000)
@@ -282,7 +282,7 @@ class PolyBotWindow(QWidget):
             )
             self.general[name] = self._add_field(form, name, value, GENERAL_INFO[name], choices)
         self.algorithm = self._add_field(
-            form, "algorithm", "tqc", GENERAL_INFO["algorithm"], ("ppo", "dqn", "tqc")
+            form, "algorithm", "grtqc", GENERAL_INFO["algorithm"], ("grtqc", "tqc", "ppo")
         )
         self.general["backend"].currentTextChanged.connect(self._backend_changed)
         self.general_advanced = {
@@ -295,7 +295,7 @@ class PolyBotWindow(QWidget):
             name: form.labelForField(widget) for name, widget in self.general.items()
         }
         basics = QPushButton("What do these training words mean?")
-        basics.setToolTip("Plain-language explanation of the terms used in PPO, DQN and TQC training.")
+        basics.setToolTip("Plain-language explanation of the terms used in GRTQC, TQC and PPO training.")
         basics.clicked.connect(self._show_glossary)
         page.addWidget(basics)
 
@@ -324,20 +324,19 @@ class PolyBotWindow(QWidget):
         self.ppo_form = ParameterForm(
             PPOConfig(), PPO_INFO, {"architecture", "learning_rate", "rollout_steps"}
         )
-        self.dqn_form = ParameterForm(
-            DQNConfig(), DQN_INFO,
-            {"architecture", "action_set", "n_quantiles", "learning_rate", "replay_capacity",
-             "exploration_fraction"},
+        self.grtqc_form = ParameterForm(
+            GRTQCConfig(), GRTQC_INFO,
+            {"architecture", "learning_rate", "train_frequency", "disagreement_coefficient"},
         )
         self.tqc_form = ParameterForm(
             TQCConfig(), TQC_INFO, {"architecture", "learning_rate", "train_frequency"}
         )
         self.algorithm_stack.addWidget(self.ppo_form)
-        self.algorithm_stack.addWidget(self.dqn_form)
+        self.algorithm_stack.addWidget(self.grtqc_form)
         self.algorithm_stack.addWidget(self.tqc_form)
         self.parameter_label = QLabel("Network and total parameter counts appear when training starts.")
         self.parameter_label.setToolTip(
-            "DQN uses one Q-network; PPO and TQC report actor and critic counts. Larger networks train slower."
+            "GRTQC, TQC and PPO report actor and critic counts. Larger networks train slower."
         )
         page.addWidget(self.parameter_label)
 
@@ -481,7 +480,7 @@ class PolyBotWindow(QWidget):
         page.addWidget(QLabel(
             "A frozen policy drives seeded full laps. Only these results can replace the champion."
         ))
-        self.evaluation_form = ParameterForm(EvaluationConfig(), EVALUATION_INFO)
+        self.evaluation_form = ParameterForm(EvaluationConfig(episodes=5), EVALUATION_INFO)
         page.addWidget(self.evaluation_form)
         note = QLabel("A lucky finish during training never promotes a model by itself.")
         note.setToolTip("Champion ranking uses finish rate, progress, then completed lap time.")
@@ -848,7 +847,7 @@ class PolyBotWindow(QWidget):
         page.addWidget(self.log)
 
     def _toggle_advanced(self, enabled: bool) -> None:
-        for form in (self.ppo_form, self.dqn_form, self.tqc_form, self.curriculum_form):
+        for form in (self.ppo_form, self.grtqc_form, self.tqc_form, self.curriculum_form):
             form.set_advanced(enabled)
         self.reward_scroll.setVisible(enabled)
         self.pace_polish_section.setVisible(enabled)
@@ -872,17 +871,16 @@ class PolyBotWindow(QWidget):
             _set(self.general["frame_skip"], 30)
 
     def _algorithm_changed(self, algorithm: str) -> None:
-        forms = {"ppo": self.ppo_form, "dqn": self.dqn_form, "tqc": self.tqc_form}
+        forms = {"ppo": self.ppo_form, "grtqc": self.grtqc_form, "tqc": self.tqc_form}
         self.algorithm_stack.setCurrentWidget(forms[algorithm])
         explanations = {
             "ppo": (
                 "PPO: on-policy. It learns from fresh rollouts, then discards them. "
                 "It directly outputs continuous steering and signed throttle/brake demand."
             ),
-            "dqn": (
-                "QR-DQN: off-policy. Its quantile network estimates a range of returns for each native digital "
-                "action. It reuses replay and sometimes chooses a random action through epsilon-greedy exploration. "
-                "It never uses PWM."
+            "grtqc": (
+                "GRTQC: the primary off-policy learner. It starts from the proven TQC actor, "
+                "warms gated quantile critics, then fine-tunes continuous controls."
             ),
             "tqc": (
                 "TQC: off-policy. It reuses replay and learns continuous steering and pedal demand "
@@ -892,10 +890,13 @@ class PolyBotWindow(QWidget):
         self.algorithm_explanation.setText(explanations[algorithm])
         ppo_metrics = {"policy_loss", "value_loss", "entropy", "explained_variance", "kl", "clip_fraction"}
         shared_replay = {"replay_size", "updates"}
-        dqn_metrics = {"loss", "exploration_rate"} | shared_replay
         tqc_metrics = {"entropy_coefficient", "actor_loss", "critic_loss"} | shared_replay
-        algorithm_metrics = {"ppo": ppo_metrics, "dqn": dqn_metrics, "tqc": tqc_metrics}
-        specific_metrics = ppo_metrics | dqn_metrics | tqc_metrics
+        grtqc_metrics = tqc_metrics | {
+            "critic_disagreement", "disagreement_penalty", "quantile_mean", "target_mean",
+            "critic_warmup_updates", "actor_unlocked",
+        }
+        algorithm_metrics = {"ppo": ppo_metrics, "grtqc": grtqc_metrics, "tqc": tqc_metrics}
+        specific_metrics = ppo_metrics | grtqc_metrics
         for name, value in self.metric_widgets.items():
             visible = name not in specific_metrics or name in algorithm_metrics[algorithm]
             value.setVisible(visible)
@@ -917,16 +918,16 @@ class PolyBotWindow(QWidget):
             if path is None:
                 return
             preset = self.presets.load(path)
-        {"ppo": self.ppo_form, "dqn": self.dqn_form, "tqc": self.tqc_form}[
+        {"ppo": self.ppo_form, "grtqc": self.grtqc_form, "tqc": self.tqc_form}[
             self.algorithm.currentText()
         ].load(preset)
 
-    def _current_algorithm_settings(self) -> PPOConfig | DQNConfig | TQCConfig:
-        forms = {"ppo": self.ppo_form, "dqn": self.dqn_form, "tqc": self.tqc_form}
-        types = {"ppo": PPOConfig, "dqn": DQNConfig, "tqc": TQCConfig}
+    def _current_algorithm_settings(self) -> PPOConfig | GRTQCConfig | TQCConfig:
+        forms = {"ppo": self.ppo_form, "grtqc": self.grtqc_form, "tqc": self.tqc_form}
+        types = {"ppo": PPOConfig, "grtqc": GRTQCConfig, "tqc": TQCConfig}
         algorithm = self.algorithm.currentText()
         values = forms[algorithm].values()
-        if algorithm == "tqc":
+        if algorithm in {"tqc", "grtqc"}:
             for name in ("actor_learning_rate", "critic_learning_rate"):
                 if values[name] is not None:
                     values[name] = float(values[name])
@@ -951,16 +952,13 @@ class PolyBotWindow(QWidget):
         glossary = (
             "Policy / actor: a network that chooses steering and pedals in PPO or TQC.\n"
             "Q-value: mean predicted future reward for one digital action.\n"
-            "Quantiles: QR-DQN's estimates of low-to-high possible future returns.\n"
-            "Q-network: DQN's network that predicts action values or return quantiles.\n"
+            "Quantiles: critics' estimates of low-to-high possible future returns.\n"
             "Critic: a network estimating how useful actions or states may be.\n"
             "Environment step: one driving decision. Physics tick: one fixed simulator update.\n"
             "Frame skip: ticks between decisions; larger is faster but reacts slower.\n"
             "Rollout: fresh PPO experiences, discarded after an update (on-policy).\n"
-            "Replay buffer: reusable driving history for DQN and TQC (off-policy).\n"
-            "Epsilon: DQN's chance of choosing a random action. Epsilon-greedy: choose randomly "
-            "with that chance, otherwise choose the highest-Q action.\n"
-            "Target network: a slowly refreshed DQN Q-network that steadies learning targets.\n"
+            "Replay buffer: reusable driving history for TQC and GRTQC (off-policy).\n"
+            "Target network: slowly updated critics that steady value targets.\n"
             "Batch: experiences processed in one gradient update.\n"
             "Learning rate: size of a gradient update. Gamma: weight on future reward.\n"
             "Entropy / exploration: encouragement to try different actions.\n"
@@ -989,12 +987,12 @@ class PolyBotWindow(QWidget):
         track_layout.addRow("Simulator", backend)
 
         _, algorithm_layout = page("2. Choose an algorithm")
-        algorithm = _editor("tqc", GENERAL_INFO["algorithm"].description, ("ppo", "dqn", "tqc"))
+        algorithm = _editor("grtqc", GENERAL_INFO["algorithm"].description, ("grtqc", "tqc", "ppo"))
         algorithm_layout.addRow("Algorithm", algorithm)
         explanation = QLabel(
             "PPO uses continuous steering and signed longitudinal control with fresh rollouts. "
-            "DQN uses nine native digital actions and replay. "
-            "TQC uses continuous controls and replay."
+            "GRTQC uses gated continuous controls and replay. "
+            "TQC is the reference algorithm."
         )
         explanation.setWordWrap(True)
         algorithm_layout.addRow(explanation)
@@ -1040,7 +1038,7 @@ class PolyBotWindow(QWidget):
                     "frame_skip": 30 if selected_backend == "websocket" else 4,
                     "device": _value(device), "reward_profile": profile,
                     "rewards": asdict(self.profiles.load(profile)),
-                    "ppo": None, "dqn": None, "tqc": None,
+                    "ppo": None, "grtqc": None, "tqc": None,
                 })
                 data[selected_algorithm] = asdict(
                     algorithm_presets(selected_algorithm)[_value(preset)]
@@ -1141,7 +1139,7 @@ class PolyBotWindow(QWidget):
         self.custom_phases.setVisible(config.curriculum.mode == "custom")
         self.evaluation_form.load(config.evaluation)
         self.ppo_form.load(config.ppo or PPOConfig())
-        self.dqn_form.load(config.dqn or DQNConfig())
+        self.grtqc_form.load(config.grtqc or GRTQCConfig())
         self.tqc_form.load(config.tqc or TQCConfig())
         self._reward_values = asdict(config.rewards)
         self._base_rewards = config.rewards
@@ -1630,17 +1628,14 @@ class PolyBotWindow(QWidget):
                 else self._best_resume_slot(cfg) if best
                 else registry.slot(cfg.track_name, cfg.algorithm, "latest")
             )
-            if resume and cfg.algorithm == "dqn":
-                metadata = registry.read_metadata(slot)
-                saved_action_set = metadata.training_config.get("dqn", {}).get("action_set")
-                if saved_action_set in {"full", "no_brake"}:
-                    _set(self.dqn_form.widgets["action_set"], saved_action_set)
-                    cfg = self.configuration()
+            if cfg.algorithm == "grtqc" and not resume:
+                slot = registry.algorithm_dir(cfg.track_name, "grtqc") / "initialization"
+                resume = True
             warnings = configuration_warnings(cfg)
             self.warnings.setText("\n".join(warnings) if warnings else "Settings look reasonable.")
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
             fresh_replay = (
-                resume and slot.name == "champion" and cfg.algorithm in {"dqn", "tqc"}
+                resume and slot.name == "champion" and cfg.algorithm in {"grtqc", "tqc"}
                 and (
                     not (slot / "replay.pkl").is_file()
                     or registry.read_metadata(slot).training_config["rewards"]
@@ -2096,14 +2091,9 @@ class PolyBotWindow(QWidget):
             except (OSError, ValueError, KeyError):
                 self._pace_champion_lap = None
             counts = event["parameters"]
-            if event["algorithm"] == "dqn":
-                self.parameter_label.setText(
-                    f"Q-network {counts['critic']:,} · total trainable {counts['total']:,}"
-                )
-            else:
-                self.parameter_label.setText(
-                    f"Actor {counts['actor']:,} · critic {counts['critic']:,} · total {counts['total']:,}"
-                )
+            self.parameter_label.setText(
+                f"Actor {counts['actor']:,} · critic {counts['critic']:,} · total {counts['total']:,}"
+            )
             self.warnings.setText("\n".join(
                 configuration_warnings(self.configuration(), event.get("gpu_name"))
             ) or "Settings look reasonable.")

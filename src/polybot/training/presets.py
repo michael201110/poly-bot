@@ -7,10 +7,10 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 
-from polybot.training.config import DQNConfig, PPOConfig, TQCConfig, TrainingConfig
+from polybot.training.config import GRTQCConfig, PPOConfig, TQCConfig, TrainingConfig
 
 
-def algorithm_presets(algorithm: str) -> dict[str, PPOConfig | DQNConfig | TQCConfig]:
+def algorithm_presets(algorithm: str) -> dict[str, PPOConfig | TQCConfig | GRTQCConfig]:
     if algorithm == "ppo":
         balanced = PPOConfig()
         return {
@@ -26,14 +26,15 @@ def algorithm_presets(algorithm: str) -> dict[str, PPOConfig | DQNConfig | TQCCo
                 entropy_coefficient=0.0001, target_lap_s=22.0,
             ),
         }
-    if algorithm == "dqn":
-        balanced = DQNConfig()
+    if algorithm == "grtqc":
+        balanced = GRTQCConfig()
         return {
-            "Stable": replace(balanced, architecture="tiny", learning_rate=5e-5,
-                              train_frequency=4),
+            "Summer 1 - Transferred Champion": replace(
+                balanced, learning_rate=3e-5, actor_learning_rate=1e-7,
+                critic_learning_rate=5e-5, train_frequency=2,
+                learning_starts=3_000, critic_warmup_updates=10_000,
+            ),
             "Balanced": balanced,
-            "Fast training": replace(balanced, architecture="tiny", batch_size=64,
-                                     train_frequency=8),
         }
     if algorithm == "tqc":
         balanced = TQCConfig()
@@ -59,7 +60,7 @@ class PresetStore:
     def __init__(self, root: Path = Path("profiles/algorithms")) -> None:
         self.root = root
 
-    def save(self, algorithm: str, name: str, settings: PPOConfig | DQNConfig | TQCConfig) -> Path:
+    def save(self, algorithm: str, name: str, settings: PPOConfig | TQCConfig | GRTQCConfig) -> Path:
         from polybot.models.registry import track_slug
 
         self.root.mkdir(parents=True, exist_ok=True)
@@ -70,11 +71,11 @@ class PresetStore:
         }, indent=2) + "\n", encoding="utf-8")
         return path
 
-    def load(self, path: Path) -> PPOConfig | DQNConfig | TQCConfig:
+    def load(self, path: Path) -> PPOConfig | TQCConfig | GRTQCConfig:
         value: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
         if value["schema"] != "polybot.algorithm-preset.v2":
             raise ValueError("only v2 presets are supported")
-        config_type = {"ppo": PPOConfig, "dqn": DQNConfig, "tqc": TQCConfig}.get(value["algorithm"])
+        config_type = {"ppo": PPOConfig, "tqc": TQCConfig, "grtqc": GRTQCConfig}.get(value["algorithm"])
         if config_type is None:
             raise ValueError("unknown algorithm in preset")
         return config_type(**value["settings"])
@@ -103,8 +104,8 @@ def configuration_warnings(config: TrainingConfig, gpu_name: str | None = None) 
         warnings.append("Very frequent evaluation may spend more time testing than training.")
     if config.timesteps > 10_000_000:
         warnings.append("This budget may run for many days; check expected TPS first.")
-    if config.tqc is not None:
-        p = config.tqc
+    if config.tqc is not None or config.grtqc is not None:
+        p = config.tqc or config.grtqc
         if p.replay_capacity > 2_000_000:
             warnings.append("A very large replay buffer can consume substantial RAM.")
         if p.gradient_steps > 4:
@@ -115,18 +116,4 @@ def configuration_warnings(config: TrainingConfig, gpu_name: str | None = None) 
             warnings.append("A T500 may train standard TQC slowly; consider frequency 2–4.")
         if p.entropy.startswith("auto_") and float(p.entropy[5:]) > 1:
             warnings.append("High initial entropy may keep driving unusually random.")
-    if config.dqn is not None:
-        p = config.dqn
-        if p.replay_capacity > 2_000_000:
-            warnings.append("A very large DQN replay buffer can consume substantial RAM.")
-        if p.exploration_final_eps > 0.3:
-            warnings.append("High final epsilon keeps many actions random even late in training.")
-        if p.exploration_fraction < 0.02:
-            warnings.append("A very short exploration schedule may stop discovering useful routes too early.")
-        if p.gradient_steps > 4:
-            warnings.append("Many DQN gradient steps per round can sharply reduce TPS and overfit replay.")
-        if p.target_update_interval < 100:
-            warnings.append("Very frequent target updates may make DQN's bootstrapped targets unstable.")
-        if p.architecture == "standard" and gpu_name and "T500" in gpu_name.upper():
-            warnings.append("A 256×256 DQN on a T500 may update slowly; tiny or compact may be faster.")
     return warnings

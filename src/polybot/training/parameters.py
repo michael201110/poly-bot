@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, fields
 
 from polybot.environment.rewards import RewardConfig
-from polybot.training.config import CurriculumConfig, DQNConfig, EvaluationConfig, PPOConfig, TQCConfig
+from polybot.training.config import CurriculumConfig, EvaluationConfig, GRTQCConfig, PPOConfig, TQCConfig
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,8 +31,7 @@ GENERAL_INFO = _info("General", {
     "track_id": "Simulator track identifier. 'current' uses the track open in PolyTrack.",
     "backend": "Mock is a fast local test track; WebSocket connects to PolyTrack in your browser.",
     "algorithm": (
-        "PPO uses fresh continuous-control rollouts; DQN uses QR-DQN with native digital actions and replay; "
-        "TQC learns continuous controls from replay."
+        "GRTQC learns gated continuous controls from replay; TQC is the reference; PPO is legacy."
     ),
     "device": "Auto tries CUDA and explains a CPU fallback. PPO often runs well on CPU.",
     "seed": "Starting number for repeatable exploration and simulator resets.",
@@ -76,37 +75,6 @@ PPO_INFO = _info("PPO", {
     "target_lap_s": "Stop training after evaluation confirms a lap faster than this time; zero disables the target.",
     "target_kl": "Stop a PPO update when its approximate KL drift exceeds 1.5 times this limit.",
 }, algorithm="ppo")
-
-DQN_INFO = _info("DQN", {
-    "architecture": (
-        "Q-network width. yosh_2020 uses 64 then 16 hidden units from Yosh's older "
-        "Trackmania model; PolyBot inputs differ."
-    ),
-    "action_set": (
-        "Full has nine digital actions; no_brake has six coast/throttle actions "
-        "for an initial DQN learning stage."
-    ),
-    "n_quantiles": "Number of return quantiles QR-DQN predicts per action. More can help but slow updates.",
-    "learning_rate": "Size of Q-network weight updates. Around 0.0001 is a cautious starting point.",
-    "replay_capacity": "Maximum past decisions kept for reuse; larger history costs more memory.",
-    "learning_starts": "Number of digital driving decisions collected before Q-network updates begin.",
-    "batch_size": "Stored transitions sampled per Q-network update. Larger batches cost more compute.",
-    "gamma": "How much future reward contributes to each action's Q-value.",
-    "train_frequency": (
-        "Environment decisions collected before a training round; higher values reduce update frequency."
-    ),
-    "gradient_steps": "Q-network updates per training round. More updates use more compute and can overfit replay.",
-    "target_update_interval": (
-        "Environment steps between copies to the target Q-network; "
-        "very short intervals can destabilize targets."
-    ),
-    "exploration_fraction": (
-        "Fraction of the training budget spent reducing random-action probability "
-        "from initial to final epsilon."
-    ),
-    "exploration_initial_eps": "Probability of a random digital action at the start of training; 1 means fully random.",
-    "exploration_final_eps": "Minimum random-action probability after the exploration schedule ends.",
-}, algorithm="dqn")
 
 TQC_INFO = _info("TQC", {
     "architecture": "Actor and critic network width. Standard 256×256 may train slowly on a T500.",
@@ -299,6 +267,16 @@ REWARD_INFO = {
     for name, description in REWARD_DESCRIPTIONS.items()
 }
 
+GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
+    "disagreement_coefficient": "Weight on variance across critics at each quantile.",
+    "critic_warmup_updates": "Minimum critic-only updates before actor readiness is checked.",
+    "critic_readiness_window": "Recent update window for critic stability checks.",
+    "critic_readiness_relative_change": "Allowed increase in loss and disagreement across that window.",
+    "target_lap_s": "Verified target lap time in seconds.",
+    "exploration_std": "Small Gaussian perturbation around deterministic rollout actions.",
+    "critic_collection_std": "Gaussian rollout perturbation while only GRTQC critics update.",
+}, algorithm="grtqc")}
+
 METRIC_INFO = _info("Status", {
     "steps_per_second": "Environment decisions per wall-clock second, including learner updates.",
     "progress": "Fraction of the track reached in the current attempt; a single attempt can vary.",
@@ -306,16 +284,20 @@ METRIC_INFO = _info("Status", {
     "simulator_ticks": "Total fixed physics updates executed in the simulator.",
     "finishes": "Number of completed training attempts; champion still depends on evaluation.",
     "crashes": "Number of training attempts ending in a crash or barrier impact.",
-    "replay_size": "Past DQN or TQC decisions available for reuse. It fills during early learning.",
+    "replay_size": "Past TQC or GRTQC decisions available for reuse. It fills during early learning.",
     "updates": "Number of gradient update rounds applied to the selected replay-based learner.",
-    "loss": "DQN error between predicted and bootstrapped Q-values; lower does not necessarily mean better driving.",
-    "exploration_rate": "DQN epsilon: probability of a random action instead of the highest-Q action.",
     "entropy_coefficient": "TQC exploration weight, also called alpha; auto mode adjusts it over time.",
     "actor_loss": "Change to TQC's action policy. Lower is not always better driving.",
     "anchor_action_drift": (
         "Largest deterministic control change from the proven champion on its saved driving path."
     ),
     "critic_loss": "Change to TQC's value estimates; spikes can signal instability.",
+    "critic_disagreement": "Mean variance across GRTQC critics at matching quantiles.",
+    "disagreement_penalty": "Weighted disagreement added to the GRTQC critic loss.",
+    "quantile_mean": "Mean current GRTQC critic quantile estimate.",
+    "target_mean": "Mean bootstrapped GRTQC target quantile value.",
+    "critic_warmup_updates": "Critic-only updates since GRTQC transfer.",
+    "actor_unlocked": "Whether GRTQC passed its critic-readiness gate and may update the actor.",
     "policy_loss": "PPO policy update signal; compare trends with deterministic evaluation.",
     "value_loss": "PPO critic prediction error; it depends strongly on reward scale.",
     "entropy": "PPO action randomness; more randomness usually means more exploration.",
@@ -327,7 +309,7 @@ METRIC_INFO = _info("Status", {
 
 def validate_metadata() -> None:
     for config_type, info in (
-        (PPOConfig, PPO_INFO), (DQNConfig, DQN_INFO), (TQCConfig, TQC_INFO),
+        (PPOConfig, PPO_INFO), (TQCConfig, TQC_INFO), (GRTQCConfig, GRTQC_INFO),
         (CurriculumConfig, CURRICULUM_INFO), (EvaluationConfig, EVALUATION_INFO),
         (RewardConfig, REWARD_INFO),
     ):

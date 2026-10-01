@@ -102,7 +102,6 @@
                     "early_run_s":  20.0
                 },
     "ppo":  null,
-    "dqn":  null,
     "tqc":  {
                 "architecture":  "compact",
                 "learning_rate":  1E-05,

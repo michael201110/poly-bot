@@ -39,7 +39,7 @@ polybot-gui
 polybot-train --algorithm tqc --backend websocket --track-name "Summer 1" --track-id current --frame-skip 30 --timesteps 100000 --reward-profile Balanced
 ```
 
-The Python listener waits at `ws://127.0.0.1:8765` for the mod. The GUI can train PPO, DQN, or TQC, stop cleanly, evaluate, and play latest or champion. A model is only champion after deterministic full-track evaluation.
+The Python listener waits at `ws://127.0.0.1:8765` for the mod. The GUI can train GRTQC, TQC, or legacy PPO, stop cleanly, evaluate, and play latest or champion. A model is only champion after deterministic full-track evaluation.
 
 ```powershell
 polybot-eval --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --episodes 5

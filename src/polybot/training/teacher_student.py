@@ -862,7 +862,7 @@ def _config_from_teacher(metadata: ModelMetadata, output_root: Path, *, device: 
             batch_size=128, epochs=3, entropy_coefficient=1e-4,
             target_lap_s=22.0,
         )),
-        "dqn": None, "tqc": None,
+        "grtqc": None, "tqc": None,
         "evaluation": asdict(EvaluationConfig(interval_steps=5_000, episodes=5)),
     })
     return TrainingConfig.from_dict(value)

@@ -17,13 +17,6 @@ ARCHITECTURES = {
     # Freeze those TQC layers during PPO and learn a linear output residual.
     "tqc_residual": (128, 128),
 }
-DQN_ARCHITECTURES = {
-    **{
-        name: shape for name, shape in ARCHITECTURES.items()
-        if name not in {"tqc_compatible", "tqc_residual"}
-    },
-    "yosh_2020": (64, 16),
-}
 
 
 @dataclass(slots=True)
@@ -83,44 +76,6 @@ class PPOConfig:
             raise ValueError("PPO target lap must be nonnegative")
         if self.target_kl <= 0:
             raise ValueError("PPO target KL must be positive")
-
-
-@dataclass(slots=True)
-class DQNConfig:
-    architecture: str = "compact"
-    action_set: str = "full"
-    n_quantiles: int = 32
-    learning_rate: float = 1e-4
-    replay_capacity: int = 250_000
-    learning_starts: int = 5_000
-    batch_size: int = 128
-    gamma: float = 0.995
-    train_frequency: int = 4
-    gradient_steps: int = 1
-    target_update_interval: int = 10_000
-    exploration_fraction: float = 0.20
-    exploration_initial_eps: float = 1.0
-    exploration_final_eps: float = 0.05
-
-    def __post_init__(self) -> None:
-        if self.architecture not in DQN_ARCHITECTURES:
-            raise ValueError("unknown DQN architecture")
-        if self.action_set not in {"full", "no_brake"}:
-            raise ValueError("DQN action set must be full or no_brake")
-        if not 2 <= self.n_quantiles <= 200:
-            raise ValueError("DQN quantiles must be between 2 and 200")
-        if not math.isfinite(self.learning_rate) or self.learning_rate <= 0:
-            raise ValueError("DQN learning rate must be positive and finite")
-        if self.replay_capacity < 1 or self.learning_starts < 0:
-            raise ValueError("DQN replay capacity must be positive; learning starts must be nonnegative")
-        if min(self.batch_size, self.train_frequency, self.gradient_steps, self.target_update_interval) < 1:
-            raise ValueError("DQN batch size, train frequency, gradient steps and target interval must be positive")
-        if not 0 < self.gamma <= 1:
-            raise ValueError("DQN gamma must be in (0, 1]")
-        if not 0 <= self.exploration_fraction <= 1:
-            raise ValueError("DQN exploration fraction must be in [0, 1]")
-        if not (0 <= self.exploration_final_eps <= self.exploration_initial_eps <= 1):
-            raise ValueError("DQN epsilon values must be in [0, 1], with final <= initial")
 
 
 @dataclass(slots=True)
@@ -190,6 +145,34 @@ class TQCConfig:
             raise ValueError("TQC closed-loop deviation limits must be positive")
         if not 0 < self.adaptation_max_action_disagreement <= 2:
             raise ValueError("TQC action-disagreement limit must be in (0, 2]")
+
+
+@dataclass(slots=True)
+class GRTQCConfig(TQCConfig):
+    """Gated TQC with an ensemble-quantile disagreement penalty."""
+
+    disagreement_coefficient: float = 0.01
+    critic_warmup_updates: int = 10_000
+    critic_readiness_window: int = 200
+    critic_readiness_relative_change: float = 0.1
+    target_lap_s: float = 22.0
+    exploration_std: float = 0.0001
+    critic_collection_std: float = 0.001
+
+    def __post_init__(self) -> None:
+        TQCConfig.__post_init__(self)
+        if not math.isfinite(self.disagreement_coefficient) or self.disagreement_coefficient < 0:
+            raise ValueError("GRTQC disagreement coefficient must be nonnegative and finite")
+        if self.critic_warmup_updates < 1 or self.critic_readiness_window < 2:
+            raise ValueError("GRTQC critic warmup and readiness window must be positive")
+        if not 0 < self.critic_readiness_relative_change < 1:
+            raise ValueError("GRTQC readiness relative change must be in (0, 1)")
+        if self.target_lap_s <= 0:
+            raise ValueError("GRTQC target lap must be positive")
+        if not 0 <= self.exploration_std <= 0.1:
+            raise ValueError("GRTQC exploration standard deviation must be in [0, 0.1]")
+        if not 0 <= self.critic_collection_std <= 0.1:
+            raise ValueError("GRTQC critic collection standard deviation must be in [0, 0.1]")
 
 
 @dataclass(slots=True)
@@ -264,7 +247,7 @@ class EvaluationConfig:
 
 @dataclass(slots=True)
 class TrainingConfig:
-    algorithm: str = "tqc"
+    algorithm: str = "grtqc"
     backend: str = "mock"
     track_name: str = "Mock straight"
     track_id: str = "mock/straight"
@@ -281,11 +264,11 @@ class TrainingConfig:
     output_root: Path = Path("models")
     log_root: Path = Path("logs")
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
-    evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+    evaluation: EvaluationConfig = field(default_factory=lambda: EvaluationConfig(episodes=5))
     rewards: RewardConfig = field(default_factory=summer_1_reward_config)
     ppo: PPOConfig | None = None
-    dqn: DQNConfig | None = None
     tqc: TQCConfig | None = None
+    grtqc: GRTQCConfig | None = None
 
     def __post_init__(self) -> None:
         from polybot.algorithms.registry import backend_for
@@ -301,6 +284,8 @@ class TrainingConfig:
             raise ValueError("invalid checkpoint interval or reward scale")
         if self.seed < 0:
             raise ValueError("seed must be nonnegative")
+        if self.algorithm == "grtqc" and self.evaluation.episodes < 5:
+            raise ValueError("GRTQC requires at least five deterministic evaluation laps")
 
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
@@ -315,6 +300,8 @@ class TrainingConfig:
         value = value.copy()
         if value.pop("schema") != CONFIG_SCHEMA:
             raise ValueError("only v2 configuration is supported")
+        if value.pop("dqn", None) is not None:
+            raise ValueError("unsupported algorithm in saved configuration")
         value["output_root"] = Path(value["output_root"])
         value["log_root"] = Path(value["log_root"])
         curriculum = value["curriculum"].copy()
@@ -322,7 +309,7 @@ class TrainingConfig:
         value["curriculum"] = CurriculumConfig(**curriculum)
         value["evaluation"] = EvaluationConfig(**value["evaluation"])
         value["rewards"] = RewardConfig(**value["rewards"])
-        for algorithm, config_type in (("ppo", PPOConfig), ("dqn", DQNConfig), ("tqc", TQCConfig)):
+        for algorithm, config_type in (("ppo", PPOConfig), ("tqc", TQCConfig), ("grtqc", GRTQCConfig)):
             if value.get(algorithm) is not None:
                 if algorithm == "ppo" and "pwm_levels" in value[algorithm]:
                     raise ValueError(

@@ -13,7 +13,7 @@ from typing import Any
 from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 
 MODEL_SCHEMA = "polybot.model.v2"
-POLYBOT_VERSION = "2.2.0"
+POLYBOT_VERSION = "2.3.0"
 REWARD_SEMANTICS = "executed-controls-v1"
 PPO_ACTION_SEMANTICS = "steering_signed_longitudinal_v1"
 
@@ -88,7 +88,7 @@ class ModelRegistry:
         return self.root / track_slug(track_name) / algorithm
 
     def slot(self, track_name: str, algorithm: str, name: str) -> Path:
-        if name not in {"latest", "champion"} and not name.startswith("checkpoints/step-"):
+        if name not in {"initialization", "latest", "champion"} and not name.startswith("checkpoints/step-"):
             raise ValueError("unknown v2 model slot")
         return self.algorithm_dir(track_name, algorithm) / name
 

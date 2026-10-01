@@ -16,8 +16,8 @@ from polybot.models.registry import ModelRegistry
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
-    DQNConfig,
     EvaluationConfig,
+    GRTQCConfig,
     PPOConfig,
     TQCConfig,
     TrainingConfig,
@@ -50,7 +50,7 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--time-start", type=float)
     parser.add_argument("--time-end", type=float)
     parser.add_argument("--eval-interval", type=int, default=10_000)
-    parser.add_argument("--eval-episodes", type=int, default=3)
+    parser.add_argument("--eval-episodes", type=int, default=5)
     parser.add_argument("--checkpoint-interval", type=int, default=10_000)
     parser.add_argument("--output-root", type=Path, default=Path("models"))
     parser.add_argument("--log-root", type=Path, default=Path("logs"))
@@ -77,21 +77,6 @@ def _algorithm_options(parser: argparse.ArgumentParser) -> None:
     ppo.add_argument("--ppo-imitation", type=float)
     ppo.add_argument("--ppo-initial-forward-bias", type=float)
     ppo.add_argument("--ppo-initial-steering-bias", type=float)
-    dqn = parser.add_argument_group("DQN")
-    dqn.add_argument("--dqn-architecture", choices=("tiny", "compact", "standard", "yosh_2020"))
-    dqn.add_argument("--dqn-action-set", choices=("full", "no_brake"))
-    dqn.add_argument("--dqn-quantiles", type=int)
-    dqn.add_argument("--dqn-lr", type=float)
-    dqn.add_argument("--dqn-replay", type=int)
-    dqn.add_argument("--dqn-learning-starts", type=int)
-    dqn.add_argument("--dqn-batch", type=int)
-    dqn.add_argument("--dqn-gamma", type=float)
-    dqn.add_argument("--dqn-train-frequency", type=int)
-    dqn.add_argument("--dqn-gradient-steps", type=int)
-    dqn.add_argument("--dqn-target-update-interval", type=int)
-    dqn.add_argument("--dqn-exploration-fraction", type=float)
-    dqn.add_argument("--dqn-initial-eps", type=float)
-    dqn.add_argument("--dqn-final-eps", type=float)
     tqc = parser.add_argument_group("TQC")
     tqc.add_argument("--tqc-architecture", choices=("tiny", "compact", "standard"))
     tqc.add_argument("--tqc-lr", type=float)
@@ -105,13 +90,27 @@ def _algorithm_options(parser: argparse.ArgumentParser) -> None:
     tqc.add_argument("--tqc-entropy")
     tqc.add_argument("--tqc-warmup-forward", type=float)
     tqc.add_argument("--tqc-warmup-steering-std", type=float)
+    grtqc = parser.add_argument_group("GRTQC")
+    grtqc.add_argument("--grtqc-architecture", choices=("tiny", "compact", "standard"))
+    grtqc.add_argument("--grtqc-lr", type=float)
+    grtqc.add_argument("--grtqc-replay", type=int)
+    grtqc.add_argument("--grtqc-learning-starts", type=int)
+    grtqc.add_argument("--grtqc-batch", type=int)
+    grtqc.add_argument("--grtqc-gamma", type=float)
+    grtqc.add_argument("--grtqc-tau", type=float)
+    grtqc.add_argument("--grtqc-train-frequency", type=int)
+    grtqc.add_argument("--grtqc-gradient-steps", type=int)
+    grtqc.add_argument("--grtqc-entropy")
+    grtqc.add_argument("--grtqc-disagreement", type=float)
+    grtqc.add_argument("--grtqc-critic-warmup-updates", type=int)
+    grtqc.add_argument("--grtqc-target-lap", type=float)
 
 
 def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser) -> TrainingConfig:
     if args.algorithm is None:
         parser.error("--algorithm is required when --config is not provided")
     values = vars(args)
-    for prefix in ("ppo_", "dqn_", "tqc_"):
+    for prefix in ("ppo_", "tqc_", "grtqc_"):
         if prefix != f"{args.algorithm}_" and any(
             value is not None for key, value in values.items() if key.startswith(prefix)
         ):
@@ -142,36 +141,29 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
         specific: dict[str, Any] = {"ppo": PPOConfig(**{
             key: value for key, value in mapping.items() if value is not None
         })}
-    elif args.algorithm == "dqn":
-        mapping = {
-            "action_set": args.dqn_action_set,
-            "n_quantiles": args.dqn_quantiles,
-            "replay_capacity": args.dqn_replay,
-            "learning_starts": args.dqn_learning_starts,
-            "train_frequency": args.dqn_train_frequency,
-            "gradient_steps": args.dqn_gradient_steps,
-            "target_update_interval": args.dqn_target_update_interval,
-            "exploration_fraction": args.dqn_exploration_fraction,
-            "exploration_initial_eps": args.dqn_initial_eps,
-            "exploration_final_eps": args.dqn_final_eps,
-        }
-        mapping.update(shared)
-        specific = {"dqn": DQNConfig(**{
-            key: value for key, value in mapping.items() if value is not None
-        })}
     else:
         mapping = {
-            "replay_capacity": args.tqc_replay,
-            "learning_starts": args.tqc_learning_starts,
-            "tau": args.tqc_tau,
-            "train_frequency": args.tqc_train_frequency,
-            "gradient_steps": args.tqc_gradient_steps,
-            "entropy": args.tqc_entropy,
-            "warmup_forward_fraction": args.tqc_warmup_forward,
-            "warmup_steering_std": args.tqc_warmup_steering_std,
+            "replay_capacity": values[f"{args.algorithm}_replay"],
+            "learning_starts": values[f"{args.algorithm}_learning_starts"],
+            "tau": values[f"{args.algorithm}_tau"],
+            "train_frequency": values[f"{args.algorithm}_train_frequency"],
+            "gradient_steps": values[f"{args.algorithm}_gradient_steps"],
+            "entropy": values[f"{args.algorithm}_entropy"],
         }
+        if args.algorithm == "tqc":
+            mapping.update({
+                "warmup_forward_fraction": args.tqc_warmup_forward,
+                "warmup_steering_std": args.tqc_warmup_steering_std,
+            })
+        else:
+            mapping.update({
+                "disagreement_coefficient": args.grtqc_disagreement,
+                "critic_warmup_updates": args.grtqc_critic_warmup_updates,
+                "target_lap_s": args.grtqc_target_lap,
+            })
         mapping.update(shared)
-        specific = {"tqc": TQCConfig(**{
+        config_type = TQCConfig if args.algorithm == "tqc" else GRTQCConfig
+        specific = {args.algorithm: config_type(**{
             key: value for key, value in mapping.items() if value is not None
         })}
     backend = args.backend
@@ -205,7 +197,7 @@ def _event(event: dict[str, Any]) -> None:
 
 
 def train_main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Train a v2 PPO, DQN or TQC policy")
+    parser = argparse.ArgumentParser(description="Train a v2 GRTQC, TQC or legacy PPO policy")
     parser.add_argument("--parameter-help", action="store_true",
                         help="print the central plain-language parameter reference")
     parser.add_argument("--config", type=Path, help="v2 JSON config shared with the GUI")
@@ -216,16 +208,16 @@ def train_main(argv: Sequence[str] | None = None) -> int:
     if args.parameter_help:
         from polybot.training.parameters import (
             CURRICULUM_INFO,
-            DQN_INFO,
             EVALUATION_INFO,
             GENERAL_INFO,
+            GRTQC_INFO,
             PPO_INFO,
             REWARD_INFO,
             TQC_INFO,
         )
 
         for title, mapping in (
-            ("General", GENERAL_INFO), ("PPO", PPO_INFO), ("DQN", DQN_INFO), ("TQC", TQC_INFO),
+            ("General", GENERAL_INFO), ("PPO", PPO_INFO), ("GRTQC", GRTQC_INFO), ("TQC", TQC_INFO),
             ("Curriculum", CURRICULUM_INFO), ("Evaluation", EVALUATION_INFO),
             ("Reward coefficients", REWARD_INFO),
         ):
@@ -245,6 +237,8 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 registry.slot(cfg.track_name, cfg.algorithm, "latest")
                 if args.resume == "latest" else Path(args.resume)
             )
+        elif cfg.algorithm == "grtqc":
+            resume = registry.algorithm_dir(cfg.track_name, "grtqc") / "initialization"
         runner = TrainingRunner(cfg, _event)
         print(f"planned training steps: {cfg.timesteps}", flush=True)
         runner.run(resume=resume)
@@ -267,7 +261,7 @@ def _configure_saved_overlays(
             model.speed_bias_schedule = [
                 list(row) for row in metadata.speed_bias_schedule
             ]
-    elif runner.config.algorithm == "tqc":
+    elif runner.config.algorithm in {"tqc", "grtqc"}:
         if model is not None:
             model.policy_overlays = list(metadata.policy_overlays)
             # Older TQC saves kept this schedule in the policy archive before
@@ -304,7 +298,7 @@ def _model_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--algorithm", choices=ALGORITHMS, required=True)
     parser.add_argument("--track-name", required=True)
-    parser.add_argument("--slot", choices=("latest", "champion"), default="champion")
+    parser.add_argument("--slot", choices=("initialization", "latest", "champion"), default="champion")
     parser.add_argument("--output-root", type=Path, default=Path("models"))
     parser.add_argument("--backend", choices=("mock", "websocket"))
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"))

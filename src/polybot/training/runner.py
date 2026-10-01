@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import shutil
+import statistics
 import threading
 import time
 from collections.abc import Callable
@@ -101,6 +103,9 @@ class TrainingRunner:
         self._champion_path_observations: list[Any] | None = None
         self._consecutive_rollbacks = 0
         self._last_rollback_severe = False
+        self._actor_unlock_seen = False
+        self._actor_unlock_event_pending = False
+        self._grtqc_weak_evaluations = 0
         self.sink: EventSink | None = None
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
         self._ppo_speed_bias_schedule: list[list[float]] = []
@@ -166,7 +171,7 @@ class TrainingRunner:
             seed=cfg.seed, device=self.device.resolved,
             finishes=self.finishes, crashes=self.crashes,
             evaluation=evaluation.to_dict() if evaluation is not None else None,
-            implementation="qr_dqn" if cfg.algorithm == "dqn" else None,
+            implementation="grtqc-gated-variance-v1" if cfg.algorithm == "grtqc" else None,
             reward_semantics=REWARD_SEMANTICS,
             critic_adaptation_required=bool(getattr(self.model, "critic_adaptation_required", False)),
             adaptation_stage=getattr(self.model, "adaptation_stage", None),
@@ -174,8 +179,7 @@ class TrainingRunner:
             policy_overlays=list(overlays),
             speed_bias_schedule=list(speed_bias_schedule),
             action_semantics=(
-                PPO_ACTION_SEMANTICS if cfg.algorithm in {"ppo", "tqc"}
-                else "native_digital_v2"
+                PPO_ACTION_SEMANTICS
             ),
         )
 
@@ -192,8 +196,51 @@ class TrainingRunner:
             search_metadata = directory / "speed-search.json"
             if search_metadata.is_file():
                 shutil.copy2(search_metadata, staging / search_metadata.name)
-            promote_directory(staging, directory, require_replay=cfg.algorithm in {"tqc", "dqn"})
+            promote_directory(staging, directory, require_replay=cfg.algorithm in {"tqc", "grtqc"})
         return directory
+
+    def _verify_grtqc_initialization(self, directory: Path) -> EvaluationResult:
+        """Block all RL updates until the transferred policy reproduces its source."""
+        transfer = json.loads((directory / "transfer.json").read_text(encoding="utf-8"))
+        source = Path(transfer["source"])
+        source_metadata = ModelRegistry(source.parents[2]).read_metadata(source)
+        reference = backend_for("tqc").load_model(
+            source / "policy.zip", None, self.device.resolved,
+        )
+        reference.policy_overlays = list(source_metadata.policy_overlays)
+        if source_metadata.speed_bias_schedule:
+            reference.speed_bias_schedule = list(source_metadata.speed_bias_schedule)
+        reference_paths: list[list[dict[str, Any]]] = []
+        result = evaluate_model(
+            self.model, self._environment, episodes=5,
+            seed=self.config.seed + 1_000_000, reference_model=reference,
+            reference_telemetry_sink=reference_paths,
+        )
+        reference_laps = [
+            float(path[-1]["elapsed_s"])
+            for path in reference_paths
+            if path and "finish" in path[-1].get("events", ())
+        ]
+        transfer["live_validation"] = result.to_dict()
+        transfer["reference_laps_s"] = reference_laps
+        (directory / "transfer.json").write_text(
+            json.dumps(transfer, indent=2) + "\n", encoding="utf-8",
+        )
+        self._emit({"type": "transfer_validation", **result.to_dict()})
+        if (
+            len(reference_laps) != 5
+            or abs(statistics.median(reference_laps) - 24.263) > 0.15
+            or result.finish_rate != 1.0 or result.median_progress != 1.0
+            or result.max_steering_disagreement > 1e-4
+            or result.max_longitudinal_disagreement > 1e-4
+            or result.lap_time_delta_s is None
+            or abs(result.lap_time_delta_s) > 0.15
+        ):
+            raise RuntimeError("GRTQC transfer failed five-lap fidelity gate; no training updates were made")
+        metadata = self.registry.read_metadata(directory)
+        metadata.evaluation = result.to_dict()
+        self.registry.write_metadata(directory, metadata)
+        return result
 
     def _evaluate(self) -> EvaluationResult:
         cfg = self.config
@@ -219,6 +266,45 @@ class TrainingRunner:
             )
             if previous is not None:
                 champion = EvaluationResult(**previous)
+        if cfg.algorithm == "grtqc":
+            reference_lap_s = 24.263
+            best_verified = (
+                min(reference_lap_s, champion.median_lap_s)
+                if champion is not None and champion.finish_rate == 1.0
+                and champion.median_lap_s is not None else reference_lap_s
+            )
+            reliable = (
+                result.episodes >= 5 and result.finish_rate == 1.0
+                and result.median_progress == 1.0
+                and result.median_lap_s is not None
+            )
+            if reliable and result.median_lap_s < best_verified:
+                self._grtqc_weak_evaluations = 0
+                path = self._save("champion", result)
+                self._emit({
+                    "type": "champion", "path": str(path),
+                    "timesteps": self.model.num_timesteps,
+                    "median_lap_s": result.median_lap_s,
+                })
+            else:
+                path = self._save(f"checkpoints/step-{self.model.num_timesteps}-rejected", result)
+                self._emit({
+                    "type": "candidate_rejected", "path": str(path),
+                    "timesteps": self.model.num_timesteps,
+                    "finish_rate": result.finish_rate,
+                    "median_lap_s": result.median_lap_s,
+                    "required_below_s": best_verified,
+                })
+                if (
+                    getattr(self.model, "actor_unlocked", False)
+                    and (not reliable or result.median_lap_s > best_verified)
+                ):
+                    self._grtqc_weak_evaluations += 1
+                    if self._grtqc_weak_evaluations >= 3:
+                        self._recover_grtqc_actor(result, path)
+                else:
+                    self._grtqc_weak_evaluations = 0
+            return result
         # Old champions have no replay file. A resumed champion can collect a
         # policy-generated buffer before its first update; keep that buffer with
         # the proven policy so later rollbacks never train from failed attempts.
@@ -257,6 +343,40 @@ class TrainingRunner:
                     cfg.tqc.champion_action_drift_limit, observations
                 )
         return result
+
+    def _recover_grtqc_actor(self, result: EvaluationResult, rejected: Path) -> None:
+        """Keep trained critics/replay while restoring a verified GRTQC driver."""
+        cfg = self.config
+        assert cfg.grtqc is not None
+        champion = self.registry.slot(cfg.track_name, "grtqc", "champion")
+        source = (
+            champion if (champion / "metadata.json").is_file()
+            else self.registry.slot(cfg.track_name, "grtqc", "initialization")
+        )
+        verified = self.backend.load_model(source / "policy.zip", None, self.device.resolved)
+        self.model.actor.load_state_dict(verified.actor.state_dict())
+        self.model.actor.optimizer.state.clear()
+        if self.model.log_ent_coef is not None and verified.log_ent_coef is not None:
+            self.model.log_ent_coef.data.copy_(verified.log_ent_coef.data)
+            if self.model.ent_coef_optimizer is not None:
+                self.model.ent_coef_optimizer.state.clear()
+        self.model.actor_lr = max(1e-8, self.model.actor_lr * 0.5)
+        cfg.grtqc.actor_learning_rate = self.model.actor_lr
+        self.model.actor_unlocked = False
+        self.model.critic_updates_since_transfer = 0
+        self.model._critic_loss_history.clear()
+        self.model._disagreement_history.clear()
+        self._actor_unlock_seen = False
+        self._grtqc_weak_evaluations = 0
+        self.last_evaluation = None
+        self._emit({
+            "type": "actor_recovery", "timesteps": self.model.num_timesteps,
+            "rejected": str(rejected), "restored_actor": str(source),
+            "rejected_finish_rate": result.finish_rate,
+            "rejected_median_lap_s": result.median_lap_s,
+            "actor_learning_rate": self.model.actor_lr,
+            "critic_replay_preserved": True,
+        })
 
     def _restore_ppo_champion_if_worse(
         self, result: EvaluationResult, env: Any, *,
@@ -417,7 +537,7 @@ class TrainingRunner:
         current_steps = int(self.model.num_timesteps)
         previous_drift = getattr(self.model, "_anchor_action_drift", None)
         replay_file = champion_dir / "replay.pkl"
-        refill_replay = cfg.algorithm in {"dqn", "tqc"} and (
+        refill_replay = cfg.algorithm in {"tqc", "grtqc"} and (
             reward_mismatch or not replay_file.is_file()
         )
         if reward_mismatch and not refill_replay:
@@ -437,9 +557,6 @@ class TrainingRunner:
             restored.anchor_to_current_policy(
                 cfg.tqc.champion_action_drift_limit, self._champion_path_observations
             )
-        if cfg.algorithm == "dqn":
-            self.backend.begin_phase(restored, cfg, phase_steps)
-            self.backend.advance_phase(restored, current_steps - phase_start)
         self.model = restored
         # The poor result belongs to the discarded policy. The restored policy
         # has not been evaluated at this step, so latest must not claim its score.
@@ -474,6 +591,8 @@ class TrainingRunner:
         allow_ppo_reward_change: bool = False,
     ) -> Path:
         cfg = self.config
+        if cfg.algorithm == "grtqc" and resume is None:
+            raise ValueError("GRTQC requires a transferred initialization or resumable checkpoint")
         if freeze_ppo_actor and cfg.algorithm != "ppo":
             raise ValueError("actor-frozen value warmup is only supported for PPO")
         if ppo_rollback_progress_tolerance < 0 or ppo_rollback_lap_tolerance_s < 0:
@@ -524,14 +643,15 @@ class TrainingRunner:
                     allow_ppo_reward_change and cfg.algorithm == "ppo"
                 ):
                     raise ValueError("resume reward settings differ from saved replay rewards")
-                if fresh_replay and cfg.algorithm not in {"dqn", "tqc"}:
-                    raise ValueError("fresh replay applies only to DQN and TQC")
+                if fresh_replay and cfg.algorithm not in {"tqc", "grtqc"}:
+                    raise ValueError("fresh replay applies only to TQC and GRTQC")
                 self.model = self.backend.load_model(
                     resume / "policy.zip", training_env, self.device.resolved,
-                    resume=not fresh_replay,
+                    resume=not (fresh_replay or (cfg.algorithm == "grtqc" and resume.name == "initialization")),
                 )
-                if cfg.algorithm == "tqc":
+                if cfg.algorithm in {"tqc", "grtqc"}:
                     self.model.policy_overlays = list(metadata.policy_overlays)
+                    self.model.speed_bias_schedule = list(metadata.speed_bias_schedule)
                 elif cfg.algorithm == "ppo":
                     self._ppo_air_brake_overlays = list(metadata.policy_overlays)
                     self._ppo_speed_bias_schedule = list(metadata.speed_bias_schedule)
@@ -544,7 +664,8 @@ class TrainingRunner:
                         )
                         self.model.set_env(training_env)
                 self.backend.configure_resume(
-                    self.model, cfg, self.device.resolved, fresh_replay=fresh_replay
+                    self.model, cfg, self.device.resolved,
+                    fresh_replay=fresh_replay or (cfg.algorithm == "grtqc" and resume.name == "initialization"),
                 )
                 if reward_changed and allow_ppo_reward_change and cfg.algorithm == "ppo":
                     # PPO has no replay buffer. Discard stale Adam moments after a
@@ -583,10 +704,15 @@ class TrainingRunner:
                 "fresh_replay": fresh_replay,
                 "rollback_on_regression": rollback_to_champion,
                 "mode": "pace_polish" if pace_polish else "training",
-                "learning_rate": cfg.tqc.learning_rate if cfg.tqc else None,
+                "learning_rate": (cfg.tqc or cfg.grtqc).learning_rate if (cfg.tqc or cfg.grtqc) else None,
                 "replay_size": self.model.replay_buffer.size()
                 if getattr(self.model, "replay_buffer", None) else None,
             })
+            if cfg.algorithm == "grtqc" and resume is not None and resume.name == "initialization":
+                training_env.close()
+                self._verify_grtqc_initialization(resume)
+                training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
+                self.model.set_env(training_env)
             if freeze_ppo_actor:
                 _freeze_ppo_actor(self.model)
                 self._emit({"type": "value_warmup", "actor_frozen": True})
@@ -652,25 +778,13 @@ class TrainingRunner:
                             "type": "curriculum_reset", "phase": runner.phase_index,
                             "mode": phase.mode, "spawn_ratio": phase.spawn_ratio,
                             "start_ratio": phase.start_ratio, "end_ratio": phase.end_ratio,
-                            "action_set": cfg.dqn.action_set if cfg.dqn else None,
-                            "epsilon": getattr(runner.model, "exploration_rate", None),
                             "replay_size": (
                                 runner.model.replay_buffer.size()
-                                if cfg.algorithm == "dqn" else None
+                                if cfg.algorithm in {"tqc", "grtqc"} else None
                             ),
                             **reset_diagnostics,
                         })
                         runner.phase_reset_logged = True
-                    actions = self.locals.get("actions")
-                    if cfg.algorithm == "dqn" and actions is not None:
-                        try:
-                            runner.phase_actions_seen.add(int(actions[0]))
-                        except (TypeError, ValueError, IndexError):
-                            pass
-                    if cfg.algorithm == "dqn":
-                        runner.backend.advance_phase(
-                            runner.model, self.num_timesteps - phase_start
-                        )
                     now = time.monotonic()
                     if now - self.last_status > 0.5:
                         runner._emit({
@@ -718,6 +832,13 @@ class TrainingRunner:
                         })
                         self.episode_reward = 0.0
                         self.episode_progress = 0.0
+                    if (
+                        cfg.algorithm == "grtqc" and runner.model.actor_unlocked
+                        and not runner._actor_unlock_seen
+                    ):
+                        runner._actor_unlock_seen = True
+                        runner._actor_unlock_event_pending = True
+                        return False
                     return not runner.stop_requested.is_set() and (
                         self.stop_at is None or self.num_timesteps < self.stop_at
                     )
@@ -732,17 +853,8 @@ class TrainingRunner:
                 phase_start = self.model.num_timesteps
                 self.phase_index = index + 1
                 self.phase_reset_logged = False
-                self.phase_actions_seen: set[int] = set()
                 self.max_section_progress = 0.0
-                if cfg.algorithm == "dqn":
-                    self.backend.begin_phase(self.model, cfg, phase.steps)
                 phase_event = {"type": "phase", "index": index + 1, **asdict(phase)}
-                if cfg.algorithm == "dqn":
-                    phase_event.update({
-                        "initial_epsilon": self.model.exploration_rate,
-                        "replay_size": self.model.replay_buffer.size(),
-                        "action_set": cfg.dqn.action_set if cfg.dqn else None,
-                    })
                 self._emit(phase_event)
                 while self.model.num_timesteps - phase_start < phase.steps:
                     if self.stop_requested.is_set():
@@ -752,19 +864,13 @@ class TrainingRunner:
                     interval = min(next_eval - consumed, next_checkpoint - consumed)
                     chunk = max(1, min(remaining, interval))
                     before = self.model.num_timesteps
-                    if cfg.algorithm == "dqn":
-                        # Keep SB3's global progress horizon stable across eval/checkpoint
-                        # chunks. PhaseExplorationSchedule advances independently per step.
-                        self.model.learn(
-                            cfg.timesteps - consumed,
-                            callback=Callback(stop_at=before + chunk),
-                            reset_num_timesteps=False,
-                        )
-                    else:
-                        self.model.learn(chunk, callback=Callback(), reset_num_timesteps=False)
+                    self.model.learn(chunk, callback=Callback(), reset_num_timesteps=False)
                     if self.model.num_timesteps == before:
                         break
                     consumed = self.model.num_timesteps - start_steps
+                    if self._actor_unlock_event_pending:
+                        next_eval = min(next_eval, consumed)
+                        self._actor_unlock_event_pending = False
                     if consumed >= next_checkpoint:
                         path = self._save(f"checkpoints/step-{self.model.num_timesteps}")
                         self._emit({"type": "checkpoint", "path": str(path),
@@ -774,7 +880,11 @@ class TrainingRunner:
                         training_env.close()
                         result = self._evaluate()
                         last_evaluated_steps = self.model.num_timesteps
-                        next_eval = consumed + cfg.evaluation.interval_steps
+                        next_eval = consumed + (
+                            min(1_000, cfg.evaluation.interval_steps)
+                            if cfg.algorithm == "grtqc" and self.model.actor_unlocked
+                            else cfg.evaluation.interval_steps
+                        )
                         training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
                         ppo_restored = (
                             rollback_to_champion and cfg.algorithm == "ppo"
@@ -816,14 +926,19 @@ class TrainingRunner:
                                 "timesteps": self.model.num_timesteps,
                             })
                             self.stop_requested.set()
-                if cfg.algorithm == "dqn":
-                    self._emit({
-                        "type": "phase_summary", "index": index + 1,
-                        "epsilon": self.model.exploration_rate,
-                        "actions_seen": sorted(getattr(self, "phase_actions_seen", set())),
-                        "replay_size": self.model.replay_buffer.size(),
-                        "timesteps": self.model.num_timesteps,
-                    })
+                        if (
+                            cfg.algorithm == "grtqc" and cfg.grtqc is not None
+                            and result.finish_rate == 1.0
+                            and result.median_lap_s is not None
+                            and result.median_lap_s < cfg.grtqc.target_lap_s
+                        ):
+                            self._emit({
+                                "type": "target_reached", "algorithm": "grtqc",
+                                "target_lap_s": cfg.grtqc.target_lap_s,
+                                "confirmed_lap_s": result.median_lap_s,
+                                "timesteps": self.model.num_timesteps,
+                            })
+                            self.stop_requested.set()
             training_env.close()
             if not self.stop_requested.is_set() and self.model.num_timesteps != last_evaluated_steps:
                 result = self._evaluate()
@@ -848,6 +963,18 @@ class TrainingRunner:
                         "type": "target_reached", "algorithm": "ppo",
                         "target_lap_s": cfg.ppo.target_lap_s,
                         "confirmed_lap_s": result.best_lap_s,
+                        "timesteps": self.model.num_timesteps,
+                    })
+                if (
+                    cfg.algorithm == "grtqc" and cfg.grtqc is not None
+                    and result.finish_rate == 1.0
+                    and result.median_lap_s is not None
+                    and result.median_lap_s < cfg.grtqc.target_lap_s
+                ):
+                    self._emit({
+                        "type": "target_reached", "algorithm": "grtqc",
+                        "target_lap_s": cfg.grtqc.target_lap_s,
+                        "confirmed_lap_s": result.median_lap_s,
                         "timesteps": self.model.num_timesteps,
                     })
             latest_evaluation = _evaluation_for_current_checkpoint(

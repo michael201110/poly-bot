@@ -167,7 +167,7 @@ def checked_parameter_device(parameter: Any, resolved: str) -> str:
 def doctor_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Show PolyBot PyTorch/CUDA diagnostics")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
-    parser.add_argument("--smoke", choices=("ppo", "dqn", "tqc"))
+    parser.add_argument("--smoke", choices=("grtqc", "tqc", "ppo"))
     args = parser.parse_args(argv)
     try:
         selected = resolve_device(args.device, algorithm=args.smoke)
@@ -182,16 +182,17 @@ def doctor_main(argv: list[str] | None = None) -> int:
         from polybot.algorithms.registry import backend_for
         from polybot.environment.env import PolyTrackEnv
         from polybot.mock import MockSimulatorTransport
-        from polybot.training.config import DQNConfig, PPOConfig, TQCConfig, TrainingConfig
+        from polybot.training.config import GRTQCConfig, PPOConfig, TQCConfig, TrainingConfig
 
         config = TrainingConfig(
             algorithm=args.smoke, backend="mock", device=selected.resolved,
             **{
                 args.smoke: {
                     "ppo": PPOConfig(architecture="tiny"),
-                    "dqn": DQNConfig(architecture="tiny", replay_capacity=128,
-                                     learning_starts=8, batch_size=8,
-                                     train_frequency=1, target_update_interval=16),
+                    "grtqc": GRTQCConfig(architecture="tiny", replay_capacity=128,
+                                          learning_starts=8, batch_size=8,
+                                          train_frequency=1, critic_warmup_updates=8,
+                                          critic_readiness_window=4),
                     "tqc": TQCConfig(architecture="tiny"),
                 }[args.smoke]
             },
@@ -207,7 +208,7 @@ def doctor_main(argv: list[str] | None = None) -> int:
                 next(model.policy.parameters()), selected.resolved
             )
             facts["model_parameters"] = backend.parameter_counts(model)
-            if args.smoke == "dqn":
+            if args.smoke == "grtqc":
                 model.learn(32)
                 with tempfile.TemporaryDirectory() as temporary:
                     directory = Path(temporary)

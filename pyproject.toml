@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "polytrack-ai"
-version = "2.2.0"
-description = "PPO, QR-DQN and TQC reinforcement-learning platform for PolyTrack"
+version = "2.3.0"
+description = "GRTQC-first continuous-control training for PolyTrack"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { file = "LICENSE" }

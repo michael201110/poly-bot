@@ -1,77 +1,54 @@
-# PolyBot v2
+# PolyBot
 
-PolyBot trains driving policies for [PolyTrack](https://www.kodub.com/apps/polytrack). PPO, QR-DQN (shown as DQN in the UI), and TQC are equal training modes. All three use the same simulator protocol, observation schema, reward components, curriculum plan, deterministic evaluation, and model registry.
+PolyBot trains driving policies for [PolyTrack](https://www.kodub.com/apps/polytrack). **GRTQC is the primary learner** for Summer 1. The verified 24.263-second TQC champion is an immutable source policy; legacy TQC and PPO code remain available for reference and controlled experiments. The PolyModLoader bridge targets PolyTrack 0.6.3, with 0.6.2 support. The simulator protocol and model schema remain v2; PolyBot is version 2.3.0.
 
-The local mock simulator makes installation and short training checks possible without the game. The real adapter is a PolyModLoader mod targeting PolyTrack 0.6.3, with 0.6.2 support. The wire protocol and model/configuration schemas remain v2; the PolyBot application is version 2.2.0.
+## Install and run
 
-## Start
-
-Python 3.11 or later is required.
+Python 3.11 or newer and Git LFS are required to use the pinned champion replay.
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev,train,gui]"
-.\.venv\Scripts\polybot-doctor.exe --smoke tqc
+.\.venv\Scripts\polybot-doctor.exe --smoke grtqc
 .\.venv\Scripts\polybot-gui.exe
 ```
 
-In the GUI, choose a track, algorithm, and preset. **Balanced** rewards and algorithm settings are intended as starting points. Hover over any field for a plain-language explanation. **Advanced settings** reveals every algorithm parameter and all reward coefficients. The exact resolved reward values are always visible in the Rewards tab. PPO uses fresh rollouts and PWM steering; DQN uses QR-DQN with nine native digital actions and replay; TQC uses continuous controls and replay. None is universally better.
+Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summer 1, and leave the game running. The GUI loads the transferred GRTQC settings when the initialization checkpoint exists. **Start with these settings** verifies five live deterministic laps against the TQC reference before making any RL update. A mismatch stops training and preserves the source checkpoint.
 
-DQN also has a six-action `no_brake` starting mode. For a staged Summer 1 experiment that learns without brake, transfers the learned Q-network and replay into the nine-action model, then continues training, run `python tools/start_staged_dqn.py`. See the [training guide](docs/training.md) for the transfer threshold and saved model folders.
-
-To try a short run on the local mock:
+The immutable TQC source is `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/`. The historical directory name does not indicate active support for its former algorithm. To recreate the separate GRTQC initialization checkpoint:
 
 ```powershell
-.\.venv\Scripts\polybot-train.exe --algorithm ppo --backend mock --timesteps 2048 --ppo-architecture tiny --ppo-rollout 256 --ppo-batch 64 --eval-interval 1024 --eval-episodes 2
-.\.venv\Scripts\polybot-train.exe --algorithm dqn --backend mock --timesteps 2048 --dqn-architecture tiny --dqn-learning-starts 256 --eval-interval 1024 --eval-episodes 2
+.\.venv\Scripts\python.exe tools/initialize_grtqc.py --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/summer-1/grtqc/initialization
+```
+
+The transfer script checks 2,048 saved Summer 1 observations and writes `transfer.json` with the source hash and action errors. It does not copy old replay rewards into GRTQC. Run the shared trainer with the saved configuration:
+
+```powershell
+.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc.json
+```
+
+The first run resumes `models/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best are promoted; other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
+
+GRTQC warms its newly initialized critics while the transferred actor is frozen. Actor updates begin only after the minimum warmup and a stable recent window of quantile loss and critic disagreement. The trainer logs quantile, target, and disagreement statistics in `logs/*.jsonl`. See the [training guide](docs/training.md) and [GRTQC experiment record](docs/grtqc-experiment.md) for the implementation, validation gate, and measured status.
+
+To check the local mock environment without the game, run the legacy TQC smoke test or the GRTQC device smoke test:
+
+```powershell
+.\.venv\Scripts\polybot-doctor.exe --smoke grtqc
 .\.venv\Scripts\polybot-train.exe --algorithm tqc --backend mock --timesteps 2048 --tqc-architecture tiny --tqc-learning-starts 256 --eval-interval 1024 --eval-episodes 2
 ```
 
-To train against the game, install the [PolyModLoader bridge](docs/game-integration.md), load a track and ghost, then choose **WebSocket** in the GUI or run:
+The GUI Status tab and `polybot-live-log logs/<run>.jsonl` show readable progress; the JSONL log retains full diagnostics. The [game integration](docs/game-integration.md) and [protocol](docs/protocol.md) explain the simulator connection.
 
-```powershell
-.\.venv\Scripts\polybot-train.exe --algorithm tqc --backend websocket --track-name "Summer 1" --track-id current --frame-skip 30 --timesteps 100000 --reward-profile Balanced
-```
-
-Training saves `models/<track>/<algorithm>/latest/` and a separately proven `champion/`. **Continue best model** prefers the champion when scores tie and restores it after a weaker evaluation. New DQN and TQC champions include replay buffers for exact continuation. Older champions without replay refill a new buffer from the saved policy; TQC attaches that buffer to the champion after a successful pre-training evaluation. A rollback never reuses replay from a failed attempt, and the restored `latest` checkpoint has no evaluation score until tested again. After three consecutive evaluations that lose finishes or substantial track progress, best-model continuation stops; slightly slower complete laps still roll back but do not trigger the stop. **Resume latest (advanced)** keeps the most recent training state even if its evaluation regressed. Changed rewards require fresh replay so stored rewards are never mixed; Continue best handles that automatically for DQN and TQC champions. A lucky finish during stochastic training never replaces the champion. Deterministic full-track evaluation ranks policies by finish rate, progress, then completed lap time. Generated models and logs are ignored by Git except for the pinned Summer 1 24.987-second TQC champion at `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/`. Its replay buffer is stored with Git LFS, so clone with Git LFS enabled to resume from it. There is no v1 model migration.
-
-For the saved Summer 1 TQC champion that predates replay checkpoints, `profiles/training/summer-1-tqc-champion-recovery.json` uses a 20,000-step policy-generated replay refill, learning rate `3e-5`, one gradient update per four environment steps, and a `0.0001` deterministic action drift cap on the champion's evaluated driving path and sampled replay states. The former model lost all five evaluation laps after just 625 reduced-rate updates; the tighter cap preserved all five finishes after 1,250 updates and improved median lap time from 30.29 to 28.98 seconds in the first live check. Further evaluations decide whether an updated policy is promoted.
-
-`profiles/training/summer-1-tqc-20s-pace.json` continues that champion with the `Summer 1 - 20s pace` reward profile. Its valid-finish bonus rises smoothly toward 20 seconds: about 3,833 points at 29 seconds and 6,800 at 20 seconds. Incomplete timeouts now receive the same progress clawback and failure penalty as other failed runs. The changed reward profile triggers a fresh 20,000-step replay refill before learning. In best-model continuation, fully completed laps up to 0.2 seconds slower than the saved champion can keep training; larger regressions restore champion weights and replay. After repeated deterministic first-jump failures at the former `3e-5` learning rate and `0.0001` action drift cap, this profile now uses `1e-5` and `0.00005` for a more gradual continuation.
-
-Actor-gradient polishing is now **experimental and disabled in the default adaptation cycle**. Earlier actor updates caused large closed-loop divergence even at very low learning rates. The explicit actor-polish action remains for controlled experiments, but the regular **Run full cycle** only collects local replay and adapts critics.
-
-The Summer 1 pace reward now gives **2.0 raw points per second × actual brake duty** only when all four wheels are airborne. Braking with any wheel touching ground instead receives the existing `-1.5`-point-per-second ground penalty. The policy chooses whether to brake; the GUI does not force it. Episode and evaluation logs report air-brake use. The 2.0 coefficient is experimental shaping and is small compared with the 1,800-point finish bonus and time-sensitive 5,000-point fast-finish bonus.
-
-The advanced **WR Pace Optimizer** uses the current TQC champion as a frozen driver and searches small, smooth steering, drive, and airborne-only brake overlays against actual lap time. It first measures a 10-lap baseline and builds a 5%, 2%, or 1% sector map plus detected airborne regions; candidate screening uses one lap, then promotion requires at least five clean confirmations (ten for gains below 0.01 seconds by default). Each accepted layer is tested in combination with previous layers, saved with the TQC checkpoint and replay, and promoted atomically with a complete champion backup. No gradient updates run during search. A speed-search or WR-search promotion marks tuned champions as requiring critic adaptation; the runner rejects normal TQC continuation until the three-stage replay expansion, critic update, and independent candidate promotion gates pass. The target is configurable and defaults in the Summer 1 profile at `22.262s`; search records and the winning stack are stored beside the champion as `wr-search-history.jsonl`, `champion-sector-map.json`, and `best-pace-config.json`. The old actor-output speed search and TQC gradient polish remain available as advanced experiments, not as the default WR workflow. The **Stop WR search safely** control stops between candidates and never discards an already confirmed champion.
-
-The advanced **Section Optimizer** runs this direct overlay search as a resumable campaign: it sweeps ten 10%-of-track windows in order, evaluates each candidate from the start of a normal lap, and uses the newly promoted champion for every later window. Sections that produced gains or near-misses are split through 5%, 2%, and 1% windows. A 10-lap deterministic baseline estimates timing noise; candidates are screened over one lap and must beat the current champion by more than that noise floor across five clean confirmation laps (ten for small gains) before atomic promotion. The GUI offers one-hour, four-hour, or until-stopped runs, safe stop/resume, section skip, and forced refinement. Progress is checkpointed in `optimizer-state.json`; append-only trials go to `section-search-history.jsonl`. The CLI accepts `--hours`, `--max-runtime-seconds`, `--stop-file`, `--skip-file`, and `--refine-file`. Local RL is not used.
-
-The advanced **Bake overlays into model** workflow distills a frozen TQC champion plus its active smooth steering/drive overlays into an actor-only supervised student. It snapshots the champion and overlay stack first, records final post-overlay actions, weights overlay-modified samples more heavily, and leaves critics, entropy state, replay, and the live champion unchanged during training. Air-brake controls remain as low-level primitives. Run the separate stages with `python -m polybot.training.distillation snapshot --config path/to/config.json`, then `collect`, `train`, and `validate` with the printed run directory; use `bake` only after the deterministic live-lap gate accepts the student. The `full` command runs those stages but leaves even a passing student staged for review; promotion is always a separate explicit `bake` action. Candidate files stay under `models/<track>/tqc/distillation/<run-id>/`, and `rollback` can restore that run's snapshotted teacher after a promotion. The advanced GUI exposes the same explicit stages. A failed or slower validation never replaces the champion, and a promoted distilled actor is marked as requiring critic adaptation before RL continuation.
-
-The GUI Status tab shows short episode and evaluation summaries. Full reward diagnostics stay in the run's JSONL file. To follow a running log in a separate readable window, run `polybot-live-log logs/<run>.jsonl`. Use `polybot-live-log "logs/summer-1-tqc-*.jsonl" --follow-newest` to switch automatically when a new run starts. Closing this window does not stop training.
-
-```powershell
-.\.venv\Scripts\polybot-eval.exe --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --episodes 5
-.\.venv\Scripts\polybot-drive.exe --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --realtime
-```
-
-See [training](docs/training.md), [game integration](docs/game-integration.md), and the [digital simulator protocol](docs/protocol.md). Validate changes with `python -m pytest`, `python -m ruff check .`, and `python tools/validate_pml_mod.py`.
-
-The [Summer 1 TQC-to-PPO diagnosis](docs/ppo-transfer-diagnosis.md) records the frozen teacher, student comparison, replay experiment, and the current transfer failure.
-
-Community contributions follow the [Code of Conduct](CODE_OF_CONDUCT.md). See [Contributing](CONTRIBUTING.md) for setup and review guidance, and [Security](SECURITY.md) for private vulnerability reports.
-
-## Repository
+Run `python -m pytest`, `python -m ruff check src tests tools`, `git diff --check`, and `python tools/validate_pml_mod.py` before committing. Community contributions follow the [Code of Conduct](CODE_OF_CONDUCT.md), [Contributing](CONTRIBUTING.md), and [Security](SECURITY.md) policies.
 
 ```text
-src/polybot/control/       Digital and PWM action adapters
-src/polybot/environment/   Gym environment, observations, rewards, curriculum
-src/polybot/algorithms/    PPO, DQN and TQC backends and registry
-src/polybot/training/      Typed config, runner, evaluation, metrics, devices
-src/polybot/models/        v2 storage and metadata
-src/polybot/gui/           Guided basic settings and complete advanced settings
-pml-mod/                  PolyModLoader adapter for PolyTrack 0.6.2/0.6.3
-profiles/rewards/          Named reward recipes
-tests/                     Protocol, environment, backend, GUI and device tests
+src/polybot/algorithms/    GRTQC, TQC and legacy PPO backends
+src/polybot/environment/   simulator environment, observations, rewards, curriculum
+src/polybot/training/      typed config, runner, evaluation and metrics
+src/polybot/models/        versioned model storage and metadata
+src/polybot/gui/           training and evaluation controls
+pml-mod/                  PolyModLoader bridge
+profiles/                 training and reward recipes
+tests/                    protocol, environment, algorithm and GUI tests
 ```

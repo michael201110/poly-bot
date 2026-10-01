@@ -115,11 +115,9 @@ def format_event(event: dict[str, Any]) -> str | None:
             f" · spawn {_percent(spawn)}; target {_percent(target_start)}–{_percent(target_end)}"
             if spawn is not None else " · full track"
         )
-        epsilon = event.get("initial_epsilon")
-        explore = f" · epsilon {epsilon:.2f}" if epsilon is not None else ""
         return (
             f"{prefix}Phase {event['index']} · {event['mode']}{section} · "
-            f"{event['steps']:,} planned steps{explore}"
+            f"{event['steps']:,} planned steps"
         )
     if kind == "curriculum_reset":
         action = event.get("initial_previous_action", {})
@@ -128,13 +126,24 @@ def format_event(event: dict[str, Any]) -> str | None:
             f"speed {_number(event.get('initial_speed_mps'), ' m/s')} · "
             f"previous action steer {action.get('steer', 0):+g}, throttle {action.get('throttle', 0):g}, "
             f"brake {action.get('brake', 0):g} · actual steer "
-            f"{_number(event.get('initial_actual_steering'))} · epsilon {_number(event.get('epsilon'))}"
+            f"{_number(event.get('initial_actual_steering'))}"
         )
-    if kind == "phase_summary":
-        actions = ", ".join(str(value) for value in event.get("actions_seen", ())) or "none"
+    if kind == "transfer_validation":
         return (
-            f"{prefix}Phase {event['index']} complete · epsilon {_number(event.get('epsilon'))} · "
-            f"actions tried {actions} · replay {event.get('replay_size', 0):,}"
+            f"{prefix}GRTQC transfer check · {_percent(event.get('finish_rate'))} finishes"
+            f" · median {_number(event.get('median_lap_s'), 's')}"
+            f" · max steering drift {event.get('max_steering_disagreement', 0):.2e}"
+        )
+    if kind == "candidate_rejected":
+        return (
+            f"{prefix}Candidate kept for diagnosis{step} · median "
+            f"{_number(event.get('median_lap_s'), 's')} · requires below "
+            f"{event['required_below_s']:.3f}s"
+        )
+    if kind == "actor_recovery":
+        return (
+            f"{prefix}GRTQC actor restored from verified policy{step} · "
+            f"critic and replay kept · actor LR {event['actor_learning_rate']:.1e}"
         )
     if kind == "episode":
         reasons = ", ".join(EVENT_NAMES.get(name, name.replace("_", " "))
