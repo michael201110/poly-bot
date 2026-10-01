@@ -13,21 +13,21 @@ python -m venv .venv
 .\.venv\Scripts\polybot-gui.exe
 ```
 
-Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summer 1, and leave the game running. The GUI loads the transferred GRTQC settings when the initialization checkpoint exists. **Start with these settings** verifies five live deterministic laps against the TQC reference before making any RL update. A mismatch stops training and preserves the source checkpoint.
+Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summer 1, and leave the game running. The GUI loads the contact-aware GRTQC profile. **Start with these settings** verifies five live deterministic laps against the TQC reference before making any RL update. A mismatch stops training and preserves the source checkpoint.
 
 The immutable TQC source is `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/`. The historical directory name does not indicate active support for its former algorithm. To recreate the separate GRTQC initialization checkpoint:
 
 ```powershell
-.\.venv\Scripts\python.exe tools/initialize_grtqc.py --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/summer-1/grtqc/initialization
+.\.venv\Scripts\python.exe tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-contact.json --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/experiments/grtqc-contact-20261001/summer-1/grtqc/initialization
 ```
 
-The transfer script checks 2,048 saved Summer 1 observations and writes `transfer.json` with the source hash and action errors. It does not copy old replay rewards into GRTQC. Run the shared trainer with the saved configuration:
+The transfer script checks 2,048 saved Summer 1 observations and writes `transfer.json` with the source hash and action errors. The contact-aware reward charges nonterminal wall impacts while filtering touchdown impulses; it starts with fresh replay. Run the shared trainer with the saved configuration:
 
 ```powershell
-.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc.json
+.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-contact.json
 ```
 
-The first run resumes `models/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best are promoted; other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
+The first run resumes `models/experiments/grtqc-contact-20261001/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best are promoted; other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
 
 GRTQC warms its newly initialized critics while the transferred actor is frozen. Actor updates begin only after the minimum warmup and a stable recent window of quantile loss and critic disagreement. The trainer logs quantile, target, and disagreement statistics in `logs/*.jsonl`. See the [training guide](docs/training.md) and [GRTQC experiment record](docs/grtqc-experiment.md) for the implementation, validation gate, and measured status.
 

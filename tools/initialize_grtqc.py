@@ -19,7 +19,10 @@ from polybot.models.registry import ModelRegistry
 from polybot.training.config import EvaluationConfig, GRTQCConfig, TrainingConfig
 
 
-def initialize(source: Path, destination: Path, *, device: str = "cpu") -> dict[str, float | int | str]:
+def initialize(
+    source: Path, destination: Path, *, device: str = "cpu",
+    training_config: TrainingConfig | None = None,
+) -> dict[str, float | int | str]:
     if destination.exists():
         raise FileExistsError(f"initialization checkpoint already exists: {destination}")
     source_metadata = ModelRegistry(source.parents[2]).read_metadata(source)
@@ -44,13 +47,21 @@ def initialize(source: Path, destination: Path, *, device: str = "cpu") -> dict[
         "critic_collection_std": 0.001,
         "actor_step_action_limit": 1e-5,
     })
-    config = replace(
+    default_config = replace(
         source_config, algorithm="grtqc", tqc=None,
         grtqc=GRTQCConfig(**settings),
         output_root=destination.parents[2],
         timesteps=2_000_000,
         evaluation=EvaluationConfig(interval_steps=5_000, episodes=5),
     )
+    config = training_config or default_config
+    if config.algorithm != "grtqc" or config.grtqc is None:
+        raise ValueError("initialization config must use GRTQC")
+    if config.output_root.resolve() != destination.parents[2].resolve():
+        raise ValueError("initialization destination must be under the config output root")
+    for key in ("track_id", "track_name", "lookahead_count", "frame_skip"):
+        if getattr(config, key) != getattr(source_config, key):
+            raise ValueError(f"transfer config differs from source in {key}")
     source_model = TQCBackend().load_model(source / "policy.zip", None, device, resume=False)
     source_model.policy_overlays = list(source_metadata.policy_overlays)
     # Older champions persisted this schedule in policy.zip but left metadata
@@ -105,6 +116,7 @@ def initialize(source: Path, destination: Path, *, device: str = "cpu") -> dict[
         source_metadata, algorithm="grtqc", architecture=config.grtqc.architecture,
         actor_parameters=counts["actor"], critic_parameters=counts["critic"],
         total_trainable_parameters=counts["total"], training_config=config.to_dict(),
+        reward_profile=config.reward_profile,
         training_timesteps=0, simulator_ticks=0, wall_seconds=0.0,
         finishes=0, crashes=0, evaluation=None, implementation="grtqc-gated-variance-v1",
         speed_bias_schedule=list(source_model.speed_bias_schedule),
@@ -133,8 +145,15 @@ def main() -> None:
         "models/summer-1/grtqc/initialization"
     ))
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--config", type=Path, help="GRTQC training profile for this transfer")
     args = parser.parse_args()
-    print(json.dumps(initialize(args.source, args.destination, device=args.device), indent=2))
+    config = (
+        TrainingConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8")))
+        if args.config else None
+    )
+    print(json.dumps(initialize(
+        args.source, args.destination, device=args.device, training_config=config,
+    ), indent=2))
 
 
 if __name__ == "__main__":

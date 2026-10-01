@@ -602,12 +602,12 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 self._episode_nonlanding_impulse_peak = max(
                     self._episode_nonlanding_impulse_peak, collision_impulse
                 )
-        # The simulator reports an untyped collision impulse. A touchdown can
-        # produce one even when no barrier was hit, so exclude the landing
-        # transition. Other impacts receive a reward cost but remain nonterminal:
-        # PPO must be able to learn from the post-contact trajectory and finish.
+        # The simulator reports an untyped collision impulse. Touchdown can
+        # produce impulses for several decisions, so suppress the entire
+        # landing grace window rather than only the first grounded decision.
+        # Other impacts remain nonterminal so the policy can recover.
         barrier_contact = (
-            not landed_this_step
+            not landing_grace
             and collision_impulse > self.reward_config.barrier_collision_impulse_threshold
         )
         self._barrier_contact_s = dt if barrier_contact else 0.0

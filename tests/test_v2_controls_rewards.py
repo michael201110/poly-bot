@@ -285,6 +285,29 @@ def test_collision_impact_cost_does_not_end_the_episode() -> None:
         env.close()
 
 
+def test_landing_grace_suppresses_untyped_impact_penalty() -> None:
+    transport = MockSimulatorTransport()
+    env = PolyTrackEnv(
+        transport, track_id="mock/straight",
+        action_adapter=ContinuousActionAdapter(),
+        reward_config=replace(
+            RewardConfig(), barrier_collision_impulse_threshold=0.0,
+            barrier_contact_penalty=-300.0, landing_grace_s=2.0,
+        ),
+    )
+    try:
+        env.reset(seed=1)
+        assert transport.state is not None
+        transport.state.lateral_offset_m = transport.track_half_width_m * 0.95
+        env._landing_grace_s = 2.0
+        _, _, _, _, info = env.step(np.array([0.0, 1.0], dtype=np.float32))
+        assert info["collision_impulse_steps"] > 0
+        assert "barrier_contact" not in info["events"]
+        assert info["reward_terms"]["barrier_contact"] == 0.0
+    finally:
+        env.close()
+
+
 def test_profile_roundtrip_and_comparison(tmp_path) -> None:
     store = RewardProfileStore(tmp_path)
     balanced = store.load("Balanced")
