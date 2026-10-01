@@ -27,7 +27,7 @@ The transfer script checks 2,048 saved Summer 1 observations and writes `transfe
 .\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-pace-30.json
 ```
 
-The first run resumes `models/experiments/grtqc-pace-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. Reliable cleaner laps within 0.5 seconds of the best are saved separately as `contact-candidate/` and can provide a recovery starting point. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
+The first run resumes `models/experiments/grtqc-pace-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. In this profile, reliable cleaner laps within 1.5 seconds of the best are saved separately as `contact-candidate/` and can provide a recovery starting point. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
 
 The current profile collects full laps first, trains around the first chicane, then returns to full laps. It preserves the source's 30-tick controls and does not prescribe section actions. For unattended training with reconnect and a clean stop file:
 
