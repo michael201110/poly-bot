@@ -240,3 +240,21 @@ def test_rejected_grtqc_checkpoint_does_not_duplicate_replay(tmp_path, monkeypat
     runner._save("checkpoints/step-100-rejected")
     runner._save("latest")
     assert flags == [False, True]
+
+
+def test_transport_disconnect_checkpoints_current_model(tmp_path, monkeypatch) -> None:
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=1234)
+    saved = []
+    events = []
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: saved.append(name) or tmp_path)
+    monkeypatch.setattr(runner, "_emit", events.append)
+
+    runner._checkpoint_after_transport_failure(ConnectionError("player left race"))
+
+    assert saved == ["latest"]
+    assert events == [{
+        "type": "transport_disconnected", "timesteps": 1234,
+        "checkpoint": str(tmp_path), "error": "player left race",
+    }]

@@ -205,6 +205,26 @@ class TrainingRunner:
             promote_directory(staging, directory, require_replay=cfg.algorithm in {"tqc", "grtqc"})
         return directory
 
+    def _checkpoint_after_transport_failure(self, error: BaseException) -> None:
+        """Preserve replay and learner state if the simulator leaves mid-run."""
+        if getattr(self, "model", None) is None:
+            return
+        try:
+            path = self._save("latest", None)
+        except Exception as save_error:
+            self._emit({
+                "type": "transport_checkpoint_failed",
+                "timesteps": getattr(self.model, "num_timesteps", None),
+                "error": str(save_error),
+            })
+            return
+        self._emit({
+            "type": "transport_disconnected",
+            "timesteps": self.model.num_timesteps,
+            "checkpoint": str(path),
+            "error": str(error),
+        })
+
     def _verify_grtqc_initialization(self, directory: Path) -> EvaluationResult:
         """Block all RL updates until the transferred policy reproduces its source."""
         assert self.config.grtqc is not None
@@ -1094,6 +1114,9 @@ class TrainingRunner:
             self._emit({"type": "stopped" if self.stop_requested.is_set() else "completed",
                         "path": str(latest), "timesteps": self.model.num_timesteps})
             return latest
+        except (ConnectionError, TimeoutError) as exc:
+            self._checkpoint_after_transport_failure(exc)
+            raise
         finally:
             training_env.close()
             self.sink.close()
