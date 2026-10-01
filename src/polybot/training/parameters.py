@@ -274,6 +274,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "critic_readiness_relative_change": "Allowed increase in loss and disagreement across that window.",
     "target_lap_s": "Verified target lap time in seconds.",
     "reference_lap_s": "Measured five-lap time of the transferred source at this frame skip.",
+    "contact_candidate_lap_tolerance_s": (
+        "Maximum slowdown allowed for a separate reliable contact-reduction candidate; "
+        "this never changes champion promotion."
+    ),
     "exploration_std": "Small Gaussian perturbation around deterministic rollout actions.",
     "critic_collection_std": "Gaussian rollout perturbation while only GRTQC critics update.",
     "actor_step_action_limit": (

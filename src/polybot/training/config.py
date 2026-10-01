@@ -157,6 +157,7 @@ class GRTQCConfig(TQCConfig):
     critic_readiness_relative_change: float = 0.1
     target_lap_s: float = 22.0
     reference_lap_s: float = 24.263
+    contact_candidate_lap_tolerance_s: float = 0.5
     exploration_std: float = 0.0001
     critic_collection_std: float = 0.001
     actor_step_action_limit: float = 1e-5
@@ -174,6 +175,8 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC target lap must be positive")
         if self.reference_lap_s <= 0:
             raise ValueError("GRTQC reference lap must be positive")
+        if not 0 <= self.contact_candidate_lap_tolerance_s <= 10:
+            raise ValueError("GRTQC contact-candidate pace tolerance must be in [0, 10] seconds")
         if not 0 <= self.exploration_std <= 0.1:
             raise ValueError("GRTQC exploration standard deviation must be in [0, 0.1]")
         if not 0 <= self.critic_collection_std <= 0.1:

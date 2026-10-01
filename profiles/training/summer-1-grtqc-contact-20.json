@@ -148,6 +148,7 @@
     "critic_readiness_window": 200,
     "critic_readiness_relative_change": 0.1,
     "target_lap_s": 22.0,
+    "contact_candidate_lap_tolerance_s": 0.5,
     "exploration_std": 0.0001,
     "critic_collection_std": 0.001,
     "actor_step_action_limit": 1e-06,

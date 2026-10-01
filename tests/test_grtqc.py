@@ -153,8 +153,8 @@ def test_grtqc_keeps_contact_reduction_as_candidate_within_pace_tolerance(tmp_pa
         barrier_contact_steps=20,
     )
     current = EvaluationResult(
-        5, 1.0, 1.0, 1.0, 24.621, 24.621, 0.0, 0.0, 0.0,
-        barrier_contact_steps=5,
+        5, 1.0, 1.0, 1.0, 24.893, 24.893, 0.0, 0.0, 0.0,
+        barrier_contact_steps=10,
     )
     champion_dir = runner.registry.slot(config.track_name, "grtqc", "champion")
     champion_dir.mkdir(parents=True)

@@ -289,18 +289,34 @@ class TrainingRunner:
                 if champion is not None and champion.finish_rate == 1.0
                 and champion.median_lap_s is not None else reference_lap_s
             )
+            contact_reference = champion
+            contact_candidate_dir = self.registry.slot(
+                cfg.track_name, "grtqc", "contact-candidate",
+            )
+            if (contact_candidate_dir / "metadata.json").is_file():
+                contact_candidate_metadata = self.registry.read_metadata(contact_candidate_dir)
+                candidate_evaluation = contact_candidate_metadata.evaluation or {}
+                candidate_lap = candidate_evaluation.get("median_lap_s")
+                if (
+                    candidate_evaluation.get("finish_rate") == 1.0
+                    and candidate_evaluation.get("median_progress") == 1.0
+                    and candidate_lap is not None
+                    and candidate_lap <= reference_lap_s + cfg.grtqc.contact_candidate_lap_tolerance_s
+                ):
+                    contact_reference = EvaluationResult(**candidate_evaluation)
             reliable = (
                 result.episodes >= 5 and result.finish_rate == 1.0
                 and result.median_progress == 1.0
                 and result.median_lap_s is not None
             )
             contact_improved = (
-                reliable and champion is not None
-                and result.barrier_contact_steps < champion.barrier_contact_steps
+                reliable and contact_reference is not None
+                and result.barrier_contact_steps < contact_reference.barrier_contact_steps
             )
             within_pace_tolerance = (
                 reliable
-                and result.median_lap_s <= best_verified + cfg.grtqc.champion_lap_tolerance_s
+                and result.median_lap_s
+                <= best_verified + cfg.grtqc.contact_candidate_lap_tolerance_s
             )
             contact_promotion = contact_improved and within_pace_tolerance
             faster_promotion = reliable and result.median_lap_s < best_verified
@@ -323,7 +339,7 @@ class TrainingRunner:
                     "median_lap_s": result.median_lap_s,
                     "champion_lap_s": best_verified,
                     "barrier_contact_steps": result.barrier_contact_steps,
-                    "champion_barrier_contact_steps": champion.barrier_contact_steps,
+                    "contact_reference_steps": contact_reference.barrier_contact_steps,
                 })
             else:
                 path = self._save(f"checkpoints/step-{self.model.num_timesteps}-rejected", result)
@@ -339,7 +355,7 @@ class TrainingRunner:
                     and (
                         not reliable
                         or result.median_lap_s
-                        > best_verified + cfg.grtqc.champion_lap_tolerance_s
+                        > best_verified + cfg.grtqc.contact_candidate_lap_tolerance_s
                     )
                 ):
                     self._grtqc_weak_evaluations += 1
@@ -406,7 +422,8 @@ class TrainingRunner:
             if (
                 candidate_evaluation.get("finish_rate") == 1.0
                 and candidate_lap is not None
-                and candidate_lap <= cfg.grtqc.reference_lap_s + cfg.grtqc.champion_lap_tolerance_s
+                and candidate_lap
+                <= cfg.grtqc.reference_lap_s + cfg.grtqc.contact_candidate_lap_tolerance_s
                 and candidate_evaluation.get("barrier_contact_steps", 0)
                 < champion_evaluation.get("barrier_contact_steps", 0)
             ):
