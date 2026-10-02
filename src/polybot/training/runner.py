@@ -341,7 +341,10 @@ class TrainingRunner:
                         "type": "evaluation_screen", "timesteps": self.model.num_timesteps,
                         **screen.to_dict(),
                     })
-                    if screen.finish_rate != 1.0 or screen.median_progress != 1.0:
+                    # The finish event is authoritative: the simulator may emit
+                    # it just before normalized route progress reaches exactly 1.
+                    # Such a screen still needs the ordinary five-lap confirmation.
+                    if screen.finish_rate != 1.0:
                         result = screen
                 if result is None:
                     result = evaluate_model(
@@ -402,14 +405,12 @@ class TrainingRunner:
                 candidate_lap = candidate_evaluation.get("median_lap_s")
                 if (
                     candidate_evaluation.get("finish_rate") == 1.0
-                    and candidate_evaluation.get("median_progress") == 1.0
                     and candidate_lap is not None
                     and candidate_lap <= reference_lap_s + cfg.grtqc.contact_candidate_lap_tolerance_s
                 ):
                     contact_reference = EvaluationResult(**candidate_evaluation)
             reliable = (
                 result.episodes >= 5 and result.finish_rate == 1.0
-                and result.median_progress == 1.0
                 and result.median_lap_s is not None
             )
             contact_improved = (

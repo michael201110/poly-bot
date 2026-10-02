@@ -1028,6 +1028,36 @@ def test_actor_screen_does_not_replace_five_lap_promotion(tmp_path, monkeypatch,
         assert saved == ["champion"]
 
 
+def test_finish_event_with_rounded_progress_gets_five_lap_confirmation(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.training_origin = "scratch"
+    config.grtqc.screen_actor_evaluations = True
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(
+        num_timesteps=5000, actor_unlocked=True, scratch_stage="pace",
+        target_entropy=config.grtqc.target_entropy,
+    )
+    rounded = EvaluationResult(
+        1, 1.0, 0.9999353381729051, 0.9999353381729051,
+        23.223, 23.223, 0.0, 0.0, 0.0,
+    )
+    confirmed = replace(rounded, episodes=5)
+    calls, saved = [], []
+
+    def evaluate(*args, episodes, **kwargs):
+        calls.append(episodes)
+        return rounded if episodes == 1 else confirmed
+
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", evaluate)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path / name)
+    result = runner._evaluate()
+
+    assert calls == [1, 5]
+    assert result == confirmed
+    assert saved == ["champion"]
+
+
 def test_successful_screen_cannot_promote_failed_full_evaluation(tmp_path, monkeypatch):
     config = replace(_config("grtqc"), output_root=tmp_path / "models")
     config.grtqc.screen_actor_evaluations = True

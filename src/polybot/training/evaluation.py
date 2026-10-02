@@ -67,7 +67,7 @@ class EvaluationResult:
         return asdict(self)
 
     def rank(self) -> tuple[float, ...]:
-        reliable = self.finish_rate == 1.0 and self.median_progress == 1.0
+        reliable = self.finish_rate == 1.0 and self.median_lap_s is not None
         return (
             self.finish_rate,
             self.median_progress,
@@ -86,7 +86,6 @@ class EvaluationResult:
             target_lap_s > 0
             and self.episodes >= 5
             and self.finish_rate == 1.0
-            and self.median_progress == 1.0
             and self.median_lap_s is not None
             and self.median_lap_s < target_lap_s
         )

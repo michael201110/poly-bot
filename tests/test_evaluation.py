@@ -25,6 +25,11 @@ def test_target_lap_requires_reliable_full_track_completion() -> None:
     assert not reliable_sub_target.confirms_target_lap(22.0)
     genuinely_fast = replace(reliable_sub_target, median_lap_s=21.95)
     assert genuinely_fast.confirms_target_lap(22.0)
+    rounded_finish_progress = replace(
+        genuinely_fast, median_progress=0.9999353381729051,
+        mean_progress=0.9999353381729051,
+    )
+    assert rounded_finish_progress.confirms_target_lap(22.0)
     assert not replace(genuinely_fast, episodes=1).confirms_target_lap(22.0)
     assert not unreliable_fast_outlier.confirms_target_lap(22.0)
     assert not exact_target.confirms_target_lap(22.0)
