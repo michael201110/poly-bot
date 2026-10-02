@@ -18,24 +18,26 @@ Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summ
 The immutable TQC source is `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/`. The historical directory name does not indicate active support for its former algorithm. To recreate the separate GRTQC initialization checkpoint:
 
 ```powershell
-.\.venv\Scripts\python.exe tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-pace-30.json --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/experiments/grtqc-pace-20261002/summer-1/grtqc/initialization
+.\.venv\Scripts\python.exe tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-finish-credit-30.json --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/experiments/grtqc-finish-credit-20261002/summer-1/grtqc/initialization
 ```
 
 The transfer script checks 2,048 saved Summer 1 observations and writes `transfer.json` with the source hash and action errors. The contact-aware reward charges nonterminal wall impacts while filtering touchdown impulses; it starts with fresh replay. Run the shared trainer with the saved configuration:
 
 ```powershell
-.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-pace-30.json
+.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-finish-credit-30.json
 ```
 
-The first run resumes `models/experiments/grtqc-pace-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. In this profile, reliable cleaner laps within 1.5 seconds of the best are saved separately as `contact-candidate/` and can provide a recovery starting point. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
+The first run resumes `models/experiments/grtqc-finish-credit-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. In this profile, reliable cleaner laps within 1.5 seconds of the best are saved separately as `contact-candidate/` and can provide a recovery starting point. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
 
-The current profile collects full laps first, trains around the first chicane, then returns to full laps. It preserves the source's 30-tick controls and does not prescribe section actions. For unattended training with reconnect and a clean stop file:
+The current profile trains full laps with a discount horizon that includes the finish, a small entropy coefficient, and a nonterminal contact penalty. It preserves the source's 30-tick controls. Earlier first-chicane curriculum settings remain as a separate experiment. For unattended training with reconnect and a clean stop file:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-pace-30.json --resume models/experiments/grtqc-pace-20261002/summer-1/grtqc/initialization --stop-file logs/grtqc-pace-30.stop --retry-transport
+.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-finish-credit-30.json --resume models/experiments/grtqc-finish-credit-20261002/summer-1/grtqc/initialization --stop-file logs/grtqc-finish-credit-30.stop --retry-transport
 ```
 
 Creating that stop file requests a saved clean shutdown. Transport retries preserve replay, the remaining step budget and curriculum position; an interrupted initial transfer repeats its fidelity check.
+
+Replay written before reward semantics `nonterminal-contact-v2` must be replaced with `--fresh-replay`. Older contact rewards also charged failed-attempt clawback and early-failure costs even when the car continued; the revised calculation reserves those costs for actual failures. Saved policy weights remain usable.
 
 GRTQC warms its newly initialized critics while the transferred actor is frozen. Actor updates begin only after the minimum warmup and a stable recent window of quantile loss and critic disagreement. The trainer logs quantile, target, and disagreement statistics in `logs/*.jsonl`. See the [training guide](docs/training.md) and [GRTQC experiment record](docs/grtqc-experiment.md) for the implementation, validation gate, and measured status.
 

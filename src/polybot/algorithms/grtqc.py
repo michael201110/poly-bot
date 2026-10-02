@@ -79,6 +79,7 @@ class GRTQC(SeededWarmupTQC):
         exploration_std: float = 0.0001, critic_collection_std: float = 0.001,
         exploration_correlation: float = 0.0,
         policy_std_limit: float = 0.0,
+        critic_exploration_fraction: float = 1.0,
         actor_step_action_limit: float = 1e-5,
         actor_reference_drift_limit: float = 0.01,
         **kwargs: Any,
@@ -91,6 +92,8 @@ class GRTQC(SeededWarmupTQC):
         self.critic_collection_std = critic_collection_std
         self.exploration_correlation = exploration_correlation
         self.policy_std_limit = policy_std_limit
+        self.critic_exploration_fraction = critic_exploration_fraction
+        self._critic_exploration_episodes: np.ndarray | None = None
         self._exploration_noise: np.ndarray | None = None
         self.actor_step_action_limit = actor_step_action_limit
         self.actor_reference_drift_limit = actor_reference_drift_limit
@@ -134,7 +137,16 @@ class GRTQC(SeededWarmupTQC):
         action, _ = self.predict(self._last_obs, deterministic=True)
         action = np.asarray(action, dtype=np.float32).reshape(n_envs, -1)
         noise_std = self.exploration_std if self.actor_unlocked else self.critic_collection_std
+        if not self.actor_unlocked and self.num_timesteps < learning_starts:
+            noise_std = 0.0
         noise = self._rollout_noise(action.shape, noise_std)
+        if not self.actor_unlocked and noise_std:
+            if self._critic_exploration_episodes is None:
+                self._critic_exploration_episodes = (
+                    self._warmup_rng.random(n_envs) < self.critic_exploration_fraction
+                )
+            noise[~self._critic_exploration_episodes] = 0
+            self._exploration_noise[~self._critic_exploration_episodes] = 0
         if noise_std:
             action = np.clip(action + noise, -1.0, 1.0).astype(np.float32)
         if self._air_brake_active and self.env is not None:
@@ -171,9 +183,15 @@ class GRTQC(SeededWarmupTQC):
         # already reset each finished environment, so reset its noise here.
         if self._exploration_noise is not None:
             self._exploration_noise[np.asarray(dones, dtype=bool)] = 0.0
+        if self._critic_exploration_episodes is not None:
+            ended = np.asarray(dones, dtype=bool)
+            self._critic_exploration_episodes[ended] = (
+                self._warmup_rng.random(int(ended.sum())) < self.critic_exploration_fraction
+            )
 
     def set_env(self, env: Any, force_reset: bool = True) -> None:
         self._exploration_noise = None
+        self._critic_exploration_episodes = None
         super().set_env(env, force_reset=force_reset)
 
     def _critic_ready(self) -> bool:
@@ -411,6 +429,7 @@ class GRTQCBackend(TQCBackend):
             critic_collection_std=p.critic_collection_std,
             exploration_correlation=p.exploration_correlation,
             policy_std_limit=p.policy_std_limit,
+            critic_exploration_fraction=p.critic_exploration_fraction,
             actor_step_action_limit=p.actor_step_action_limit,
             actor_reference_drift_limit=p.actor_reference_drift_limit,
             policy_kwargs={"net_arch": {"pi": layers, "qf": layers}},
@@ -446,6 +465,17 @@ class GRTQCBackend(TQCBackend):
         model.critic_collection_std = config.grtqc.critic_collection_std
         model.exploration_correlation = config.grtqc.exploration_correlation
         model.policy_std_limit = config.grtqc.policy_std_limit
+        model.critic_exploration_fraction = config.grtqc.critic_exploration_fraction
+        model._critic_exploration_episodes = None
+        if model.ent_coef != config.grtqc.entropy:
+            # An explicit changed initialization must take effect on resume;
+            # otherwise preserve the coefficient learned by an unchanged run.
+            initial = float(config.grtqc.entropy[5:]) if config.grtqc.entropy.startswith("auto_") else 1.0
+            with th.no_grad():
+                model.log_ent_coef.fill_(log(initial))
+            if model.ent_coef_optimizer is not None:
+                model.ent_coef_optimizer.state.clear()
+            model.ent_coef = config.grtqc.entropy
         model.target_entropy = (
             -float(np.prod(model.action_space.shape))
             if config.grtqc.target_entropy == "auto" else float(config.grtqc.target_entropy)

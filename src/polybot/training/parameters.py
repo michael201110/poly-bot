@@ -293,6 +293,9 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "policy_std_limit": (
         "Smooth bound on stochastic actor and critic-target standard deviation before tanh; 0 disables it."
     ),
+    "critic_exploration_fraction": (
+        "Fraction of critic-warmup episodes with noise after the initial reliable replay fill."
+    ),
     "target_entropy": "Desired policy entropy; use a lower value when bounding training variance tightly.",
     "recovery_critic_cooldown_updates": "Minimum critic updates after actor recovery before learning resumes.",
 }, algorithm="grtqc")}

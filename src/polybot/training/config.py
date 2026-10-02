@@ -162,6 +162,7 @@ class GRTQCConfig(TQCConfig):
     critic_collection_std: float = 0.001
     exploration_correlation: float = 0.0
     policy_std_limit: float = 0.0
+    critic_exploration_fraction: float = 1.0
     target_entropy: float | str = "auto"
     actor_step_action_limit: float = 1e-5
     actor_reference_drift_limit: float = 0.01
@@ -189,6 +190,8 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC exploration correlation must be in [0, 1)")
         if not 0 <= self.policy_std_limit <= 1:
             raise ValueError("GRTQC policy standard deviation limit must be in [0, 1]; 0 disables it")
+        if not 0 <= self.critic_exploration_fraction <= 1:
+            raise ValueError("GRTQC critic exploration fraction must be in [0, 1]")
         if self.target_entropy != "auto" and not math.isfinite(float(self.target_entropy)):
             raise ValueError("GRTQC target entropy must be auto or finite")
         if self.recovery_critic_cooldown_updates < 1:

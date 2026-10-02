@@ -217,6 +217,56 @@ def test_curriculum_boundary_keeps_full_lap_bootstrap_in_replay() -> None:
         env.close()
 
 
+@pytest.mark.parametrize("fraction", [0.0, 1.0])
+def test_critic_exploration_preserves_initial_reliable_fill_and_quiet_episodes(fraction) -> None:
+    config = _config("grtqc")
+    config.grtqc.critic_collection_std = 0.005
+    config.grtqc.critic_exploration_fraction = fraction
+    model, env = _model(config)
+    try:
+        model._last_obs = model.env.reset()
+        expected, _ = model.predict(model._last_obs, deterministic=True)
+        initial, _ = model._sample_action(config.grtqc.learning_starts)
+        np.testing.assert_array_equal(initial, expected)
+        model.num_timesteps = config.grtqc.learning_starts
+        collected, _ = model._sample_action(config.grtqc.learning_starts)
+        if fraction == 0:
+            np.testing.assert_array_equal(collected, expected)
+        else:
+            assert not np.array_equal(collected, expected)
+    finally:
+        env.close()
+
+
+def test_explicit_entropy_change_applies_on_resume_without_resetting_unchanged_runs() -> None:
+    config = _config("grtqc")
+    model, env = _model(config)
+    try:
+        with th.no_grad():
+            model.log_ent_coef.fill_(log_value := -4.0)
+        backend = GRTQCBackend()
+        backend.configure_resume(model, config, "cpu")
+        assert float(model.log_ent_coef.detach()) == log_value
+        config.grtqc.entropy = "auto_0.0001"
+        backend.configure_resume(model, config, "cpu")
+        assert float(model.log_ent_coef.detach().exp()) == pytest.approx(0.0001)
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("algorithm", ["tqc", "grtqc"])
+def test_old_reward_semantics_cannot_be_reused_from_replay(tmp_path, monkeypatch, algorithm) -> None:
+    config = replace(_config(algorithm), output_root=tmp_path / "models", log_root=tmp_path / "logs")
+    runner = TrainingRunner(config)
+    monkeypatch.setattr(runner.registry, "validate", lambda *args: None)
+    monkeypatch.setattr(runner.registry, "read_metadata", lambda *args: SimpleNamespace(
+        training_config=config.to_dict(), reward_semantics="executed-controls-v1",
+        critic_adaptation_required=False, architecture="tiny",
+    ))
+    with pytest.raises(ValueError, match="resume reward settings differ"):
+        runner.run(resume=tmp_path / "latest")
+
+
 @pytest.mark.parametrize(
     ("laps", "expected"),
     [((24.2,) * 5, "champion"), ((24.3,) * 5, "rejected"), ((24.1,) * 4, "rejected")],

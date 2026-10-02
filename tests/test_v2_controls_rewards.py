@@ -261,6 +261,8 @@ def test_collision_impact_cost_does_not_end_the_episode() -> None:
         reward_config=replace(
             RewardConfig(), barrier_collision_impulse_threshold=0.0,
             barrier_contact_penalty=-50.0,
+            failure_progress_clawback_per_m=-3.0,
+            failure_early_penalty=-1800.0,
         ),
     )
     try:
@@ -274,6 +276,8 @@ def test_collision_impact_cost_does_not_end_the_episode() -> None:
         )
         assert "barrier_contact" in info["events"]
         assert info["reward_terms"]["barrier_contact"] == pytest.approx(-50.0)
+        assert info["reward_terms"]["failure_progress_clawback"] == 0.0
+        assert info["reward_terms"]["failure_early"] == 0.0
         assert info["collision_impulse_peak"] == pytest.approx(1.0)
         assert info["collision_impulse_steps"] > 0
         assert info["nonlanding_impulse_peak"] == pytest.approx(1.0)

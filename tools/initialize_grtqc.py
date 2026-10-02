@@ -15,7 +15,7 @@ from polybot.algorithms.grtqc import GRTQCBackend
 from polybot.algorithms.tqc import TQCBackend
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
-from polybot.models.registry import ModelRegistry
+from polybot.models.registry import REWARD_SEMANTICS, ModelRegistry
 from polybot.training.config import EvaluationConfig, GRTQCConfig, TrainingConfig
 
 
@@ -125,6 +125,7 @@ def initialize(
         actor_parameters=counts["actor"], critic_parameters=counts["critic"],
         total_trainable_parameters=counts["total"], training_config=config.to_dict(),
         reward_profile=config.reward_profile,
+        reward_semantics=REWARD_SEMANTICS,
         training_timesteps=0, simulator_ticks=0, wall_seconds=0.0,
         finishes=0, crashes=0, evaluation=None, implementation="grtqc-gated-variance-v1",
         speed_bias_schedule=list(source_model.speed_bias_schedule),

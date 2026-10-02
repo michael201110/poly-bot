@@ -62,10 +62,17 @@ class LiveLogWindow(QWidget):
                 if summary:
                     self.events.append(summary)
                 if event.get("type") == "progress":
+                    learning = ""
+                    if "actor_unlocked" in event:
+                        learning = (
+                            "\nPolicy learning"
+                            if event["actor_unlocked"]
+                            else f"\nPolicy frozen · critic warmup {event.get('critic_warmup_updates', 0):,} updates"
+                        )
                     self.status.setText(
                         f"Step {event['timesteps']:,} · {event['steps_per_second']:.1f} TPS · "
                         f"attempt {event['progress']:.1%} · best seen {event['run_max_progress']:.1%} · "
-                        f"updates {event.get('updates', 0):,}\nFull detail: {self.path}"
+                        f"updates {event.get('updates', 0):,}{learning}\nFull detail: {self.path}"
                     )
             self.position = stream.tell()
 

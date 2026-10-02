@@ -14,7 +14,7 @@ from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
 
 MODEL_SCHEMA = "polybot.model.v2"
 POLYBOT_VERSION = "2.3.0"
-REWARD_SEMANTICS = "executed-controls-v1"
+REWARD_SEMANTICS = "nonterminal-contact-v2"
 PPO_ACTION_SEMANTICS = "steering_signed_longitudinal_v1"
 
 

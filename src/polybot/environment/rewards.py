@@ -520,7 +520,7 @@ class RewardContext:
     @property
     def incomplete_failure(self) -> bool:
         return any((
-            self.barrier_contact, self.airborne_roll_failure, self.stalled,
+            self.airborne_roll_failure, self.stalled,
             self.off_track, self.timed_out, "crash" in self.transition.events,
         ))
 

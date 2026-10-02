@@ -510,7 +510,10 @@ class TrainingRunner:
             self.model.set_actor_reference_observations(
                 reference_observations.cpu().numpy(), reference_model=verified,
             )
-        if self.model.log_ent_coef is not None and verified.log_ent_coef is not None:
+        if (
+            self.model.log_ent_coef is not None and verified.log_ent_coef is not None
+            and getattr(self.model, "ent_coef", None) == getattr(verified, "ent_coef", None)
+        ):
             self.model.log_ent_coef.data.copy_(verified.log_ent_coef.data)
             if self.model.ent_coef_optimizer is not None:
                 self.model.ent_coef_optimizer.state.clear()
@@ -797,9 +800,11 @@ class TrainingRunner:
                     raise ValueError("resume architecture differs from saved model")
                 reward_changed = (
                     metadata.training_config["rewards"] != cfg.to_dict()["rewards"]
-                    or (cfg.algorithm == "tqc" and metadata.reward_semantics != REWARD_SEMANTICS)
+                    or (cfg.algorithm in {"tqc", "grtqc"} and metadata.reward_semantics != REWARD_SEMANTICS)
                 )
-                if reward_changed and not fresh_replay and not (
+                if reward_changed and not (
+                    fresh_replay or (cfg.algorithm == "grtqc" and resume.name == "initialization")
+                ) and not (
                     allow_ppo_reward_change and cfg.algorithm == "ppo"
                 ):
                     raise ValueError("resume reward settings differ from saved replay rewards")
