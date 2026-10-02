@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch as th
+from sb3_contrib import TQC
 from stable_baselines3.common.buffers import NStepReplayBuffer
 from stable_baselines3.common.logger import configure
 
@@ -41,6 +42,7 @@ def _model(config: TrainingConfig):
     backend = TQCBackend() if config.algorithm == "tqc" else GRTQCBackend()
     env = PolyTrackEnv(
         MockSimulatorTransport(), action_adapter=backend.action_adapter(config),
+        expose_training_state=bool(config.grtqc and config.grtqc.critic_environment_state),
     )
     return backend.create_model(config, env, "cpu"), env
 
@@ -64,6 +66,95 @@ def test_gated_actor_transfers_all_tqc_weights_with_near_identical_actions() -> 
     finally:
         source_env.close()
         target_env.close()
+
+
+def test_grtqc_without_extra_penalty_matches_the_installed_tqc_update_mathematically():
+    config = _config("grtqc")
+    config.grtqc.disagreement_coefficient = 0
+    config.grtqc.actor_step_action_limit = 2
+    model, env = _model(config)
+    reference, reference_env = _model(config)
+    try:
+        rng = np.random.default_rng(19)
+        for _ in range(32):
+            observation = rng.normal(size=(1, 105)).astype(np.float32)
+            following = rng.normal(size=(1, 105)).astype(np.float32)
+            action = rng.uniform(-1, 1, size=(1, 2)).astype(np.float32)
+            reward = rng.normal(size=1).astype(np.float32)
+            done = rng.random(size=1) > .7
+            for learner in (model, reference):
+                learner.replay_buffer.add(observation, following, action, reward, done, [{}])
+        reference.policy.load_state_dict(model.policy.state_dict())
+        for learner in (model, reference):
+            learner.actor_unlocked = True
+            learner.set_logger(configure(None, []))
+            np.random.seed(17)
+            th.manual_seed(17)
+            if learner is model:
+                learner.train(3, 8)
+            else:
+                TQC.train(learner, 3, 8)
+        for name, tensor in reference.policy.state_dict().items():
+            th.testing.assert_close(tensor, model.policy.state_dict()[name], rtol=1e-6, atol=2e-7)
+        th.testing.assert_close(model.log_ent_coef, reference.log_ent_coef, rtol=0, atol=0)
+    finally:
+        env.close()
+        reference_env.close()
+
+
+def test_critic_environment_context_does_not_change_actor_inputs_or_transfer(tmp_path):
+    source, source_env = _model(_config("tqc"))
+    config = _config("grtqc")
+    config.grtqc.critic_controller_state = True
+    config.grtqc.actor_controller_state = True
+    config.grtqc.critic_environment_state = True
+    target, target_env = _model(config)
+    try:
+        target.actor.load_state_dict(source.actor.state_dict(), strict=False)
+        base = np.random.default_rng(17).normal(size=(64, 105)).astype(np.float32)
+        extra = np.random.default_rng(18).uniform(-1, 1, size=(64, 16)).astype(np.float32)
+        augmented = np.concatenate((base, extra), axis=1)
+        assert target.actor.features_extractor.features_dim == 109
+        assert target.critic.features_extractor.features_dim == 121
+        np.testing.assert_array_equal(
+            source.predict(base, deterministic=True)[0], target.predict(augmented, deterministic=True)[0],
+        )
+        changed = augmented.copy()
+        changed[:, 109:] += 1
+        np.testing.assert_array_equal(
+            target.predict(augmented, deterministic=True)[0], target.predict(changed, deterministic=True)[0],
+        )
+        backend = GRTQCBackend()
+        backend.save_model(target, tmp_path)
+        loaded = backend.load_model(tmp_path / "policy.zip", None, "cpu")
+        np.testing.assert_array_equal(
+            target.predict(augmented, deterministic=True)[0], loaded.predict(augmented, deterministic=True)[0],
+        )
+        old, old_env = _model(_config("grtqc"))
+        try:
+            with pytest.raises(ValueError, match="observation layout"):
+                backend.configure_resume(old, config, "cpu")
+        finally:
+            old_env.close()
+    finally:
+        source_env.close()
+        target_env.close()
+
+
+def test_incomplete_deadline_masks_bootstrap_in_replay():
+    config = _config("grtqc")
+    model, env = _model(config)
+    try:
+        env.max_episode_steps = 1
+        observation = model.env.reset()
+        action = np.array([[0, 1]], dtype=np.float32)
+        _, rewards, dones, infos = model.env.step(action)
+        assert dones[0] and not infos[0]["TimeLimit.truncated"]
+        terminal = infos[0]["terminal_observation"][None]
+        model.replay_buffer.add(observation, terminal, action, rewards, dones, infos)
+        assert float(model.replay_buffer.sample(1).dones[0]) == 1
+    finally:
+        env.close()
 
 
 def test_controller_adapter_settings_require_real_controller_observations():

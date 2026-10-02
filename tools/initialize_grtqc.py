@@ -14,7 +14,7 @@ import torch as th
 from polybot.algorithms.grtqc import GRTQCBackend
 from polybot.algorithms.tqc import TQCBackend
 from polybot.environment.env import PolyTrackEnv
-from polybot.environment.observations import schema_for
+from polybot.environment.observations import extra_size, schema_for
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import REWARD_SEMANTICS, ModelRegistry
 from polybot.training.config import EvaluationConfig, GRTQCConfig, TrainingConfig
@@ -82,6 +82,7 @@ def initialize(
         MockSimulatorTransport(), track_id=config.track_id,
         lookahead_count=config.lookahead_count, frame_skip=config.frame_skip,
         action_adapter=target_backend.action_adapter(config),
+        expose_training_state=config.grtqc.critic_environment_state,
     )
     try:
         target = target_backend.create_model(config, env, device)
@@ -110,7 +111,7 @@ def initialize(
     executed_difference = []
     for batch in np.array_split(observations, 16):
         target_batch = (
-            np.pad(batch, ((0, 0), (0, 4))) if config.grtqc.critic_controller_state else batch
+            np.pad(batch, ((0, 0), (0, extra_size(config)))) if extra_size(config) else batch
         )
         with th.no_grad():
             tensor = th.as_tensor(batch, device=device)

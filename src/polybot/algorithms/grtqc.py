@@ -17,12 +17,13 @@ import torch as th
 from sb3_contrib.common.utils import quantile_huber_loss
 from sb3_contrib.tqc.policies import TQCPolicy
 from stable_baselines3.common.buffers import NStepReplayBuffer, ReplayBuffer
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, FlattenExtractor
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.utils import polyak_update
 from torch import nn
 
 from polybot.algorithms.tqc import SeededWarmupTQC, TQCBackend
 from polybot.control.actions import ContinuousActionAdapter
+from polybot.environment.observations import extra_size
 from polybot.environment.observations import size as observation_size
 from polybot.training.config import ARCHITECTURES, GRTQCConfig
 from polybot.training.critic_reference import on_policy_returns
@@ -91,10 +92,10 @@ def _enable_actor_controller_state(actor: Any, width: int) -> bool:
         return False
     if not isinstance(first, nn.Linear) or first.in_features != width:
         raise ValueError("actor controller adapter requires the compatible inherited first layer")
-    if int(np.prod(actor.observation_space.shape)) != width + 4:
+    if int(np.prod(actor.observation_space.shape)) < width + 4:
         raise ValueError("actor controller adapter requires four real controller-state inputs")
     actor.latent_pi[0] = ControllerStateLinear(first)
-    actor.features_extractor = FlattenExtractor(actor.observation_space)
+    actor.features_extractor = ActorPrefixExtractor(actor.observation_space, width + 4)
     return True
 
 
@@ -665,7 +666,7 @@ class GRTQCBackend(TQCBackend):
         p = config.grtqc
         layers = list(ARCHITECTURES[p.architecture])
         width = observation_size(config.lookahead_count)
-        if int(np.prod(env.observation_space.shape)) != width + (4 if p.critic_controller_state else 0):
+        if int(np.prod(env.observation_space.shape)) != width + extra_size(config):
             raise ValueError("GRTQC environment has an incompatible controller-state observation layout")
         model = GRTQC(
             GRTQCPolicy, env, seed=config.seed, device=device, verbose=0,
@@ -716,7 +717,7 @@ class GRTQCBackend(TQCBackend):
     ) -> None:
         assert config.grtqc is not None
         width = observation_size(config.lookahead_count)
-        expected_width = width + (4 if config.grtqc.critic_controller_state else 0)
+        expected_width = width + extra_size(config)
         if int(np.prod(model.observation_space.shape)) != expected_width:
             raise ValueError("GRTQC resume has an incompatible controller-state observation layout")
         adapter_added = model.configure_actor_controller_state(

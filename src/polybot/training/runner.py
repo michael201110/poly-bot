@@ -135,6 +135,7 @@ class TrainingRunner:
             # short per-step timeout used by local mock environments.
             request_timeout_s=180.0 if cfg.backend == "websocket" else 10.0,
             action_adapter=self.backend.action_adapter(cfg),
+            expose_training_state=bool(cfg.grtqc and cfg.grtqc.critic_environment_state),
             **(phase.env_kwargs() if phase is not None else {}),
         )
         if cfg.algorithm == "ppo" and (
@@ -266,7 +267,9 @@ class TrainingRunner:
         if source_metadata.speed_bias_schedule:
             reference.speed_bias_schedule = list(source_metadata.speed_bias_schedule)
         if self.config.grtqc.critic_controller_state:
-            reference = PrefixObservationReference(reference, extra_features=4)
+            reference = PrefixObservationReference(
+                reference, extra_features=self.model.observation_space.shape[0] - reference.observation_space.shape[0],
+            )
         reference_paths: list[list[dict[str, Any]]] = []
         observations: list[np.ndarray] = []
         result = evaluate_model(

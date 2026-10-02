@@ -333,6 +333,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "Maximum mean critic error relative to observed frozen-policy driving returns before actor unlock. "
         "Used with complete-return initialization; this is a diagnostic, not an exact soft-Q target."
     ),
+    "critic_environment_state": (
+        "Give critics the actual lap clock, checkpoint, reward history and failure timers. "
+        "Actor inputs remain unchanged; requires fresh replay with the recorded state."
+    ),
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {

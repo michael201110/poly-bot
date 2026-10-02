@@ -173,6 +173,7 @@ class GRTQCConfig(TQCConfig):
     screen_actor_evaluations: bool = False
     finish_episode_before_actor_eval: bool = False
     critic_controller_state: bool = False
+    critic_environment_state: bool = False
     actor_controller_state: bool = False
     controller_adapter_only: bool = False
     critic_mc_initialization_updates: int = 0
@@ -181,6 +182,8 @@ class GRTQCConfig(TQCConfig):
 
     def __post_init__(self) -> None:
         TQCConfig.__post_init__(self)
+        if self.critic_environment_state and not self.critic_controller_state:
+            raise ValueError("GRTQC environment state requires controller-state observations")
         if self.actor_controller_state and not self.critic_controller_state:
             raise ValueError("GRTQC actor controller inputs require controller-state observations")
         if self.controller_adapter_only and not self.actor_controller_state:

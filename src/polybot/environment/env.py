@@ -12,7 +12,7 @@ import numpy as np
 from gymnasium import spaces
 
 from polybot.control.actions import ActionAdapter, AppliedAction, ControlDemand, DigitalActionAdapter
-from polybot.environment.observations import observe, size
+from polybot.environment.observations import TRAINING_STATE_SIZE, observe, size
 from polybot.environment.rewards import (
     RewardConfig,
     RewardContext,
@@ -148,6 +148,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         curriculum_end_s: float | None = None,
         curriculum_random_quarters: bool = False,
         action_adapter: ActionAdapter | None = None,
+        expose_training_state: bool = False,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -213,11 +214,13 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_curriculum_spawn_ratio: float | None = None
         self._episode_curriculum_quarter: int | None = None
         self.action_adapter = action_adapter or DigitalActionAdapter()
+        self.expose_training_state = expose_training_state
         self.action_space = self.action_adapter.action_space
         self.observation_space = spaces.Box(
             low=-5.0,
             high=5.0,
-            shape=(size(lookahead_count) + len(self._controller_observation()),),
+            shape=(size(lookahead_count) + len(self._controller_observation())
+                   + TRAINING_STATE_SIZE * expose_training_state,),
             dtype=np.float32,
         )
 
@@ -686,14 +689,14 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             or stalled
             or off_track
             or airborne_roll_failure
+            # A deadline charged as an incomplete failure is an absorbing
+            # task outcome, not a bootstrap into another chance at finishing.
+            or timed_out
         )
         truncated = (
-            "time_limit" in events
             # Section bounds shorten collection, not the full-lap value task.
             # Preserve bootstrap from terminal_observation in replay and PPO.
-            or (curriculum_section_complete and not terminated)
-            or self._episode_steps >= self.max_episode_steps
-            or (self.max_episode_s is not None and telemetry.elapsed_s >= self.max_episode_s)
+            curriculum_section_complete and not terminated
         )
         self._episode_done = terminated or truncated
         self._previous_progress_m = transition.telemetry.route_progress_m
@@ -771,7 +774,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             info["events"] = tuple(dict.fromkeys((*info["events"], "curriculum_section_complete")))
         if landing_grace:
             info["landing_grace_s"] = self._landing_grace_s
-        if truncated and "time_limit" not in events:
+        if (truncated or timed_out) and "time_limit" not in events:
             info["wrapper_time_limit"] = True
             info["events"] = tuple(dict.fromkeys((*info["events"], "time_limit")))
         return observation, reward, terminated, truncated, info
@@ -781,6 +784,20 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         state = self._controller_observation()
         if state:
             observation = np.concatenate((observation, np.asarray(state, dtype=np.float32)))
+        if self.expose_training_state:
+            p = self.reward_config
+            context = (
+                telemetry.elapsed_s / 60.0, telemetry.checkpoint_index / 10.0,
+                self._highest_progress_m / max(1.0, telemetry.track_length_m),
+                self._episode_start_progress_m / max(1.0, telemetry.track_length_m),
+                self._stationary_s / max(1e-6, p.stall_timeout_s),
+                self._off_track_s / max(1e-6, p.off_track_timeout_s),
+                self._airborne_roll_s / max(1e-6, p.airborne_roll_timeout_s),
+                self._landing_grace_s / max(1e-6, p.landing_grace_s),
+                self._previous_control.steer, self._previous_control.throttle, self._previous_control.brake,
+                self._episode_steps / max(1, self.max_episode_steps),
+            )
+            observation = np.concatenate((observation, np.clip(context, -5, 5).astype(np.float32)))
         return observation
 
     def _controller_observation(self) -> tuple[float, ...]:

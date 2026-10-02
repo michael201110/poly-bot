@@ -19,6 +19,7 @@ from polybot.environment.rewards import (
     RewardContext,
     _airborne_terms,
     _driving_terms,
+    _finish_reward,
     _ghost_guidance_weight,
     _ground_spin_penalty,
     summer_1_recovery_reward_config,
@@ -285,9 +286,36 @@ def test_incomplete_time_limit_gets_failure_penalty() -> None:
     try:
         env.reset(seed=1)
         _, _, terminated, truncated, info = env.step(np.array([0, 1], dtype=np.float32))
-        assert not terminated and truncated
+        assert terminated and not truncated
         assert "time_limit" in info["events"]
         assert info["reward_terms"]["failure_early"] < 0
+    finally:
+        env.close()
+
+
+def test_privileged_context_distinguishes_reward_and_failure_states_with_identical_policy_inputs():
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), action_adapter=ContinuousActionAdapter(expose_controller_state=True),
+        expose_training_state=True,
+    )
+    try:
+        observed, _ = env.reset(seed=1)
+        original = env.latest_telemetry
+        later = replace(original, elapsed_s=25.0, checkpoint_index=1)
+        assert _finish_reward(original, env.reward_config) != _finish_reward(later, env.reward_config)
+        timed = env._policy_observation(later)
+        np.testing.assert_array_equal(observed[:109], timed[:109])
+        assert not np.array_equal(observed[109:], timed[109:])
+        env._stationary_s = env.reward_config.stall_timeout_s - 0.01
+        env._landing_grace_s = env.reward_config.landing_grace_s
+        env._highest_progress_m = 50
+        env._previous_control = ControlDemand(0.3, 0.7, 0)
+        delayed = env._policy_observation(later)
+        np.testing.assert_array_equal(timed[:109], delayed[:109])
+        assert not np.array_equal(timed[109:], delayed[109:])
+        assert env.observation_space.contains(delayed)
+        reset, _ = env.reset(seed=1)
+        np.testing.assert_array_equal(reset, observed)
     finally:
         env.close()
 
