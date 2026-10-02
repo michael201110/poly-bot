@@ -175,7 +175,11 @@ class TrainingRunner:
             seed=cfg.seed, device=self.device.resolved,
             finishes=self.finishes, crashes=self.crashes,
             evaluation=evaluation.to_dict() if evaluation is not None else None,
-            implementation="grtqc-gated-variance-v1" if cfg.algorithm == "grtqc" else None,
+            implementation=(
+                "grtqc-gated-variance-pwm-adapter-v1" if cfg.grtqc and cfg.grtqc.actor_controller_state else
+                "grtqc-gated-variance-pwm-state-v1" if cfg.grtqc and cfg.grtqc.critic_controller_state else
+                "grtqc-gated-variance-v1" if cfg.algorithm == "grtqc" else None
+            ),
             reward_semantics=REWARD_SEMANTICS,
             critic_adaptation_required=bool(getattr(self.model, "critic_adaptation_required", False)),
             adaptation_stage=getattr(self.model, "adaptation_stage", None),
@@ -548,7 +552,7 @@ class TrainingRunner:
         assert cfg.grtqc is not None
         source = self._grtqc_verified_actor_source()
         verified = self.backend.load_model(source / "policy.zip", None, self.device.resolved)
-        self.model.actor.load_state_dict(verified.actor.state_dict())
+        self.backend.restore_actor_weights(self.model, verified)
         self.model.actor.optimizer.state.clear()
         reference_observations = getattr(self.model, "_actor_reference_observations", None)
         if reference_observations is not None:

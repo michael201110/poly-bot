@@ -310,8 +310,16 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "critics continue learning and complete-lap rewards remain in replay."
     ),
     "critic_controller_state": (
-        "Give critics the PWM accumulators and directions while keeping the actor's original inputs. "
+        "Append the PWM accumulators and directions to observations for the critics. "
         "Requires a new compatible initialization and fresh replay."
+    ),
+    "actor_controller_state": (
+        "Let the actor learn from actual PWM accumulator state through a zero-initialized input adapter. "
+        "Initial driving actions stay unchanged; requires controller-state observations."
+    ),
+    "controller_adapter_only": (
+        "Initially train only the actor's new controller input weights, preserving its inherited layers. "
+        "Disable to continue learning with all actor weights after validating this stage."
     ),
 }, algorithm="grtqc")}
 

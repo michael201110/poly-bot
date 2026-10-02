@@ -67,7 +67,8 @@ class LiveLogWindow(QWidget):
                         learning = "\nFinishing attempt before policy check · critic updates continue"
                     elif "actor_unlocked" in event:
                         learning = (
-                            "\nPolicy learning"
+                            ("\nLearning controller input adapter" if event.get("controller_adapter_only")
+                             else "\nPolicy learning")
                             if event["actor_unlocked"]
                             else f"\nPolicy frozen · critic warmup {event.get('critic_warmup_updates', 0):,} updates"
                         )

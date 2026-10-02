@@ -64,6 +64,13 @@ def test_gated_actor_transfers_all_tqc_weights_with_near_identical_actions() -> 
         target_env.close()
 
 
+def test_controller_adapter_settings_require_real_controller_observations():
+    with pytest.raises(ValueError, match="controller-state observations"):
+        GRTQCConfig(actor_controller_state=True)
+    with pytest.raises(ValueError, match="actor controller inputs"):
+        GRTQCConfig(controller_adapter_only=True)
+
+
 def test_critic_updates_keep_transferred_actor_frozen_until_ready() -> None:
     model, env = _model(_config("grtqc"))
     try:
@@ -133,6 +140,123 @@ def test_pending_evaluation_holds_actor_but_keeps_real_critic_updates() -> None:
         assert GRTQCBackend().metrics(model)["actor_evaluation_pending"] == 1
         GRTQCBackend().configure_resume(model, config, "cpu")
         assert not model._actor_evaluation_hold
+    finally:
+        env.close()
+
+
+def test_controller_actor_adapter_preserves_source_then_learns_without_changing_inherited_weights(tmp_path):
+    source, source_env = _model(_config("tqc"))
+    config = _config("grtqc")
+    config.grtqc.critic_controller_state = True
+    config.grtqc.actor_controller_state = True
+    config.grtqc.controller_adapter_only = True
+    target, target_env = _model(config)
+    try:
+        result = target.actor.load_state_dict(source.actor.state_dict(), strict=False)
+        assert len(result.missing_keys) == 5
+        assert "latent_pi.0.controller_weight" in result.missing_keys
+        base = np.random.default_rng(17).normal(size=(64, 105)).astype(np.float32)
+        controller = np.random.default_rng(18).uniform(-1, 1, size=(64, 4)).astype(np.float32)
+        augmented = np.concatenate((base, controller), axis=1)
+        expected = source.predict(base, deterministic=True)[0]
+        np.testing.assert_array_equal(expected, target.predict(augmented, deterministic=True)[0])
+        before = {name: weight.clone() for name, weight in target.actor.state_dict().items()}
+        target.actor_unlocked = True
+        target.learn(24)
+        changed = []
+        for name, weight in target.actor.state_dict().items():
+            if not th.equal(weight, before[name]):
+                changed.append(name)
+        assert changed == ["latent_pi.0.controller_weight"]
+        assert target.critic_updates_since_transfer > 0
+        action = target.predict(augmented, deterministic=True)[0]
+        backend = GRTQCBackend()
+        counts = backend.parameter_counts(target)
+        assert counts["actor_trainable"] == 4 * target.actor.latent_pi[0].out_features
+        assert counts["actor"] > counts["actor_trainable"]
+        backend.save_model(target, tmp_path, resume=True)
+        loaded = backend.load_model(tmp_path / "policy.zip", None, "cpu", resume=True)
+        np.testing.assert_array_equal(action, loaded.predict(augmented, deterministic=True)[0])
+        assert loaded.policy.controller_adapter_only
+        assert sum(p.requires_grad for p in loaded.actor.parameters()) == 1
+        loaded.set_env(target_env)
+        loaded.learn(8, reset_num_timesteps=False)
+        assert loaded.actor.optimizer.state
+        config.grtqc.controller_adapter_only = False
+        backend.configure_resume(loaded, config, "cpu")
+        assert all(p.requires_grad for p in loaded.actor.parameters())
+        before_full_learning = {name: value.clone() for name, value in loaded.actor.state_dict().items()}
+        loaded.learn(8, reset_num_timesteps=False)
+        assert any(
+            not th.equal(value, before_full_learning[name])
+            for name, value in loaded.actor.state_dict().items()
+            if name != "latent_pi.0.controller_weight"
+        )
+    finally:
+        source_env.close()
+        target_env.close()
+
+
+def test_controller_adapter_upgrade_retains_replay_critics_and_exact_fallback(tmp_path):
+    config = _config("grtqc")
+    config.grtqc.critic_controller_state = True
+    model, env = _model(config)
+    fallback, fallback_env = _model(config)
+    try:
+        model.learn(24)
+        observations = model.replay_buffer.observations[:24, 0].copy()
+        expected = model.predict(observations, deterministic=True)[0]
+        replay, critic_optimizer = model.replay_buffer, model.critic.optimizer
+        critic = {name: value.clone() for name, value in model.critic.state_dict().items()}
+        config.grtqc.actor_controller_state = True
+        config.grtqc.controller_adapter_only = True
+        backend = GRTQCBackend()
+        backend.configure_resume(model, config, "cpu")
+        assert model.replay_buffer is replay
+        assert model.critic.optimizer is critic_optimizer
+        assert not model.actor_unlocked
+        assert model.critic_updates_since_transfer == 0
+        for name, value in model.critic.state_dict().items():
+            th.testing.assert_close(value, critic[name], rtol=0, atol=0)
+        np.testing.assert_array_equal(expected, model.predict(observations, deterministic=True)[0])
+        backend.save_model(model, tmp_path, resume=True)
+        loaded = backend.load_model(tmp_path / "policy.zip", None, "cpu", resume=True)
+        np.testing.assert_array_equal(expected, loaded.predict(observations, deterministic=True)[0])
+        with th.no_grad():
+            model.actor.latent_pi[0].controller_weight.fill_(0.1)
+        backend.restore_actor_weights(model, fallback)
+        assert th.count_nonzero(model.actor.latent_pi[0].controller_weight) == 0
+        np.testing.assert_array_equal(
+            fallback.predict(observations, deterministic=True)[0],
+            model.predict(observations, deterministic=True)[0],
+        )
+        config.grtqc.actor_controller_state = False
+        config.grtqc.controller_adapter_only = False
+        with pytest.raises(ValueError, match="cannot disable"):
+            backend.configure_resume(model, config, "cpu")
+    finally:
+        env.close()
+        fallback_env.close()
+
+
+@pytest.mark.parametrize("setting,value", [("policy_std_limit", 0.001), ("gamma", 0.999)])
+def test_changed_critic_targets_repeat_warmup_with_saved_replay(setting, value):
+    config = _config("grtqc")
+    model, env = _model(config)
+    try:
+        model.actor_unlocked = True
+        model.critic_updates_since_transfer = 9000
+        replay = model.replay_buffer
+        setattr(config.grtqc, setting, value)
+        GRTQCBackend().configure_resume(model, config, "cpu")
+        assert not model.actor_unlocked
+        assert model.critic_updates_since_transfer == 0
+        assert model.replay_buffer is replay
+        model.actor_unlocked = True
+        model.critic_updates_since_transfer = 9000
+        GRTQCBackend().configure_resume(model, config, "cpu")
+        assert model.actor_unlocked
+        assert model.critic_updates_since_transfer == 9000
     finally:
         env.close()
 

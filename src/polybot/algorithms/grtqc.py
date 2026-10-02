@@ -17,7 +17,7 @@ import torch as th
 from sb3_contrib.common.utils import quantile_huber_loss
 from sb3_contrib.tqc.policies import TQCPolicy
 from stable_baselines3.common.buffers import NStepReplayBuffer, ReplayBuffer
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor, FlattenExtractor
 from stable_baselines3.common.utils import polyak_update
 from torch import nn
 
@@ -69,16 +69,61 @@ class ActorPrefixExtractor(BaseFeaturesExtractor):
         return observations[..., :self.width].contiguous()
 
 
+class ControllerStateLinear(nn.Linear):
+    """Add learned PWM state without changing the inherited matrix multiply."""
+
+    def __init__(self, original: nn.Linear) -> None:
+        nn.Module.__init__(self)
+        self.in_features, self.out_features = original.in_features, original.out_features
+        self.weight, self.bias = original.weight, original.bias
+        self.controller_weight = nn.Parameter(original.weight.new_zeros((self.out_features, 4)))
+
+    def forward(self, values: th.Tensor) -> th.Tensor:
+        inherited = nn.functional.linear(values[..., :self.in_features].contiguous(), self.weight, self.bias)
+        controller = nn.functional.linear(values[..., self.in_features:], self.controller_weight)
+        return inherited + controller
+
+
+def _enable_actor_controller_state(actor: Any, width: int) -> bool:
+    first = actor.latent_pi[0]
+    if isinstance(first, ControllerStateLinear):
+        return False
+    if not isinstance(first, nn.Linear) or first.in_features != width:
+        raise ValueError("actor controller adapter requires the compatible inherited first layer")
+    if int(np.prod(actor.observation_space.shape)) != width + 4:
+        raise ValueError("actor controller adapter requires four real controller-state inputs")
+    actor.latent_pi[0] = ControllerStateLinear(first)
+    actor.features_extractor = FlattenExtractor(actor.observation_space)
+    return True
+
+
+def _configure_actor_trainability(actor: Any, adapter_only: bool) -> None:
+    for name, parameter in actor.named_parameters():
+        parameter.requires_grad_(not adapter_only or name.endswith(".controller_weight"))
+        parameter.grad = None
+
+
 class GRTQCPolicy(TQCPolicy):
     """Keep original TQC linear parameter names for direct weight transfer."""
 
-    def __init__(self, *args: Any, actor_observation_size: int = 0, **kwargs: Any) -> None:
+    def __init__(
+        self, *args: Any, actor_observation_size: int = 0,
+        actor_controller_state: bool = False, controller_adapter_only: bool = False, **kwargs: Any,
+    ) -> None:
         self.actor_observation_size = actor_observation_size
+        self.actor_controller_state = actor_controller_state
+        self.controller_adapter_only = controller_adapter_only
+        if actor_controller_state and not actor_observation_size:
+            raise ValueError("actor controller adapter requires the inherited observation width")
+        if controller_adapter_only and not actor_controller_state:
+            raise ValueError("controller-only adaptation requires the actor controller adapter")
         super().__init__(*args, **kwargs)
 
     def _get_constructor_parameters(self) -> dict[str, Any]:
         parameters = super()._get_constructor_parameters()
         parameters["actor_observation_size"] = self.actor_observation_size
+        parameters["actor_controller_state"] = self.actor_controller_state
+        parameters["controller_adapter_only"] = self.controller_adapter_only
         return parameters
 
     def make_actor(self, features_extractor: Any = None) -> Any:
@@ -86,6 +131,9 @@ class GRTQCPolicy(TQCPolicy):
             features_extractor = ActorPrefixExtractor(self.observation_space, self.actor_observation_size)
         actor = super().make_actor(features_extractor)
         _gate_hidden_layers(actor.latent_pi, scale=2.0)
+        if self.actor_controller_state:
+            _enable_actor_controller_state(actor, self.actor_observation_size)
+        _configure_actor_trainability(actor, self.controller_adapter_only)
         return actor
 
     def make_critic(self, features_extractor: Any = None) -> Any:
@@ -131,6 +179,29 @@ class GRTQC(SeededWarmupTQC):
         self._actor_reference_observations: th.Tensor | None = None
         self._actor_reference_actions: th.Tensor | None = None
         super().__init__(*args, **kwargs)
+
+    def configure_actor_controller_state(self, enabled: bool, adapter_only: bool) -> bool:
+        """Upgrade compatible phase-aware checkpoints without discarding critic/replay."""
+        existing = bool(getattr(self.policy, "actor_controller_state", False))
+        if existing and not enabled:
+            raise ValueError("cannot disable controller inputs in an adapted actor")
+        changed = False
+        if enabled:
+            width = self.policy.actor_observation_size
+            changed = _enable_actor_controller_state(self.actor, width)
+            if changed:
+                # One parameter group must match reconstruction on save/load.
+                # Start actor moments afresh; critic optimizer and replay stay intact.
+                self.actor.optimizer = self.policy.optimizer_class(
+                    self.actor.parameters(), lr=self.actor_lr, **self.policy.optimizer_kwargs,
+                )
+        if adapter_only != getattr(self.policy, "controller_adapter_only", False):
+            self.actor.optimizer.state.clear()
+        _configure_actor_trainability(self.actor, adapter_only)
+        self.policy.actor_controller_state = enabled
+        self.policy.controller_adapter_only = adapter_only
+        self.policy_kwargs.update(actor_controller_state=enabled, controller_adapter_only=adapter_only)
+        return changed
 
     def set_actor_reference_observations(
         self, observations: np.ndarray, *, reference_model: Any | None = None,
@@ -516,6 +587,8 @@ class GRTQCBackend(TQCBackend):
             policy_kwargs={
                 "net_arch": {"pi": layers, "qf": layers},
                 "actor_observation_size": width if p.critic_controller_state else 0,
+                "actor_controller_state": p.actor_controller_state,
+                "controller_adapter_only": p.controller_adapter_only,
             },
         )
         model.actor_lr = p.actor_learning_rate or p.learning_rate
@@ -535,6 +608,22 @@ class GRTQCBackend(TQCBackend):
         self, model: GRTQC, config: TrainingConfig, device: str, *, fresh_replay: bool = False,
     ) -> None:
         assert config.grtqc is not None
+        width = observation_size(config.lookahead_count)
+        expected_width = width + (4 if config.grtqc.critic_controller_state else 0)
+        if int(np.prod(model.observation_space.shape)) != expected_width:
+            raise ValueError("GRTQC resume has an incompatible controller-state observation layout")
+        adapter_added = model.configure_actor_controller_state(
+            config.grtqc.actor_controller_state, config.grtqc.controller_adapter_only,
+        )
+        target_entropy = (
+            -float(np.prod(model.action_space.shape))
+            if config.grtqc.target_entropy == "auto" else float(config.grtqc.target_entropy)
+        )
+        targets_changed = (
+            model.gamma != config.grtqc.gamma
+            or model.policy_std_limit != config.grtqc.policy_std_limit
+            or model.target_entropy != target_entropy
+        )
         original = config.tqc
         config.tqc = config.grtqc
         try:
@@ -542,7 +631,7 @@ class GRTQCBackend(TQCBackend):
         finally:
             config.tqc = original
         horizon_changed = model.configure_replay_horizon(config.grtqc.n_step_return, config.grtqc.gamma)
-        if horizon_changed or fresh_replay:
+        if horizon_changed or fresh_replay or targets_changed or adapter_added:
             # Changed targets or recollected reward data must adapt the critics
             # before they can guide another update to the saved driving skill.
             model.actor_unlocked = False
@@ -568,14 +657,34 @@ class GRTQCBackend(TQCBackend):
             if model.ent_coef_optimizer is not None:
                 model.ent_coef_optimizer.state.clear()
             model.ent_coef = config.grtqc.entropy
-        model.target_entropy = (
-            -float(np.prod(model.action_space.shape))
-            if config.grtqc.target_entropy == "auto" else float(config.grtqc.target_entropy)
-        )
+        model.target_entropy = target_entropy
         model._exploration_noise = None
         model._actor_evaluation_hold = False
         model.actor_step_action_limit = config.grtqc.actor_step_action_limit
         model.actor_reference_drift_limit = config.grtqc.actor_reference_drift_limit
+
+    @staticmethod
+    def restore_actor_weights(model: GRTQC, verified: GRTQC) -> None:
+        """A legacy phase-aware fallback initializes only the new adapter to zero."""
+        incoming = verified.actor.state_dict()
+        destination = set(model.actor.state_dict())
+        missing = destination - set(incoming)
+        if missing - {"latent_pi.0.controller_weight"}:
+            raise ValueError("verified actor has incompatible inherited weights")
+        if set(incoming) - destination:
+            raise ValueError("verified actor has incompatible controller inputs")
+        result = model.actor.load_state_dict(incoming, strict=False)
+        if result.unexpected_keys:
+            raise ValueError("verified actor has incompatible controller inputs")
+        if missing:
+            with th.no_grad():
+                model.actor.latent_pi[0].controller_weight.zero_()
+
+    def parameter_counts(self, model: GRTQC) -> dict[str, int]:
+        counts = super().parameter_counts(model)
+        counts["actor_trainable"] = counts["actor"]
+        counts["actor"] = sum(parameter.numel() for parameter in model.actor.parameters())
+        return counts
 
     def metrics(self, model: GRTQC) -> dict[str, float | int | None]:
         metrics = super().metrics(model)
@@ -589,6 +698,12 @@ class GRTQCBackend(TQCBackend):
             "policy_training_std_max": values.get("train/policy_training_std_max"),
             "actor_unlocked": int(model.actor_unlocked),
             "actor_evaluation_pending": int(model._actor_evaluation_hold),
+            "actor_controller_state": int(getattr(model.policy, "actor_controller_state", False)),
+            "controller_adapter_only": int(getattr(model.policy, "controller_adapter_only", False)),
+            "actor_total_parameters": sum(parameter.numel() for parameter in model.actor.parameters()),
+            "actor_trainable_parameters": sum(
+                parameter.numel() for parameter in model.actor.parameters() if parameter.requires_grad
+            ),
             "actor_proposed_action_drift": values.get("train/actor_proposed_action_drift"),
             "actor_executed_action_drift": values.get("train/actor_executed_action_drift"),
             "actor_reference_action_drift": values.get("train/actor_reference_action_drift"),

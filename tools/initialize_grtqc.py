@@ -89,9 +89,12 @@ def initialize(
         env.close()
     source_actor = source_model.actor.state_dict()
     transfer = target.actor.load_state_dict(source_actor, strict=False)
-    if transfer.unexpected_keys or any(".gate." not in key for key in transfer.missing_keys):
+    if transfer.unexpected_keys or any(
+        ".gate." not in key and key != "latent_pi.0.controller_weight"
+        for key in transfer.missing_keys
+    ):
         raise RuntimeError(f"actor transfer mismatch: {transfer}")
-    if not source_actor or len(transfer.missing_keys) != 4:
+    if not source_actor or len(transfer.missing_keys) != 4 + int(config.grtqc.actor_controller_state):
         raise RuntimeError("unexpected TQC actor architecture")
     target.policy_overlays = list(source_metadata.policy_overlays)
     target.speed_bias_schedule = list(source_model.speed_bias_schedule)
@@ -134,6 +137,7 @@ def initialize(
         training_timesteps=0, simulator_ticks=0, wall_seconds=0.0,
         finishes=0, crashes=0, evaluation=None,
         implementation=(
+            "grtqc-gated-variance-pwm-adapter-v1" if config.grtqc.actor_controller_state else
             "grtqc-gated-variance-pwm-state-v1"
             if config.grtqc.critic_controller_state else "grtqc-gated-variance-v1"
         ),
@@ -145,7 +149,8 @@ def initialize(
         "source_policy_sha256": hashlib.sha256((source / "policy.zip").read_bytes()).hexdigest(),
         "sampled_observations": len(observations),
         "transferred_actor_tensors": len(source_actor),
-        "new_gate_tensors": len(transfer.missing_keys),
+        "new_gate_tensors": sum(".gate." in key for key in transfer.missing_keys),
+        "new_controller_adapter_tensors": int(config.grtqc.actor_controller_state),
         "actor_observation_size": target.actor.features_extractor.features_dim,
         "critic_observation_size": target.critic.features_extractor.features_dim,
         "raw_action_max_abs_error": raw_max,
