@@ -1488,6 +1488,58 @@ def test_faster_scratch_champion_recenters_actor_reference_states(tmp_path, monk
     np.testing.assert_array_equal(reference_calls[0], np.asarray(observations))
 
 
+def test_clean_slower_scratch_candidate_recenters_without_replacing_champion(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    reference_calls = []
+    saves = []
+    events = []
+    runner.model = SimpleNamespace(
+        num_timesteps=12000,
+        scratch_stage="pace",
+        set_actor_reference_observations=reference_calls.append,
+    )
+    champion = EvaluationResult(5, 1., 1., 1., 22.635, 22.635, 0., 0., 0.)
+    slower = EvaluationResult(5, 1., 1., 1., 22.7, 22.7, 0., 0., 0.)
+    observations = [np.asarray([1., 2.], dtype=np.float32)]
+    monkeypatch.setattr(runner, "_emit", events.append)
+    monkeypatch.setattr(
+        runner, "_save", lambda name, evaluation=None: saves.append(name) or tmp_path / name,
+    )
+
+    runner._select_scratch_candidate(slower, champion, observations=observations)
+
+    assert len(reference_calls) == 1
+    np.testing.assert_array_equal(reference_calls[0], np.asarray(observations))
+    assert saves == ["checkpoints/step-12000-rejected"]
+    assert any(event["type"] == "scratch_clean_anchor_refreshed" for event in events)
+    assert not any(event["type"] == "champion" for event in events)
+
+
+def test_contacting_scratch_candidate_does_not_recenter_anchor(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    reference_calls = []
+    runner.model = SimpleNamespace(
+        num_timesteps=12000,
+        scratch_stage="pace",
+        set_actor_reference_observations=reference_calls.append,
+    )
+    champion = EvaluationResult(5, 1., 1., 1., 22.635, 22.635, 0., 0., 0.)
+    contacting = EvaluationResult(
+        5, 1., 1., 1., 22.6, 22.6, 0., 0., 0., barrier_contact_steps=1,
+    )
+    observations = [np.asarray([1., 2.], dtype=np.float32)]
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
+
+    runner._select_scratch_candidate(contacting, champion, observations=observations)
+
+    assert reference_calls == []
+
+
 def test_grtqc_resume_rollback_restores_actor_but_keeps_latest_training_state(tmp_path, monkeypatch):
     config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
     config.grtqc.training_origin = "scratch"

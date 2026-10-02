@@ -528,6 +528,13 @@ class TrainingRunner:
     ) -> EvaluationResult:
         """A fresh learner may regress temporarily; only reliable pace enters champion."""
         reliable = result.episodes >= 5 and result.finish_rate == 1.0 and result.median_lap_s is not None
+        clean = (
+            reliable
+            and result.crash_rate == 0.0
+            and result.off_track_rate == 0.0
+            and result.stall_rate == 0.0
+            and result.barrier_contact_steps == 0
+        )
         better = reliable and (champion is None or result.median_lap_s < champion.median_lap_s)
         if reliable and getattr(self.model, "scratch_stage", "completion") != "pace":
             self.model.scratch_stage = "pace"
@@ -535,12 +542,21 @@ class TrainingRunner:
             self.config.grtqc.target_entropy = self.model.target_entropy
             self._emit({"type": "scratch_stage", "stage": "pace", "timesteps": self.model.num_timesteps,
                         "target_entropy": self.model.target_entropy, "finish_rate": result.finish_rate})
+        if clean and observations:
+            # Advance the local search anchor after a repeatable clean lap,
+            # even when it is slower than the protected champion. Only the
+            # separate pace gate below is allowed to replace that champion.
+            self.model.set_actor_reference_observations(np.asarray(observations))
+            self._emit({
+                "type": "scratch_clean_anchor_refreshed",
+                "timesteps": self.model.num_timesteps,
+                "median_lap_s": result.median_lap_s,
+                "finish_rate": result.finish_rate,
+                "episodes": result.episodes,
+                "barrier_contact_steps": result.barrier_contact_steps,
+            })
         if better:
             self._grtqc_weak_evaluations = 0
-            if observations:
-                # Recenter the scratch actor's trust region only after its
-                # faster full-lap policy passes the reliable evaluation gate.
-                self.model.set_actor_reference_observations(np.asarray(observations))
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps,
                         "promotion_reason": "scratch_verified_pace", "median_lap_s": result.median_lap_s,
