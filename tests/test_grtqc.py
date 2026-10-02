@@ -1379,21 +1379,66 @@ def test_scratch_promotes_first_reliable_lap_without_the_tqc_time_ceiling(tmp_pa
     assert not any(event["type"] == "pace_milestone" for event in events)
 
 
-def test_scratch_rejected_candidate_keeps_learning_without_actor_recovery(tmp_path, monkeypatch):
+def test_scratch_rejected_candidates_recover_after_configured_weaker_checks(tmp_path, monkeypatch):
     config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
     config.grtqc.training_origin = "scratch"
-    config.grtqc.recovery_weak_evaluations = 1
+    config.grtqc.recovery_weak_evaluations = 5
     runner = TrainingRunner(config)
-    runner.model = SimpleNamespace(num_timesteps=12000, actor_unlocked=True)
-    failed = EvaluationResult(1, 0., .65, .65, None, None, 1., 0., 0.)
-    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: failed)
+    runner.model = SimpleNamespace(
+        num_timesteps=12000, actor_unlocked=True, scratch_stage="pace",
+    )
+    champion = EvaluationResult(5, 1., 1., 1., 22.709, 22.709, 0., 0., 0.)
+    slower = EvaluationResult(5, 1., 1., 1., 22.9, 22.9, 0., 0., 0.)
+    recovered = []
     monkeypatch.setattr(runner, "_emit", lambda event: None)
-    monkeypatch.setattr(runner, "_save", lambda name, evaluation: tmp_path / name)
-    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *a: pytest.fail("scratch candidate was reset"))
-    for _ in range(6):
-        runner._evaluate()
-    assert runner.model.actor_unlocked
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
+
+    def recover(result, path):
+        recovered.append((result, path))
+        runner._grtqc_weak_evaluations = 0
+
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", recover)
+    for _ in range(4):
+        runner._select_scratch_candidate(slower, champion)
+    assert not recovered
+    runner._select_scratch_candidate(slower, champion)
+    assert len(recovered) == 1
+    assert recovered[0][0] == slower
     assert runner._grtqc_weak_evaluations == 0
+
+
+def test_grtqc_resume_rollback_restores_actor_but_keeps_latest_training_state(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=12000)
+    champion = EvaluationResult(5, 1., 1., 1., 22.709, 22.709, 0., 0., 0.)
+    slower = EvaluationResult(5, 1., 1., 1., 23.0, 23.0, 0., 0., 0.)
+    champion_dir = runner.registry.slot(config.track_name, "grtqc", "champion")
+    champion_dir.mkdir(parents=True)
+    (champion_dir / "metadata.json").touch()
+    monkeypatch.setattr(
+        runner.registry, "read_metadata", lambda _: SimpleNamespace(evaluation=champion.to_dict()),
+    )
+    recovered = []
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
+    events = []
+    monkeypatch.setattr(runner, "_emit", events.append)
+
+    restored = runner._restore_grtqc_resume_actor_if_worse(
+        SimpleNamespace(evaluation=slower.to_dict()), tmp_path / "latest",
+    )
+
+    assert restored
+    assert recovered == [(slower, tmp_path / "latest")]
+    assert events[-1]["type"] == "grtqc_resume_actor_restored"
+    assert events[-1]["critic_replay_preserved"] is True
+
+    assert runner._restore_grtqc_resume_actor_if_worse(
+        SimpleNamespace(evaluation=None), tmp_path / "latest", force=True,
+    )
+    assert recovered[-1] == (None, tmp_path / "latest")
 
 
 def test_scratch_training_saves_a_random_origin_and_resumes_without_teacher(tmp_path):

@@ -535,6 +535,7 @@ class TrainingRunner:
             self._emit({"type": "scratch_stage", "stage": "pace", "timesteps": self.model.num_timesteps,
                         "target_entropy": self.model.target_entropy, "finish_rate": result.finish_rate})
         if better:
+            self._grtqc_weak_evaluations = 0
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps,
                         "promotion_reason": "scratch_verified_pace", "median_lap_s": result.median_lap_s,
@@ -551,6 +552,25 @@ class TrainingRunner:
                         "timesteps": self.model.num_timesteps, "finish_rate": result.finish_rate,
                         "median_lap_s": result.median_lap_s, "best_lap_s": result.best_lap_s,
                         "candidate_continues": True, "training_origin": "scratch"})
+            if (
+                getattr(self.model, "actor_unlocked", False)
+                and champion is not None
+                and result.rank() < champion.rank()
+            ):
+                self._grtqc_weak_evaluations += 1
+                self._emit({
+                    "type": "weaker_actor_evaluation",
+                    "timesteps": self.model.num_timesteps,
+                    "count": self._grtqc_weak_evaluations,
+                    "required": self.config.grtqc.recovery_weak_evaluations,
+                    "champion_lap_s": champion.median_lap_s,
+                    "candidate_lap_s": result.median_lap_s,
+                    "training_origin": "scratch",
+                })
+                if self._grtqc_weak_evaluations >= self.config.grtqc.recovery_weak_evaluations:
+                    self._recover_grtqc_actor(result, path)
+            else:
+                self._grtqc_weak_evaluations = 0
         return result
 
     def _restore_unverified_grtqc_resume(self, reference: Any, directory: Path) -> None:
@@ -643,7 +663,7 @@ class TrainingRunner:
                 source = contact_candidate
         return source
 
-    def _recover_grtqc_actor(self, result: EvaluationResult, rejected: Path) -> None:
+    def _recover_grtqc_actor(self, result: EvaluationResult | None, rejected: Path) -> None:
         """Keep trained critics/replay while restoring a verified GRTQC driver."""
         cfg = self.config
         assert cfg.grtqc is not None
@@ -682,12 +702,40 @@ class TrainingRunner:
         self._emit({
             "type": "actor_recovery", "timesteps": self.model.num_timesteps,
             "rejected": str(rejected), "restored_actor": str(source),
-            "rejected_finish_rate": result.finish_rate,
-            "rejected_median_lap_s": result.median_lap_s,
+            "rejected_finish_rate": result.finish_rate if result is not None else None,
+            "rejected_median_lap_s": result.median_lap_s if result is not None else None,
             "actor_learning_rate": self.model.actor_lr,
             "critic_cooldown_updates": cooldown,
             "critic_replay_preserved": True,
         })
+
+    def _restore_grtqc_resume_actor_if_worse(
+        self, metadata: Any, directory: Path, *, force: bool = False,
+    ) -> bool:
+        """Restore the verified GRTQC actor on request without discarding learner state."""
+        if self.config.algorithm != "grtqc":
+            return False
+        champion_dir = self.registry.slot(self.config.track_name, "grtqc", "champion")
+        if not (champion_dir / "metadata.json").is_file():
+            return False
+        champion_evaluation = self.registry.read_metadata(champion_dir).evaluation
+        if champion_evaluation is None:
+            return False
+        champion = EvaluationResult(**champion_evaluation)
+        candidate = (
+            EvaluationResult(**metadata.evaluation)
+            if metadata.evaluation is not None else None
+        )
+        if not force and (candidate is None or candidate.rank() >= champion.rank()):
+            return False
+        self._recover_grtqc_actor(candidate, directory)
+        path = self._save("latest")
+        self._emit({
+            "type": "grtqc_resume_actor_restored", "timesteps": self.model.num_timesteps,
+            "path": str(path), "champion": str(champion_dir),
+            "critic_replay_preserved": True,
+        })
+        return True
 
     def _restore_ppo_champion_if_worse(
         self, result: EvaluationResult, env: Any, *,
@@ -1031,6 +1079,8 @@ class TrainingRunner:
                 self.best_training_lap_s = metadata.best_training_lap_s
                 self.previous_wall_seconds = metadata.wall_seconds
                 self.started = time.monotonic()
+                if rollback_to_champion and cfg.algorithm == "grtqc":
+                    self._restore_grtqc_resume_actor_if_worse(metadata, resume, force=True)
             if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and resume is None:
                 path = self._save("initialization")
                 self._emit({"type": "scratch_initialization", "path": str(path),
