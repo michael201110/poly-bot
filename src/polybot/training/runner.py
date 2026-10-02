@@ -8,8 +8,9 @@ import shutil
 import statistics
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -33,7 +34,7 @@ from polybot.models.registry import (
     track_slug,
 )
 from polybot.protocol import ProtocolViolation
-from polybot.training.config import TrainingConfig
+from polybot.training.config import CurriculumConfig, CurriculumPhaseConfig, TrainingConfig
 from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, PrefixObservationReference, evaluate_model
 from polybot.training.metrics import EventSink
@@ -100,6 +101,7 @@ class TrainingRunner:
         self.phase_reset_logged = False
         self.started = time.monotonic()
         self.previous_wall_seconds = 0.0
+        self.best_training_lap_s: float | None = None
         self.device = None
         self.last_evaluation: EvaluationResult | None = None
         self._champion_refill_source: Path | None = None
@@ -111,6 +113,10 @@ class TrainingRunner:
         self._actor_unlock_event_pending = False
         self._actor_eval_episode_finished = False
         self._grtqc_weak_evaluations = 0
+        self._scratch_section_results: deque[bool] = deque(
+            maxlen=config.grtqc.scratch_section_success_window if config.grtqc else 40,
+        )
+        self._scratch_phase_ready = False
         self.sink: EventSink | None = None
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
         self._ppo_speed_bias_schedule: list[list[float]] = []
@@ -123,7 +129,7 @@ class TrainingRunner:
             return self.transport_factory()
         if self.config.backend == "mock":
             return MockSimulatorTransport()
-        return WebSocketServerTransport(connect_timeout_s=300, request_timeout_s=60)
+        return WebSocketServerTransport(port=self.config.websocket_port, connect_timeout_s=300, request_timeout_s=60)
 
     def _environment(self, phase: CurriculumPhase | None = None) -> PolyTrackEnv:
         cfg = self.config
@@ -178,6 +184,7 @@ class TrainingRunner:
             finishes=self.finishes, crashes=self.crashes,
             evaluation=evaluation.to_dict() if evaluation is not None else None,
             implementation=(
+                "grtqc-scratch-gated-v1" if cfg.grtqc and cfg.grtqc.training_origin == "scratch" else
                 "grtqc-gated-variance-pwm-adapter-v1" if cfg.grtqc and cfg.grtqc.actor_controller_state else
                 "grtqc-gated-variance-pwm-state-v1" if cfg.grtqc and cfg.grtqc.critic_controller_state else
                 "grtqc-gated-variance-v1" if cfg.algorithm == "grtqc" else None
@@ -188,6 +195,7 @@ class TrainingRunner:
             adaptation_rollback_count=int(getattr(self.model, "adaptation_rollback_count", 0)),
             policy_overlays=list(overlays),
             speed_bias_schedule=list(speed_bias_schedule),
+            best_training_lap_s=self.best_training_lap_s,
             action_semantics=(
                 "grtqc.raw-policy.v1" if cfg.grtqc and cfg.grtqc.critic_raw_actions else PPO_ACTION_SEMANTICS
             ),
@@ -371,6 +379,8 @@ class TrainingRunner:
                 champion = EvaluationResult(**previous)
         if cfg.algorithm == "grtqc":
             assert cfg.grtqc is not None
+            if cfg.grtqc.training_origin == "scratch":
+                return self._select_scratch_candidate(result, champion)
             reference_lap_s = cfg.grtqc.reference_lap_s
             best_verified = (
                 min(reference_lap_s, champion.median_lap_s)
@@ -509,6 +519,37 @@ class TrainingRunner:
                 self.model.anchor_to_current_policy(
                     cfg.tqc.champion_action_drift_limit, observations
                 )
+        return result
+
+    def _select_scratch_candidate(
+        self, result: EvaluationResult, champion: EvaluationResult | None,
+    ) -> EvaluationResult:
+        """A fresh learner may regress temporarily; only reliable pace enters champion."""
+        reliable = result.episodes >= 5 and result.finish_rate == 1.0 and result.median_lap_s is not None
+        better = reliable and (champion is None or result.median_lap_s < champion.median_lap_s)
+        if reliable and getattr(self.model, "scratch_stage", "completion") != "pace":
+            self.model.scratch_stage = "pace"
+            self.model.target_entropy = self.config.grtqc.scratch_pace_target_entropy
+            self.config.grtqc.target_entropy = self.model.target_entropy
+            self._emit({"type": "scratch_stage", "stage": "pace", "timesteps": self.model.num_timesteps,
+                        "target_entropy": self.model.target_entropy, "finish_rate": result.finish_rate})
+        if better:
+            path = self._save("champion", result)
+            self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps,
+                        "promotion_reason": "scratch_verified_pace", "median_lap_s": result.median_lap_s,
+                        "best_lap_s": result.best_lap_s, "finish_rate": result.finish_rate})
+            for threshold in (25., 24.263, 24., 23.5, 23.):
+                if result.median_lap_s < threshold and (champion is None or champion.median_lap_s >= threshold):
+                    self._emit({"type": "pace_milestone", "threshold_s": threshold,
+                                "median_lap_s": result.median_lap_s, "best_lap_s": result.best_lap_s,
+                                "episodes": result.episodes, "finish_rate": result.finish_rate,
+                                "timesteps": self.model.num_timesteps, "checkpoint": str(path)})
+        else:
+            path = self._save(f"checkpoints/step-{self.model.num_timesteps}-rejected", result)
+            self._emit({"type": "candidate_rejected", "path": str(path),
+                        "timesteps": self.model.num_timesteps, "finish_rate": result.finish_rate,
+                        "median_lap_s": result.median_lap_s, "best_lap_s": result.best_lap_s,
+                        "candidate_continues": True, "training_origin": "scratch"})
         return result
 
     def _restore_unverified_grtqc_resume(self, reference: Any, directory: Path) -> None:
@@ -860,7 +901,7 @@ class TrainingRunner:
         allow_ppo_reward_change: bool = False,
     ) -> Path:
         cfg = self.config
-        if cfg.algorithm == "grtqc" and resume is None:
+        if cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch" and resume is None:
             raise ValueError("GRTQC requires a transferred initialization or resumable checkpoint")
         if freeze_ppo_actor and cfg.algorithm != "ppo":
             raise ValueError("actor-frozen value warmup is only supported for PPO")
@@ -898,6 +939,11 @@ class TrainingRunner:
             if resume is None:
                 if fresh_replay:
                     raise ValueError("fresh replay requires a saved model")
+                if cfg.grtqc and cfg.grtqc.training_origin == "scratch":
+                    if self.registry.algorithm_dir(cfg.track_name, "grtqc").exists():
+                        raise FileExistsError(
+                            "scratch output already exists; explicitly resume or choose a new experiment"
+                        )
                 self.model = self.backend.create_model(cfg, training_env, self.device.resolved)
             else:
                 metadata = self.registry.read_metadata(resume)
@@ -939,6 +985,14 @@ class TrainingRunner:
                     self.model, cfg, self.device.resolved,
                     fresh_replay=fresh_replay or (cfg.algorithm == "grtqc" and resume.name == "initialization"),
                 )
+                if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and getattr(
+                    self.model, "scratch_curriculum_ready", False,
+                ) and plan.phases[0].mode != "full":
+                    cfg.curriculum = CurriculumConfig("full")
+                    plan = build_plan(cfg.curriculum, cfg.timesteps)
+                    training_env.close()
+                    training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
+                    self.model.set_env(training_env)
                 if reward_changed and allow_ppo_reward_change and cfg.algorithm == "ppo":
                     # PPO has no replay buffer. Discard stale Adam moments after a
                     # deliberate reward-shaping change while keeping the policy/value weights.
@@ -963,8 +1017,14 @@ class TrainingRunner:
                 self.ticks = metadata.simulator_ticks
                 self.finishes = metadata.finishes
                 self.crashes = metadata.crashes
+                self.best_training_lap_s = metadata.best_training_lap_s
                 self.previous_wall_seconds = metadata.wall_seconds
                 self.started = time.monotonic()
+            if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and resume is None:
+                path = self._save("initialization")
+                self._emit({"type": "scratch_initialization", "path": str(path),
+                            "seed": cfg.seed, "teacher": None, "replay_size": 0,
+                            "actor_sha256": hashlib.sha256((path / "policy.zip").read_bytes()).hexdigest()})
             self._emit({
                 "type": "started", "algorithm": cfg.algorithm, "device": self.device.resolved,
                 "device_reason": self.device.diagnostics.get("selection_reason"),
@@ -980,13 +1040,14 @@ class TrainingRunner:
                 "replay_size": self.model.replay_buffer.size()
                 if getattr(self.model, "replay_buffer", None) else None,
             })
-            if cfg.algorithm == "grtqc" and resume is not None and resume.name == "initialization":
+            if (cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch"
+                    and resume is not None and resume.name == "initialization"):
                 training_env.close()
                 initialization = self._preserve_grtqc_initialization(resume)
                 self._verify_grtqc_initialization(initialization)
                 training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
                 self.model.set_env(training_env)
-            elif cfg.algorithm == "grtqc" and resume is not None:
+            elif cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch" and resume is not None:
                 training_env.close()
                 reference_directory = self._grtqc_verified_actor_source()
                 reference_metadata = self.registry.read_metadata(reference_directory)
@@ -1099,6 +1160,7 @@ class TrainingRunner:
                             "reward": self.episode_reward,
                             "simulator_ticks": runner.ticks,
                             "finishes": runner.finishes,
+                            "best_training_lap_s": runner.best_training_lap_s,
                             "crashes": runner.crashes,
                             "wall_seconds": runner.previous_wall_seconds + now - runner.started,
                             "steps_per_second": (self.num_timesteps - start_steps)
@@ -1116,8 +1178,28 @@ class TrainingRunner:
                             runner._actor_eval_episode_finished = True
                         events = set(info.get("events", ()))
                         runner.episodes += 1
-                        runner.finishes += int("finish" in events)
+                        full_finish = phase.mode == "full" and "finish" in events
+                        runner.finishes += int(full_finish)
+                        if full_finish:
+                            lap = float(info["elapsed_s"])
+                            if runner.best_training_lap_s is None or lap < runner.best_training_lap_s:
+                                runner.best_training_lap_s = lap
+                                checkpoint = None
+                                if cfg.grtqc and cfg.grtqc.training_origin == "scratch":
+                                    checkpoint = str(runner._save(
+                                        f"checkpoints/step-{self.num_timesteps}-rollout-best-rejected",
+                                    ))
+                                runner._emit({"type": "training_best_lap", "timesteps": self.num_timesteps,
+                                              "lap_s": lap, "verified": False, "checkpoint": checkpoint})
                         runner.crashes += int("crash" in events or "airborne_roll_failure" in events)
+                        if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and phase.mode != "full":
+                            runner._scratch_section_results.append(
+                                "curriculum_section_complete" in events or "finish" in events,
+                            )
+                            runner._scratch_phase_ready = (
+                                len(runner._scratch_section_results) == cfg.grtqc.scratch_section_success_window
+                                and np.mean(runner._scratch_section_results) >= cfg.grtqc.scratch_section_success_rate
+                            )
                         runner._emit({
                             "type": "episode", "episode": runner.episodes,
                             "timesteps": self.num_timesteps, "reward": self.episode_reward,
@@ -1136,7 +1218,8 @@ class TrainingRunner:
                         self.episode_reward = 0.0
                         self.episode_progress = 0.0
                     if (
-                        cfg.algorithm == "grtqc" and runner.model.actor_unlocked
+                        cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch"
+                        and runner.model.actor_unlocked
                         and not runner._actor_unlock_seen
                     ):
                         runner._actor_unlock_seen = True
@@ -1147,17 +1230,22 @@ class TrainingRunner:
                         self.stop_at is None or self.num_timesteps < self.stop_at
                     )
 
-            for index, phase in enumerate(plan.phases):
+            phases = list(plan.phases)
+            for index, phase in enumerate(phases):
                 if self.stop_requested.is_set():
                     break
                 if index:
                     training_env.close()
                     training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
                     self.model.set_env(training_env)
+                if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and phase.mode == "full":
+                    self.model.scratch_curriculum_ready = True
                 phase_start = self.model.num_timesteps
                 self.phase_index = index + 1
                 self.phase_reset_logged = False
                 self.max_section_progress = 0.0
+                self._scratch_phase_ready = False
+                self._scratch_section_results.clear()
                 phase_event = {"type": "phase", "index": index + 1, **asdict(phase)}
                 self._emit(phase_event)
                 while self.model.num_timesteps - phase_start < phase.steps:
@@ -1181,6 +1269,20 @@ class TrainingRunner:
                     if self.model.num_timesteps == before:
                         break
                     consumed = self.model.num_timesteps - start_steps
+                    if self._scratch_phase_ready and index + 1 < len(phases):
+                        spent = self.model.num_timesteps - phase_start
+                        carried = max(0, phase.steps - spent)
+                        phases[index] = replace(phase, steps=spent)
+                        phases[index + 1] = replace(phases[index + 1], steps=phases[index + 1].steps + carried)
+                        cfg.curriculum.phases = tuple(CurriculumPhaseConfig(
+                            mode=item.mode, steps=item.steps, start_ratio=item.start_ratio, end_ratio=item.end_ratio,
+                            start_s=item.start_s, end_s=item.end_s, lead_in_ratio=item.lead_in_ratio,
+                        ) for item in phases)
+                        self._emit({"type": "curriculum_advance", "reason": "scratch_section_competence",
+                                    "timesteps": self.model.num_timesteps, "carried_steps": carried,
+                                    "success_rate": float(np.mean(self._scratch_section_results)),
+                                    "attempts": len(self._scratch_section_results)})
+                        break
                     if self._actor_unlock_event_pending:
                         next_eval = min(next_eval, consumed)
                         self._actor_unlock_event_pending = False
@@ -1253,9 +1355,7 @@ class TrainingRunner:
                             self.stop_requested.set()
                         if (
                             cfg.algorithm == "grtqc" and cfg.grtqc is not None
-                            and result.finish_rate == 1.0
-                            and result.median_lap_s is not None
-                            and result.median_lap_s < cfg.grtqc.target_lap_s
+                            and result.confirms_target_lap(cfg.grtqc.target_lap_s)
                         ):
                             self._emit({
                                 "type": "target_reached", "algorithm": "grtqc",
@@ -1292,9 +1392,7 @@ class TrainingRunner:
                     })
                 if (
                     cfg.algorithm == "grtqc" and cfg.grtqc is not None
-                    and result.finish_rate == 1.0
-                    and result.median_lap_s is not None
-                    and result.median_lap_s < cfg.grtqc.target_lap_s
+                    and result.confirms_target_lap(cfg.grtqc.target_lap_s)
                 ):
                     self._emit({
                         "type": "target_reached", "algorithm": "grtqc",

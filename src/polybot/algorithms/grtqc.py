@@ -110,8 +110,10 @@ class GRTQCPolicy(TQCPolicy):
 
     def __init__(
         self, *args: Any, actor_observation_size: int = 0,
-        actor_controller_state: bool = False, controller_adapter_only: bool = False, **kwargs: Any,
+        actor_controller_state: bool = False, controller_adapter_only: bool = False,
+        actor_gate_scale: float = 2.0, **kwargs: Any,
     ) -> None:
+        self.actor_gate_scale = actor_gate_scale
         self.actor_observation_size = actor_observation_size
         self.actor_controller_state = actor_controller_state
         self.controller_adapter_only = controller_adapter_only
@@ -123,6 +125,7 @@ class GRTQCPolicy(TQCPolicy):
 
     def _get_constructor_parameters(self) -> dict[str, Any]:
         parameters = super()._get_constructor_parameters()
+        parameters["actor_gate_scale"] = self.actor_gate_scale
         parameters["actor_observation_size"] = self.actor_observation_size
         parameters["actor_controller_state"] = self.actor_controller_state
         parameters["controller_adapter_only"] = self.controller_adapter_only
@@ -132,7 +135,7 @@ class GRTQCPolicy(TQCPolicy):
         if self.actor_observation_size:
             features_extractor = ActorPrefixExtractor(self.observation_space, self.actor_observation_size)
         actor = super().make_actor(features_extractor)
-        _gate_hidden_layers(actor.latent_pi, scale=2.0)
+        _gate_hidden_layers(actor.latent_pi, scale=self.actor_gate_scale)
         if self.actor_controller_state:
             _enable_actor_controller_state(actor, self.actor_observation_size)
         _configure_actor_trainability(actor, self.controller_adapter_only)
@@ -150,6 +153,7 @@ class GRTQC(SeededWarmupTQC):
 
     def __init__(
         self, *args: Any, disagreement_coefficient: float = 0.01,
+        training_origin: str = "transfer", actor_update_interval: int = 1,
         critic_warmup_updates: int = 10_000, critic_readiness_window: int = 200,
         critic_readiness_relative_change: float = 0.1,
         exploration_std: float = 0.0001, critic_collection_std: float = 0.001,
@@ -163,6 +167,8 @@ class GRTQC(SeededWarmupTQC):
         critic_reference_error_limit: float = 0.2,
         **kwargs: Any,
     ) -> None:
+        self.training_origin = training_origin
+        self.actor_update_interval = actor_update_interval
         self.actor_verified_state_sampling = actor_verified_state_sampling
         self.critic_raw_actions = critic_raw_actions
         self._training_diagnostics: dict[str, Any] = {}
@@ -307,6 +313,10 @@ class GRTQC(SeededWarmupTQC):
     def _sample_action(
         self, learning_starts: int, action_noise: Any = None, n_envs: int = 1,
     ) -> tuple[np.ndarray, np.ndarray]:
+        if self.training_origin == "scratch":
+            # Generic seeded driving warmup, then genuine stochastic SAC exploration.
+            # No inherited policy, overlays, action imitation or deterministic teacher lock.
+            return super()._sample_action(learning_starts, action_noise, n_envs)
         # Keep rollout exploration separate from the stochastic critic target
         # and smooth it over time rather than injecting independent PWM jitter.
         if self.critic_raw_actions:
@@ -568,9 +578,15 @@ class GRTQC(SeededWarmupTQC):
             self._record("train/quantile_std", float(current.detach().std(unbiased=False).item()))
             self._record("train/target_mean", float(targets.mean().item()))
             self._record("train/target_std", float(targets.std(unbiased=False).item()))
+            self._record("train/td_absolute_mean", float((
+                targets.mean(dim=(1, 2)) - current.detach().mean(dim=(1, 2))
+            ).abs().mean()))
             self._record("train/actor_unlocked", int(self.actor_unlocked))
             self._record("train/critic_warmup_updates", self.critic_updates_since_transfer)
-            if self.actor_unlocked and not self._actor_evaluation_hold:
+            if (
+                self.actor_unlocked and not self._actor_evaluation_hold
+                and (self._n_updates + gradient_step + 1) % self.actor_update_interval == 0
+            ):
                 if self.ent_coef_optimizer is not None and self.log_ent_coef is not None:
                     ent_loss = -(self.log_ent_coef * (log_prob + self.target_entropy).detach()).mean()
                     self.ent_coef_optimizer.zero_grad()
@@ -722,6 +738,8 @@ class GRTQCBackend(TQCBackend):
             raise ValueError("GRTQC environment has an incompatible controller-state observation layout")
         model = GRTQC(
             GRTQCPolicy, env, seed=config.seed, device=device, verbose=0,
+            training_origin=p.training_origin, actor_update_interval=p.actor_update_interval,
+            top_quantiles_to_drop_per_net=p.top_quantiles_to_drop_per_net,
             learning_rate=p.learning_rate, buffer_size=p.replay_capacity,
             learning_starts=p.learning_starts, batch_size=p.batch_size,
             gamma=p.gamma, tau=p.tau, train_freq=p.train_frequency,
@@ -748,7 +766,9 @@ class GRTQCBackend(TQCBackend):
             critic_reference_error_limit=p.critic_reference_error_limit,
             policy_kwargs={
                 "net_arch": {"pi": layers, "qf": layers},
-                "actor_observation_size": width if p.critic_controller_state else 0,
+                "n_critics": p.n_critics, "n_quantiles": p.n_quantiles,
+                "actor_gate_scale": 1.0 if p.training_origin == "scratch" else 2.0,
+                "actor_observation_size": width if p.critic_controller_state and p.training_origin != "scratch" else 0,
                 "actor_controller_state": p.actor_controller_state,
                 "controller_adapter_only": p.controller_adapter_only,
             },
@@ -770,6 +790,13 @@ class GRTQCBackend(TQCBackend):
         self, model: GRTQC, config: TrainingConfig, device: str, *, fresh_replay: bool = False,
     ) -> None:
         assert config.grtqc is not None
+        if model.training_origin != config.grtqc.training_origin:
+            raise ValueError("cannot convert transferred actor/replay into a scratch experiment")
+        if (model.critic.n_critics, model.critic.n_quantiles) != (
+            config.grtqc.n_critics, config.grtqc.n_quantiles,
+        ):
+            raise ValueError("critic architecture changes require a separate new experiment")
+        model.actor_update_interval = config.grtqc.actor_update_interval
         width = observation_size(config.lookahead_count)
         expected_width = width + extra_size(config)
         if int(np.prod(model.observation_space.shape)) != expected_width:
@@ -789,6 +816,7 @@ class GRTQCBackend(TQCBackend):
             model.gamma != config.grtqc.gamma
             or model.policy_std_limit != config.grtqc.policy_std_limit
             or model.target_entropy != target_entropy
+            or model.top_quantiles_to_drop_per_net != config.grtqc.top_quantiles_to_drop_per_net
         )
         original = config.tqc
         config.tqc = config.grtqc
@@ -796,6 +824,8 @@ class GRTQCBackend(TQCBackend):
             super().configure_resume(model, config, device, fresh_replay=fresh_replay)
         finally:
             config.tqc = original
+        if model.training_origin == "scratch":
+            model._refill_replay_from_policy = False
         horizon_changed = model.configure_replay_horizon(config.grtqc.n_step_return, config.grtqc.gamma)
         initialization_pending = model.critic_mc_updates_done < config.grtqc.critic_mc_initialization_updates
         if horizon_changed or fresh_replay or targets_changed or adapter_added or initialization_pending:
@@ -832,6 +862,7 @@ class GRTQCBackend(TQCBackend):
                 model.ent_coef_optimizer.state.clear()
             model.ent_coef = config.grtqc.entropy
         model.target_entropy = target_entropy
+        model.top_quantiles_to_drop_per_net = config.grtqc.top_quantiles_to_drop_per_net
         model._exploration_noise = None
         model._actor_evaluation_hold = False
         model.actor_step_action_limit = config.grtqc.actor_step_action_limit
@@ -877,6 +908,11 @@ class GRTQCBackend(TQCBackend):
             "actor_layer_update_norms": values.get("train/actor_layer_update_norms"),
             "actor_adam_steps": values.get("train/actor_adam_steps"),
             "critic_raw_actions": int(model.critic_raw_actions),
+            "training_origin": model.training_origin,
+            "td_absolute_mean": values.get("train/td_absolute_mean"),
+            "quantile_std": values.get("train/quantile_std"),
+            "target_std": values.get("train/target_std"),
+            "quantile_loss": values.get("train/quantile_loss"),
             "critic_disagreement": values.get("train/disagreement"),
             "disagreement_penalty": values.get("train/disagreement_penalty"),
             "quantile_mean": values.get("train/quantile_mean"),

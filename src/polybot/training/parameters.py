@@ -28,6 +28,7 @@ def _info(category: str, values: dict[str, str], *, algorithm: str | None = None
 
 GENERAL_INFO = _info("General", {
     "track_name": "Name used to group model files. Choose a separate name for each track.",
+    "websocket_port": "Local simulator connection port; use a separate port for each concurrent game session.",
     "track_id": "Simulator track identifier. 'current' uses the track open in PolyTrack.",
     "backend": "Mock is a fast local test track; WebSocket connects to PolyTrack in your browser.",
     "algorithm": (
@@ -333,6 +334,16 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "Maximum mean critic error relative to observed frozen-policy driving returns before actor unlock. "
         "Used with complete-return initialization; this is a diagnostic, not an exact soft-Q target."
     ),
+    "training_origin": (
+        "Transfer preserves an inherited actor; scratch creates an independent randomly initialized policy."
+    ),
+    "scratch_section_success_window": "Completed section attempts used to decide readiness for full-track learning.",
+    "scratch_section_success_rate": "Section completion rate required to advance early into full-track learning.",
+    "scratch_pace_target_entropy": "Exploration target after the first reliable five-lap scratch policy.",
+    "actor_update_interval": "Critic updates per actor/temperature update; delay is counted across training calls.",
+    "n_critics": "Number of independently initialized gated quantile critics.",
+    "n_quantiles": "Return quantiles estimated by each critic.",
+    "top_quantiles_to_drop_per_net": "Upper quantiles per critic dropped from pooled target predictions.",
     "learn_from_actor_evaluations": (
         "Keep actual tested-policy transitions, including failed candidates, in learning replay. "
         "Critics can learn from the counterfactuals used to accept or reject actor updates."

@@ -237,7 +237,7 @@ def train_main(argv: Sequence[str] | None = None) -> int:
                 registry.slot(cfg.track_name, cfg.algorithm, "latest")
                 if args.resume == "latest" else Path(args.resume)
             )
-        elif cfg.algorithm == "grtqc":
+        elif cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch":
             resume = registry.algorithm_dir(cfg.track_name, "grtqc") / "initialization"
         runner = TrainingRunner(cfg, _event)
         print(f"planned training steps: {cfg.timesteps}", flush=True)

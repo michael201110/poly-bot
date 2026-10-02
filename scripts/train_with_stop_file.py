@@ -90,7 +90,7 @@ def main() -> None:
                 if not (resume / "metadata.json").is_file():
                     raise
                 fresh_replay = False
-                if config.algorithm == "grtqc":
+                if config.algorithm == "grtqc" and config.grtqc.training_origin != "scratch":
                     initialization = registry.slot(config.track_name, "grtqc", "initialization")
                     # An interrupted transfer check must repeat its five-lap
                     # fidelity gate rather than resume an unverified seed.

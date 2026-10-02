@@ -66,6 +66,7 @@ class ModelMetadata:
     adaptation_rollback_count: int = 0
     policy_overlays: list[dict[str, Any]] = field(default_factory=list)
     speed_bias_schedule: list[list[float]] = field(default_factory=list)
+    best_training_lap_s: float | None = None
     action_semantics: str | None = None
     schema: str = MODEL_SCHEMA
     polybot_version: str = POLYBOT_VERSION
@@ -117,6 +118,11 @@ class ModelRegistry:
                 "PPO checkpoint does not declare continuous steering and signed longitudinal actions; "
                 "start a fresh model or use the TQC-to-PPO teacher pipeline"
             )
+        if metadata.algorithm == "grtqc" and (
+            metadata.training_config.get("grtqc", {}).get("training_origin", "transfer")
+            != config.grtqc.training_origin
+        ):
+            raise IncompatibleModelError("scratch and transferred GRTQC experiments cannot share model/replay")
         if getattr(config.grtqc, "critic_raw_actions", False) and metadata.action_semantics != "grtqc.raw-policy.v1":
             raise IncompatibleModelError("GRTQC raw-policy learning requires matching replay action semantics")
         mismatches = []

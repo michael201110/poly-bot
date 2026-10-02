@@ -1274,3 +1274,120 @@ def test_resume_does_not_deploy_an_unverified_actor_from_a_transport_checkpoint(
     finally:
         env.close()
         reference_env.close()
+
+
+def test_scratch_uses_fresh_actor_full_state_and_real_stochastic_exploration(tmp_path):
+    config = _config("grtqc")
+    config.grtqc.training_origin = "scratch"
+    config.grtqc.critic_controller_state = config.grtqc.critic_environment_state = True
+    config.grtqc.critic_raw_actions = True
+    model, env = _model(config)
+    teacher, teacher_env = _model(_config("tqc"))
+    try:
+        obs, _ = env.reset()
+        assert model.replay_buffer.size() == 0
+        assert not model.policy_overlays and not model.speed_bias_schedule
+        assert model.actor.features_extractor.features_dim == 121
+        assert model.policy.actor_gate_scale == 1.
+        assert not th.equal(model.actor.latent_pi[0].weight[:, :105], teacher.actor.latent_pi[0].weight)
+        model.num_timesteps = model.learning_starts + 1
+        model._last_obs = obs[None]
+        samples = np.stack([model._sample_action(0)[0][0] for _ in range(12)])
+        assert samples.std(axis=0).min() > .05
+        model.save(tmp_path / "scratch")
+        restored = GRTQCBackend().load_model(tmp_path / "scratch.zip", None, "cpu")
+        assert restored.training_origin == "scratch"
+        assert restored.actor.features_extractor.features_dim == 121
+        assert restored.policy.actor_gate_scale == 1.
+        with pytest.raises(ValueError, match="scratch experiment"):
+            GRTQCBackend().configure_resume(model, _config("grtqc"), "cpu", fresh_replay=True)
+    finally:
+        env.close()
+        teacher_env.close()
+
+
+def test_delayed_actor_updates_count_across_single_update_training_calls():
+    config = _config("grtqc")
+    config.grtqc.actor_update_interval = 2
+    model, env = _model(config)
+    try:
+        model.set_logger(configure(None, []))
+        model.learn(16)
+        model.actor_unlocked = True
+        model._n_updates = 0
+        before = {name: value.clone() for name, value in model.actor.state_dict().items()}
+        model.train(1, 8)
+        assert all(th.equal(value, before[name]) for name, value in model.actor.state_dict().items())
+        model.train(1, 8)
+        assert any(not th.equal(value, before[name]) for name, value in model.actor.state_dict().items())
+        assert model._training_diagnostics["train/actor_adam_steps"] == 1
+    finally:
+        env.close()
+
+
+def test_scratch_promotes_first_reliable_lap_without_the_tqc_time_ceiling(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=12000, actor_unlocked=True)
+    reliable = EvaluationResult(5, 1., 1., 1., 27., 27., 0., 0., 0.)
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: reliable)
+    events, saved = [], []
+    monkeypatch.setattr(runner, "_emit", events.append)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path / name)
+    runner._evaluate()
+    assert saved == ["champion"]
+    assert runner.model.scratch_stage == "pace"
+    assert config.grtqc.target_entropy == config.grtqc.scratch_pace_target_entropy
+    assert not any(event["type"] == "pace_milestone" for event in events)
+
+
+def test_scratch_rejected_candidate_keeps_learning_without_actor_recovery(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    config.grtqc.recovery_weak_evaluations = 1
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=12000, actor_unlocked=True)
+    failed = EvaluationResult(1, 0., .65, .65, None, None, 1., 0., 0.)
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: failed)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: tmp_path / name)
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *a: pytest.fail("scratch candidate was reset"))
+    for _ in range(6):
+        runner._evaluate()
+    assert runner.model.actor_unlocked
+    assert runner._grtqc_weak_evaluations == 0
+
+
+def test_scratch_training_saves_a_random_origin_and_resumes_without_teacher(tmp_path):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch", log_root=tmp_path / "logs", timesteps=16)
+    config.grtqc.training_origin = "scratch"
+    config.grtqc.critic_warmup_updates = 1
+    config.grtqc.critic_readiness_window = 2
+    runner = TrainingRunner(config)
+    latest = runner.run()
+    origin = runner.registry.slot(config.track_name, "grtqc", "initialization")
+    assert (origin / "policy.zip").is_file()
+    assert not (origin / "transfer.json").exists()
+    metadata = runner.registry.read_metadata(origin)
+    assert metadata.training_config["grtqc"]["training_origin"] == "scratch"
+    assert metadata.training_timesteps == 0
+    second = TrainingRunner(replace(config, timesteps=8))
+    second.run(resume=latest)
+    assert second.model.num_timesteps == 24
+    assert second.model.training_origin == "scratch"
+    with pytest.raises(FileExistsError, match="scratch output already exists"):
+        TrainingRunner(config).run()
+
+
+def test_parallel_ports_are_explicit_and_do_not_change_transfer_default():
+    scratch = TrainingConfig.from_dict(json.loads(Path("profiles/training/summer-1-grtqc-scratch-30.json").read_text()))
+    assert TrainingRunner(scratch)._transport().endpoint == "ws://127.0.0.1:8766"
+    assert TrainingRunner(replace(_config("grtqc"), backend="websocket"))._transport().endpoint == "ws://127.0.0.1:8765"
+    assert scratch.grtqc.target_lap_s == 23.
+    assert scratch.grtqc.training_origin == "scratch"
+    assert scratch.curriculum.phases[0].mode == "quarters-randomised"
+    assert scratch.rewards.guidance_reward_scale == 0
+    assert scratch.rewards.finish_fast_bonus > 2 * scratch.rewards.finish_bonus
+    with pytest.raises(ValueError, match="WebSocket port"):
+        replace(scratch, websocket_port=0)

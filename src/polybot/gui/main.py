@@ -282,7 +282,7 @@ class PolyBotWindow(QWidget):
         page.addLayout(form)
         self.general: dict[str, QWidget] = {}
         values = {
-            "track_name": "Summer 1", "track_id": "current", "backend": "websocket",
+            "track_name": "Summer 1", "track_id": "current", "backend": "websocket", "websocket_port": 8765,
             "device": "auto", "seed": 0, "frame_skip": 30, "timesteps": 100_000,
             "max_episode_seconds": 60.0, "max_episode_steps": 30_000,
             "lookahead_count": 12, "reward_scale": 0.01,

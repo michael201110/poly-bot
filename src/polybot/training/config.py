@@ -151,6 +151,14 @@ class TQCConfig:
 class GRTQCConfig(TQCConfig):
     """Gated TQC with an ensemble-quantile disagreement penalty."""
 
+    training_origin: str = "transfer"
+    actor_update_interval: int = 1
+    n_critics: int = 2
+    n_quantiles: int = 25
+    top_quantiles_to_drop_per_net: int = 2
+    scratch_section_success_window: int = 40
+    scratch_section_success_rate: float = 0.75
+    scratch_pace_target_entropy: float = -4.0
     disagreement_coefficient: float = 0.01
     critic_warmup_updates: int = 10_000
     critic_readiness_window: int = 200
@@ -186,6 +194,21 @@ class GRTQCConfig(TQCConfig):
 
     def __post_init__(self) -> None:
         TQCConfig.__post_init__(self)
+        if self.scratch_section_success_window < 8 or not 0 < self.scratch_section_success_rate <= 1:
+            raise ValueError("scratch curriculum competence thresholds are invalid")
+        if not math.isfinite(self.scratch_pace_target_entropy):
+            raise ValueError("scratch pace entropy target must be finite")
+        if self.training_origin not in {"transfer", "scratch"}:
+            raise ValueError("GRTQC origin must be transfer or scratch")
+        if self.actor_update_interval < 1 or not 1 <= self.n_critics <= 8 or self.n_quantiles < 2:
+            raise ValueError("invalid GRTQC actor delay or critic distribution dimensions")
+        if not 0 <= self.top_quantiles_to_drop_per_net < self.n_quantiles:
+            raise ValueError("GRTQC truncation must leave target quantiles")
+        if self.training_origin == "scratch" and (
+            self.actor_verified_state_sampling or self.controller_adapter_only or self.actor_controller_state
+            or self.critic_mc_initialization_updates or self.pace_only_actor_acceptance
+        ):
+            raise ValueError("scratch GRTQC cannot require a transferred/verified-policy initialization")
         if self.critic_environment_state and not self.critic_controller_state:
             raise ValueError("GRTQC environment state requires controller-state observations")
         if self.actor_controller_state and not self.critic_controller_state:
@@ -315,6 +338,7 @@ class TrainingConfig:
     max_episode_seconds: float = 60.0
     max_episode_steps: int = 30_000
     lookahead_count: int = 12
+    websocket_port: int = 8765
     reward_profile: str | None = None
     reward_scale: float = 0.01
     checkpoint_interval: int = 10_000
@@ -333,6 +357,8 @@ class TrainingConfig:
         backend_for(self.algorithm).validate_config(self)
         if self.backend not in {"mock", "websocket"} or self.device not in {"auto", "cpu", "cuda"}:
             raise ValueError("invalid simulator backend or device")
+        if not isinstance(self.websocket_port, int) or not 0 < self.websocket_port < 65536:
+            raise ValueError("WebSocket port must be an integer in [1, 65535]")
         if self.frame_skip < 1 or self.timesteps < 1 or self.lookahead_count < 1:
             raise ValueError("frame skip, budget and lookahead must be positive")
         if self.max_episode_seconds <= 0 or self.max_episode_steps < 1:

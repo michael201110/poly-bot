@@ -46,7 +46,7 @@ polybot-eval --algorithm tqc --track-name "Summer 1" --slot champion --backend w
 polybot-drive --algorithm tqc --track-name "Summer 1" --slot champion --backend websocket --realtime
 ```
 
-The training command defaults to `--track-id current` and frame skip 30 for WebSocket, and `mock/straight` and 4 for the mock. The simulator follows Python's fixed-step requests rather than render timing. Only one training, evaluation, or playback listener can use the fixed local port at once.
+The training command defaults to `--track-id current` and frame skip 30 for WebSocket, and `mock/straight` and 4 for the mock. The simulator follows Python's fixed-step requests rather than render timing. Only one training, evaluation, or playback listener can use a given local port at once. Bridge 0.1.32 supports separate tabs using `?polybotPort=8766` and matching `websocket_port` in the Python profile; the default remains 8765. Each concurrent learner must own a distinct simulator tab and port.
 
 ## Troubleshooting
 

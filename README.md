@@ -72,3 +72,5 @@ pml-mod/                  PolyModLoader bridge
 profiles/                 training and reward recipes
 tests/                    protocol, environment, algorithm and GUI tests
 ```
+
+An independent scratch GRTQC experiment is available through `profiles/training/summer-1-grtqc-scratch-30.json`, with its own output directory, stochastic exploration, adaptive quarter-to-full curriculum and **confirmed sub-23s** milestone. It inherits no TQC weights, replay or output overlays. See [the scratch experiment](docs/grtqc-scratch-experiment.md) for origin checks, reward priorities and parallel simulator setup.
