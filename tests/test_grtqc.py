@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 import torch as th
+from stable_baselines3.common.buffers import NStepReplayBuffer
 
 from polybot.algorithms.grtqc import GRTQCBackend
 from polybot.algorithms.tqc import TQCBackend
@@ -254,6 +255,67 @@ def test_explicit_entropy_change_applies_on_resume_without_resetting_unchanged_r
         env.close()
 
 
+def test_multistep_rewards_stop_at_finish_and_at_evaluation_reset() -> None:
+    config = _config("grtqc")
+    config.grtqc.n_step_return = 4
+    config.grtqc.gamma = 0.9
+    model, env = _model(config)
+    try:
+        replay = model.replay_buffer
+        assert isinstance(replay, NStepReplayBuffer)
+        shape = (1, model.observation_space.shape[0])
+        action = np.zeros((1, 2), dtype=np.float32)
+        # Two observed decisions before an evaluation interrupts the episode.
+        for index in range(2):
+            replay.add(np.full(shape, index), np.full(shape, index + 1), action,
+                       np.array([1.0]), np.array([False]), [{}])
+        model.set_env(env)
+        # This is a different episode with a much larger finish reward.
+        replay.add(np.full(shape, 10), np.full(shape, 11), action,
+                   np.array([50.0]), np.array([True]), [{}])
+        sample = replay._get_samples(np.array([0, 2]))
+        th.testing.assert_close(sample.rewards[:, 0], th.tensor([1.9, 50.0]))
+        th.testing.assert_close(sample.dones[:, 0], th.tensor([0.0, 1.0]))
+        th.testing.assert_close(sample.discounts[:, 0], th.tensor([0.81, 0.9]))
+        th.testing.assert_close(sample.next_observations[0], th.full(shape[1:], 2.0))
+    finally:
+        env.close()
+
+
+def test_resume_changes_horizon_without_losing_replay_or_actor_and_repairs_old_resets() -> None:
+    config = _config("grtqc")
+    model, env = _model(config)
+    try:
+        replay = model.replay_buffer
+        shape = (1, model.observation_space.shape[0])
+        action = np.zeros((1, 2), dtype=np.float32)
+        replay.add(np.zeros(shape), np.ones(shape), action, np.array([1.0]), np.array([False]), [{}])
+        replay.add(np.full(shape, 10), np.full(shape, 11), action,
+                   np.array([50.0]), np.array([True]), [{}])
+        actor = {name: weight.clone() for name, weight in model.actor.state_dict().items()}
+        model.actor_unlocked = True
+        model.critic_updates_since_transfer = 3000
+        config.grtqc.n_step_return = 4
+        config.grtqc.gamma = 0.9
+        GRTQCBackend().configure_resume(model, config, "cpu")
+        assert isinstance(model.replay_buffer, NStepReplayBuffer)
+        assert model.replay_buffer.observations is replay.observations
+        assert model.replay_buffer.size() == 2
+        assert not model.actor_unlocked
+        assert model.critic_updates_since_transfer == 0
+        sample = model.replay_buffer._get_samples(np.array([0]))
+        assert float(sample.rewards[0]) == 1.0
+        assert float(sample.dones[0]) == 0.0
+        assert float(sample.discounts[0]) == pytest.approx(0.9)
+        for name, weight in model.actor.state_dict().items():
+            th.testing.assert_close(weight, actor[name], rtol=0, atol=0)
+        config.grtqc.gamma = 0.8
+        GRTQCBackend().configure_resume(model, config, "cpu")
+        assert model.replay_buffer.gamma == 0.8
+    finally:
+        env.close()
+
+
 @pytest.mark.parametrize("algorithm", ["tqc", "grtqc"])
 def test_old_reward_semantics_cannot_be_reused_from_replay(tmp_path, monkeypatch, algorithm) -> None:
     config = replace(_config(algorithm), output_root=tmp_path / "models", log_root=tmp_path / "logs")
@@ -340,6 +402,35 @@ def test_grtqc_keeps_contact_reduction_as_candidate_within_pace_tolerance(tmp_pa
 
     assert saved == ["contact-candidate"]
     assert runner._grtqc_weak_evaluations == 0
+
+
+@pytest.mark.parametrize(
+    ("lap", "contacts", "expected"),
+    [(25.1, 5, "contact-candidate"), (25.5, 5, "rejected"), (25.1, 10, "rejected")],
+)
+def test_cleaner_candidate_retains_faster_pace_without_adding_contacts(
+    tmp_path, monkeypatch, lap, contacts, expected,
+) -> None:
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.contact_candidate_lap_tolerance_s = 1.5
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=5000)
+    saved_candidate = EvaluationResult(
+        5, 1.0, 1.0, 1.0, 25.359, 25.359, 0.0, 0.0, 0.0, barrier_contact_steps=5,
+    )
+    current = replace(saved_candidate, best_lap_s=lap, median_lap_s=lap, barrier_contact_steps=contacts)
+    candidate_dir = runner.registry.slot(config.track_name, "grtqc", "contact-candidate")
+    candidate_dir.mkdir(parents=True)
+    (candidate_dir / "metadata.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(runner.registry, "read_metadata", lambda path: SimpleNamespace(
+        evaluation=saved_candidate.to_dict(),
+    ))
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: current)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    saved = []
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path)
+    runner._evaluate()
+    assert expected in saved[0]
 
 
 def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_path, monkeypatch) -> None:

@@ -296,6 +296,7 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "critic_exploration_fraction": (
         "Fraction of critic-warmup episodes with noise after the initial reliable replay fill."
     ),
+    "n_step_return": "Decisions of observed rewards per critic target; 1 uses ordinary one-step targets.",
     "target_entropy": "Desired policy entropy; use a lower value when bounding training variance tightly.",
     "recovery_critic_cooldown_updates": "Minimum critic updates after actor recovery before learning resumes.",
 }, algorithm="grtqc")}

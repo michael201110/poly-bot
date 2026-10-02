@@ -16,6 +16,7 @@ import numpy as np
 import torch as th
 from sb3_contrib.common.utils import quantile_huber_loss
 from sb3_contrib.tqc.policies import TQCPolicy
+from stable_baselines3.common.buffers import NStepReplayBuffer, ReplayBuffer
 from stable_baselines3.common.utils import polyak_update
 from torch import nn
 
@@ -190,9 +191,55 @@ class GRTQC(SeededWarmupTQC):
             )
 
     def set_env(self, env: Any, force_reset: bool = True) -> None:
+        replay = self.replay_buffer
+        if force_reset and replay is not None and replay.size():
+            # Evaluations and phase switches reset the simulator. Preserve
+            # bootstrap at that real observation, but stop multi-step returns
+            # before rewards from the next reset episode.
+            last = (replay.pos - 1) % replay.buffer_size
+            unfinished = replay.dones[last] == 0
+            replay.dones[last, unfinished] = 1
+            replay.timeouts[last, unfinished] = 1
         self._exploration_noise = None
         self._critic_exploration_episodes = None
         super().set_env(env, force_reset=force_reset)
+
+    def configure_replay_horizon(self, n_steps: int, gamma: float) -> bool:
+        """Reuse raw transitions when changing the return horizon on resume.
+
+        Both SB3 buffer classes have identical storage. Reuse their arrays to
+        avoid a second large allocation; only sampling behavior changes.
+        """
+        replay = self.replay_buffer
+        if replay is None or type(replay) not in {ReplayBuffer, NStepReplayBuffer}:
+            raise ValueError("GRTQC return horizon requires standard continuous replay")
+        changed = self.n_steps != n_steps
+        if changed:
+            order = np.arange(replay.size())
+            if replay.full:
+                order = np.concatenate((order[replay.pos:], order[:replay.pos]))
+            for offset in range(0, len(order) - 1, 1024):
+                current = order[offset:min(offset + 1024, len(order) - 1)]
+                following = order[offset + 1:min(offset + 1025, len(order))]
+                reset = np.any(
+                    np.abs(replay.next_observations[current] - replay.observations[following]) > 1e-6,
+                    axis=2,
+                ) & (replay.dones[current] == 0)
+                rows, environments = np.nonzero(reset)
+                replay.dones[current[rows], environments] = 1
+                replay.timeouts[current[rows], environments] = 1
+            desired = NStepReplayBuffer if n_steps > 1 else ReplayBuffer
+            converted = desired.__new__(desired)
+            converted.__dict__.update(replay.__dict__)
+            self.replay_buffer = replay = converted
+            self.replay_buffer_class = desired
+        self.n_steps = n_steps
+        self.replay_buffer_kwargs.pop("n_steps", None)
+        self.replay_buffer_kwargs.pop("gamma", None)
+        if n_steps > 1:
+            replay.n_steps, replay.gamma = n_steps, gamma
+            self.replay_buffer_kwargs.update(n_steps=n_steps, gamma=gamma)
+        return changed
 
     def _critic_ready(self) -> bool:
         if self.critic_updates_since_transfer < self.critic_warmup_updates:
@@ -418,6 +465,7 @@ class GRTQCBackend(TQCBackend):
             learning_starts=p.learning_starts, batch_size=p.batch_size,
             gamma=p.gamma, tau=p.tau, train_freq=p.train_frequency,
             gradient_steps=p.gradient_steps, ent_coef=p.entropy,
+            n_steps=p.n_step_return,
             target_entropy=p.target_entropy,
             warmup_forward_fraction=p.warmup_forward_fraction,
             warmup_steering_std=p.warmup_steering_std,
@@ -457,6 +505,14 @@ class GRTQCBackend(TQCBackend):
             super().configure_resume(model, config, device, fresh_replay=fresh_replay)
         finally:
             config.tqc = original
+        horizon_changed = model.configure_replay_horizon(config.grtqc.n_step_return, config.grtqc.gamma)
+        if horizon_changed:
+            # The critics need to adapt to the new targets before changing
+            # the actor. Existing weights and recorded rewards remain useful.
+            model.actor_unlocked = False
+            model.critic_updates_since_transfer = 0
+            model._critic_loss_history.clear()
+            model._disagreement_history.clear()
         model.disagreement_coefficient = config.grtqc.disagreement_coefficient
         model.critic_warmup_updates = config.grtqc.critic_warmup_updates
         model.critic_readiness_window = config.grtqc.critic_readiness_window

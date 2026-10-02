@@ -140,7 +140,8 @@
     "exploration_correlation": 0.9,
     "policy_std_limit": 0.02,
     "target_entropy": -10.0,
-    "critic_exploration_fraction": 0.25
+    "critic_exploration_fraction": 0.25,
+    "n_step_return": 64
   },
   "schema": "polybot.config.v2"
 }

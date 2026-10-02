@@ -372,7 +372,14 @@ class TrainingRunner:
             )
             contact_improved = (
                 reliable and contact_reference is not None
-                and result.barrier_contact_steps < contact_reference.barrier_contact_steps
+                and (
+                    result.barrier_contact_steps < contact_reference.barrier_contact_steps
+                    or (
+                        result.barrier_contact_steps == contact_reference.barrier_contact_steps
+                        and contact_reference.median_lap_s is not None
+                        and result.median_lap_s < contact_reference.median_lap_s
+                    )
+                )
             )
             within_pace_tolerance = (
                 reliable
@@ -403,6 +410,11 @@ class TrainingRunner:
                     "champion_lap_s": best_verified,
                     "barrier_contact_steps": result.barrier_contact_steps,
                     "contact_reference_steps": contact_reference.barrier_contact_steps,
+                    "promotion_reason": (
+                        "fewer_contacts"
+                        if result.barrier_contact_steps < contact_reference.barrier_contact_steps
+                        else "faster_cleaner_candidate"
+                    ),
                 })
             else:
                 path = self._save(f"checkpoints/step-{self.model.num_timesteps}-rejected", result)
