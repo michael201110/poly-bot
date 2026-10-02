@@ -38,6 +38,14 @@ def remaining_config(config: TrainingConfig, completed: int) -> TrainingConfig |
     )
 
 
+def should_continue(config: TrainingConfig, *, requested: bool, target_reached: bool, stop_file: Path) -> bool:
+    """Continue another training budget only for an explicitly supervised scratch run."""
+    if requested and (config.algorithm != "grtqc" or config.grtqc is None
+                      or config.grtqc.training_origin != "scratch"):
+        raise ValueError("continue-until-target is only supported for scratch GRTQC")
+    return requested and not target_reached and not stop_file.exists()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
@@ -51,14 +59,28 @@ def main() -> None:
         help="reconnect and resume the saved learner after simulator interruptions",
     )
     parser.add_argument(
+        "--continue-until-target", action="store_true",
+        help="start another saved scratch-GRTQC training budget until its confirmed lap target",
+    )
+    parser.add_argument(
         "--allow-ppo-reward-change", action="store_true",
         help="resume PPO weights under an intentional new reward profile; resets Adam moments",
     )
     args = parser.parse_args()
     config = TrainingConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8-sig")))
+    if args.continue_until_target and (config.algorithm != "grtqc" or config.grtqc is None
+                                       or config.grtqc.training_origin != "scratch"):
+        raise SystemExit("--continue-until-target requires scratch GRTQC")
     if args.stop_file.exists():
         raise SystemExit(f"remove the stop file before starting: {args.stop_file}")
-    runner = TrainingRunner(config, lambda event: print(json.dumps(event, allow_nan=False), flush=True))
+    target_reached = threading.Event()
+
+    def emit(event: dict) -> None:
+        if event.get("type") == "target_reached":
+            target_reached.set()
+        print(json.dumps(event, allow_nan=False), flush=True)
+
+    runner = TrainingRunner(config, emit)
     finished = threading.Event()
 
     def watch_stop_file() -> None:
@@ -108,15 +130,29 @@ def main() -> None:
                 retry_config = remaining_config(config, completed)
                 if retry_config is None:
                     break
+                initial_steps = registry.read_metadata(resume).training_timesteps
                 runner = TrainingRunner(
-                    retry_config, lambda event: print(json.dumps(event, allow_nan=False), flush=True),
+                    retry_config, emit,
                 )
                 continue
             print(json.dumps({
                 "type": "launcher_completed", "latest": str(latest),
                 "champion": str(registry.slot(config.track_name, config.algorithm, "champion")),
             }), flush=True)
-            break
+            if not should_continue(
+                config, requested=args.continue_until_target, target_reached=target_reached.is_set(),
+                stop_file=args.stop_file,
+            ):
+                break
+            resume = registry.slot(config.track_name, config.algorithm, "latest")
+            fresh_replay = False
+            initial_steps = registry.read_metadata(resume).training_timesteps
+            target_reached.clear()
+            print(json.dumps({
+                "type": "training_budget_continued", "resume": str(resume),
+                "training_timesteps": initial_steps, "next_budget": config.timesteps,
+            }), flush=True)
+            runner = TrainingRunner(config, emit)
     finally:
         finished.set()
         watcher.join(timeout=1.0)

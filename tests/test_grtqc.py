@@ -1384,7 +1384,7 @@ def test_parallel_ports_are_explicit_and_do_not_change_transfer_default():
     scratch = TrainingConfig.from_dict(json.loads(Path("profiles/training/summer-1-grtqc-scratch-30.json").read_text()))
     assert TrainingRunner(scratch)._transport().endpoint == "ws://127.0.0.1:8766"
     assert TrainingRunner(replace(_config("grtqc"), backend="websocket"))._transport().endpoint == "ws://127.0.0.1:8765"
-    assert scratch.grtqc.target_lap_s == 23.
+    assert scratch.grtqc.target_lap_s == 22.
     assert scratch.grtqc.training_origin == "scratch"
     assert scratch.curriculum.phases[0].mode == "quarters-randomised"
     assert scratch.rewards.guidance_reward_scale == 0

@@ -139,7 +139,7 @@
     "critic_warmup_updates": 100,
     "critic_readiness_window": 100,
     "critic_readiness_relative_change": 0.5,
-    "target_lap_s": 23.0,
+    "target_lap_s": 22.0,
     "contact_candidate_lap_tolerance_s": 1.5,
     "exploration_std": 0.0,
     "critic_collection_std": 0.0,

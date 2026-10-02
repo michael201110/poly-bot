@@ -1,6 +1,6 @@
 # Independent Summer 1 GRTQC scratch experiment
 
-Success requires a deterministic five-finish evaluation with median below 23.000 seconds. The project target remains below 22.000 seconds. Initialization, completion and critic calibration are milestones, not success. No result is established yet.
+Success requires a deterministic five-finish evaluation with median below 23.000 seconds. The long-term project target remains below 22.000 seconds; the supervisor runs repeated two-million-step budgets until the configured 22-second goal is confirmed. Initialization, completion and critic calibration are milestones, not success. No result is established yet.
 
 ## Isolation and origin
 
@@ -33,10 +33,10 @@ Full stochastic-rollout best times are marked unverified and archived separately
 Logs include actor/critic loss, quantile/target mean and spread, TD residual, disagreement/regularizer, entropy temperature, total/per-layer gradients and parameter updates, Adam steps, replay size, phase competence, full finishes, crashes/contact progress and evaluation best/median. Failed tested-policy experience enters compatible fresh replay. The immutable original TQC source is not read for this branch's policy training.
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-scratch-30.json --stop-file logs/grtqc-scratch-20261002/train.stop --retry-transport
+.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-scratch-30.json --stop-file logs/grtqc-scratch-20261002/train.stop --retry-transport --continue-until-target
 ```
 
-Bridge 0.1.32 accepts a per-tab `polybotPort` URL parameter, tags worker initialization with that port and validates it to a loopback endpoint. Defaults remain 8765. Use `https://web.polymodloader.com/?polybotPort=8766` for this simulator after enabling the new version. The original already-running tab need not be reloaded. Parallel learners require distinct game tabs and ports; output directories alone do not isolate simulation state.
+Bridge 0.1.33 accepts a per-tab `polybotPort` URL parameter, tags worker initialization with that port and validates it to a loopback endpoint. Defaults remain 8765. Use `https://web.polymodloader.com/?polybotPort=8766` for this simulator after enabling the new version. Parallel learners require distinct game tabs and ports; output directories alone do not isolate simulation state.
 
 Bridge 0.1.33 additionally scopes PolyTrack's native single-instance BroadcastChannel to the selected port. Without this, the second tab is blocked even with separate websocket endpoints. The native guard remains effective for two tabs using the same port. This only partitions offline client sessions; worker physics and training controls are unchanged.
 
@@ -45,3 +45,5 @@ Bridge 0.1.33 additionally scopes PolyTrack's native single-instance BroadcastCh
 The initial independent policy reached 35,349 decisions across 137 short attempts (mostly off-track or stalled) without a full-track finish; its best sampled section progress was 62.1%. It had 8,086 critic updates and an unlocked actor. At this point, reward-term logs showed early off-track cost was zero even though stalled attempts cost -400. The complete checkpoint and its 35,845-transition replay are preserved at `models/experiments/grtqc-scratch-20261002/archive/early-off-track-zero-step-35349/latest`.
 
 Training resumed from that scratch actor with newly initialized critic/replay and the corrected equal -400 off-track/stall costs. It uses the same single simulator tab and verified Summer 1 reference run selected in the game. At step 46,046 it had 10,932 new replay transitions, 10,011 critic updates, an unlocked actor, and no full-track finish. This is early learning evidence only, not a faster lap. Live output is `logs/grtqc-scratch-20261002/training-resume-uniform-offtrack-v3.stdout.jsonl` and detailed episode telemetry remains in `logs/summer-1-grtqc-*.jsonl`.
+
+Deterministic one-lap screens remained unfinished through step 122,078. Their median progress rose from 2.4% to 23.5%; a few stochastic training attempts reached the end of the route, but none recorded the finish. The actor/critic, 88,985-transition compatible replay, and optimizer state are saved at `latest`. The scratch target was tightened to 22.000 seconds, and `--continue-until-target` starts another two-million-step budget from `latest` unless the user stop file exists or five finishing laps confirm the target. The active run was stopped at step 122,078 only to install this resume automation, then will continue from the full saved replay.
