@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 import torch as th
 from stable_baselines3.common.buffers import NStepReplayBuffer
+from stable_baselines3.common.logger import configure
 
 from polybot.algorithms.grtqc import GRTQCBackend
 from polybot.algorithms.tqc import TQCBackend
@@ -18,6 +19,7 @@ from polybot.protocol import ProtocolViolation
 from polybot.training.config import EvaluationConfig, GRTQCConfig, TQCConfig, TrainingConfig
 from polybot.training.evaluation import EvaluationResult, PrefixObservationReference
 from polybot.training.runner import TrainingRunner
+from tools.audit_grtqc_training_distribution import TrainingDistributionDriver
 
 
 def _config(algorithm: str) -> TrainingConfig:
@@ -83,6 +85,81 @@ def test_critic_updates_keep_transferred_actor_frozen_until_ready() -> None:
         metrics = GRTQCBackend().metrics(model)
         assert metrics["critic_disagreement"] is not None
         assert metrics["disagreement_penalty"] is not None
+    finally:
+        env.close()
+
+
+def test_complete_return_initialization_changes_only_critics_and_survives_reload(tmp_path):
+    config = _config("grtqc")
+    config.grtqc.critic_mc_initialization_updates = 4
+    config.grtqc.critic_mc_min_episodes = 1
+    model, env = _model(config)
+    try:
+        model.set_logger(configure(None, []))
+        observation = np.zeros((1, model.observation_space.shape[0]), dtype=np.float32)
+        action, _ = model.predict(observation, deterministic=True)
+        for _ in range(2):
+            model.replay_buffer.add(observation, observation, action, np.ones(1), np.ones(1), [{}])
+        before = {name: value.clone() for name, value in model.actor.state_dict().items()}
+        model.train(10, 4)
+        assert model.critic_mc_updates_done == 4
+        assert model.critic_updates_since_transfer == 14
+        assert model._n_updates == 14
+        assert model._critic_reference_episodes == 2
+        assert not model.actor_unlocked
+        for name, value in model.actor.state_dict().items():
+            th.testing.assert_close(value, before[name], rtol=0, atol=0)
+        backend = GRTQCBackend()
+        backend.save_model(model, tmp_path, resume=True)
+        loaded = backend.load_model(tmp_path / "policy.zip", None, "cpu", resume=True)
+        loaded.set_logger(configure(None, []))
+        assert loaded.critic_mc_updates_done == 4
+        assert loaded._critic_reference_observations is None
+        loaded.train(1, 4)
+        assert loaded.critic_mc_updates_done == 4
+        assert loaded._n_updates == 15
+        assert loaded._critic_reference_episodes == 2
+        backend.configure_resume(loaded, config, "cpu", fresh_replay=True)
+        assert loaded.critic_mc_updates_done == 0
+        assert loaded._critic_reference_observations is None
+    finally:
+        env.close()
+
+
+def test_return_initialization_blocks_unlock_until_policy_values_are_accurate():
+    config = _config("grtqc")
+    config.grtqc.critic_mc_initialization_updates = 1
+    model, env = _model(config)
+    try:
+        model.critic_updates_since_transfer = model.critic_warmup_updates
+        model._critic_loss_history.extend([1.0] * model.critic_readiness_window)
+        model._disagreement_history.extend([0.1] * model.critic_readiness_window)
+        assert not model._critic_ready()
+        model.critic_mc_updates_done = 1
+        model._critic_reference_observations = th.zeros((4, model.observation_space.shape[0]))
+        model._critic_reference_actions = th.zeros((4, 2))
+        model._critic_reference_returns = th.full((4, 1), 100.0)
+        assert not model._critic_ready()
+        assert model._critic_reference_error > config.grtqc.critic_reference_error_limit
+        model._critic_reference_error = 0.01
+        model._critic_reference_probe_update = model.critic_updates_since_transfer
+        assert model._critic_ready()
+    finally:
+        env.close()
+
+
+def test_resume_repairs_replay_sampling_class_even_when_model_horizon_already_matches():
+    config = _config("grtqc")
+    config.grtqc.n_step_return = 4
+    model, env = _model(config)
+    try:
+        replay = model.replay_buffer
+        assert type(replay) is NStepReplayBuffer
+        model.n_steps = 1  # Policy snapshot coupled with another checkpoint's raw replay.
+        assert model.configure_replay_horizon(1, config.grtqc.gamma)
+        assert type(model.replay_buffer) is not NStepReplayBuffer
+        assert model.replay_buffer.observations is replay.observations
+        assert not model.configure_replay_horizon(1, config.grtqc.gamma)
     finally:
         env.close()
 
@@ -407,6 +484,31 @@ def test_rollout_passes_air_brake_touchdown_release_to_wrapped_environment() -> 
         assert action[0, 1] == pytest.approx(-0.05)
         assert env._air_brake_request
         np.testing.assert_array_equal(env._air_brake_base_action, model._air_brake_base_action[0])
+    finally:
+        env.close()
+
+
+def test_distribution_audit_samples_before_overlays_and_restores_normal_prediction(monkeypatch):
+    model, env = _model(_config("grtqc"))
+    try:
+        observations = model.env.reset()
+        observations[0, 12] = 0.5
+        observations[0, 17:21] = 0
+        model.policy_overlays = [{"kind": "air_brake", "start": 0.2, "end": 0.8, "duty": 0.5}]
+        original = model.policy.predict
+        before = {name: value.clone() for name, value in model.actor.state_dict().items()}
+        monkeypatch.setattr(model, "_training_actions_log_prob", lambda tensor: (
+            tensor.new_tensor([[0.125, 0.75]]), tensor.new_tensor([3.4]),
+        ))
+        driver = TrainingDistributionDriver(model)
+        action, _ = driver.predict(observations[0], deterministic=True)
+        np.testing.assert_array_equal(action, [0.125, -0.5])
+        np.testing.assert_array_equal(driver._air_brake_base_action, [0.125, 0.75])
+        assert driver._air_brake_active
+        assert model.policy.predict == original
+        assert driver.log_probabilities == pytest.approx([3.4])
+        for name, value in model.actor.state_dict().items():
+            th.testing.assert_close(value, before[name], rtol=0, atol=0)
     finally:
         env.close()
 

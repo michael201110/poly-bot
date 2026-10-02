@@ -576,6 +576,8 @@ class TrainingRunner:
         )
         self.model._critic_loss_history.clear()
         self.model._disagreement_history.clear()
+        if hasattr(self.model, "invalidate_critic_reference"):
+            self.model.invalidate_critic_reference()
         self.model._exploration_noise = None
         self._actor_unlock_seen = False
         self._grtqc_weak_evaluations = 0

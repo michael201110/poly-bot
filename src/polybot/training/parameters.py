@@ -321,6 +321,18 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "Initially train only the actor's new controller input weights, preserving its inherited layers. "
         "Disable to continue learning with all actor weights after validating this stage."
     ),
+    "critic_mc_initialization_updates": (
+        "Initialize frozen-policy critics using discounted rewards from complete matching-policy episodes. "
+        "Only critic weights change; ordinary TQC updates follow. Zero disables this initialization."
+    ),
+    "critic_mc_min_episodes": (
+        "Minimum complete episodes matching the frozen policy before value initialization. "
+        "Both finishes and failures count; noisy or incomplete episodes cannot supply its returns."
+    ),
+    "critic_reference_error_limit": (
+        "Maximum mean critic error relative to observed frozen-policy driving returns before actor unlock. "
+        "Used with complete-return initialization; this is a diagnostic, not an exact soft-Q target."
+    ),
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {

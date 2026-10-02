@@ -25,6 +25,7 @@ from polybot.algorithms.tqc import SeededWarmupTQC, TQCBackend
 from polybot.control.actions import ContinuousActionAdapter
 from polybot.environment.observations import size as observation_size
 from polybot.training.config import ARCHITECTURES, GRTQCConfig
+from polybot.training.critic_reference import on_policy_returns
 
 if TYPE_CHECKING:
     from polybot.training.config import TrainingConfig
@@ -156,6 +157,8 @@ class GRTQC(SeededWarmupTQC):
         critic_exploration_fraction: float = 1.0,
         actor_step_action_limit: float = 1e-5,
         actor_reference_drift_limit: float = 0.01,
+        critic_mc_initialization_updates: int = 0, critic_mc_min_episodes: int = 5,
+        critic_reference_error_limit: float = 0.2,
         **kwargs: Any,
     ) -> None:
         self.disagreement_coefficient = disagreement_coefficient
@@ -178,7 +181,76 @@ class GRTQC(SeededWarmupTQC):
         self._disagreement_history: deque[float] = deque(maxlen=critic_readiness_window)
         self._actor_reference_observations: th.Tensor | None = None
         self._actor_reference_actions: th.Tensor | None = None
+        self.critic_mc_initialization_updates = critic_mc_initialization_updates
+        self.critic_mc_min_episodes = critic_mc_min_episodes
+        self.critic_reference_error_limit = critic_reference_error_limit
+        self.critic_mc_updates_done = 0
+        self.invalidate_critic_reference()
         super().__init__(*args, **kwargs)
+
+    def _excluded_save_params(self) -> list[str]:
+        return super()._excluded_save_params() + [
+            "_critic_reference_observations", "_critic_reference_actions", "_critic_reference_returns",
+        ]
+
+    def invalidate_critic_reference(self) -> None:
+        self._critic_reference_observations: th.Tensor | None = None
+        self._critic_reference_actions: th.Tensor | None = None
+        self._critic_reference_returns: th.Tensor | None = None
+        self._critic_reference_error: float | None = None
+        self._critic_reference_probe_update = -1
+        self._critic_reference_retry_update = 0
+        self._critic_reference_episodes = 0
+
+    def _initialize_critics_from_returns(self, batch_size: int) -> None:
+        """Seed frozen-policy values from real complete episodes, then resume TD."""
+        if not self.critic_mc_initialization_updates or self.actor_unlocked:
+            return
+        if self._critic_reference_observations is None:
+            if self._n_updates < self._critic_reference_retry_update:
+                return
+            self._critic_reference_retry_update = self._n_updates + 200
+            previous_air_brake = self._air_brake_active, self._air_brake_base_action
+            try:
+                samples = on_policy_returns(self.replay_buffer, self, self.gamma)
+            except ValueError as error:
+                if "no complete episodes" not in str(error):
+                    raise
+                return
+            finally:
+                self.policy.set_training_mode(True)
+                self._air_brake_active, self._air_brake_base_action = previous_air_brake
+            self._critic_reference_episodes = samples.episodes
+            if samples.episodes < self.critic_mc_min_episodes:
+                return
+            self._critic_reference_observations = th.as_tensor(samples.observations, device=self.device)
+            self._critic_reference_actions = th.as_tensor(samples.actions, device=self.device)
+            self._critic_reference_returns = th.as_tensor(samples.returns, device=self.device)
+            self._critic_reference_error = None
+            self._critic_reference_probe_update = -1
+            self.policy.set_training_mode(True)
+        observations, actions, returns = (
+            self._critic_reference_observations, self._critic_reference_actions, self._critic_reference_returns,
+        )
+        remaining = max(0, self.critic_mc_initialization_updates - self.critic_mc_updates_done)
+        for _ in range(remaining):
+            indices = th.randint(len(observations), (batch_size,), device=self.device)
+            values = self.critic(observations[indices], actions[indices])
+            loss = quantile_huber_loss(values, returns[indices].unsqueeze(1), sum_over_quantiles=False)
+            loss = loss + self.disagreement_coefficient * values.var(dim=1, unbiased=False).mean()
+            if not th.isfinite(loss):
+                raise RuntimeError("non-finite complete-return critic initialization loss")
+            self.critic.optimizer.zero_grad()
+            loss.backward()
+            self.critic.optimizer.step()
+            polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
+            self.critic_mc_updates_done += 1
+        if remaining:
+            self._n_updates += remaining
+            self.critic_updates_since_transfer += remaining
+            self._critic_loss_history.clear()
+            self._disagreement_history.clear()
+            self._critic_reference_error = None
 
     def configure_actor_controller_state(self, enabled: bool, adapter_only: bool) -> bool:
         """Upgrade compatible phase-aware checkpoints without discarding critic/replay."""
@@ -310,7 +382,11 @@ class GRTQC(SeededWarmupTQC):
         replay = self.replay_buffer
         if replay is None or type(replay) not in {ReplayBuffer, NStepReplayBuffer}:
             raise ValueError("GRTQC return horizon requires standard continuous replay")
-        changed = self.n_steps != n_steps
+        desired = NStepReplayBuffer if n_steps > 1 else ReplayBuffer
+        changed = (
+            self.n_steps != n_steps or type(replay) is not desired
+            or (n_steps > 1 and (replay.n_steps != n_steps or replay.gamma != gamma))
+        )
         if changed:
             order = np.arange(replay.size())
             if replay.full:
@@ -325,7 +401,6 @@ class GRTQC(SeededWarmupTQC):
                 rows, environments = np.nonzero(reset)
                 replay.dones[current[rows], environments] = 1
                 replay.timeouts[current[rows], environments] = 1
-            desired = NStepReplayBuffer if n_steps > 1 else ReplayBuffer
             converted = desired.__new__(desired)
             converted.__dict__.update(replay.__dict__)
             self.replay_buffer = replay = converted
@@ -339,6 +414,12 @@ class GRTQC(SeededWarmupTQC):
         return changed
 
     def _critic_ready(self) -> bool:
+        if self.critic_mc_initialization_updates:
+            if (
+                self.critic_mc_updates_done < self.critic_mc_initialization_updates
+                or self._critic_reference_observations is None
+            ):
+                return False
         if self.critic_updates_since_transfer < self.critic_warmup_updates:
             return False
         if len(self._critic_loss_history) < self.critic_readiness_window:
@@ -350,6 +431,28 @@ class GRTQC(SeededWarmupTQC):
             half = len(values) // 2
             first, second = values[:half].mean(), values[half:].mean()
             if second > first * (1 + self.critic_readiness_relative_change):
+                return False
+        if self.critic_mc_initialization_updates:
+            if (
+                self._critic_reference_error is None
+                or self.critic_updates_since_transfer - self._critic_reference_probe_update >= 100
+            ):
+                indices = th.linspace(
+                    0, len(self._critic_reference_observations) - 1, 512, device=self.device,
+                ).long()
+                with th.no_grad():
+                    values = self.critic(
+                        self._critic_reference_observations[indices], self._critic_reference_actions[indices],
+                    ).mean(dim=(1, 2))[:, None]
+                    returns = self._critic_reference_returns[indices]
+                    self._critic_reference_error = float(
+                        ((values - returns).abs().mean() / returns.abs().mean().clamp_min(1.0)).item()
+                    )
+                self._critic_reference_probe_update = self.critic_updates_since_transfer
+            if (
+                not np.isfinite(self._critic_reference_error)
+                or self._critic_reference_error > self.critic_reference_error_limit
+            ):
                 return False
         return True
 
@@ -375,6 +478,7 @@ class GRTQC(SeededWarmupTQC):
         if self.ent_coef_optimizer is not None:
             optimizers.append(self.ent_coef_optimizer)
         self._update_learning_rate(optimizers)
+        self._initialize_critics_from_returns(batch_size)
         for gradient_step in range(gradient_steps):
             data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
             discounts = data.discounts if data.discounts is not None else self.gamma
@@ -584,6 +688,9 @@ class GRTQCBackend(TQCBackend):
             critic_exploration_fraction=p.critic_exploration_fraction,
             actor_step_action_limit=p.actor_step_action_limit,
             actor_reference_drift_limit=p.actor_reference_drift_limit,
+            critic_mc_initialization_updates=p.critic_mc_initialization_updates,
+            critic_mc_min_episodes=p.critic_mc_min_episodes,
+            critic_reference_error_limit=p.critic_reference_error_limit,
             policy_kwargs={
                 "net_arch": {"pi": layers, "qf": layers},
                 "actor_observation_size": width if p.critic_controller_state else 0,
@@ -631,13 +738,20 @@ class GRTQCBackend(TQCBackend):
         finally:
             config.tqc = original
         horizon_changed = model.configure_replay_horizon(config.grtqc.n_step_return, config.grtqc.gamma)
-        if horizon_changed or fresh_replay or targets_changed or adapter_added:
+        initialization_pending = model.critic_mc_updates_done < config.grtqc.critic_mc_initialization_updates
+        if horizon_changed or fresh_replay or targets_changed or adapter_added or initialization_pending:
             # Changed targets or recollected reward data must adapt the critics
             # before they can guide another update to the saved driving skill.
             model.actor_unlocked = False
             model.critic_updates_since_transfer = 0
             model._critic_loss_history.clear()
             model._disagreement_history.clear()
+            if horizon_changed or fresh_replay or targets_changed or adapter_added:
+                model.critic_mc_updates_done = 0
+            model.invalidate_critic_reference()
+        model.critic_mc_initialization_updates = config.grtqc.critic_mc_initialization_updates
+        model.critic_mc_min_episodes = config.grtqc.critic_mc_min_episodes
+        model.critic_reference_error_limit = config.grtqc.critic_reference_error_limit
         model.disagreement_coefficient = config.grtqc.disagreement_coefficient
         model.critic_warmup_updates = config.grtqc.critic_warmup_updates
         model.critic_readiness_window = config.grtqc.critic_readiness_window
@@ -698,6 +812,10 @@ class GRTQCBackend(TQCBackend):
             "policy_training_std_max": values.get("train/policy_training_std_max"),
             "actor_unlocked": int(model.actor_unlocked),
             "actor_evaluation_pending": int(model._actor_evaluation_hold),
+            "critic_mc_updates": model.critic_mc_updates_done,
+            "critic_mc_initialization_updates": model.critic_mc_initialization_updates,
+            "critic_reference_episodes": model._critic_reference_episodes,
+            "critic_reference_relative_error": model._critic_reference_error,
             "actor_controller_state": int(getattr(model.policy, "actor_controller_state", False)),
             "controller_adapter_only": int(getattr(model.policy, "controller_adapter_only", False)),
             "actor_total_parameters": sum(parameter.numel() for parameter in model.actor.parameters()),

@@ -72,6 +72,14 @@ class LiveLogWindow(QWidget):
                             if event["actor_unlocked"]
                             else f"\nPolicy frozen · critic warmup {event.get('critic_warmup_updates', 0):,} updates"
                         )
+                        if not event["actor_unlocked"] and event.get("critic_mc_initialization_updates"):
+                            learning += (
+                                f" · complete-return initialization {event.get('critic_mc_updates', 0):,}"
+                                f"/{event['critic_mc_initialization_updates']:,}"
+                            )
+                            error = event.get("critic_reference_relative_error")
+                            if error is not None:
+                                learning += f" · driving-return error {error:.1%}"
                     self.status.setText(
                         f"Step {event['timesteps']:,} · {event['steps_per_second']:.1f} TPS · "
                         f"attempt {event['progress']:.1%} · best seen {event['run_max_progress']:.1%} · "

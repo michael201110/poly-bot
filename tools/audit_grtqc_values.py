@@ -12,13 +12,21 @@ import torch as th
 from polybot.algorithms.grtqc import GRTQCBackend
 
 
-def audit(directory: Path) -> dict:
+def audit(directory: Path, *, replay_directory: Path | None = None, reference_directory: Path | None = None) -> dict:
     th.set_num_threads(1)
     model = GRTQCBackend().load_model(directory / "policy.zip", None, "cpu")
-    model.load_replay_buffer(str(directory / "replay.pkl"))
+    model.load_replay_buffer(str((replay_directory or directory) / "replay.pkl"))
     replay = model.replay_buffer
     if replay is None or replay.n_envs != 1:
         raise ValueError("audit requires single-environment replay")
+    if replay.observations.shape[-1] != int(np.prod(model.observation_space.shape)):
+        raise ValueError("critic and replay observation layouts differ")
+    reference = (
+        GRTQCBackend().load_model(reference_directory / "policy.zip", None, "cpu")
+        if reference_directory else None
+    )
+    if reference is not None and reference.observation_space.shape != model.observation_space.shape:
+        raise ValueError("reference and critic observation layouts differ")
     order = np.arange(replay.size())
     if replay.full:
         order = np.concatenate((order[replay.pos:], order[:replay.pos]))
@@ -37,11 +45,19 @@ def audit(directory: Path) -> dict:
         )
         if dones[end]:
             if complete_start and not timeouts[end] and rewards[end] > 0:
-                future = 0.0
-                for index in range(end, start - 1, -1):
-                    future = rewards[index] + model.gamma * future
-                    returns[index] = future
-                finished += 1
+                matches_reference = True
+                if reference is not None:
+                    predicted, _ = reference.predict(observations[start:end + 1], deterministic=True)
+                    recorded = replay.actions[order[start:end + 1], 0]
+                    # Allow only the numerical difference between batched
+                    # inference and the single-observation driving kernel.
+                    matches_reference = np.allclose(predicted, recorded, rtol=0, atol=3e-6)
+                if matches_reference:
+                    future = 0.0
+                    for index in range(end, start - 1, -1):
+                        future = rewards[index] + model.gamma * future
+                        returns[index] = future
+                    finished += 1
             start, complete_start = end + 1, True
         elif discontinuity:
             # Evaluation and curriculum switches can reset without a stored
@@ -71,6 +87,8 @@ def audit(directory: Path) -> dict:
             })
     return {
         "checkpoint": str(directory), "timesteps": model.num_timesteps,
+        "replay_source": str(replay_directory or directory),
+        "matched_reference": str(reference_directory) if reference_directory else None,
         "critic_updates": model.critic_updates_since_transfer,
         "actor_unlocked": model.actor_unlocked, "gamma": model.gamma,
         "completed_laps": finished, "samples": len(valid),
@@ -87,9 +105,11 @@ def audit(directory: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("checkpoint", type=Path)
+    parser.add_argument("--replay", type=Path, help="use another compatible checkpoint's raw replay")
+    parser.add_argument("--reference", type=Path, help="select episodes matching this deterministic driver")
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
-    report = audit(args.checkpoint)
+    report = audit(args.checkpoint, replay_directory=args.replay, reference_directory=args.reference)
     serialized = json.dumps(report, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

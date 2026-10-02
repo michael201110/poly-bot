@@ -20,10 +20,10 @@ from polybot.training.config import TrainingConfig
 
 
 def benchmark(learner: Path, actor: Path, config: TrainingConfig, output: Path,
-              critic_updates: int, snapshots: list[int]) -> dict:
+              critic_updates: int, snapshots: list[int], *, monte_carlo_updates: int = 0) -> dict:
     if output.exists():
         raise FileExistsError(f"preserve existing diagnostic: {output}")
-    if critic_updates < 0 or not snapshots or min(snapshots) < 1:
+    if min(critic_updates, monte_carlo_updates) < 0 or not snapshots or min(snapshots) < 1:
         raise ValueError("diagnostic update counts must be nonnegative with positive actor snapshots")
     th.set_num_threads(1)
     backend = GRTQCBackend()
@@ -45,6 +45,23 @@ def benchmark(learner: Path, actor: Path, config: TrainingConfig, output: Path,
     model.critic_warmup_updates = 10_000_000
     np.random.seed(17)
     th.manual_seed(17)
+    mc_report = None
+    if monte_carlo_updates:
+        model.critic_mc_initialization_updates = monte_carlo_updates
+        model.critic_mc_min_episodes = config.grtqc.critic_mc_min_episodes
+        model.invalidate_critic_reference()
+        model._initialize_critics_from_returns(config.grtqc.batch_size)
+        if model.critic_mc_updates_done != monte_carlo_updates:
+            raise ValueError("diagnostic has too few complete matching-policy episodes for initialization")
+        observations = model._critic_reference_observations
+        actions = model._critic_reference_actions
+        returns = model._critic_reference_returns
+        with th.no_grad():
+            estimates = model.critic(observations, actions).mean(dim=(1, 2))[:, None]
+            mc_report = {"episodes": model._critic_reference_episodes, "samples": len(observations),
+                         "mean_estimate": float(estimates.mean()), "mean_return": float(returns.mean()),
+                         "mean_absolute_error": float((estimates - returns).abs().mean())}
+        print(json.dumps({"monte_carlo_initialization": mc_report}), flush=True)
     if critic_updates:
         model.train(critic_updates, config.grtqc.batch_size)
     if any(not th.equal(value, initial[name]) for name, value in model.actor.state_dict().items()):
@@ -65,6 +82,7 @@ def benchmark(learner: Path, actor: Path, config: TrainingConfig, output: Path,
     result = {
         "learner": str(learner), "actor": str(actor), "config": config.to_dict(),
         "critic_only_updates": critic_updates, "actor_unchanged_during_warmup": True,
+        "monte_carlo_updates": monte_carlo_updates, "monte_carlo_initialization": mc_report,
         "snapshots": records, "live_validation": "pending",
     }
     (output / "diagnostic.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -78,12 +96,15 @@ def main() -> None:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--critic-updates", type=int, default=2000)
+    parser.add_argument("--monte-carlo-updates", type=int, default=0,
+                        help="initialize critics from complete matching-policy episodes before normal TD warmup")
     parser.add_argument("--snapshots", type=int, nargs="+", default=[1, 32, 64, 96, 128, 192, 256])
     args = parser.parse_args()
     config = TrainingConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8-sig")))
     if config.algorithm != "grtqc":
         parser.error("requires a GRTQC training config")
-    benchmark(args.learner, args.actor, config, args.output, args.critic_updates, args.snapshots)
+    benchmark(args.learner, args.actor, config, args.output, args.critic_updates, args.snapshots,
+              monte_carlo_updates=args.monte_carlo_updates)
 
 
 if __name__ == "__main__":
