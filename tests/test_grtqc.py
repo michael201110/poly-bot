@@ -1394,6 +1394,7 @@ def test_parallel_ports_are_explicit_and_do_not_change_transfer_default():
     assert scratch.rewards.airborne_roll_failure_penalty == scratch.rewards.crash_penalty
     assert scratch.rewards.barrier_contact_penalty <= -200.0
     assert scratch.grtqc.actor_learning_rate == 1e-4
+    assert scratch.rewards.speed_pace_reward_per_m_per_mps == 0.01
     assert scratch.rewards.early_off_track_penalty == scratch.rewards.off_track_penalty == -400.
     assert scratch.rewards.finish_fast_bonus > 2 * scratch.rewards.finish_bonus
     with pytest.raises(ValueError, match="WebSocket port"):
