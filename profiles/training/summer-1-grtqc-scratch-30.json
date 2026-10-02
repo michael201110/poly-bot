@@ -21,11 +21,11 @@
     "phases": [
       {
         "mode": "quarters-randomised",
-        "steps": 60000
+        "steps": 800000
       },
       {
         "mode": "full",
-        "steps": 1940000
+        "steps": 1200000
       }
     ]
   },
