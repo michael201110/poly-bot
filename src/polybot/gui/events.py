@@ -172,6 +172,13 @@ def format_event(event: dict[str, Any]) -> str | None:
             f" · median progress {_percent(event.get('median_progress'))}"
             f" · median lap {median} · best lap {lap}"
         )
+    if kind == "evaluation_screen":
+        if event.get("finish_rate") == 1.0 and event.get("median_progress") == 1.0:
+            return (
+                f"{prefix}One-lap screen{step} · {_number(event.get('median_lap_s'), 's')}"
+                " · five-lap confirmation follows"
+            )
+        return f"{prefix}One-lap screen{step} · failed at {_percent(event.get('median_progress'))}"
     if kind == "champion":
         return f"{prefix}New champion{step} · best evaluated policy saved"
     if kind == "checkpoint":

@@ -299,6 +299,12 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "n_step_return": "Decisions of observed rewards per critic target; 1 uses ordinary one-step targets.",
     "target_entropy": "Desired policy entropy; use a lower value when bounding training variance tightly.",
     "recovery_critic_cooldown_updates": "Minimum critic updates after actor recovery before learning resumes.",
+    "actor_evaluation_interval_steps": "Decisions between lap checks while the GRTQC actor is learning.",
+    "recovery_weak_evaluations": "Consecutive weaker actor checks before restoring a verified policy.",
+    "screen_actor_evaluations": (
+        "Try one lap before a full actor evaluation; failed screens cannot promote a model. "
+        "Finishing policies still require the full five-lap confirmation."
+    ),
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {

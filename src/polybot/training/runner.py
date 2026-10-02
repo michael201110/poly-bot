@@ -308,11 +308,27 @@ class TrainingRunner:
         )
         for attempt in range(2):
             try:
-                result = evaluate_model(
-                    self.model, self._environment, episodes=cfg.evaluation.episodes,
-                    seed=cfg.seed + 1_000_000,
-                    observation_sink=observations,
-                )
+                result = None
+                if (
+                    cfg.algorithm == "grtqc" and cfg.grtqc.screen_actor_evaluations
+                    and getattr(self.model, "actor_unlocked", False)
+                ):
+                    screen = evaluate_model(
+                        self.model, self._environment, episodes=1,
+                        seed=cfg.seed + 1_000_000,
+                    )
+                    self._emit({
+                        "type": "evaluation_screen", "timesteps": self.model.num_timesteps,
+                        **screen.to_dict(),
+                    })
+                    if screen.finish_rate != 1.0 or screen.median_progress != 1.0:
+                        result = screen
+                if result is None:
+                    result = evaluate_model(
+                        self.model, self._environment, episodes=cfg.evaluation.episodes,
+                        seed=cfg.seed + 1_000_000,
+                        observation_sink=observations,
+                    )
                 break
             except ProtocolViolation as exc:
                 if attempt or not str(exc).startswith("stale_episode:"):
@@ -434,7 +450,7 @@ class TrainingRunner:
                     )
                 ):
                     self._grtqc_weak_evaluations += 1
-                    if self._grtqc_weak_evaluations >= 3:
+                    if self._grtqc_weak_evaluations >= cfg.grtqc.recovery_weak_evaluations:
                         self._recover_grtqc_actor(result, path)
                 else:
                     self._grtqc_weak_evaluations = 0
@@ -1092,7 +1108,7 @@ class TrainingRunner:
                             self._actor_unlock_seen = True
                             self._actor_unlock_event_pending = False
                         next_eval = consumed + (
-                            min(1_000, cfg.evaluation.interval_steps)
+                            min(cfg.grtqc.actor_evaluation_interval_steps, cfg.evaluation.interval_steps)
                             if cfg.algorithm == "grtqc" and self.model.actor_unlocked
                             else cfg.evaluation.interval_steps
                         )

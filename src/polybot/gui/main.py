@@ -75,7 +75,10 @@ def _editor(value: Any, help_text: str, choices: tuple[str, ...] = ()) -> QWidge
         widget = QComboBox()
         widget.addItems(choices)
         widget.setCurrentText(str(value))
-    elif isinstance(value, int) and not isinstance(value, bool):
+    elif isinstance(value, bool):
+        widget = QCheckBox()
+        widget.setChecked(value)
+    elif isinstance(value, int):
         widget = QSpinBox()
         widget.setRange(-2_000_000_000, 2_000_000_000)
         widget.setValue(value)
@@ -92,6 +95,8 @@ def _editor(value: Any, help_text: str, choices: tuple[str, ...] = ()) -> QWidge
 
 
 def _value(widget: QWidget) -> Any:
+    if isinstance(widget, QCheckBox):
+        return widget.isChecked()
     if isinstance(widget, QComboBox):
         return widget.currentText()
     if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
@@ -105,6 +110,8 @@ def _set(widget: QWidget, value: Any) -> None:
     try:
         if isinstance(widget, QComboBox):
             widget.setCurrentText(str(value))
+        elif isinstance(widget, QCheckBox):
+            widget.setChecked(value)
         elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
             widget.setValue(value)
         else:

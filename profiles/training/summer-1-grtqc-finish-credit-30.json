@@ -141,7 +141,10 @@
     "policy_std_limit": 0.02,
     "target_entropy": -10.0,
     "critic_exploration_fraction": 0.25,
-    "n_step_return": 64
+    "n_step_return": 64,
+    "actor_evaluation_interval_steps": 512,
+    "recovery_weak_evaluations": 5,
+    "screen_actor_evaluations": true
   },
   "schema": "polybot.config.v2"
 }

@@ -168,6 +168,9 @@ class GRTQCConfig(TQCConfig):
     actor_step_action_limit: float = 1e-5
     actor_reference_drift_limit: float = 0.01
     recovery_critic_cooldown_updates: int = 1000
+    actor_evaluation_interval_steps: int = 1000
+    recovery_weak_evaluations: int = 3
+    screen_actor_evaluations: bool = False
 
     def __post_init__(self) -> None:
         TQCConfig.__post_init__(self)
@@ -199,6 +202,8 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC target entropy must be auto or finite")
         if self.recovery_critic_cooldown_updates < 1:
             raise ValueError("GRTQC recovery critic cooldown must be positive")
+        if self.actor_evaluation_interval_steps < 1 or self.recovery_weak_evaluations < 1:
+            raise ValueError("GRTQC actor evaluation interval and recovery count must be positive")
         if not 0 < self.actor_step_action_limit <= 0.1:
             raise ValueError("GRTQC actor step action limit must be in (0, 0.1]")
         if not 0 <= self.actor_reference_drift_limit <= 0.1:

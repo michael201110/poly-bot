@@ -568,6 +568,75 @@ def test_grtqc_waits_for_three_weak_evaluations_before_recovery(tmp_path, monkey
     assert len(recovered) == 1
 
 
+@pytest.mark.parametrize("actor_unlocked,screen_finished", [(True, False), (True, True), (False, True)])
+def test_actor_screen_does_not_replace_five_lap_promotion(tmp_path, monkeypatch, actor_unlocked, screen_finished):
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.screen_actor_evaluations = True
+    config.grtqc.recovery_weak_evaluations = 5
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=5000, actor_unlocked=actor_unlocked)
+    calls, saved = [], []
+    weak = EvaluationResult(1, 0.0, 0.5, 0.5, None, None, 1.0, 0.0, 0.0)
+    finished = EvaluationResult(1, 1.0, 1.0, 1.0, 23.0, 23.0, 0.0, 0.0, 0.0)
+    full = replace(finished, episodes=5)
+
+    def evaluate(*args, episodes, **kwargs):
+        calls.append(episodes)
+        return (finished if screen_finished else weak) if episodes == 1 else full
+
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", evaluate)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path / name)
+    result = runner._evaluate()
+    if actor_unlocked and not screen_finished:
+        assert calls == [1]
+        assert result.episodes == 1
+        assert saved == ["checkpoints/step-5000-rejected"]
+        assert runner._grtqc_weak_evaluations == 1
+    else:
+        assert calls == ([1, 5] if actor_unlocked else [5])
+        assert result.episodes == 5
+        assert saved == ["champion"]
+
+
+def test_successful_screen_cannot_promote_failed_full_evaluation(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.screen_actor_evaluations = True
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=5000, actor_unlocked=True)
+    finished = EvaluationResult(1, 1.0, 1.0, 1.0, 21.5, 21.5, 0.0, 0.0, 0.0)
+    failed = EvaluationResult(5, 0.2, 0.5, 0.6, 21.5, 21.5, 0.8, 0.0, 0.0)
+    monkeypatch.setattr(
+        "polybot.training.runner.evaluate_model",
+        lambda *args, episodes, **kwargs: finished if episodes == 1 else failed,
+    )
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    saved = []
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path / name)
+    result = runner._evaluate()
+    assert result == failed
+    assert saved == ["checkpoints/step-5000-rejected"]
+    assert not result.confirms_target_lap(22)
+
+
+def test_denser_checks_keep_configured_recovery_opportunity(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.recovery_weak_evaluations = 5
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=5000, actor_unlocked=True)
+    weak = EvaluationResult(5, 0.0, 0.5, 0.5, None, None, 1.0, 0.0, 0.0)
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: weak)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: tmp_path / name)
+    recovered = []
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+    for _ in range(4):
+        runner._evaluate()
+    assert not recovered
+    runner._evaluate()
+    assert len(recovered) == 1
+
+
 def test_rejected_grtqc_checkpoint_does_not_duplicate_replay(tmp_path, monkeypatch) -> None:
     config = replace(_config("grtqc"), output_root=tmp_path / "models")
     runner = TrainingRunner(config)
