@@ -578,8 +578,12 @@ class TrainingRunner:
             severe_screen_failure = (
                 result.episodes == 1
                 and result.finish_rate == 0.0
-                and result.off_track_rate == 1.0
-                and result.median_progress < 0.75
+                and (
+                    result.off_track_rate == 1.0
+                    and result.median_progress < 0.75
+                    or result.barrier_contact_steps > 0
+                    and result.median_progress < 0.30
+                )
             )
             if (
                 severe_screen_failure

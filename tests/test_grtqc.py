@@ -1546,7 +1546,17 @@ def test_contacting_scratch_candidate_does_not_recenter_anchor(tmp_path, monkeyp
     assert reference_calls == []
 
 
-def test_severe_scratch_screen_failure_restores_verified_actor_immediately(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "failed_screen",
+    [
+        EvaluationResult(1, 0., 0.64, 0.64, None, None, 0., 1., 0., barrier_contact_steps=1),
+        EvaluationResult(1, 0., 0.234, 0.234, None, None, 0., 0., 0., barrier_contact_steps=1),
+    ],
+    ids=("early-off-track", "early-barrier-contact"),
+)
+def test_severe_scratch_screen_failure_restores_verified_actor_immediately(
+    tmp_path, monkeypatch, failed_screen,
+):
     config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
     config.grtqc.training_origin = "scratch"
     runner = TrainingRunner(config)
@@ -1556,9 +1566,6 @@ def test_severe_scratch_screen_failure_restores_verified_actor_immediately(tmp_p
         scratch_stage="pace",
     )
     champion = EvaluationResult(5, 1., 1., 1., 22.635, 22.635, 0., 0., 0.)
-    failed_screen = EvaluationResult(
-        1, 0., 0.64, 0.64, None, None, 0., 1., 0., barrier_contact_steps=1,
-    )
     recovered = []
     events = []
     monkeypatch.setattr(runner, "_emit", events.append)
