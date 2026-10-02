@@ -252,8 +252,8 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC actor evaluation interval and recovery count must be positive")
         if not 0 < self.actor_step_action_limit <= 0.1:
             raise ValueError("GRTQC actor step action limit must be in (0, 0.1]")
-        if not 0 <= self.actor_reference_drift_limit <= 0.1:
-            raise ValueError("GRTQC cumulative reference action limit must be in [0, 0.1]; 0 disables it")
+        if not 0 <= self.actor_reference_drift_limit <= 2.0:
+            raise ValueError("GRTQC cumulative reference action limit must be in [0, 2]; 0 disables it")
 
 
 @dataclass(slots=True)
