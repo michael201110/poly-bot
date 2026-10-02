@@ -340,6 +340,9 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "scratch_section_success_window": "Completed section attempts used to decide readiness for full-track learning.",
     "scratch_section_success_rate": "Section completion rate required to advance early into full-track learning.",
     "scratch_pace_target_entropy": "Exploration target after the first reliable five-lap scratch policy.",
+    "reopen_scratch_curriculum_on_resume": (
+        "Run the configured scratch curriculum phases again when resuming a saved learner."
+    ),
     "actor_update_interval": "Critic updates per actor/temperature update; delay is counted across training calls.",
     "n_critics": "Number of independently initialized gated quantile critics.",
     "n_quantiles": "Return quantiles estimated by each critic.",

@@ -19,7 +19,14 @@ from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import IncompatibleModelError, ModelMetadata, ModelRegistry
 from polybot.protocol import ProtocolViolation
-from polybot.training.config import EvaluationConfig, GRTQCConfig, TQCConfig, TrainingConfig
+from polybot.training.config import (
+    CurriculumConfig,
+    CurriculumPhaseConfig,
+    EvaluationConfig,
+    GRTQCConfig,
+    TQCConfig,
+    TrainingConfig,
+)
 from polybot.training.evaluation import EvaluationResult, PrefixObservationReference
 from polybot.training.runner import TrainingRunner
 from tools.audit_grtqc_training_distribution import TrainingDistributionDriver
@@ -1378,6 +1385,40 @@ def test_scratch_training_saves_a_random_origin_and_resumes_without_teacher(tmp_
     assert second.model.training_origin == "scratch"
     with pytest.raises(FileExistsError, match="scratch output already exists"):
         TrainingRunner(config).run()
+
+
+def test_scratch_resume_reopens_configured_curriculum_when_requested(tmp_path):
+    config = replace(
+        _config("grtqc"), output_root=tmp_path / "scratch", log_root=tmp_path / "logs", timesteps=16,
+    )
+    config.grtqc.training_origin = "scratch"
+    config.grtqc.critic_warmup_updates = 1
+    config.grtqc.critic_readiness_window = 2
+    original = TrainingRunner(config)
+    latest = original.run()
+    original.model.scratch_curriculum_ready = True
+    latest = original._save("latest")
+
+    resumed = replace(
+        config, timesteps=32,
+        curriculum=CurriculumConfig("custom", phases=(
+            CurriculumPhaseConfig("quarters-randomised", 24),
+            CurriculumPhaseConfig("full", 8),
+        )),
+    )
+    resumed.grtqc.reopen_scratch_curriculum_on_resume = True
+    events = []
+    continuation = TrainingRunner(resumed, events.append)
+    continuation.run(resume=latest)
+
+    curriculum_event = next(event for event in events if event["type"] == "scratch_curriculum_reopened")
+    assert curriculum_event["timesteps"] == 16
+    assert curriculum_event["plan_steps"] == 32
+    phases = [event for event in events if event["type"] == "phase"]
+    assert [(event["mode"], event["steps"]) for event in phases] == [
+        ("quarters-randomised", 24), ("full", 8),
+    ]
+    assert continuation.model.num_timesteps == 48
 
 
 def test_parallel_ports_are_explicit_and_do_not_change_transfer_default():

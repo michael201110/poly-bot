@@ -168,6 +168,7 @@
     "actor_verified_state_sampling": false,
     "learn_from_actor_evaluations": true,
     "training_origin": "scratch",
+    "reopen_scratch_curriculum_on_resume": true,
     "actor_update_interval": 2
   },
   "schema": "polybot.config.v2",

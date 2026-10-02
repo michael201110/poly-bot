@@ -985,14 +985,24 @@ class TrainingRunner:
                     self.model, cfg, self.device.resolved,
                     fresh_replay=fresh_replay or (cfg.algorithm == "grtqc" and resume.name == "initialization"),
                 )
-                if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and getattr(
-                    self.model, "scratch_curriculum_ready", False,
-                ) and plan.phases[0].mode != "full":
-                    cfg.curriculum = CurriculumConfig("full")
-                    plan = build_plan(cfg.curriculum, cfg.timesteps)
-                    training_env.close()
-                    training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
-                    self.model.set_env(training_env)
+                if (
+                    cfg.grtqc and cfg.grtqc.training_origin == "scratch"
+                    and plan.phases[0].mode != "full"
+                ):
+                    if cfg.grtqc.reopen_scratch_curriculum_on_resume:
+                        self.model.scratch_curriculum_ready = False
+                        self._emit({
+                            "type": "scratch_curriculum_reopened",
+                            "timesteps": int(self.model.num_timesteps),
+                            "plan_steps": plan.total_steps,
+                            "phases": [asdict(phase) for phase in plan.phases],
+                        })
+                    elif getattr(self.model, "scratch_curriculum_ready", False):
+                        cfg.curriculum = CurriculumConfig("full")
+                        plan = build_plan(cfg.curriculum, cfg.timesteps)
+                        training_env.close()
+                        training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
+                        self.model.set_env(training_env)
                 if reward_changed and allow_ppo_reward_change and cfg.algorithm == "ppo":
                     # PPO has no replay buffer. Discard stale Adam moments after a
                     # deliberate reward-shaping change while keeping the policy/value weights.

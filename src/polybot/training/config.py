@@ -159,6 +159,7 @@ class GRTQCConfig(TQCConfig):
     scratch_section_success_window: int = 40
     scratch_section_success_rate: float = 0.75
     scratch_pace_target_entropy: float = -4.0
+    reopen_scratch_curriculum_on_resume: bool = False
     disagreement_coefficient: float = 0.01
     critic_warmup_updates: int = 10_000
     critic_readiness_window: int = 200
