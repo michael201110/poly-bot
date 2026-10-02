@@ -383,7 +383,7 @@ class TrainingRunner:
         if cfg.algorithm == "grtqc":
             assert cfg.grtqc is not None
             if cfg.grtqc.training_origin == "scratch":
-                return self._select_scratch_candidate(result, champion)
+                return self._select_scratch_candidate(result, champion, observations=observations)
             reference_lap_s = cfg.grtqc.reference_lap_s
             best_verified = (
                 min(reference_lap_s, champion.median_lap_s)
@@ -524,6 +524,7 @@ class TrainingRunner:
 
     def _select_scratch_candidate(
         self, result: EvaluationResult, champion: EvaluationResult | None,
+        *, observations: list[np.ndarray] | None = None,
     ) -> EvaluationResult:
         """A fresh learner may regress temporarily; only reliable pace enters champion."""
         reliable = result.episodes >= 5 and result.finish_rate == 1.0 and result.median_lap_s is not None
@@ -536,6 +537,10 @@ class TrainingRunner:
                         "target_entropy": self.model.target_entropy, "finish_rate": result.finish_rate})
         if better:
             self._grtqc_weak_evaluations = 0
+            if observations:
+                # Recenter the scratch actor's trust region only after its
+                # faster full-lap policy passes the reliable evaluation gate.
+                self.model.set_actor_reference_observations(np.asarray(observations))
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps,
                         "promotion_reason": "scratch_verified_pace", "median_lap_s": result.median_lap_s,

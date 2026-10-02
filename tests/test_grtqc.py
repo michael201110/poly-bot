@@ -562,6 +562,26 @@ def test_disabled_reference_cap_allows_learning_with_bounded_steps() -> None:
         env.close()
 
 
+def test_enabled_reference_cap_bounds_cumulative_actor_drift() -> None:
+    config = _config("grtqc")
+    config.grtqc.actor_learning_rate = 1e-3
+    config.grtqc.actor_step_action_limit = 0.01
+    config.grtqc.actor_reference_drift_limit = 0.005
+    model, env = _model(config)
+    try:
+        observations = np.random.default_rng(17).normal(
+            size=(256, model.observation_space.shape[0]),
+        ).astype(np.float32)
+        model.set_actor_reference_observations(observations)
+        model.actor_unlocked = True
+        model.learn(24)
+        metrics = GRTQCBackend().metrics(model)
+        assert metrics["actor_reference_cumulative_action_drift"] <= 0.00501
+        assert metrics["actor_reference_cumulative_action_drift"] > 0
+    finally:
+        env.close()
+
+
 def test_correlated_exploration_resets_at_episode_end(monkeypatch) -> None:
     config = _config("grtqc")
     config.grtqc.exploration_correlation = 0.9
@@ -1444,6 +1464,28 @@ def test_scratch_rejected_candidates_recover_after_configured_weaker_checks(tmp_
     assert len(recovered) == 1
     assert recovered[0][0] == slower
     assert runner._grtqc_weak_evaluations == 0
+
+
+def test_faster_scratch_champion_recenters_actor_reference_states(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    reference_calls = []
+    runner.model = SimpleNamespace(
+        num_timesteps=12000,
+        scratch_stage="pace",
+        set_actor_reference_observations=reference_calls.append,
+    )
+    champion = EvaluationResult(5, 1., 1., 1., 22.635, 22.635, 0., 0., 0.)
+    faster = EvaluationResult(5, 1., 1., 1., 22.5, 22.5, 0., 0., 0.)
+    observations = [np.asarray([1., 2.], dtype=np.float32)]
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
+
+    runner._select_scratch_candidate(faster, champion, observations=observations)
+
+    assert len(reference_calls) == 1
+    np.testing.assert_array_equal(reference_calls[0], np.asarray(observations))
 
 
 def test_grtqc_resume_rollback_restores_actor_but_keeps_latest_training_state(tmp_path, monkeypatch):
