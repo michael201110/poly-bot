@@ -1387,7 +1387,10 @@ def test_scratch_rejected_candidates_recover_after_configured_weaker_checks(tmp_
     runner.model = SimpleNamespace(
         num_timesteps=12000, actor_unlocked=True, scratch_stage="pace",
     )
-    champion = EvaluationResult(5, 1., 1., 1., 22.709, 22.709, 0., 0., 0.)
+    # A finisher can report normalized progress 1.0 while the champion's
+    # finish-event progress is just below 1.0. That tiny progress delta must
+    # not hide a slower lap from the pace-regression recovery counter.
+    champion = EvaluationResult(5, 1., 0.999935, 1., 22.709, 22.709, 0., 0., 0.)
     slower = EvaluationResult(5, 1., 1., 1., 22.9, 22.9, 0., 0., 0.)
     recovered = []
     monkeypatch.setattr(runner, "_emit", lambda event: None)

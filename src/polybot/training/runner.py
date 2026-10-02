@@ -552,10 +552,15 @@ class TrainingRunner:
                         "timesteps": self.model.num_timesteps, "finish_rate": result.finish_rate,
                         "median_lap_s": result.median_lap_s, "best_lap_s": result.best_lap_s,
                         "candidate_continues": True, "training_origin": "scratch"})
+            pace_is_weaker = (
+                not reliable
+                or champion is not None and champion.median_lap_s is not None
+                and result.median_lap_s is not None and result.median_lap_s >= champion.median_lap_s
+            )
             if (
                 getattr(self.model, "actor_unlocked", False)
                 and champion is not None
-                and result.rank() < champion.rank()
+                and pace_is_weaker
             ):
                 self._grtqc_weak_evaluations += 1
                 self._emit({
