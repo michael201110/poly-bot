@@ -90,7 +90,7 @@
     "crash_penalty": -400.0,
     "stall_penalty": -400.0,
     "off_track_penalty": -400.0,
-    "early_off_track_penalty": 0.0,
+    "early_off_track_penalty": -400.0,
     "action_change_penalty": -0.002,
     "max_forward_progress_per_step_m": 10.0,
     "max_reverse_progress_per_step_m": 3.0,

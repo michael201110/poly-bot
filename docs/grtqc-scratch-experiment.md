@@ -22,6 +22,8 @@ Ghost/teacher action and pose guidance weights are zero. Corridor-speed, unsafe-
 
 Finish credit is 2,000 plus 15,000*exp(-0.15*max(lap_seconds-20,0)). A 22.9-second finish earns about 11,709 raw finish points versus about 9,085 at 25 seconds. Faster completion dominates the small control/contact shaping. There is no reward for matching TQC. Existing lookahead/geometry observations and physically consistent curriculum starts remain environment knowledge; they are not action imitation.
 
+The initial live collection exposed a configuration mistake: `early_off_track_penalty=0` replaces, rather than adds to, the ordinary -400 off-track cost. Every quarter's early off-track failures were therefore cheaper than stalls. Early and ordinary off-track failures now receive the same global -400 cost. The first learner/replay is archived before resuming its independently learned weights with empty replay; old reward labels are not reused.
+
 A first reliable policy can be champion even when slower than 24.263 seconds. Subsequent champions require a faster five-finish median. The live candidate remains separate and keeps learning after ordinary weaker checks; it is not automatically reset to the transferred actor or every slightly better snapshot. Screens that already fail do not consume five laps, but every finishing screen requires a separate five-lap confirmation. Rejected policies and actual evaluation transitions remain available for diagnosis and critic learning.
 
 Full stochastic-rollout best times are marked unverified and archived separately. Verified milestone thresholds are 25, 24.263, 24, 23.5 and 23 seconds. Progress/loss trends alone do not establish an improved lap.
