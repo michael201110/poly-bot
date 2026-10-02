@@ -35,3 +35,5 @@ Logs include actor/critic loss, quantile/target mean and spread, TD residual, di
 ```
 
 Bridge 0.1.32 accepts a per-tab `polybotPort` URL parameter, tags worker initialization with that port and validates it to a loopback endpoint. Defaults remain 8765. Use `https://web.polymodloader.com/?polybotPort=8766` for this simulator after enabling the new version. The original already-running tab need not be reloaded. Parallel learners require distinct game tabs and ports; output directories alone do not isolate simulation state.
+
+Bridge 0.1.33 additionally scopes PolyTrack's native single-instance BroadcastChannel to the selected port. Without this, the second tab is blocked even with separate websocket endpoints. The native guard remains effective for two tabs using the same port. This only partitions offline client sessions; worker physics and training controls are unchanged.

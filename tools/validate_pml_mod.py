@@ -25,6 +25,7 @@ PML_WORKER_CONSTRUCTOR = "new Worker(ActivePolyModLoader.getSimURL())"
 
 WORKER_TOKENS = ("const r = i.data;",)
 MAIN_TOKENS = (
+    '"polytrack-single-instance"',
     PML_WORKER_CONSTRUCTOR,
     "this.setCarState(e, !1);",
     '(0, l.GG)(this, Ue, null, "f"),',
