@@ -1441,6 +1441,43 @@ def test_grtqc_resume_rollback_restores_actor_but_keeps_latest_training_state(tm
     assert recovered[-1] == (None, tmp_path / "latest")
 
 
+def test_scratch_grtqc_reference_guard_uses_observed_verified_actor_states(monkeypatch, tmp_path):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    config.grtqc.actor_reference_drift_limit = 0.05
+    runner = TrainingRunner(config)
+    reference = SimpleNamespace(policy_overlays=[], speed_bias_schedule=[])
+    source = tmp_path / "champion"
+    metadata = SimpleNamespace(policy_overlays=[{"kind": "test"}], speed_bias_schedule=[{"speed": 1}])
+    observations = [np.asarray([1.0, 2.0], dtype=np.float32)]
+    result = EvaluationResult(1, 1., 1., 1., 22.663, 22.663, 0., 0., 0.)
+    captured = {}
+    runner.device = SimpleNamespace(resolved="cpu")
+    runner.model = SimpleNamespace(
+        set_actor_reference_observations=lambda values, **kwargs: captured.update(
+            observations=values, kwargs=kwargs,
+        ),
+    )
+    runner._environment = lambda *_: object()
+    monkeypatch.setattr(runner.registry, "read_metadata", lambda _: metadata)
+    monkeypatch.setattr(runner.backend, "load_model", lambda *args, **kwargs: reference)
+    monkeypatch.setattr(
+        "polybot.training.runner.evaluate_model",
+        lambda model, environment, **kwargs: (kwargs["observation_sink"].extend(observations) or result),
+    )
+    events = []
+    monkeypatch.setattr(runner, "_emit", events.append)
+
+    assert runner._set_grtqc_actor_reference(source) == 1
+
+    assert captured["observations"].tolist() == [observations[0].tolist()]
+    assert captured["kwargs"]["reference_model"] is reference
+    assert reference.policy_overlays == metadata.policy_overlays
+    assert reference.speed_bias_schedule == metadata.speed_bias_schedule
+    assert events[-1]["type"] == "actor_reference_states"
+    assert events[-1]["actor_reference_drift_limit"] == 0.05
+
+
 def test_scratch_training_saves_a_random_origin_and_resumes_without_teacher(tmp_path):
     config = replace(_config("grtqc"), output_root=tmp_path / "scratch", log_root=tmp_path / "logs", timesteps=16)
     config.grtqc.training_origin = "scratch"

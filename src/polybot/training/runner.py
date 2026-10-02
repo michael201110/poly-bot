@@ -663,6 +663,35 @@ class TrainingRunner:
                 source = contact_candidate
         return source
 
+    def _set_grtqc_actor_reference(
+        self, source: Path, reference_model: Any | None = None,
+    ) -> int:
+        """Capture real observations from a verified GRTQC policy for its trust region."""
+        reference = reference_model
+        if reference is None:
+            reference_metadata = self.registry.read_metadata(source)
+            reference = self.backend.load_model(
+                source / "policy.zip", None, self.device.resolved,
+            )
+            reference.policy_overlays = list(reference_metadata.policy_overlays)
+            reference.speed_bias_schedule = list(reference_metadata.speed_bias_schedule)
+        observations: list[np.ndarray] = []
+        result = evaluate_model(
+            reference, self._environment, episodes=1,
+            seed=self.config.seed + 1_000_000, observation_sink=observations,
+        )
+        if result.finish_rate != 1.0 or not observations:
+            raise RuntimeError("verified GRTQC actor failed to provide a reference lap")
+        self.model.set_actor_reference_observations(
+            np.asarray(observations), reference_model=reference,
+        )
+        self._emit({
+            "type": "actor_reference_states", "source": str(source),
+            "observations": len(observations), "guard_samples": min(512, len(observations)),
+            "actor_reference_drift_limit": self.config.grtqc.actor_reference_drift_limit,
+        })
+        return len(observations)
+
     def _recover_grtqc_actor(self, result: EvaluationResult | None, rejected: Path) -> None:
         """Keep trained critics/replay while restoring a verified GRTQC driver."""
         cfg = self.config
@@ -1118,22 +1147,17 @@ class TrainingRunner:
                 reference.policy_overlays = list(reference_metadata.policy_overlays)
                 reference.speed_bias_schedule = list(reference_metadata.speed_bias_schedule)
                 self._restore_unverified_grtqc_resume(reference, reference_directory)
-                observations: list[np.ndarray] = []
-                result = evaluate_model(
-                    reference, self._environment, episodes=1,
-                    seed=cfg.seed + 1_000_000, observation_sink=observations,
-                )
-                if result.finish_rate != 1.0:
-                    raise RuntimeError("verified GRTQC anchor failed to produce a reference lap")
-                self.model.set_actor_reference_observations(
-                    np.asarray(observations), reference_model=reference,
-                )
-                self._emit({
-                    "type": "actor_reference_states",
-                    "source": str(reference_directory),
-                    "observations": len(observations),
-                    "guard_samples": min(512, len(observations)),
-                })
+                self._set_grtqc_actor_reference(reference_directory, reference)
+                training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
+                self.model.set_env(training_env)
+            elif (
+                cfg.algorithm == "grtqc" and cfg.grtqc.training_origin == "scratch"
+                and resume is not None and rollback_to_champion
+                and cfg.grtqc.actor_reference_drift_limit > 0
+            ):
+                training_env.close()
+                reference_directory = self._grtqc_verified_actor_source()
+                self._set_grtqc_actor_reference(reference_directory)
                 training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
                 self.model.set_env(training_env)
             if freeze_ppo_actor:
