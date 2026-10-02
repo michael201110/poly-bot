@@ -305,6 +305,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "Try one lap before a full actor evaluation; failed screens cannot promote a model. "
         "Finishing policies still require the full five-lap confirmation."
     ),
+    "finish_episode_before_actor_eval": (
+        "When an actor check is due, hold policy updates until the current attempt ends; "
+        "critics continue learning and complete-lap rewards remain in replay."
+    ),
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {

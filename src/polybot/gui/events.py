@@ -179,6 +179,8 @@ def format_event(event: dict[str, Any]) -> str | None:
                 " · five-lap confirmation follows"
             )
         return f"{prefix}One-lap screen{step} · failed at {_percent(event.get('median_progress'))}"
+    if kind == "evaluation_pending":
+        return f"{prefix}Policy check due{step} · holding actor updates until this attempt ends"
     if kind == "champion":
         return f"{prefix}New champion{step} · best evaluated policy saved"
     if kind == "checkpoint":

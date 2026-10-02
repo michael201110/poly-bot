@@ -100,6 +100,7 @@ class GRTQC(SeededWarmupTQC):
         self.actor_reference_drift_limit = actor_reference_drift_limit
         self.critic_updates_since_transfer = 0
         self.actor_unlocked = False
+        self._actor_evaluation_hold = False
         self._critic_loss_history: deque[float] = deque(maxlen=critic_readiness_window)
         self._disagreement_history: deque[float] = deque(maxlen=critic_readiness_window)
         self._actor_reference_observations: th.Tensor | None = None
@@ -326,7 +327,7 @@ class GRTQC(SeededWarmupTQC):
             self.logger.record("train/target_std", float(targets.std(unbiased=False).item()))
             self.logger.record("train/actor_unlocked", int(self.actor_unlocked))
             self.logger.record("train/critic_warmup_updates", self.critic_updates_since_transfer)
-            if self.actor_unlocked:
+            if self.actor_unlocked and not self._actor_evaluation_hold:
                 if self.ent_coef_optimizer is not None and self.log_ent_coef is not None:
                     ent_loss = -(self.log_ent_coef * (log_prob + self.target_entropy).detach()).mean()
                     self.ent_coef_optimizer.zero_grad()
@@ -537,6 +538,7 @@ class GRTQCBackend(TQCBackend):
             if config.grtqc.target_entropy == "auto" else float(config.grtqc.target_entropy)
         )
         model._exploration_noise = None
+        model._actor_evaluation_hold = False
         model.actor_step_action_limit = config.grtqc.actor_step_action_limit
         model.actor_reference_drift_limit = config.grtqc.actor_reference_drift_limit
 
@@ -551,6 +553,7 @@ class GRTQCBackend(TQCBackend):
             "critic_warmup_updates": model.critic_updates_since_transfer,
             "policy_training_std_max": values.get("train/policy_training_std_max"),
             "actor_unlocked": int(model.actor_unlocked),
+            "actor_evaluation_pending": int(model._actor_evaluation_hold),
             "actor_proposed_action_drift": values.get("train/actor_proposed_action_drift"),
             "actor_executed_action_drift": values.get("train/actor_executed_action_drift"),
             "actor_reference_action_drift": values.get("train/actor_reference_action_drift"),

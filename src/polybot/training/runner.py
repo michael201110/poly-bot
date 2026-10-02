@@ -108,6 +108,7 @@ class TrainingRunner:
         self._last_rollback_severe = False
         self._actor_unlock_seen = False
         self._actor_unlock_event_pending = False
+        self._actor_eval_episode_finished = False
         self._grtqc_weak_evaluations = 0
         self.sink: EventSink | None = None
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
@@ -493,6 +494,20 @@ class TrainingRunner:
                     cfg.tqc.champion_action_drift_limit, observations
                 )
         return result
+
+    def _defer_actor_evaluation(self, *, phase_finished: bool) -> bool:
+        """Keep the pending actor fixed while completing its current rollout."""
+        cfg = self.config
+        if (
+            cfg.algorithm != "grtqc" or not cfg.grtqc.finish_episode_before_actor_eval
+            or not self.model.actor_unlocked
+        ):
+            return False
+        if not self.model._actor_evaluation_hold:
+            self.model._actor_evaluation_hold = True
+            self._actor_eval_episode_finished = False
+            self._emit({"type": "evaluation_pending", "timesteps": self.model.num_timesteps})
+        return not (self._actor_eval_episode_finished or phase_finished)
 
     def _grtqc_verified_actor_source(self) -> Path:
         """Use a reliable cleaner candidate even before the first faster champion."""
@@ -1032,6 +1047,8 @@ class TrainingRunner:
                         })
                         self.last_status = now
                     if bool(self.locals.get("dones", [False])[-1]):
+                        if getattr(runner.model, "_actor_evaluation_hold", False):
+                            runner._actor_eval_episode_finished = True
                         events = set(info.get("events", ()))
                         runner.episodes += 1
                         runner.finishes += int("finish" in events)
@@ -1059,7 +1076,8 @@ class TrainingRunner:
                     ):
                         runner._actor_unlock_seen = True
                         runner._actor_unlock_event_pending = True
-                        return False
+                        if not cfg.grtqc.finish_episode_before_actor_eval:
+                            return False
                     return not runner.stop_requested.is_set() and (
                         self.stop_at is None or self.num_timesteps < self.stop_at
                     )
@@ -1083,7 +1101,16 @@ class TrainingRunner:
                     consumed = self.model.num_timesteps - start_steps
                     remaining = phase.steps - (self.model.num_timesteps - phase_start)
                     interval = min(next_eval - consumed, next_checkpoint - consumed)
+                    if getattr(self.model, "_actor_evaluation_hold", False):
+                        interval = min(16, next_checkpoint - consumed)
                     chunk = max(1, min(remaining, interval))
+                    if (
+                        cfg.algorithm == "grtqc" and cfg.grtqc.finish_episode_before_actor_eval
+                        and (not self.model.actor_unlocked or not self._actor_unlock_seen)
+                    ):
+                        # Notice unlock without aborting before SB3 stores the
+                        # transition, including a possible terminal reward.
+                        chunk = min(chunk, 64)
                     before = self.model.num_timesteps
                     self.model.learn(chunk, callback=Callback(), reset_num_timesteps=False)
                     if self.model.num_timesteps == before:
@@ -1098,6 +1125,12 @@ class TrainingRunner:
                                     "timesteps": self.model.num_timesteps})
                         next_checkpoint = consumed + cfg.checkpoint_interval
                     if consumed >= next_eval and not self.stop_requested.is_set():
+                        if self._defer_actor_evaluation(
+                            phase_finished=self.model.num_timesteps - phase_start >= phase.steps,
+                        ):
+                            continue
+                        if cfg.algorithm == "grtqc":
+                            self.model._actor_evaluation_hold = False
                         training_env.close()
                         result = self._evaluate()
                         last_evaluated_steps = self.model.num_timesteps

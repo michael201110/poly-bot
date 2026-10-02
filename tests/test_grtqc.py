@@ -79,6 +79,45 @@ def test_critic_updates_keep_transferred_actor_frozen_until_ready() -> None:
         env.close()
 
 
+def test_pending_evaluation_holds_actor_but_keeps_real_critic_updates() -> None:
+    config = _config("grtqc")
+    model, env = _model(config)
+    try:
+        model.actor_unlocked = True
+        model._actor_evaluation_hold = True
+        before = {name: weight.clone() for name, weight in model.actor.state_dict().items()}
+        model.learn(24)
+        assert model.critic_updates_since_transfer > 0
+        assert model.replay_buffer.size() == 24
+        assert model.actor_unlocked
+        for name, weight in model.actor.state_dict().items():
+            th.testing.assert_close(weight, before[name], rtol=0, atol=0)
+        assert GRTQCBackend().metrics(model)["actor_evaluation_pending"] == 1
+        GRTQCBackend().configure_resume(model, config, "cpu")
+        assert not model._actor_evaluation_hold
+    finally:
+        env.close()
+
+
+def test_pending_evaluation_waits_for_episode_and_allows_phase_boundary(tmp_path, monkeypatch) -> None:
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.finish_episode_before_actor_eval = True
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=512, actor_unlocked=True, _actor_evaluation_hold=False)
+    events = []
+    monkeypatch.setattr(runner, "_emit", events.append)
+    assert runner._defer_actor_evaluation(phase_finished=False)
+    assert runner.model._actor_evaluation_hold
+    assert runner._defer_actor_evaluation(phase_finished=False)
+    assert len(events) == 1
+    runner._actor_eval_episode_finished = True
+    assert not runner._defer_actor_evaluation(phase_finished=False)
+    runner.model._actor_evaluation_hold = False
+    assert not runner._defer_actor_evaluation(phase_finished=True)
+    runner.model.actor_unlocked = False
+    assert not runner._defer_actor_evaluation(phase_finished=False)
+
+
 def test_actor_step_backtracks_large_action_change() -> None:
     config = _config("grtqc")
     assert config.grtqc is not None

@@ -171,6 +171,7 @@ class GRTQCConfig(TQCConfig):
     actor_evaluation_interval_steps: int = 1000
     recovery_weak_evaluations: int = 3
     screen_actor_evaluations: bool = False
+    finish_episode_before_actor_eval: bool = False
 
     def __post_init__(self) -> None:
         TQCConfig.__post_init__(self)

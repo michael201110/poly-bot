@@ -63,7 +63,9 @@ class LiveLogWindow(QWidget):
                     self.events.append(summary)
                 if event.get("type") == "progress":
                     learning = ""
-                    if "actor_unlocked" in event:
+                    if event.get("actor_evaluation_pending"):
+                        learning = "\nFinishing attempt before policy check · critic updates continue"
+                    elif "actor_unlocked" in event:
                         learning = (
                             "\nPolicy learning"
                             if event["actor_unlocked"]

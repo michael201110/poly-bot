@@ -144,7 +144,8 @@
     "n_step_return": 64,
     "actor_evaluation_interval_steps": 512,
     "recovery_weak_evaluations": 5,
-    "screen_actor_evaluations": true
+    "screen_actor_evaluations": true,
+    "finish_episode_before_actor_eval": true
   },
   "schema": "polybot.config.v2"
 }
