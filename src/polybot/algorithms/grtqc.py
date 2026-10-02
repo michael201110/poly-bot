@@ -31,6 +31,8 @@ from polybot.training.critic_reference import on_policy_returns
 if TYPE_CHECKING:
     from polybot.training.config import TrainingConfig
 
+CRITIC_MC_UPDATES_PER_TRAIN_CALL = 32
+
 
 class GatedReLU(nn.Module):
     """ReLU features multiplied by an input-dependent sigmoid gate.
@@ -213,8 +215,12 @@ class GRTQC(SeededWarmupTQC):
         self._critic_reference_retry_update = 0
         self._critic_reference_episodes = 0
 
-    def _initialize_critics_from_returns(self, batch_size: int) -> None:
+    def _initialize_critics_from_returns(
+        self, batch_size: int, *, max_updates: int | None = None,
+    ) -> None:
         """Seed frozen-policy values from real complete episodes, then resume TD."""
+        if max_updates is not None and max_updates < 0:
+            raise ValueError("complete-return update limit must be nonnegative")
         if not self.critic_mc_initialization_updates or self.actor_unlocked:
             return
         if self._critic_reference_observations is None:
@@ -244,7 +250,8 @@ class GRTQC(SeededWarmupTQC):
             self._critic_reference_observations, self._critic_reference_actions, self._critic_reference_returns,
         )
         remaining = max(0, self.critic_mc_initialization_updates - self.critic_mc_updates_done)
-        for _ in range(remaining):
+        updates = remaining if max_updates is None else min(remaining, max_updates)
+        for _ in range(updates):
             indices = th.randint(len(observations), (batch_size,), device=self.device)
             values = self.critic(observations[indices], actions[indices])
             loss = quantile_huber_loss(values, returns[indices].unsqueeze(1), sum_over_quantiles=False)
@@ -256,9 +263,9 @@ class GRTQC(SeededWarmupTQC):
             self.critic.optimizer.step()
             polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
             self.critic_mc_updates_done += 1
-        if remaining:
-            self._n_updates += remaining
-            self.critic_updates_since_transfer += remaining
+        if updates:
+            self._n_updates += updates
+            self.critic_updates_since_transfer += updates
             self._critic_loss_history.clear()
             self._disagreement_history.clear()
             self._critic_reference_error = None
@@ -516,7 +523,9 @@ class GRTQC(SeededWarmupTQC):
         if self.ent_coef_optimizer is not None:
             optimizers.append(self.ent_coef_optimizer)
         self._update_learning_rate(optimizers)
-        self._initialize_critics_from_returns(batch_size)
+        self._initialize_critics_from_returns(
+            batch_size, max_updates=max(1, gradient_steps) * CRITIC_MC_UPDATES_PER_TRAIN_CALL,
+        )
         for gradient_step in range(gradient_steps):
             data = self.replay_buffer.sample(batch_size, env=self._vec_normalize_env)
             discounts = data.discounts if data.discounts is not None else self.gamma

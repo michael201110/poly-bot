@@ -173,6 +173,16 @@ def test_controller_adapter_settings_require_real_controller_observations():
         GRTQCConfig(controller_adapter_only=True)
 
 
+def test_scratch_grtqc_can_calibrate_critics_from_its_own_complete_episodes():
+    config = GRTQCConfig(
+        architecture="tiny", training_origin="scratch", critic_mc_initialization_updates=4000,
+    )
+
+    assert config.critic_mc_initialization_updates == 4000
+    assert not config.actor_verified_state_sampling
+    assert not config.controller_adapter_only
+
+
 def test_critic_updates_keep_transferred_actor_frozen_until_ready() -> None:
     model, env = _model(_config("grtqc"))
     try:
@@ -222,6 +232,32 @@ def test_complete_return_initialization_changes_only_critics_and_survives_reload
         backend.configure_resume(loaded, config, "cpu", fresh_replay=True)
         assert loaded.critic_mc_updates_done == 0
         assert loaded._critic_reference_observations is None
+    finally:
+        env.close()
+
+
+def test_complete_return_initialization_is_chunked_during_training():
+    config = _config("grtqc")
+    config.grtqc.critic_mc_initialization_updates = 100
+    config.grtqc.critic_mc_min_episodes = 5
+    model, env = _model(config)
+    try:
+        model.set_logger(configure(None, []))
+        observation = np.zeros((1, model.observation_space.shape[0]), dtype=np.float32)
+        action, _ = model.predict(observation, deterministic=True)
+        for _ in range(5):
+            model.replay_buffer.add(observation, observation, action, np.ones(1), np.ones(1), [{}])
+
+        actor_before = {name: value.clone() for name, value in model.actor.state_dict().items()}
+        model.train(1, 4)
+
+        assert model.critic_mc_updates_done == 32
+        assert model.critic_updates_since_transfer == 33
+        assert model._n_updates == 33
+        assert model._critic_reference_episodes == 5
+        assert not model.actor_unlocked
+        for name, value in model.actor.state_dict().items():
+            th.testing.assert_close(value, actor_before[name], rtol=0, atol=0)
     finally:
         env.close()
 
