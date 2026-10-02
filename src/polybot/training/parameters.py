@@ -333,6 +333,22 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "Maximum mean critic error relative to observed frozen-policy driving returns before actor unlock. "
         "Used with complete-return initialization; this is a diagnostic, not an exact soft-Q target."
     ),
+    "learn_from_actor_evaluations": (
+        "Keep actual tested-policy transitions, including failed candidates, in learning replay. "
+        "Critics can learn from the counterfactuals used to accept or reject actor updates."
+    ),
+    "critic_raw_actions": (
+        "Store the policy demand before fixed output transforms, including the demand resumed on touchdown. "
+        "Requires freshly collected replay; deterministic driving is unchanged."
+    ),
+    "pace_only_actor_acceptance": (
+        "Continue from the fastest verified complete policy and reject slower actor candidates. "
+        "Fewer contacts alone do not replace the pace baseline."
+    ),
+    "actor_verified_state_sampling": (
+        "Compute actor gradients on states from the latest verified lap, while critics use all replay. "
+        "This restricts learning states, not the actions the policy may discover."
+    ),
     "critic_environment_state": (
         "Give critics the actual lap clock, checkpoint, reward history and failure timers. "
         "Actor inputs remain unchanged; requires fresh replay with the recorded state."

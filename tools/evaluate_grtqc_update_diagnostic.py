@@ -46,7 +46,8 @@ def main() -> None:
             if screen.finish_rate == 1.0 else None
         )
         record = {
-            "actor_updates": snapshot["actor_updates"], "policy": snapshot["policy"],
+            **{key: snapshot[key] for key in ("actor_updates", "update_fraction") if key in snapshot},
+            "policy": snapshot["policy"],
             "screen": screen.to_dict(), "confirmation": confirmed.to_dict() if confirmed else None,
         }
         records.append(record)

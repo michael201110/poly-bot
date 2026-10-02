@@ -153,7 +153,8 @@ class GRTQC(SeededWarmupTQC):
         critic_warmup_updates: int = 10_000, critic_readiness_window: int = 200,
         critic_readiness_relative_change: float = 0.1,
         exploration_std: float = 0.0001, critic_collection_std: float = 0.001,
-        exploration_correlation: float = 0.0,
+        exploration_correlation: float = 0.0, critic_raw_actions: bool = False,
+        actor_verified_state_sampling: bool = False,
         policy_std_limit: float = 0.0,
         critic_exploration_fraction: float = 1.0,
         actor_step_action_limit: float = 1e-5,
@@ -162,6 +163,9 @@ class GRTQC(SeededWarmupTQC):
         critic_reference_error_limit: float = 0.2,
         **kwargs: Any,
     ) -> None:
+        self.actor_verified_state_sampling = actor_verified_state_sampling
+        self.critic_raw_actions = critic_raw_actions
+        self._training_diagnostics: dict[str, Any] = {}
         self.disagreement_coefficient = disagreement_coefficient
         self.critic_warmup_updates = critic_warmup_updates
         self.critic_readiness_window = critic_readiness_window
@@ -305,7 +309,11 @@ class GRTQC(SeededWarmupTQC):
     ) -> tuple[np.ndarray, np.ndarray]:
         # Keep rollout exploration separate from the stochastic critic target
         # and smooth it over time rather than injecting independent PWM jitter.
-        action, _ = self.predict(self._last_obs, deterministic=True)
+        if self.critic_raw_actions:
+            raw, _ = self.policy.predict(self._last_obs, deterministic=True)
+            action = np.asarray(raw, dtype=np.float32).reshape(n_envs, -1)
+        else:
+            action, _ = self.predict(self._last_obs, deterministic=True)
         action = np.asarray(action, dtype=np.float32).reshape(n_envs, -1)
         noise_std = self.exploration_std if self.actor_unlocked else self.critic_collection_std
         if not self.actor_unlocked and self.num_timesteps < learning_starts:
@@ -320,6 +328,9 @@ class GRTQC(SeededWarmupTQC):
             self._exploration_noise[~self._critic_exploration_episodes] = 0
         if noise_std:
             action = np.clip(action + noise, -1.0, 1.0).astype(np.float32)
+        buffer_action = self.policy.scale_action(action)
+        if self.critic_raw_actions:
+            action = self._transform_action(action, self._last_obs)
         if self._air_brake_active and self.env is not None:
             observations = np.asarray(self._last_obs).reshape(n_envs, -1)
             base = np.asarray(self._air_brake_base_action, dtype=np.float32).reshape(n_envs, -1)
@@ -327,9 +338,10 @@ class GRTQC(SeededWarmupTQC):
                 airborne = np.all(observations[index, 17:21] < 0.5)
                 if airborne and action[index, 1] != base[index, 1] + noise[index, 1]:
                     self.env.env_method(
-                        "request_air_brake", np.clip(base[index] + noise[index], -1, 1), indices=index,
+                        "request_air_brake",
+                        np.clip(base[index] + (0 if self.critic_raw_actions else noise[index]), -1, 1), indices=index,
                     )
-        return action, self.policy.scale_action(action)
+        return action, buffer_action
 
     def _rollout_noise(self, shape: tuple[int, int], std: float) -> np.ndarray:
         if self._exploration_noise is None or self._exploration_noise.shape != shape:
@@ -468,8 +480,23 @@ class GRTQC(SeededWarmupTQC):
             return self.actor.action_log_prob(observations)
         mean, log_std, kwargs = self.actor.get_action_dist_params(observations)
         log_std = log_std - th.nn.functional.softplus(log_std - log(self.policy_std_limit))
-        self.logger.record("train/policy_training_std_max", float(log_std.detach().exp().max().item()))
+        self._record("train/policy_training_std_max", float(log_std.detach().exp().max().item()))
         return self.actor.action_dist.log_prob_from_params(mean, log_std, **kwargs)
+
+    def _critic_actions(self, actions: th.Tensor, observations: th.Tensor) -> th.Tensor:
+        return actions if self.critic_raw_actions else self._apply_overlays_to_actions(actions, observations)
+
+    def _record(self, name: str, value: Any, **kwargs: Any) -> None:
+        self._training_diagnostics[name] = value
+        self.logger.record(name, value, **kwargs)
+
+    @staticmethod
+    def _gradient_norm(module: nn.Module) -> float:
+        norms = [p.grad.detach().norm() for p in module.parameters() if p.grad is not None]
+        value = float(th.stack(norms).norm()) if norms else 0.0
+        if not np.isfinite(value):
+            raise RuntimeError("non-finite GRTQC parameter gradient")
+        return value
 
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         if self.replay_buffer is None:
@@ -485,8 +512,14 @@ class GRTQC(SeededWarmupTQC):
             discounts = data.discounts if data.discounts is not None else self.gamma
             if self.use_sde:
                 self.actor.reset_noise()
-            actions_pi, log_prob = self._training_actions_log_prob(data.observations)
-            actions_pi = self._apply_overlays_to_actions(actions_pi, data.observations)
+            actor_observations = data.observations
+            if self.actor_verified_state_sampling:
+                if self._actor_reference_observations is None:
+                    raise RuntimeError("verified-state actor sampling requires a verified full-lap reference")
+                indices = th.randint(len(self._actor_reference_observations), (batch_size,), device=self.device)
+                actor_observations = self._actor_reference_observations[indices]
+            actions_pi, log_prob = self._training_actions_log_prob(actor_observations)
+            actions_pi = self._critic_actions(actions_pi, actor_observations)
             log_prob = log_prob.reshape(-1, 1)
             ent_coef = (
                 th.exp(self.log_ent_coef.detach())
@@ -495,7 +528,7 @@ class GRTQC(SeededWarmupTQC):
             )
             with th.no_grad():
                 next_actions, next_log_prob = self._training_actions_log_prob(data.next_observations)
-                next_actions = self._apply_overlays_to_actions(next_actions, data.next_observations)
+                next_actions = self._critic_actions(next_actions, data.next_observations)
                 next_quantiles = self.critic_target(data.next_observations, next_actions)
                 keep = self.critic.quantiles_total - self.top_quantiles_to_drop_per_net * self.critic.n_critics
                 next_quantiles = th.sort(next_quantiles.reshape(batch_size, -1), dim=1).values[:, :keep]
@@ -511,30 +544,39 @@ class GRTQC(SeededWarmupTQC):
                 raise RuntimeError("non-finite GRTQC critic loss")
             self.critic.optimizer.zero_grad()
             critic_loss.backward()
+            self._record("train/critic_gradient_norm", self._gradient_norm(self.critic))
+            critic_before = [p.detach().clone() for p in self.critic.parameters()]
+            critic_gradients = {name: float(p.grad.detach().norm())
+                                for name, p in self.critic.named_parameters() if p.grad is not None}
             self.critic.optimizer.step()
+            critic_changes = {name: float((p.detach() - old).norm())
+                              for (name, p), old in zip(self.critic.named_parameters(), critic_before, strict=True)}
+            self._record("train/critic_layer_gradient_norms", critic_gradients)
+            self._record("train/critic_layer_update_norms", critic_changes)
+            self._record("train/critic_update_norm", float(np.linalg.norm(list(critic_changes.values()))))
             self.critic_updates_since_transfer += 1
             self._critic_loss_history.append(float(quantile_loss.item()))
             self._disagreement_history.append(float(disagreement.item()))
             if not self.actor_unlocked and self._critic_ready():
                 self.actor_unlocked = True
-            self.logger.record("train/critic_loss", float(critic_loss.item()))
-            self.logger.record("train/quantile_loss", float(quantile_loss.item()))
-            self.logger.record("train/disagreement", float(disagreement.item()))
+            self._record("train/critic_loss", float(critic_loss.item()))
+            self._record("train/quantile_loss", float(quantile_loss.item()))
+            self._record("train/disagreement", float(disagreement.item()))
             penalty = self.disagreement_coefficient * disagreement
-            self.logger.record("train/disagreement_penalty", float(penalty.item()))
-            self.logger.record("train/quantile_mean", float(current.detach().mean().item()))
-            self.logger.record("train/quantile_std", float(current.detach().std(unbiased=False).item()))
-            self.logger.record("train/target_mean", float(targets.mean().item()))
-            self.logger.record("train/target_std", float(targets.std(unbiased=False).item()))
-            self.logger.record("train/actor_unlocked", int(self.actor_unlocked))
-            self.logger.record("train/critic_warmup_updates", self.critic_updates_since_transfer)
+            self._record("train/disagreement_penalty", float(penalty.item()))
+            self._record("train/quantile_mean", float(current.detach().mean().item()))
+            self._record("train/quantile_std", float(current.detach().std(unbiased=False).item()))
+            self._record("train/target_mean", float(targets.mean().item()))
+            self._record("train/target_std", float(targets.std(unbiased=False).item()))
+            self._record("train/actor_unlocked", int(self.actor_unlocked))
+            self._record("train/critic_warmup_updates", self.critic_updates_since_transfer)
             if self.actor_unlocked and not self._actor_evaluation_hold:
                 if self.ent_coef_optimizer is not None and self.log_ent_coef is not None:
                     ent_loss = -(self.log_ent_coef * (log_prob + self.target_entropy).detach()).mean()
                     self.ent_coef_optimizer.zero_grad()
                     ent_loss.backward()
                     self.ent_coef_optimizer.step()
-                q_pi = self.critic(data.observations, actions_pi).mean(dim=(1, 2), keepdim=False).reshape(-1, 1)
+                q_pi = self.critic(actor_observations, actions_pi).mean(dim=(1, 2), keepdim=False).reshape(-1, 1)
                 actor_loss = (ent_coef * log_prob - q_pi).mean()
                 with th.no_grad():
                     before_actions = self.actor(data.observations, deterministic=True).detach()
@@ -545,6 +587,9 @@ class GRTQC(SeededWarmupTQC):
                     before_parameters = [parameter.detach().clone() for parameter in self.actor.parameters()]
                 self.actor.optimizer.zero_grad()
                 actor_loss.backward()
+                self._record("train/actor_gradient_norm", self._gradient_norm(self.actor))
+                layer_gradients = {name: float(p.grad.detach().norm())
+                                   for name, p in self.actor.named_parameters() if p.grad is not None}
                 self.actor.optimizer.step()
                 with th.no_grad():
                     after_actions = self.actor(data.observations, deterministic=True)
@@ -628,11 +673,18 @@ class GRTQC(SeededWarmupTQC):
                         and self._actor_reference_actions is not None else 0.0
                     )
                     executed_drift = max(executed_local_drift, executed_reference_drift)
-                self.logger.record("train/actor_loss", float(actor_loss.item()))
-                self.logger.record("train/actor_proposed_action_drift", proposed_drift)
-                self.logger.record("train/actor_executed_action_drift", executed_drift)
-                self.logger.record("train/actor_reference_action_drift", executed_reference_drift)
-                self.logger.record(
+                changes = {name: float((p.detach() - old).norm())
+                           for (name, p), old in zip(self.actor.named_parameters(), before_parameters, strict=True)}
+                self._record("train/actor_update_norm", float(np.linalg.norm(list(changes.values()))))
+                self._record("train/actor_layer_gradient_norms", layer_gradients)
+                self._record("train/actor_layer_update_norms", changes)
+                self._record("train/actor_adam_steps", max(
+                    (float(v["step"]) for v in self.actor.optimizer.state.values() if "step" in v), default=0))
+                self._record("train/actor_loss", float(actor_loss.item()))
+                self._record("train/actor_proposed_action_drift", proposed_drift)
+                self._record("train/actor_executed_action_drift", executed_drift)
+                self._record("train/actor_reference_action_drift", executed_reference_drift)
+                self._record(
                     "train/actor_reference_cumulative_action_drift",
                     executed_reference_cumulative_drift,
                 )
@@ -640,8 +692,8 @@ class GRTQC(SeededWarmupTQC):
                 polyak_update(self.critic.parameters(), self.critic_target.parameters(), self.tau)
                 polyak_update(self.batch_norm_stats, self.batch_norm_stats_target, 1.0)
         self._n_updates += gradient_steps
-        self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
-        self.logger.record("train/ent_coef", float(ent_coef.item()))
+        self._record("train/n_updates", self._n_updates, exclude="tensorboard")
+        self._record("train/ent_coef", float(ent_coef.item()))
 
 
 class GRTQCBackend(TQCBackend):
@@ -683,6 +735,8 @@ class GRTQCBackend(TQCBackend):
             critic_readiness_window=p.critic_readiness_window,
             critic_readiness_relative_change=p.critic_readiness_relative_change,
             exploration_std=p.exploration_std,
+            critic_raw_actions=p.critic_raw_actions,
+            actor_verified_state_sampling=p.actor_verified_state_sampling,
             critic_collection_std=p.critic_collection_std,
             exploration_correlation=p.exploration_correlation,
             policy_std_limit=p.policy_std_limit,
@@ -720,6 +774,10 @@ class GRTQCBackend(TQCBackend):
         expected_width = width + extra_size(config)
         if int(np.prod(model.observation_space.shape)) != expected_width:
             raise ValueError("GRTQC resume has an incompatible controller-state observation layout")
+        if model.critic_raw_actions != config.grtqc.critic_raw_actions:
+            if not fresh_replay:
+                raise ValueError("GRTQC raw/post-transform replay action semantics differ; recollect replay")
+            model.critic_raw_actions = config.grtqc.critic_raw_actions
         adapter_added = model.configure_actor_controller_state(
             config.grtqc.actor_controller_state, config.grtqc.controller_adapter_only,
         )
@@ -757,6 +815,7 @@ class GRTQCBackend(TQCBackend):
         model.critic_warmup_updates = config.grtqc.critic_warmup_updates
         model.critic_readiness_window = config.grtqc.critic_readiness_window
         model.critic_readiness_relative_change = config.grtqc.critic_readiness_relative_change
+        model.actor_verified_state_sampling = config.grtqc.actor_verified_state_sampling
         model.exploration_std = config.grtqc.exploration_std
         model.critic_collection_std = config.grtqc.critic_collection_std
         model.exploration_correlation = config.grtqc.exploration_correlation
@@ -803,8 +862,21 @@ class GRTQCBackend(TQCBackend):
 
     def metrics(self, model: GRTQC) -> dict[str, float | int | None]:
         metrics = super().metrics(model)
-        values = model.logger.name_to_value
+        values = {**getattr(model, "_training_diagnostics", {}), **model.logger.name_to_value}
         metrics.update({
+            "actor_loss": values.get("train/actor_loss"),
+            "critic_loss": values.get("train/critic_loss"),
+            "entropy_coefficient": values.get("train/ent_coef"),
+            "actor_gradient_norm": values.get("train/actor_gradient_norm"),
+            "critic_gradient_norm": values.get("train/critic_gradient_norm"),
+            "actor_update_norm": values.get("train/actor_update_norm"),
+            "critic_update_norm": values.get("train/critic_update_norm"),
+            "critic_layer_gradient_norms": values.get("train/critic_layer_gradient_norms"),
+            "critic_layer_update_norms": values.get("train/critic_layer_update_norms"),
+            "actor_layer_gradient_norms": values.get("train/actor_layer_gradient_norms"),
+            "actor_layer_update_norms": values.get("train/actor_layer_update_norms"),
+            "actor_adam_steps": values.get("train/actor_adam_steps"),
+            "critic_raw_actions": int(model.critic_raw_actions),
             "critic_disagreement": values.get("train/disagreement"),
             "disagreement_penalty": values.get("train/disagreement_penalty"),
             "quantile_mean": values.get("train/quantile_mean"),

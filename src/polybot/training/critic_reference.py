@@ -44,7 +44,8 @@ def on_policy_returns(
         if replay.dones[row, 0] or replay.timeouts[row, 0]:
             if complete_start and not replay.timeouts[row, 0]:
                 rows = order[start:end + 1]
-                predicted, _ = reference.predict(replay.observations[rows, 0], deterministic=True)
+                predictor = reference.policy if getattr(reference, "critic_raw_actions", False) else reference
+                predicted, _ = predictor.predict(replay.observations[rows, 0], deterministic=True)
                 if np.allclose(predicted, replay.actions[rows, 0], rtol=0, atol=3e-6):
                     discounted = np.empty(len(rows), dtype=np.float32)
                     future = 0.0

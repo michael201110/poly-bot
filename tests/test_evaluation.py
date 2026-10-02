@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 from polybot.training.evaluation import EvaluationResult, evaluate_model
 
 
@@ -20,7 +22,10 @@ def test_target_lap_requires_reliable_full_track_completion() -> None:
         off_track_rate=0.0, stall_rate=0.0,
     )
 
-    assert reliable_sub_target.confirms_target_lap(22.0)
+    assert not reliable_sub_target.confirms_target_lap(22.0)
+    genuinely_fast = replace(reliable_sub_target, median_lap_s=21.95)
+    assert genuinely_fast.confirms_target_lap(22.0)
+    assert not replace(genuinely_fast, episodes=1).confirms_target_lap(22.0)
     assert not unreliable_fast_outlier.confirms_target_lap(22.0)
     assert not exact_target.confirms_target_lap(22.0)
 
@@ -42,7 +47,7 @@ def test_evaluation_records_barrier_contacts_and_progress() -> None:
 
         def step(self, action):
             return [0.0], 0.0, True, False, {
-                "events": ("finish",),
+                "events": ("finish", "barrier_contact"),
                 "route_progress_m": 100.0,
                 "track_length_m": 100.0,
                 "elapsed_s": 24.0,
@@ -54,8 +59,12 @@ def test_evaluation_records_barrier_contacts_and_progress() -> None:
         def close(self) -> None:
             pass
 
-    result = evaluate_model(Model(), Env, episodes=1, seed=1)
+    transitions = []
+    result = evaluate_model(Model(), Env, episodes=1, seed=1, transition_sink=transitions)
 
+    assert result.crash_rate == 0
+    assert len(transitions) == 1
+    assert transitions[0]["done"] and not transitions[0]["timeout"]
     assert result.barrier_contact_steps == 2
     assert result.max_barrier_impulse == 8_000.0
     assert result.barrier_contact_progress == (0.1, 0.99)

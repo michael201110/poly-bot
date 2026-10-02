@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from collections import deque
 from dataclasses import replace
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -882,6 +884,9 @@ def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_p
     verified = th.nn.Linear(2, 2)
     current.optimizer = th.optim.Adam(current.parameters(), lr=1e-5)
     verified.optimizer = th.optim.Adam(verified.parameters(), lr=1e-5)
+    current(th.ones(1, 2)).sum().backward()
+    current.optimizer.step()
+    assert current.optimizer.state
     critic = th.nn.Linear(2, 1)
     preserved = {key: value.clone() for key, value in critic.state_dict().items()}
     runner.model = SimpleNamespace(
@@ -901,6 +906,7 @@ def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_p
         th.testing.assert_close(value, verified.state_dict()[key])
     for key, value in critic.state_dict().items():
         th.testing.assert_close(value, preserved[key])
+    assert not current.optimizer.state
     assert runner.model.actor_lr == pytest.approx(1e-5)
     assert not runner.model.actor_unlocked
     assert runner.model.critic_updates_since_transfer == 1100
@@ -1106,3 +1112,165 @@ def test_external_grtqc_initialization_is_kept_for_future_resumes(tmp_path) -> N
     (source / "policy.zip").write_bytes(b"different-policy")
     with pytest.raises(FileExistsError, match="GRTQC initialization differs"):
         runner._preserve_grtqc_initialization(source)
+
+
+def test_raw_replay_retains_distinct_touchdown_demands_and_deterministic_runtime():
+    config = _config("grtqc")
+    config.grtqc.critic_raw_actions = True
+    config.grtqc.critic_collection_std = 0
+    model, env = _model(config)
+    try:
+        obs, _ = env.reset()
+        obs[12], obs[17:21] = .5, 0
+        model.policy_overlays = [{"kind": "air_brake", "start": .4, "end": .6, "duty": .25}]
+        left = model._transform_action(np.array([.1, .4], dtype=np.float32), obs)
+        left_base = model._air_brake_base_action.copy()
+        right = model._transform_action(np.array([.1, .8], dtype=np.float32), obs)
+        right_base = model._air_brake_base_action.copy()
+        np.testing.assert_array_equal(left, right)
+        assert left_base[1] != right_base[1]  # post-overlay labels alias touchdown behavior
+        model._last_obs = obs[None]
+        expected, _ = model.predict(obs[None], deterministic=True)
+        executed, recorded = model._sample_action(0)
+        np.testing.assert_array_equal(executed, expected)
+        raw, _ = model.policy.predict(obs[None], deterministic=True)
+        np.testing.assert_array_equal(recorded, raw)
+        assert recorded[0, 1] != executed[0, 1]
+        with th.no_grad():
+            demand = th.tensor([[.1, .8]])
+            th.testing.assert_close(model._critic_actions(demand, th.as_tensor(obs[None])), demand)
+        changed = replace(config.grtqc, critic_raw_actions=False)
+        with pytest.raises(ValueError, match="action semantics"):
+            GRTQCBackend().configure_resume(model, replace(config, grtqc=changed), "cpu")
+    finally:
+        env.close()
+
+
+def test_pace_acceptance_rejects_a_slower_clean_policy_immediately(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.pace_only_actor_acceptance = True
+    config.grtqc.recovery_weak_evaluations = 1
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(num_timesteps=5000, actor_unlocked=True)
+    slower = EvaluationResult(5, 1., 1., 1., 24.485, 24.485, 0., 0., 0., barrier_contact_steps=5)
+    monkeypatch.setattr("polybot.training.runner.evaluate_model", lambda *a, **k: slower)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    saved, recovered = [], []
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation: saved.append(name) or tmp_path / name)
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+    runner._evaluate()
+    assert saved == ["checkpoints/step-5000-rejected"]
+    assert len(recovered) == 1
+    assert runner._grtqc_verified_actor_source().name == "initialization"
+
+
+def test_actor_update_diagnostics_survive_logger_dump_and_model_roundtrip(tmp_path):
+    model, env = _model(_config("grtqc"))
+    try:
+        model.set_logger(configure(None, []))
+        model.learn(16)
+        model.actor_unlocked = True
+        model.train(1, 8)
+        metrics = GRTQCBackend().metrics(model)
+        assert metrics["actor_gradient_norm"] > 0
+        assert metrics["critic_gradient_norm"] > 0
+        assert metrics["actor_layer_update_norms"]
+        assert metrics["actor_adam_steps"] == 1
+        model.logger.dump()
+        assert GRTQCBackend().metrics(model)["actor_gradient_norm"] == metrics["actor_gradient_norm"]
+        model.save(tmp_path / "policy")
+        restored = GRTQCBackend().load_model(tmp_path / "policy.zip", None, "cpu")
+        restored.set_logger(configure(None, []))
+        assert GRTQCBackend().metrics(restored)["actor_gradient_norm"] == metrics["actor_gradient_norm"]
+        assert all(float(state["step"]) == 1 for state in restored.actor.optimizer.state.values())
+    finally:
+        env.close()
+
+
+def test_evaluation_replay_keeps_real_terminal_observations_and_marks_reset_boundary():
+    config = _config("grtqc")
+    runner = TrainingRunner(config)
+    model, env = _model(config)
+    runner.model = model
+    runner._emit = lambda event: None
+    try:
+        first = np.zeros(105, dtype=np.float32)
+        terminal = np.ones(105, dtype=np.float32)
+        model.replay_buffer.add(first[None], first[None], np.zeros((1, 2)), np.zeros(1), [False], [{}])
+        runner._retain_grtqc_evaluation_transitions([{
+            "observation": first, "next_observation": terminal,
+            "action": np.array([.2, .6], dtype=np.float32), "reward": 123.,
+            "done": True, "timeout": False,
+        }])
+        assert model.replay_buffer.dones[0, 0] == 1
+        assert model.replay_buffer.timeouts[0, 0] == 1
+        assert model.replay_buffer.dones[1, 0] == 1
+        assert model.replay_buffer.timeouts[1, 0] == 0
+        np.testing.assert_array_equal(model.replay_buffer.next_observations[1, 0], terminal)
+        assert model.replay_buffer.rewards[1, 0] == pytest.approx(123 * config.reward_scale)
+        model.actor_verified_state_sampling = True
+        model.actor_unlocked = True
+        model.set_actor_reference_observations(np.stack([first, terminal]))
+        model.set_logger(configure(None, []))
+        model.train(1, 2)
+        assert model._training_diagnostics["train/actor_update_norm"] > 0
+        assert model._training_diagnostics["train/critic_update_norm"] > 0
+    finally:
+        env.close()
+
+
+def test_pace_profile_ranks_the_measured_faster_complete_lap_above_the_cleaner_lap():
+    records = json.loads(Path("tests/fixtures/grtqc-complete-lap-rewards.json").read_text())
+    profile = json.loads(Path("profiles/training/summer-1-grtqc-causal-30.json").read_text())
+    totals = []
+    for record in records:
+        terms = dict(record["reward_terms"])
+        for key in ("on_track_speed", "speed_pace", "unsafe_speed", "ground_brake", "airborne_brake"):
+            terms[key] = 0.
+        terms["elapsed"] *= profile["rewards"]["elapsed_cost_per_s"] / record["recorded_profile"]["elapsed_cost_per_s"]
+        terms["barrier_contact"] *= (
+            profile["rewards"]["barrier_contact_penalty"] / record["recorded_profile"]["barrier_contact_penalty"]
+        )
+        totals.append(sum(terms.values()))
+    assert records[0]["lap_s"] == 24.263
+    assert records[1]["lap_s"] == 24.485
+    assert sum(records[0]["reward_terms"].values()) < sum(records[1]["reward_terms"].values())
+    assert totals[0] > totals[1]
+    assert profile["rewards"]["barrier_contact_penalty"] < 0
+
+
+def test_resume_does_not_deploy_an_unverified_actor_from_a_transport_checkpoint(tmp_path, monkeypatch):
+    config = _config("grtqc")
+    config.grtqc.pace_only_actor_acceptance = True
+    model, env = _model(config)
+    verified, reference_env = _model(config)
+    runner = TrainingRunner(config)
+    runner.model = model
+    try:
+        model.set_logger(configure(None, []))
+        model.learn(16)
+        model.actor_unlocked = True
+        model.train(1, 8)
+        assert model.actor.optimizer.state
+        critic = {name: value.clone() for name, value in model.critic.state_dict().items()}
+        replay = model.replay_buffer
+        saved, events = [], []
+        monkeypatch.setattr(runner, "_save", lambda name: saved.append(name) or tmp_path / name)
+        monkeypatch.setattr(runner, "_emit", events.append)
+        runner._restore_unverified_grtqc_resume(verified, tmp_path / "initialization")
+        assert saved and saved[0].endswith("resume-rejected")
+        for name, value in model.actor.state_dict().items():
+            th.testing.assert_close(value, verified.actor.state_dict()[name], rtol=0, atol=0)
+        for name, value in model.critic.state_dict().items():
+            th.testing.assert_close(value, critic[name], rtol=0, atol=0)
+        assert not model.actor.optimizer.state
+        assert not model.ent_coef_optimizer.state
+        th.testing.assert_close(model.log_ent_coef, verified.log_ent_coef)
+        assert model.replay_buffer is replay and replay.size() == 16
+        assert model.critic.optimizer.state
+        assert events[0]["critic_replay_preserved"]
+        runner._restore_unverified_grtqc_resume(verified, tmp_path / "initialization")
+        assert len(saved) == 1
+    finally:
+        env.close()
+        reference_env.close()

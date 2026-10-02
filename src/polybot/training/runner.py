@@ -17,6 +17,7 @@ from uuid import uuid4
 
 import gymnasium as gym
 import numpy as np
+import torch as th
 from stable_baselines3.common.callbacks import BaseCallback
 
 from polybot.algorithms.registry import backend_for
@@ -188,7 +189,7 @@ class TrainingRunner:
             policy_overlays=list(overlays),
             speed_bias_schedule=list(speed_bias_schedule),
             action_semantics=(
-                PPO_ACTION_SEMANTICS
+                "grtqc.raw-policy.v1" if cfg.grtqc and cfg.grtqc.critic_raw_actions else PPO_ACTION_SEMANTICS
             ),
         )
 
@@ -316,6 +317,7 @@ class TrainingRunner:
             [] if cfg.algorithm == "grtqc"
             or (cfg.algorithm == "tqc" and self.model._champion_actor is not None) else None
         )
+        transitions = [] if cfg.grtqc and cfg.grtqc.learn_from_actor_evaluations else None
         for attempt in range(2):
             try:
                 result = None
@@ -325,7 +327,7 @@ class TrainingRunner:
                 ):
                     screen = evaluate_model(
                         self.model, self._environment, episodes=1,
-                        seed=cfg.seed + 1_000_000,
+                        seed=cfg.seed + 1_000_000, transition_sink=transitions,
                     )
                     self._emit({
                         "type": "evaluation_screen", "timesteps": self.model.num_timesteps,
@@ -337,7 +339,7 @@ class TrainingRunner:
                     result = evaluate_model(
                         self.model, self._environment, episodes=cfg.evaluation.episodes,
                         seed=cfg.seed + 1_000_000,
-                        observation_sink=observations,
+                        observation_sink=observations, transition_sink=transitions,
                     )
                 break
             except ProtocolViolation as exc:
@@ -345,10 +347,14 @@ class TrainingRunner:
                     raise
                 if observations is not None:
                     observations.clear()
+                if transitions is not None:
+                    transitions.clear()
                 self._emit({
                     "type": "evaluation_retry", "timesteps": self.model.num_timesteps,
                     "reason": str(exc),
                 })
+        if transitions:
+            self._retain_grtqc_evaluation_transitions(transitions)
         self.last_evaluation = result
         self._emit({"type": "evaluation", "timesteps": self.model.num_timesteps, **result.to_dict()})
         champion_dir = self.registry.slot(cfg.track_name, cfg.algorithm, "champion")
@@ -414,7 +420,7 @@ class TrainingRunner:
             )
             contact_promotion = contact_improved and within_pace_tolerance
             faster_promotion = reliable and result.median_lap_s < best_verified
-            if (faster_promotion or contact_promotion) and observations:
+            if (faster_promotion or (contact_promotion and not cfg.grtqc.pace_only_actor_acceptance)) and observations:
                 self.model.set_actor_reference_observations(np.asarray(observations))
             if faster_promotion:
                 self._grtqc_weak_evaluations = 0
@@ -426,7 +432,7 @@ class TrainingRunner:
                     "promotion_reason": "faster_lap",
                     "barrier_contact_steps": result.barrier_contact_steps,
                 })
-            elif contact_promotion:
+            elif contact_promotion and not cfg.grtqc.pace_only_actor_acceptance:
                 self._grtqc_weak_evaluations = 0
                 path = self._save("contact-candidate", result)
                 self._emit({
@@ -454,7 +460,8 @@ class TrainingRunner:
                 if (
                     getattr(self.model, "actor_unlocked", False)
                     and (
-                        not reliable
+                        cfg.grtqc.pace_only_actor_acceptance
+                        or not reliable
                         or result.median_lap_s
                         > best_verified + cfg.grtqc.contact_candidate_lap_tolerance_s
                     )
@@ -504,6 +511,49 @@ class TrainingRunner:
                 )
         return result
 
+    def _restore_unverified_grtqc_resume(self, reference: Any, directory: Path) -> None:
+        """A transport checkpoint may hold a proposal that never passed live checks."""
+        settings = self.config.grtqc
+        if not settings.pace_only_actor_acceptance or all(
+            th.equal(value, reference.actor.state_dict()[name])
+            for name, value in self.model.actor.state_dict().items()
+        ):
+            return
+        rejected = self._save(f"checkpoints/step-{self.model.num_timesteps}-resume-rejected")
+        self.backend.restore_actor_weights(self.model, reference)
+        self.model.actor.optimizer.state.clear()
+        if self.model.log_ent_coef is not None and reference.log_ent_coef is not None:
+            self.model.log_ent_coef.data.copy_(reference.log_ent_coef.data)
+            self.model.ent_coef_optimizer.state.clear()
+        self.model.actor_unlocked = False
+        self.model.critic_updates_since_transfer = max(
+            0, self.model.critic_warmup_updates - settings.recovery_critic_cooldown_updates,
+        )
+        self.model._critic_loss_history.clear()
+        self.model._disagreement_history.clear()
+        self.model.invalidate_critic_reference()
+        self._emit({"type": "resume_actor_restore", "timesteps": self.model.num_timesteps,
+                    "restored_actor": str(directory), "unverified_actor": str(rejected),
+                    "critic_replay_preserved": True, "actor_optimizer_reset": True})
+
+    def _retain_grtqc_evaluation_transitions(self, transitions: list[dict[str, Any]]) -> None:
+        """Learn from real complete candidate attempts without joining reset states."""
+        replay = self.model.replay_buffer
+        if replay is None or not transitions or not transitions[-1]["done"]:
+            raise ValueError("evaluation replay requires completed real attempts")
+        if replay.size():
+            last = (replay.pos - 1) % replay.buffer_size
+            if not replay.dones[last, 0]:
+                replay.dones[last, 0] = replay.timeouts[last, 0] = 1
+        for row in transitions:
+            replay.add(
+                row["observation"][None], row["next_observation"][None], row["action"][None],
+                np.asarray([row["reward"] * self.config.reward_scale], dtype=np.float32),
+                np.asarray([row["done"]]), [{"TimeLimit.truncated": row["timeout"]}],
+            )
+        self._emit({"type": "evaluation_replay", "timesteps": self.model.num_timesteps,
+                    "transitions": len(transitions), "replay_size": replay.size()})
+
     def _defer_actor_evaluation(self, *, phase_finished: bool) -> bool:
         """Keep the pending actor fixed while completing its current rollout."""
         cfg = self.config
@@ -527,6 +577,8 @@ class TrainingRunner:
             champion if (champion / "metadata.json").is_file()
             else self.registry.slot(cfg.track_name, "grtqc", "initialization")
         )
+        if cfg.grtqc.pace_only_actor_acceptance:
+            return source
         contact_candidate = self.registry.slot(cfg.track_name, "grtqc", "contact-candidate")
         if (contact_candidate / "metadata.json").is_file() and (source / "metadata.json").is_file():
             candidate_metadata = self.registry.read_metadata(contact_candidate)
@@ -870,7 +922,8 @@ class TrainingRunner:
                 )
                 if cfg.algorithm in {"tqc", "grtqc"}:
                     self.model.policy_overlays = list(metadata.policy_overlays)
-                    self.model.speed_bias_schedule = list(metadata.speed_bias_schedule)
+                    if metadata.speed_bias_schedule:
+                        self.model.speed_bias_schedule = list(metadata.speed_bias_schedule)
                 elif cfg.algorithm == "ppo":
                     self._ppo_air_brake_overlays = list(metadata.policy_overlays)
                     self._ppo_speed_bias_schedule = list(metadata.speed_bias_schedule)
@@ -942,6 +995,7 @@ class TrainingRunner:
                 )
                 reference.policy_overlays = list(reference_metadata.policy_overlays)
                 reference.speed_bias_schedule = list(reference_metadata.speed_bias_schedule)
+                self._restore_unverified_grtqc_resume(reference, reference_directory)
                 observations: list[np.ndarray] = []
                 result = evaluate_model(
                     reference, self._environment, episodes=1,
@@ -1063,7 +1117,7 @@ class TrainingRunner:
                         events = set(info.get("events", ()))
                         runner.episodes += 1
                         runner.finishes += int("finish" in events)
-                        runner.crashes += int("crash" in events or "barrier_contact" in events)
+                        runner.crashes += int("crash" in events or "airborne_roll_failure" in events)
                         runner._emit({
                             "type": "episode", "episode": runner.episodes,
                             "timesteps": self.num_timesteps, "reward": self.episode_reward,

@@ -174,6 +174,10 @@ class GRTQCConfig(TQCConfig):
     finish_episode_before_actor_eval: bool = False
     critic_controller_state: bool = False
     critic_environment_state: bool = False
+    critic_raw_actions: bool = False
+    pace_only_actor_acceptance: bool = False
+    actor_verified_state_sampling: bool = False
+    learn_from_actor_evaluations: bool = False
     actor_controller_state: bool = False
     controller_adapter_only: bool = False
     critic_mc_initialization_updates: int = 0

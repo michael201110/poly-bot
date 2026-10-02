@@ -55,7 +55,7 @@ def test_partial_stopped_evaluation_cannot_confirm_target_lap() -> None:
 def test_complete_evaluation_confirms_target_only_with_reliable_fast_lap() -> None:
     evaluation = {
         "episodes": 5, "finish_rate": 1.0, "median_progress": 1.0,
-        "mean_progress": 1.0, "best_lap_s": 21.9, "median_lap_s": 22.0,
+        "mean_progress": 1.0, "best_lap_s": 21.9, "median_lap_s": 21.95,
         "crash_rate": 0.0, "off_track_rate": 0.0, "stall_rate": 0.0,
     }
     assert _evaluation_confirms_target(evaluation, 22.0)

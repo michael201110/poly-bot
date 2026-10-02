@@ -70,11 +70,15 @@ class SeededWarmupTQC(TQC):
         episode_start: np.ndarray | None = None, deterministic: bool = False,
     ) -> tuple[np.ndarray, Any]:
         action, state = super().predict(observation, state, episode_start, deterministic)
+        return self._transform_action(action, observation), state
+
+    def _transform_action(self, action: np.ndarray, observation: Any) -> np.ndarray:
+        """Apply immutable output transforms to a given raw policy demand."""
         self._air_brake_active = False
         schedule = getattr(self, "speed_bias_schedule", ())
         overlays = getattr(self, "policy_overlays", ())
         if isinstance(observation, dict):
-            return action, state
+            return action
         state_vector = np.asarray(observation)
         progress = state_vector[..., 12]
         bias = np.zeros_like(progress, dtype=np.float32)
@@ -116,7 +120,7 @@ class SeededWarmupTQC(TQC):
                         adjusted[..., 1],
                     )
         adjusted = np.clip(adjusted, -1.0, 1.0)
-        return adjusted, state
+        return adjusted
 
     def _apply_overlays_to_actions(self, actions: th.Tensor, observations: th.Tensor) -> th.Tensor:
         """Apply the same smooth output overlays in TQC's differentiable Q path.

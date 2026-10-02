@@ -35,6 +35,7 @@ def seed_replay(source: Path, current: Path, destination: Path) -> dict[str, obj
         source_meta.observation_schema != current_meta.observation_schema
         or source_meta.action_schema != current_meta.action_schema
         or source_meta.reward_semantics != current_meta.reward_semantics
+        or source_meta.action_semantics != current_meta.action_semantics
     ):
         raise ValueError("source and continuation transition semantics differ")
     backend = GRTQCBackend()
@@ -62,11 +63,15 @@ def seed_replay(source: Path, current: Path, destination: Path) -> dict[str, obj
     imported_count = source_replay.size()
     if target.full or source_replay.full or original_count + imported_count >= target.buffer_size:
         raise ValueError("replay merge requires two non-full buffers with spare capacity")
+    if original_count and imported_count and not target.dones[original_count - 1, 0]:
+        target.dones[original_count - 1, 0] = target.timeouts[original_count - 1, 0] = 1
     for key in names:
         getattr(target, key)[original_count:original_count + imported_count] = (
             getattr(source_replay, key)[:imported_count]
         )
     target.pos = original_count + imported_count
+    model.invalidate_critic_reference()
+    model.critic_mc_updates_done = 0
     model.actor_unlocked = False
     model.critic_updates_since_transfer = 0
     model._critic_loss_history.clear()

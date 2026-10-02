@@ -117,6 +117,8 @@ class ModelRegistry:
                 "PPO checkpoint does not declare continuous steering and signed longitudinal actions; "
                 "start a fresh model or use the TQC-to-PPO teacher pipeline"
             )
+        if getattr(config.grtqc, "critic_raw_actions", False) and metadata.action_semantics != "grtqc.raw-policy.v1":
+            raise IncompatibleModelError("GRTQC raw-policy learning requires matching replay action semantics")
         mismatches = []
         for name, actual, expected in (
             ("algorithm", metadata.algorithm, config.algorithm),

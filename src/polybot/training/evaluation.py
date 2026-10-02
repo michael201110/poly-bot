@@ -84,10 +84,11 @@ class EvaluationResult:
         """Require a reliable full-track evaluation before stopping on pace."""
         return (
             target_lap_s > 0
+            and self.episodes >= 5
             and self.finish_rate == 1.0
             and self.median_progress == 1.0
-            and self.best_lap_s is not None
-            and self.best_lap_s < target_lap_s
+            and self.median_lap_s is not None
+            and self.median_lap_s < target_lap_s
         )
 
 
@@ -99,6 +100,7 @@ def evaluate_model(
     action_noise_probability: float = 1.0,
     telemetry_sink: list[list[dict[str, Any]]] | None = None,
     reference_telemetry_sink: list[list[dict[str, Any]]] | None = None,
+    transition_sink: list[dict[str, Any]] | None = None,
 ) -> EvaluationResult:
     if episodes < 1:
         raise ValueError("evaluation requires at least one episode")
@@ -162,7 +164,20 @@ def evaluate_model(
                     if diff.size >= 2:
                         steer_drift.append(float(diff[0]))
                         longitudinal_drift.append(float(diff[1]))
-                observation, _, terminated, truncated, info = env.step(action)
+                before = np.array(observation, copy=True) if transition_sink is not None else None
+                recorded = action
+                if transition_sink is not None and getattr(model, "critic_raw_actions", False):
+                    if action_noise_std is not None:
+                        raise ValueError("raw-action evaluation replay does not support post-transform noise")
+                    recorded, _ = model.policy.predict(observation, deterministic=True)
+                observation, reward, terminated, truncated, info = env.step(action)
+                if transition_sink is not None:
+                    transition_sink.append({
+                        "observation": before, "next_observation": np.array(observation, copy=True),
+                        "action": np.array(recorded, copy=True), "reward": reward,
+                        "done": terminated or truncated,
+                        "timeout": truncated and not terminated,
+                    })
                 if reference_model is not None:
                     candidate_path.append(info)
                 candidate_samples.append(_telemetry_sample(info, action))
@@ -196,8 +211,7 @@ def evaluate_model(
             if "finish" in events:
                 laps.append(float(info["elapsed_s"]))
             crashes += int(
-                "crash" in events or "barrier_contact" in events
-                or "airborne_roll_failure" in events
+                "crash" in events or "airborne_roll_failure" in events
             )
             off_tracks += int("off_track" in events)
             stalls += int("stalled" in events)

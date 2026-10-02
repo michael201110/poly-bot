@@ -13,29 +13,29 @@ python -m venv .venv
 .\.venv\Scripts\polybot-gui.exe
 ```
 
-Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summer 1, and leave the game running. The GUI loads the GRTQC complete-return initialization profile. Starting from its initialization verifies five live deterministic laps against the TQC reference before making any RL update. A mismatch stops training and preserves the source checkpoint.
+Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summer 1, and leave the game running. The GUI loads the GRTQC causal-repair profile. Starting from its initialization verifies five live deterministic laps against the TQC reference before making any RL update. A mismatch stops training and preserves the source checkpoint.
 
 The immutable TQC source is `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/`. The historical directory name does not indicate active support for its former algorithm. To recreate the separate GRTQC initialization checkpoint:
 
 ```powershell
-.\.venv\Scripts\python.exe tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-precise-values-30.json --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/experiments/grtqc-precise-values-20261002/summer-1/grtqc/initialization
+.\.venv\Scripts\python.exe tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-causal-30.json --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/experiments/grtqc-causal-20261002/summer-1/grtqc/initialization
 ```
 
 The transfer script checks 2,048 saved Summer 1 observations and writes `transfer.json` with the source hash and action errors. The contact-aware reward charges nonterminal wall impacts while filtering touchdown impulses; it starts with fresh replay. Run the shared trainer with the saved configuration:
 
 ```powershell
-.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-precise-values-30.json
+.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-causal-30.json
 ```
 
-The first run resumes `models/experiments/grtqc-precise-values-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. In this profile, reliable cleaner laps within 1.5 seconds of the best are saved separately as `contact-candidate/` and can provide a recovery starting point. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
+The first run resumes `models/experiments/grtqc-causal-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. This profile continues from the fastest verified policy; a slower lap with fewer contacts does not replace it. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
 
 The current profile trains full laps with a discount horizon that includes the finish, a small entropy coefficient, and a nonterminal contact penalty. Critics first fit discounted driving returns from complete matching-policy episodes, then use ordinary one-step TQC targets. The training distribution is bounded tightly after a live audit showed broader samples breaking the unchanged driver's completion. It preserves the source's 30-tick controls. Earlier curriculum and 64-step profiles remain separate experiments. For unattended continuation with reconnect and a clean stop file:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-precise-values-30.json --resume models/experiments/grtqc-precise-values-20261002/summer-1/grtqc/latest --stop-file logs/grtqc-precise-values-30.stop --retry-transport
+.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-causal-30.json --resume models/experiments/grtqc-causal-20261002/summer-1/grtqc/latest --stop-file logs/grtqc-causal-30.stop --retry-transport
 ```
 
-The current GRTQC profile supplies the steering and longitudinal PWM accumulators and directions to both critics and actor. The actor retains its original 105-input matrix and adds a zero-initialized contribution from the four controller values, preserving initial actions exactly. Compatible 109-input critic replay can be retained when adding this actor input; legacy 105-input replay cannot. Live paired validation reproduced five source laps at 24.263 seconds with zero action and time drift. Complete-return critic initialization produced a confirmed five-lap **24.485-second cleaner policy with one contact per lap**, improving the previous cleaner driver's 24.634 seconds. It remains slower than the immutable source, and other updated snapshots failed. Continuation retains 93,744 real replay transitions and trains all 64,132 actor parameters. This is a tested stepping stone, not a faster champion or a stability guarantee.
+The current GRTQC profile gives critics 121 real inputs: physical state, PWM state and task clock/reward/failure context. The actor retains its original 105-input matrix plus the four-value PWM contribution, preserving source controls exactly. Raw policy demands are stored before immutable output transforms, so replay also describes the controls resumed on touchdown. Previous 105/109-input replay cannot be padded or reused here. Five paired initialization laps again retained exactly 24.263 seconds with zero action/time drift. The old 24.485-second cleaner candidate remains archived; the source remains unbeaten. See the [causal audit](docs/grtqc-causal-audit.md) for the measured reward conflict, repair evidence and remaining uncertainties.
 
 Creating that stop file requests a saved clean shutdown. Transport retries preserve replay, the remaining step budget and curriculum position; an interrupted initial transfer repeats its fidelity check.
 
@@ -47,7 +47,7 @@ GRTQC warms its newly initialized critics while the transferred actor is frozen.
 
 The current profile schedules a learning-actor check every 512 decisions. Once due, policy updates pause while the current attempt ends and critics continue learning, preserving complete-lap rewards in replay. A failed one-lap screen skips the remaining evaluation laps; a finishing policy still needs a full five-lap evaluation for promotion or target confirmation. Five consecutive weaker checks restore the verified actor, keeping roughly the same opportunity for actor updates as the previous three checks spaced 1,000 decisions apart. Frozen checks still use five laps every 5,000 decisions.
 
-Changing the GRTQC return horizon, discount, training variance bound or entropy target on resume retains raw replay and driving weights, then repeats critic warmup for the changed targets. Adding actor controller inputs also repeats warmup without discarding critic weights or replay. Multi-step returns stop at finishes, failures and artificial resets; evaluation or curriculum resets retain bootstrap from the actual final observation. Faster cleaner candidates with the same contact count can replace their previous candidate, while champion promotion still requires beating the verified lap time. `tools/audit_grtqc_values.py <checkpoint>` compares critic values with recorded completed-lap returns as a diagnostic.
+Changing the GRTQC return horizon, discount, training variance bound or entropy target on resume retains raw replay and driving weights, then repeats critic warmup for the changed targets. Adding actor controller inputs also repeats warmup without discarding critic weights or replay. Multi-step returns stop at finishes, failures and artificial resets; evaluation or curriculum resets retain bootstrap from the actual final observation. The causal profile retains actual complete evaluation attempts in replay and computes actor gradients on verified-lap states without prescribing actions. Every rejected update returns to the verified pace policy while preserving learned critics and experience. `tools/audit_grtqc_values.py <checkpoint>` compares critic values with recorded completed-lap returns as a diagnostic.
 
 The separate `profiles/training/summer-1-grtqc-contact-20.json` tests more frequent control at 20 ticks per decision. Its transferred source completes 5/5 laps at 24.616 seconds; the 30-tick, 24.263-second reference remains preserved.
 

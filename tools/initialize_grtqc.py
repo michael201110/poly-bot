@@ -131,6 +131,7 @@ def initialize(
     metadata = replace(
         source_metadata, algorithm="grtqc", architecture=config.grtqc.architecture,
         observation_schema=schema_for(config),
+        action_semantics="grtqc.raw-policy.v1" if config.grtqc.critic_raw_actions else source_metadata.action_semantics,
         actor_parameters=counts["actor"], critic_parameters=counts["critic"],
         total_trainable_parameters=counts["total"], training_config=config.to_dict(),
         reward_profile=config.reward_profile,
