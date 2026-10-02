@@ -316,6 +316,32 @@ def test_resume_changes_horizon_without_losing_replay_or_actor_and_repairs_old_r
         env.close()
 
 
+def test_fresh_replay_resume_refreezes_actor_and_collects_reliable_initial_laps() -> None:
+    config = _config("grtqc")
+    model, env = _model(config)
+    try:
+        model.actor_unlocked = True
+        model.critic_updates_since_transfer = 3000
+        model._critic_loss_history.append(1.0)
+        model._disagreement_history.append(0.1)
+        model.num_timesteps = 5000
+        actor = {name: weight.clone() for name, weight in model.actor.state_dict().items()}
+        GRTQCBackend().configure_resume(model, config, "cpu", fresh_replay=True)
+        assert not model.actor_unlocked
+        assert model.critic_updates_since_transfer == 0
+        assert not model._critic_loss_history
+        assert not model._disagreement_history
+        assert model.learning_starts > model.num_timesteps
+        model._last_obs = model.env.reset()
+        expected, _ = model.predict(model._last_obs, deterministic=True)
+        action, _ = model._sample_action(model.learning_starts)
+        np.testing.assert_array_equal(action, expected)
+        for name, weight in model.actor.state_dict().items():
+            th.testing.assert_close(weight, actor[name], rtol=0, atol=0)
+    finally:
+        env.close()
+
+
 @pytest.mark.parametrize("algorithm", ["tqc", "grtqc"])
 def test_old_reward_semantics_cannot_be_reused_from_replay(tmp_path, monkeypatch, algorithm) -> None:
     config = replace(_config(algorithm), output_root=tmp_path / "models", log_root=tmp_path / "logs")

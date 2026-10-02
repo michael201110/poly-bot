@@ -39,6 +39,8 @@ Creating that stop file requests a saved clean shutdown. Transport retries prese
 
 Replay written before reward semantics `nonterminal-contact-v2` must be replaced with `--fresh-replay`. Older contact rewards also charged failed-attempt clawback and early-failure costs even when the car continued; the revised calculation reserves those costs for actual failures. Saved policy weights remain usable.
 
+GRTQC continuation with fresh replay refreezes the saved actor while collecting reliable initial laps and adapting critics to the recollected rewards.
+
 GRTQC warms its newly initialized critics while the transferred actor is frozen. Actor updates begin only after the minimum warmup and a stable recent window of quantile loss and critic disagreement. The trainer logs quantile, target, and disagreement statistics in `logs/*.jsonl`. See the [training guide](docs/training.md) and [GRTQC experiment record](docs/grtqc-experiment.md) for the implementation, validation gate, and measured status.
 
 Changing the GRTQC return horizon on resume retains raw replay and driving weights, then repeats critic warmup for the changed targets. Multi-step returns stop at finishes, failures and artificial resets; evaluation or curriculum resets retain bootstrap from the actual final observation. Faster cleaner candidates with the same contact count can replace their previous candidate, while champion promotion still requires beating the verified lap time. `tools/audit_grtqc_values.py <checkpoint>` compares critic values with recorded completed-lap returns as a diagnostic.

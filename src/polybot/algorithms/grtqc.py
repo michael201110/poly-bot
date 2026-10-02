@@ -506,9 +506,9 @@ class GRTQCBackend(TQCBackend):
         finally:
             config.tqc = original
         horizon_changed = model.configure_replay_horizon(config.grtqc.n_step_return, config.grtqc.gamma)
-        if horizon_changed:
-            # The critics need to adapt to the new targets before changing
-            # the actor. Existing weights and recorded rewards remain useful.
+        if horizon_changed or fresh_replay:
+            # Changed targets or recollected reward data must adapt the critics
+            # before they can guide another update to the saved driving skill.
             model.actor_unlocked = False
             model.critic_updates_since_transfer = 0
             model._critic_loss_history.clear()
