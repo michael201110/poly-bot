@@ -56,6 +56,19 @@ def test_wrapped_replay_discards_the_unproven_initial_episode():
     np.testing.assert_array_equal(samples.returns[:, 0], [4, 4])
 
 
+def test_reference_matching_allows_measured_cpu_inference_roundoff():
+    replay, reference = _replay()
+    _add(replay, 0, 1, 1, done=True)
+    reference.predict = lambda observations, deterministic: (
+        np.full((len(observations), 2), 4.1e-6, dtype=np.float32), None,
+    )
+
+    samples = on_policy_returns(replay, reference, 0.99)
+
+    assert samples.episodes == 1
+    assert len(samples.observations) == 1
+
+
 def test_reference_returns_reject_incompatible_or_absent_on_policy_data():
     replay, reference = _replay()
     _add(replay, 0, 1, 1, noisy=True, done=True)

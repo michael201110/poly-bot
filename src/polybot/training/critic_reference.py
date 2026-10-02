@@ -7,6 +7,8 @@ from typing import Any
 
 import numpy as np
 
+POLICY_ACTION_MATCH_ATOL = 1e-5
+
 
 @dataclass(frozen=True)
 class CriticReferenceSamples:
@@ -46,7 +48,9 @@ def on_policy_returns(
                 rows = order[start:end + 1]
                 predictor = reference.policy if getattr(reference, "critic_raw_actions", False) else reference
                 predicted, _ = predictor.predict(replay.observations[rows, 0], deterministic=True)
-                if np.allclose(predicted, replay.actions[rows, 0], rtol=0, atol=3e-6):
+                if np.allclose(
+                    predicted, replay.actions[rows, 0], rtol=0, atol=POLICY_ACTION_MATCH_ATOL,
+                ):
                     discounted = np.empty(len(rows), dtype=np.float32)
                     future = 0.0
                     for offset in range(len(rows) - 1, -1, -1):
