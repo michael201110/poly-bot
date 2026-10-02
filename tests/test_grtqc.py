@@ -1392,6 +1392,7 @@ def test_parallel_ports_are_explicit_and_do_not_change_transfer_default():
     # after a sampled airborne roll and charge the same terminal cost as crashes.
     assert scratch.rewards.airborne_roll_timeout_s >= 1.0
     assert scratch.rewards.airborne_roll_failure_penalty == scratch.rewards.crash_penalty
+    assert scratch.rewards.barrier_contact_penalty <= -200.0
     assert scratch.rewards.early_off_track_penalty == scratch.rewards.off_track_penalty == -400.
     assert scratch.rewards.finish_fast_bonus > 2 * scratch.rewards.finish_bonus
     with pytest.raises(ValueError, match="WebSocket port"):

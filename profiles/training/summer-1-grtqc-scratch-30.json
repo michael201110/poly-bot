@@ -57,7 +57,7 @@
     "low_speed_penalty_per_s": -2.0,
     "low_speed_grace_s": 1.0,
     "unsafe_speed_penalty_per_m": 0.0,
-    "barrier_contact_penalty": -50.0,
+    "barrier_contact_penalty": -200.0,
     "barrier_early_penalty": 0.0,
     "barrier_collision_impulse_threshold": 250.0,
     "failure_progress_clawback_per_m": -1.0,
