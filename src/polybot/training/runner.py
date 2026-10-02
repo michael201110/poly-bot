@@ -542,19 +542,21 @@ class TrainingRunner:
             self.config.grtqc.target_entropy = self.model.target_entropy
             self._emit({"type": "scratch_stage", "stage": "pace", "timesteps": self.model.num_timesteps,
                         "target_entropy": self.model.target_entropy, "finish_rate": result.finish_rate})
-        if clean and observations:
-            # Advance the local search anchor after a repeatable clean lap,
-            # even when it is slower than the protected champion. Only the
-            # separate pace gate below is allowed to replace that champion.
-            self.model.set_actor_reference_observations(np.asarray(observations))
-            self._emit({
-                "type": "scratch_clean_anchor_refreshed",
-                "timesteps": self.model.num_timesteps,
-                "median_lap_s": result.median_lap_s,
-                "finish_rate": result.finish_rate,
-                "episodes": result.episodes,
-                "barrier_contact_steps": result.barrier_contact_steps,
-            })
+        if clean:
+            # A repeatable clean policy is valid local-search progress even
+            # when it has not yet beaten the protected champion. Let it move
+            # the search anchor without accumulating a regression count.
+            self._grtqc_weak_evaluations = 0
+            if observations:
+                self.model.set_actor_reference_observations(np.asarray(observations))
+                self._emit({
+                    "type": "scratch_clean_anchor_refreshed",
+                    "timesteps": self.model.num_timesteps,
+                    "median_lap_s": result.median_lap_s,
+                    "finish_rate": result.finish_rate,
+                    "episodes": result.episodes,
+                    "barrier_contact_steps": result.barrier_contact_steps,
+                })
         if better:
             self._grtqc_weak_evaluations = 0
             path = self._save("champion", result)
@@ -573,9 +575,30 @@ class TrainingRunner:
                         "timesteps": self.model.num_timesteps, "finish_rate": result.finish_rate,
                         "median_lap_s": result.median_lap_s, "best_lap_s": result.best_lap_s,
                         "candidate_continues": True, "training_origin": "scratch"})
+            severe_screen_failure = (
+                result.episodes == 1
+                and result.finish_rate == 0.0
+                and result.off_track_rate == 1.0
+                and result.median_progress < 0.75
+            )
+            if (
+                severe_screen_failure
+                and getattr(self.model, "actor_unlocked", False)
+                and champion is not None
+            ):
+                self._emit({
+                    "type": "severe_actor_screen_rollback",
+                    "timesteps": self.model.num_timesteps,
+                    "champion_lap_s": champion.median_lap_s,
+                    "candidate_progress": result.median_progress,
+                    "barrier_contact_steps": result.barrier_contact_steps,
+                    "training_origin": "scratch",
+                })
+                self._recover_grtqc_actor(result, path)
+                return result
             pace_is_weaker = (
                 not reliable
-                or champion is not None and champion.median_lap_s is not None
+                or not clean and champion is not None and champion.median_lap_s is not None
                 and result.median_lap_s is not None and result.median_lap_s >= champion.median_lap_s
             )
             if (

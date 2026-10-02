@@ -1443,11 +1443,10 @@ def test_scratch_rejected_candidates_recover_after_configured_weaker_checks(tmp_
     runner.model = SimpleNamespace(
         num_timesteps=12000, actor_unlocked=True, scratch_stage="pace",
     )
-    # A finisher can report normalized progress 1.0 while the champion's
-    # finish-event progress is just below 1.0. That tiny progress delta must
-    # not hide a slower lap from the pace-regression recovery counter.
+    # An unclean slower finisher still counts toward recovery; only clean
+    # five-lap candidates are retained as local search progress.
     champion = EvaluationResult(5, 1., 0.999935, 1., 22.709, 22.709, 0., 0., 0.)
-    slower = EvaluationResult(5, 1., 1., 1., 22.9, 22.9, 0., 0., 0.)
+    slower = EvaluationResult(5, 1., 1., 1., 22.9, 22.9, 0., 0., 0., barrier_contact_steps=1)
     recovered = []
     monkeypatch.setattr(runner, "_emit", lambda event: None)
     monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
@@ -1497,13 +1496,17 @@ def test_clean_slower_scratch_candidate_recenters_without_replacing_champion(tmp
     events = []
     runner.model = SimpleNamespace(
         num_timesteps=12000,
+        actor_unlocked=True,
         scratch_stage="pace",
         set_actor_reference_observations=reference_calls.append,
     )
+    runner._grtqc_weak_evaluations = 4
     champion = EvaluationResult(5, 1., 1., 1., 22.635, 22.635, 0., 0., 0.)
     slower = EvaluationResult(5, 1., 1., 1., 22.7, 22.7, 0., 0., 0.)
     observations = [np.asarray([1., 2.], dtype=np.float32)]
     monkeypatch.setattr(runner, "_emit", events.append)
+    recovered = []
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
     monkeypatch.setattr(
         runner, "_save", lambda name, evaluation=None: saves.append(name) or tmp_path / name,
     )
@@ -1513,8 +1516,11 @@ def test_clean_slower_scratch_candidate_recenters_without_replacing_champion(tmp
     assert len(reference_calls) == 1
     np.testing.assert_array_equal(reference_calls[0], np.asarray(observations))
     assert saves == ["checkpoints/step-12000-rejected"]
+    assert runner._grtqc_weak_evaluations == 0
+    assert not recovered
     assert any(event["type"] == "scratch_clean_anchor_refreshed" for event in events)
     assert not any(event["type"] == "champion" for event in events)
+    assert not any(event["type"] == "weaker_actor_evaluation" for event in events)
 
 
 def test_contacting_scratch_candidate_does_not_recenter_anchor(tmp_path, monkeypatch):
@@ -1538,6 +1544,32 @@ def test_contacting_scratch_candidate_does_not_recenter_anchor(tmp_path, monkeyp
     runner._select_scratch_candidate(contacting, champion, observations=observations)
 
     assert reference_calls == []
+
+
+def test_severe_scratch_screen_failure_restores_verified_actor_immediately(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(
+        num_timesteps=12000,
+        actor_unlocked=True,
+        scratch_stage="pace",
+    )
+    champion = EvaluationResult(5, 1., 1., 1., 22.635, 22.635, 0., 0., 0.)
+    failed_screen = EvaluationResult(
+        1, 0., 0.64, 0.64, None, None, 0., 1., 0., barrier_contact_steps=1,
+    )
+    recovered = []
+    events = []
+    monkeypatch.setattr(runner, "_emit", events.append)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+
+    runner._select_scratch_candidate(failed_screen, champion)
+
+    assert recovered == [(failed_screen, tmp_path / "checkpoints/step-12000-rejected")]
+    assert any(event["type"] == "severe_actor_screen_rollback" for event in events)
+    assert not any(event["type"] == "weaker_actor_evaluation" for event in events)
 
 
 def test_grtqc_resume_rollback_restores_actor_but_keeps_latest_training_state(tmp_path, monkeypatch):
