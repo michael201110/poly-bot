@@ -143,7 +143,7 @@
     "contact_candidate_lap_tolerance_s": 1.5,
     "exploration_std": 0.0,
     "critic_collection_std": 0.0,
-    "actor_step_action_limit": 0.1,
+    "actor_step_action_limit": 0.05,
     "actor_reference_drift_limit": 0.0,
     "reference_lap_s": 24.263,
     "recovery_critic_cooldown_updates": 1000,
