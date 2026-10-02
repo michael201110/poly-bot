@@ -217,7 +217,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.observation_space = spaces.Box(
             low=-5.0,
             high=5.0,
-            shape=(size(lookahead_count),),
+            shape=(size(lookahead_count) + len(self._controller_observation()),),
             dtype=np.float32,
         )
 
@@ -777,7 +777,15 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         return observation, reward, terminated, truncated, info
 
     def _policy_observation(self, telemetry: Telemetry) -> np.ndarray:
-        return observe(telemetry)
+        observation = observe(telemetry)
+        state = self._controller_observation()
+        if state:
+            observation = np.concatenate((observation, np.asarray(state, dtype=np.float32)))
+        return observation
+
+    def _controller_observation(self) -> tuple[float, ...]:
+        provider = getattr(self.action_adapter, "observation_state", None)
+        return provider() if provider is not None else ()
 
     def request_air_brake(self, base_action: np.ndarray) -> None:
         """Release an existing policy air-brake overlay at touchdown within a block."""

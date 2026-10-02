@@ -309,6 +309,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "When an actor check is due, hold policy updates until the current attempt ends; "
         "critics continue learning and complete-lap rewards remain in replay."
     ),
+    "critic_controller_state": (
+        "Give critics the PWM accumulators and directions while keeping the actor's original inputs. "
+        "Requires a new compatible initialization and fresh replay."
+    ),
 }, algorithm="grtqc")}
 
 METRIC_INFO = _info("Status", {

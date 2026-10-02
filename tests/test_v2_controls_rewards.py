@@ -44,6 +44,45 @@ def test_control_modes_use_shared_demand_and_never_overlap() -> None:
         assert applied == adapter.apply(action, 40)
 
 
+def test_controller_state_resolves_identical_history_with_different_future_pulses() -> None:
+    a = ContinuousActionAdapter(expose_controller_state=True)
+    b = ContinuousActionAdapter(expose_controller_state=True)
+    history_a = a.apply(np.array([0.01, 1], dtype=np.float32), 30)
+    history_b = b.apply(np.array([0.03, 1], dtype=np.float32), 30)
+    assert history_a.ticks == history_b.ticks
+    assert a.observation_state()[0] == pytest.approx(0.3)
+    assert b.observation_state()[0] == pytest.approx(0.9)
+    assert a.apply(np.array([0.02, 1], dtype=np.float32), 30).ticks != b.apply(
+        np.array([0.02, 1], dtype=np.float32), 30,
+    ).ticks
+    a.reset()
+    assert a.observation_state() == (0, 0, 0, 0)
+    assert ContinuousActionAdapter().observation_state() == ()
+
+
+def test_controller_features_preserve_physical_prefix_and_reset() -> None:
+    envs = [PolyTrackEnv(
+        MockSimulatorTransport(), frame_skip=30,
+        action_adapter=ContinuousActionAdapter(expose_controller_state=True),
+    ) for _ in range(2)]
+    try:
+        for env in envs:
+            obs, _ = env.reset(seed=17)
+            assert obs.shape == (109,)
+            np.testing.assert_array_equal(obs[-4:], np.zeros(4))
+        obs_a = envs[0].step(np.array([0.01, 1], dtype=np.float32))[0]
+        obs_b = envs[1].step(np.array([0.03, 1], dtype=np.float32))[0]
+        np.testing.assert_array_equal(obs_a[:-4], obs_b[:-4])
+        assert obs_a[-4] == pytest.approx(0.3)
+        assert obs_b[-4] == pytest.approx(0.9)
+        for env in envs:
+            obs, _ = env.reset(seed=17)
+            np.testing.assert_array_equal(obs[-4:], np.zeros(4))
+    finally:
+        for env in envs:
+            env.close()
+
+
 def test_external_overlapping_action_resolves_in_favor_of_brake() -> None:
     demand = ControlDemand.from_action(Action(steer=1, throttle=True, brake=True))
     assert demand == ControlDemand(steer=1, throttle=0.0, brake=1.0)

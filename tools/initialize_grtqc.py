@@ -14,6 +14,7 @@ import torch as th
 from polybot.algorithms.grtqc import GRTQCBackend
 from polybot.algorithms.tqc import TQCBackend
 from polybot.environment.env import PolyTrackEnv
+from polybot.environment.observations import schema_for
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import REWARD_SEMANTICS, ModelRegistry
 from polybot.training.config import EvaluationConfig, GRTQCConfig, TrainingConfig
@@ -105,13 +106,16 @@ def initialize(
     raw_difference = []
     executed_difference = []
     for batch in np.array_split(observations, 16):
+        target_batch = (
+            np.pad(batch, ((0, 0), (0, 4))) if config.grtqc.critic_controller_state else batch
+        )
         with th.no_grad():
             tensor = th.as_tensor(batch, device=device)
             raw_source = source_model.actor(tensor, deterministic=True).cpu().numpy()
-            raw_target = target.actor(tensor, deterministic=True).cpu().numpy()
+            raw_target = target.actor(th.as_tensor(target_batch, device=device), deterministic=True).cpu().numpy()
         raw_difference.append(np.abs(raw_source - raw_target))
         executed_source, _ = source_model.predict(batch, deterministic=True)
-        executed_target, _ = target.predict(batch, deterministic=True)
+        executed_target, _ = target.predict(target_batch, deterministic=True)
         executed_difference.append(np.abs(executed_source - executed_target))
     raw_max = float(np.concatenate(raw_difference).max())
     executed_max = float(np.concatenate(executed_difference).max())
@@ -122,12 +126,17 @@ def initialize(
     counts = target_backend.parameter_counts(target)
     metadata = replace(
         source_metadata, algorithm="grtqc", architecture=config.grtqc.architecture,
+        observation_schema=schema_for(config),
         actor_parameters=counts["actor"], critic_parameters=counts["critic"],
         total_trainable_parameters=counts["total"], training_config=config.to_dict(),
         reward_profile=config.reward_profile,
         reward_semantics=REWARD_SEMANTICS,
         training_timesteps=0, simulator_ticks=0, wall_seconds=0.0,
-        finishes=0, crashes=0, evaluation=None, implementation="grtqc-gated-variance-v1",
+        finishes=0, crashes=0, evaluation=None,
+        implementation=(
+            "grtqc-gated-variance-pwm-state-v1"
+            if config.grtqc.critic_controller_state else "grtqc-gated-variance-v1"
+        ),
         speed_bias_schedule=list(source_model.speed_bias_schedule),
     )
     ModelRegistry(config.output_root).write_metadata(destination, metadata)
@@ -137,6 +146,8 @@ def initialize(
         "sampled_observations": len(observations),
         "transferred_actor_tensors": len(source_actor),
         "new_gate_tensors": len(transfer.missing_keys),
+        "actor_observation_size": target.actor.features_extractor.features_dim,
+        "critic_observation_size": target.critic.features_extractor.features_dim,
         "raw_action_max_abs_error": raw_max,
         "executed_action_max_abs_error": executed_max,
         "expected_reference_lap_s": config.grtqc.reference_lap_s,

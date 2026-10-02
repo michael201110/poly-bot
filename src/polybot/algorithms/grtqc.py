@@ -17,10 +17,13 @@ import torch as th
 from sb3_contrib.common.utils import quantile_huber_loss
 from sb3_contrib.tqc.policies import TQCPolicy
 from stable_baselines3.common.buffers import NStepReplayBuffer, ReplayBuffer
+from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 from stable_baselines3.common.utils import polyak_update
 from torch import nn
 
 from polybot.algorithms.tqc import SeededWarmupTQC, TQCBackend
+from polybot.control.actions import ContinuousActionAdapter
+from polybot.environment.observations import size as observation_size
 from polybot.training.config import ARCHITECTURES, GRTQCConfig
 
 if TYPE_CHECKING:
@@ -55,10 +58,32 @@ def _gate_hidden_layers(module: nn.Sequential, *, scale: float) -> None:
             module[index] = GatedReLU(previous.out_features, scale=scale)
 
 
+class ActorPrefixExtractor(BaseFeaturesExtractor):
+    """Leave privileged controller state to the critic, preserving source inputs."""
+
+    def __init__(self, observation_space: Any, width: int) -> None:
+        super().__init__(observation_space, features_dim=width)
+        self.width = width
+
+    def forward(self, observations: th.Tensor) -> th.Tensor:
+        return observations[..., :self.width].contiguous()
+
+
 class GRTQCPolicy(TQCPolicy):
     """Keep original TQC linear parameter names for direct weight transfer."""
 
+    def __init__(self, *args: Any, actor_observation_size: int = 0, **kwargs: Any) -> None:
+        self.actor_observation_size = actor_observation_size
+        super().__init__(*args, **kwargs)
+
+    def _get_constructor_parameters(self) -> dict[str, Any]:
+        parameters = super()._get_constructor_parameters()
+        parameters["actor_observation_size"] = self.actor_observation_size
+        return parameters
+
     def make_actor(self, features_extractor: Any = None) -> Any:
+        if self.actor_observation_size:
+            features_extractor = ActorPrefixExtractor(self.observation_space, self.actor_observation_size)
         actor = super().make_actor(features_extractor)
         _gate_hidden_layers(actor.latent_pi, scale=2.0)
         return actor
@@ -446,6 +471,10 @@ class GRTQC(SeededWarmupTQC):
 class GRTQCBackend(TQCBackend):
     name = "grtqc"
 
+    def action_adapter(self, config: TrainingConfig) -> ContinuousActionAdapter:
+        assert config.grtqc is not None
+        return ContinuousActionAdapter(expose_controller_state=config.grtqc.critic_controller_state)
+
     def validate_config(self, config: TrainingConfig) -> None:
         if config.ppo is not None or config.tqc is not None:
             raise ValueError("GRTQC config cannot contain other algorithm settings")
@@ -460,6 +489,9 @@ class GRTQCBackend(TQCBackend):
         assert config.grtqc is not None
         p = config.grtqc
         layers = list(ARCHITECTURES[p.architecture])
+        width = observation_size(config.lookahead_count)
+        if int(np.prod(env.observation_space.shape)) != width + (4 if p.critic_controller_state else 0):
+            raise ValueError("GRTQC environment has an incompatible controller-state observation layout")
         model = GRTQC(
             GRTQCPolicy, env, seed=config.seed, device=device, verbose=0,
             learning_rate=p.learning_rate, buffer_size=p.replay_capacity,
@@ -481,7 +513,10 @@ class GRTQCBackend(TQCBackend):
             critic_exploration_fraction=p.critic_exploration_fraction,
             actor_step_action_limit=p.actor_step_action_limit,
             actor_reference_drift_limit=p.actor_reference_drift_limit,
-            policy_kwargs={"net_arch": {"pi": layers, "qf": layers}},
+            policy_kwargs={
+                "net_arch": {"pi": layers, "qf": layers},
+                "actor_observation_size": width if p.critic_controller_state else 0,
+            },
         )
         model.actor_lr = p.actor_learning_rate or p.learning_rate
         model.critic_lr = p.critic_learning_rate or p.learning_rate

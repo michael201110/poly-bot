@@ -47,6 +47,13 @@ class ContinuousPwmControls:
         self.steering.reset()
         self.longitudinal.reset()
 
+    def state(self) -> tuple[float, int, float, int]:
+        """State needed to determine future pulses from a control request."""
+        return (
+            self.steering._error, self.steering._direction,
+            self.longitudinal._error, self.longitudinal._direction,
+        )
+
     def generate(
         self, steering: float, longitudinal: float, ticks: int
     ) -> list[tuple[int, bool, bool]]:

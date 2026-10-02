@@ -187,6 +187,7 @@ def test_gui_exact_config_roundtrip_and_presets(window) -> None:
     grtqc.grtqc.actor_evaluation_interval_steps = 512
     grtqc.grtqc.recovery_weak_evaluations = 5
     grtqc.grtqc.finish_episode_before_actor_eval = True
+    grtqc.grtqc.critic_controller_state = True
     window.load_configuration(grtqc)
     assert window.configuration().to_dict() == grtqc.to_dict()
     window.preset.setCurrentText("Summer 1 - Transferred Champion")

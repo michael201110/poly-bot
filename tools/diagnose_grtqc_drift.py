@@ -29,11 +29,19 @@ def main() -> None:
     assert replay is not None
     indices = np.linspace(0, replay.size() - 1, 8192, dtype=np.int64)
     observations = np.asarray(replay.observations[indices, 0], dtype=np.float32)
+
+    def inputs(policy, batch):
+        extra = policy.observation_space.shape[0] - batch.shape[1]
+        if extra not in (0, 4):
+            raise ValueError("drift audit only supports the known controller-state suffix")
+        # This actor-only audit does not invent replay for the critics.
+        return np.pad(batch, ((0, 0), (0, extra))) if extra else batch
+
     def drift(model):
         differences = []
         for batch in np.array_split(observations, 64):
-            expected, _ = baseline.predict(batch, deterministic=True)
-            actual, _ = model.predict(batch, deterministic=True)
+            expected, _ = baseline.predict(inputs(baseline, batch), deterministic=True)
+            actual, _ = model.predict(inputs(model, batch), deterministic=True)
             differences.append(np.abs(expected - actual))
         return np.concatenate(differences)
 

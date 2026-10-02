@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
+from polybot.environment.observations import schema_for
 
 MODEL_SCHEMA = "polybot.model.v2"
 POLYBOT_VERSION = "2.3.0"
@@ -121,7 +121,7 @@ class ModelRegistry:
         for name, actual, expected in (
             ("algorithm", metadata.algorithm, config.algorithm),
             ("track", metadata.track_id, config.track_id),
-            ("observation", metadata.observation_schema, OBSERVATION_SCHEMA),
+            ("observation", metadata.observation_schema, schema_for(config)),
             ("action", metadata.action_schema, action_schema),
             ("lookahead", metadata.lookahead_count, config.lookahead_count),
         ):

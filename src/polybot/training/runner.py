@@ -22,7 +22,7 @@ from stable_baselines3.common.callbacks import BaseCallback
 from polybot.algorithms.registry import backend_for
 from polybot.environment.curriculum import CurriculumPhase, build_plan
 from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
-from polybot.environment.observations import SCHEMA as OBSERVATION_SCHEMA
+from polybot.environment.observations import schema_for
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import (
     PPO_ACTION_SEMANTICS,
@@ -34,7 +34,7 @@ from polybot.models.registry import (
 from polybot.protocol import ProtocolViolation
 from polybot.training.config import TrainingConfig
 from polybot.training.devices import resolve_device
-from polybot.training.evaluation import EvaluationResult, evaluate_model
+from polybot.training.evaluation import EvaluationResult, PrefixObservationReference, evaluate_model
 from polybot.training.metrics import EventSink
 from polybot.training.pace_history import append_pace_history
 from polybot.training.promotion import promote_directory
@@ -165,7 +165,7 @@ class TrainingRunner:
             algorithm=cfg.algorithm, architecture=self.backend.architecture(cfg),
             actor_parameters=counts["actor"], critic_parameters=counts["critic"],
             total_trainable_parameters=counts["total"],
-            observation_schema=OBSERVATION_SCHEMA,
+            observation_schema=schema_for(cfg),
             action_schema=self.backend.action_adapter(cfg).schema,
             track_name=cfg.track_name, track_id=cfg.track_id,
             lookahead_count=cfg.lookahead_count, reward_profile=cfg.reward_profile,
@@ -261,6 +261,8 @@ class TrainingRunner:
         reference.policy_overlays = list(source_metadata.policy_overlays)
         if source_metadata.speed_bias_schedule:
             reference.speed_bias_schedule = list(source_metadata.speed_bias_schedule)
+        if self.config.grtqc.critic_controller_state:
+            reference = PrefixObservationReference(reference, extra_features=4)
         reference_paths: list[list[dict[str, Any]]] = []
         observations: list[np.ndarray] = []
         result = evaluate_model(

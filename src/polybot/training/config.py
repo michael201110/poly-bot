@@ -172,6 +172,7 @@ class GRTQCConfig(TQCConfig):
     recovery_weak_evaluations: int = 3
     screen_actor_evaluations: bool = False
     finish_episode_before_actor_eval: bool = False
+    critic_controller_state: bool = False
 
     def __post_init__(self) -> None:
         TQCConfig.__post_init__(self)

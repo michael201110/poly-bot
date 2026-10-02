@@ -18,22 +18,24 @@ Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summ
 The immutable TQC source is `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/`. The historical directory name does not indicate active support for its former algorithm. To recreate the separate GRTQC initialization checkpoint:
 
 ```powershell
-.\.venv\Scripts\python.exe tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-finish-credit-30.json --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/experiments/grtqc-finish-credit-20261002/summer-1/grtqc/initialization
+.\.venv\Scripts\python.exe tools/initialize_grtqc.py --config profiles/training/summer-1-grtqc-controller-state-30.json --source models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion --destination models/experiments/grtqc-controller-state-20261002/summer-1/grtqc/initialization
 ```
 
 The transfer script checks 2,048 saved Summer 1 observations and writes `transfer.json` with the source hash and action errors. The contact-aware reward charges nonterminal wall impacts while filtering touchdown impulses; it starts with fresh replay. Run the shared trainer with the saved configuration:
 
 ```powershell
-.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-finish-credit-30.json
+.\.venv\Scripts\polybot-train.exe --config profiles/training/summer-1-grtqc-controller-state-30.json
 ```
 
-The first run resumes `models/experiments/grtqc-finish-credit-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. In this profile, reliable cleaner laps within 1.5 seconds of the best are saved separately as `contact-candidate/` and can provide a recovery starting point. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
+The first run resumes `models/experiments/grtqc-controller-state-20261002/summer-1/grtqc/initialization/` automatically. Later runs use `--resume latest` or the GUI's **Continue best model**. New candidate policies are evaluated over five deterministic full laps. Only reliable GRTQC policies with a faster median than the current verified best become champions. In this profile, reliable cleaner laps within 1.5 seconds of the best are saved separately as `contact-candidate/` and can provide a recovery starting point. Other candidates remain under `checkpoints/step-*-rejected/`. The 22.000-second target is checked from those evaluations.
 
 The current profile trains full laps with a discount horizon that includes the finish, 64-decision reward targets, a small entropy coefficient, and a nonterminal contact penalty. It preserves the source's 30-tick controls. Earlier first-chicane curriculum settings remain as a separate experiment. For unattended training with reconnect and a clean stop file:
 
 ```powershell
-.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-finish-credit-30.json --resume models/experiments/grtqc-finish-credit-20261002/summer-1/grtqc/initialization --stop-file logs/grtqc-finish-credit-30.stop --retry-transport
+.\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-controller-state-30.json --resume models/experiments/grtqc-controller-state-20261002/summer-1/grtqc/initialization --stop-file logs/grtqc-controller-state-30.stop --retry-transport
 ```
+
+The current GRTQC profile gives critics four additional inputs: the steering and longitudinal PWM accumulators and directions. The actor keeps its original 105 inputs and source weights. These controller values resolve cases where identical observed digital histories produce different next pulses. This layout requires a compatible initialization and fresh replay; legacy models and replay remain in their original experiment directories. Live paired validation reproduced five source laps at 24.263 seconds with zero action and time drift, while the converted cleaner fallback retained five laps at 24.645 seconds. Faster learning remains an experiment.
 
 Creating that stop file requests a saved clean shutdown. Transport retries preserve replay, the remaining step budget and curriculum position; an interrupted initial transfer repeats its fidelity check.
 

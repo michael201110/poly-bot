@@ -73,9 +73,13 @@ class ContinuousActionAdapter:
     schema = "continuous-pwm-v2"
     sequence = True
 
-    def __init__(self) -> None:
+    def __init__(self, *, expose_controller_state: bool = False) -> None:
         self.action_space = spaces.Box(-1.0, 1.0, shape=(2,), dtype=np.float32)
         self._controls = ContinuousPwmControls()
+        self.expose_controller_state = expose_controller_state
+
+    def observation_state(self) -> tuple[float, ...]:
+        return self._controls.state() if self.expose_controller_state else ()
 
     def reset(self) -> None:
         self._controls.reset()

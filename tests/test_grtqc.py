@@ -13,9 +13,10 @@ from polybot.algorithms.grtqc import GRTQCBackend
 from polybot.algorithms.tqc import TQCBackend
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
+from polybot.models.registry import IncompatibleModelError, ModelMetadata, ModelRegistry
 from polybot.protocol import ProtocolViolation
 from polybot.training.config import EvaluationConfig, GRTQCConfig, TQCConfig, TrainingConfig
-from polybot.training.evaluation import EvaluationResult
+from polybot.training.evaluation import EvaluationResult, PrefixObservationReference
 from polybot.training.runner import TrainingRunner
 
 
@@ -79,6 +80,43 @@ def test_critic_updates_keep_transferred_actor_frozen_until_ready() -> None:
         env.close()
 
 
+def test_controller_critics_keep_exact_actor_transfer_and_survive_reload(tmp_path) -> None:
+    source, source_env = _model(_config("tqc"))
+    config = _config("grtqc")
+    config.grtqc.critic_controller_state = True
+    target, target_env = _model(config)
+    try:
+        transferred = target.actor.load_state_dict(source.actor.state_dict(), strict=False)
+        assert not transferred.unexpected_keys
+        assert len(transferred.missing_keys) == 4
+        base = np.random.default_rng(17).normal(size=(64, 105)).astype(np.float32)
+        controller = np.random.default_rng(18).uniform(-1, 1, size=(64, 4)).astype(np.float32)
+        augmented = np.concatenate((base, controller), axis=1)
+        expected = source.predict(base, deterministic=True)[0]
+        np.testing.assert_array_equal(expected, target.predict(augmented, deterministic=True)[0])
+        altered = augmented.copy()
+        altered[:, -4:] = 0
+        np.testing.assert_array_equal(expected, target.predict(altered, deterministic=True)[0])
+        with th.no_grad():
+            actions = th.as_tensor(expected)
+            q_a = target.critic(th.as_tensor(augmented), actions)
+            q_b = target.critic(th.as_tensor(altered), actions)
+            assert (q_a - q_b).abs().max() > 0
+        reference = PrefixObservationReference(source, extra_features=4)
+        np.testing.assert_array_equal(expected, reference.predict(augmented, deterministic=True)[0])
+        with pytest.raises(ValueError, match="declared controller-state"):
+            reference.predict(base, deterministic=True)
+        GRTQCBackend().save_model(target, tmp_path)
+        loaded = GRTQCBackend().load_model(tmp_path / "policy.zip", None, "cpu")
+        np.testing.assert_array_equal(expected, loaded.predict(augmented, deterministic=True)[0])
+        target.learn(24)
+        assert target.replay_buffer.observations.shape[-1] == 109
+        assert target.critic_updates_since_transfer > 0
+    finally:
+        source_env.close()
+        target_env.close()
+
+
 def test_pending_evaluation_holds_actor_but_keeps_real_critic_updates() -> None:
     config = _config("grtqc")
     model, env = _model(config)
@@ -97,6 +135,28 @@ def test_pending_evaluation_holds_actor_but_keeps_real_critic_updates() -> None:
         assert not model._actor_evaluation_hold
     finally:
         env.close()
+
+
+def test_controller_state_layout_cannot_silently_reuse_legacy_model_or_replay(tmp_path) -> None:
+    legacy = _config("grtqc")
+    metadata = ModelMetadata(
+        algorithm="grtqc", architecture="tiny", actor_parameters=0, critic_parameters=0,
+        total_trainable_parameters=0, observation_schema="polybot.observation.v2",
+        action_schema="continuous-pwm-v2", track_name=legacy.track_name, track_id=legacy.track_id,
+        lookahead_count=legacy.lookahead_count, reward_profile=None, curriculum={},
+        training_config=legacy.to_dict(), training_timesteps=0, simulator_ticks=0, wall_seconds=0,
+        seed=0, device="cpu", finishes=0, crashes=0,
+    )
+    registry = ModelRegistry(tmp_path)
+    registry.validate(metadata, legacy, "continuous-pwm-v2")
+    augmented = _config("grtqc")
+    augmented.grtqc.critic_controller_state = True
+    with pytest.raises(IncompatibleModelError, match="observation"):
+        registry.validate(metadata, augmented, "continuous-pwm-v2")
+    metadata.observation_schema = "polybot.observation.v2.pwm-state"
+    registry.validate(metadata, augmented, "continuous-pwm-v2")
+    with pytest.raises(IncompatibleModelError, match="observation"):
+        registry.validate(metadata, legacy, "continuous-pwm-v2")
 
 
 def test_pending_evaluation_waits_for_episode_and_allows_phase_boundary(tmp_path, monkeypatch) -> None:

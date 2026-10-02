@@ -10,6 +10,28 @@ from typing import Any
 import numpy as np
 
 
+class PrefixObservationReference:
+    """Run the immutable actor on its original prefix during paired validation.
+
+    This adapter is only for the known appended controller-state layout. It
+    never changes the candidate's inputs or permits old replay to be reused.
+    """
+
+    def __init__(self, model: Any, *, extra_features: int) -> None:
+        self.model = model
+        self.width = int(np.prod(model.observation_space.shape))
+        self.extra_features = extra_features
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.model, name)
+
+    def predict(self, observation: np.ndarray, **kwargs: Any) -> Any:
+        values = np.asarray(observation)
+        if values.shape[-1] != self.width + self.extra_features:
+            raise ValueError("reference observation does not have the declared controller-state suffix")
+        return self.model.predict(values[..., :self.width], **kwargs)
+
+
 @dataclass(frozen=True, slots=True)
 class EvaluationResult:
     episodes: int

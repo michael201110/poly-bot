@@ -7,6 +7,12 @@ import numpy as np
 from polybot.protocol import Telemetry
 
 SCHEMA = "polybot.observation.v2"
+CONTROLLER_STATE_SCHEMA = "polybot.observation.v2.pwm-state"
+
+
+def schema_for(config: object) -> str:
+    settings = getattr(config, "grtqc", None)
+    return CONTROLLER_STATE_SCHEMA if getattr(settings, "critic_controller_state", False) else SCHEMA
 
 
 def observe(telemetry: Telemetry) -> np.ndarray:
