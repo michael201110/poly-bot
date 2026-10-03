@@ -1559,8 +1559,9 @@ def test_contacting_scratch_candidate_does_not_recenter_anchor(tmp_path, monkeyp
     [
         EvaluationResult(1, 0., 0.64, 0.64, None, None, 0., 1., 0., barrier_contact_steps=1),
         EvaluationResult(1, 0., 0.234, 0.234, None, None, 0., 0., 0., barrier_contact_steps=1),
+        EvaluationResult(1, 0., 0.664, 0.664, None, None, 0., 0., 1., barrier_contact_steps=1),
     ],
-    ids=("early-off-track", "early-barrier-contact"),
+    ids=("early-off-track", "early-barrier-contact", "mid-track-wall-stall"),
 )
 def test_severe_scratch_screen_failure_restores_verified_actor_immediately(
     tmp_path, monkeypatch, failed_screen,

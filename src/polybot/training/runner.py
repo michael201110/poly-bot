@@ -583,6 +583,9 @@ class TrainingRunner:
                     and result.median_progress < 0.75
                     or result.barrier_contact_steps > 0
                     and result.median_progress < 0.30
+                    or result.stall_rate == 1.0
+                    and result.barrier_contact_steps > 0
+                    and result.median_progress < 0.75
                 )
             )
             if (
