@@ -149,7 +149,7 @@ class TQCConfig:
 
 @dataclass(slots=True)
 class GRTQCConfig(TQCConfig):
-    """Gated TQC with an ensemble-quantile disagreement penalty."""
+    """Gated TQC with ensemble quantiles and optional conservative actor values."""
 
     training_origin: str = "transfer"
     actor_update_interval: int = 1
@@ -161,6 +161,7 @@ class GRTQCConfig(TQCConfig):
     scratch_pace_target_entropy: float = -4.0
     reopen_scratch_curriculum_on_resume: bool = False
     disagreement_coefficient: float = 0.01
+    actor_uncertainty_coefficient: float = 0.0
     critic_warmup_updates: int = 10_000
     critic_readiness_window: int = 200
     critic_readiness_relative_change: float = 0.1
@@ -224,6 +225,8 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC critic reference error limit must be in (0, 1]")
         if not math.isfinite(self.disagreement_coefficient) or self.disagreement_coefficient < 0:
             raise ValueError("GRTQC disagreement coefficient must be nonnegative and finite")
+        if not math.isfinite(self.actor_uncertainty_coefficient) or self.actor_uncertainty_coefficient < 0:
+            raise ValueError("GRTQC actor uncertainty coefficient must be nonnegative and finite")
         if self.critic_warmup_updates < 1 or self.critic_readiness_window < 2:
             raise ValueError("GRTQC critic warmup and readiness window must be positive")
         if not 0 < self.critic_readiness_relative_change < 1:

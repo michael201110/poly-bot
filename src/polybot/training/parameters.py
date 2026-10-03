@@ -272,6 +272,9 @@ REWARD_INFO = {
 
 GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
     "disagreement_coefficient": "Weight on variance across critics at each quantile.",
+    "actor_uncertainty_coefficient": (
+        "Subtract this multiple of ensemble Q uncertainty from the actor value; 1 uses the lower of two critics."
+    ),
     "critic_warmup_updates": "Minimum critic-only updates before actor readiness is checked.",
     "critic_readiness_window": "Recent update window for critic stability checks.",
     "critic_readiness_relative_change": "Allowed increase in loss and disagreement across that window.",
@@ -391,6 +394,9 @@ METRIC_INFO = _info("Status", {
     "critic_disagreement": "Mean variance across GRTQC critics at matching quantiles.",
     "policy_training_std_max": "Largest stochastic policy standard deviation used inside GRTQC updates before tanh.",
     "disagreement_penalty": "Weighted disagreement added to the GRTQC critic loss.",
+    "actor_q_mean": "Mean critic value for actions proposed by the learning actor.",
+    "actor_q_uncertainty": "Standard deviation between critics' mean values for actor-proposed actions.",
+    "actor_uncertainty_penalty": "Uncertainty subtracted from actor value; nonzero only when enabled in GRTQC.",
     "quantile_mean": "Mean current GRTQC critic quantile estimate.",
     "target_mean": "Mean bootstrapped GRTQC target quantile value.",
     "critic_warmup_updates": "Critic-only updates since GRTQC transfer.",

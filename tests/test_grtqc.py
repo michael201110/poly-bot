@@ -13,7 +13,7 @@ from sb3_contrib import TQC
 from stable_baselines3.common.buffers import NStepReplayBuffer
 from stable_baselines3.common.logger import configure
 
-from polybot.algorithms.grtqc import GRTQCBackend
+from polybot.algorithms.grtqc import GRTQC, GRTQCBackend
 from polybot.algorithms.tqc import TQCBackend
 from polybot.environment.env import PolyTrackEnv
 from polybot.mock import MockSimulatorTransport
@@ -111,6 +111,21 @@ def test_grtqc_without_extra_penalty_matches_the_installed_tqc_update_mathematic
         reference_env.close()
 
 
+def test_actor_uncertainty_penalty_uses_conservative_ensemble_value() -> None:
+    quantiles = th.tensor([[[10.0, 12.0], [18.0, 22.0]]], requires_grad=True)
+    value, mean, uncertainty = GRTQC._lower_confidence_actor_value(quantiles, 1.0)
+    th.testing.assert_close(mean, th.tensor([[15.5]]))
+    th.testing.assert_close(uncertainty, th.tensor([[4.5]]))
+    th.testing.assert_close(value, th.tensor([[11.0]]))
+    value.sum().backward()
+    th.testing.assert_close(quantiles.grad, th.tensor([[[0.5, 0.5], [0.0, 0.0]]]))
+
+    unpenalized, unpenalized_mean, _ = GRTQC._lower_confidence_actor_value(
+        quantiles.detach(), 0.0,
+    )
+    th.testing.assert_close(unpenalized, unpenalized_mean)
+
+
 def test_critic_environment_context_does_not_change_actor_inputs_or_transfer(tmp_path):
     source, source_env = _model(_config("tqc"))
     config = _config("grtqc")
@@ -171,6 +186,24 @@ def test_controller_adapter_settings_require_real_controller_observations():
         GRTQCConfig(actor_controller_state=True)
     with pytest.raises(ValueError, match="actor controller inputs"):
         GRTQCConfig(controller_adapter_only=True)
+
+
+def test_actor_uncertainty_coefficient_must_be_nonnegative_and_finite():
+    with pytest.raises(ValueError, match="actor uncertainty coefficient"):
+        GRTQCConfig(actor_uncertainty_coefficient=-0.1)
+    with pytest.raises(ValueError, match="actor uncertainty coefficient"):
+        GRTQCConfig(actor_uncertainty_coefficient=float("inf"))
+
+
+def test_actor_uncertainty_coefficient_is_applied_when_resuming():
+    config = _config("grtqc")
+    model, env = _model(config)
+    try:
+        config.grtqc.actor_uncertainty_coefficient = 1.0
+        GRTQCBackend().configure_resume(model, config, "cpu")
+        assert model.actor_uncertainty_coefficient == 1.0
+    finally:
+        env.close()
 
 
 def test_scratch_grtqc_can_calibrate_critics_from_its_own_complete_episodes():
@@ -1299,7 +1332,9 @@ def test_pace_acceptance_rejects_a_slower_clean_policy_immediately(tmp_path, mon
 
 
 def test_actor_update_diagnostics_survive_logger_dump_and_model_roundtrip(tmp_path):
-    model, env = _model(_config("grtqc"))
+    config = _config("grtqc")
+    config.grtqc.actor_uncertainty_coefficient = 0.5
+    model, env = _model(config)
     try:
         model.set_logger(configure(None, []))
         model.learn(16)
@@ -1310,6 +1345,9 @@ def test_actor_update_diagnostics_survive_logger_dump_and_model_roundtrip(tmp_pa
         assert metrics["critic_gradient_norm"] > 0
         assert metrics["actor_layer_update_norms"]
         assert metrics["actor_adam_steps"] == 1
+        assert metrics["actor_q_mean"] is not None
+        assert metrics["actor_q_uncertainty"] is not None
+        assert metrics["actor_uncertainty_penalty"] >= 0
         model.logger.dump()
         assert GRTQCBackend().metrics(model)["actor_gradient_norm"] == metrics["actor_gradient_norm"]
         model.save(tmp_path / "policy")

@@ -151,10 +151,11 @@ class GRTQCPolicy(TQCPolicy):
 
 
 class GRTQC(SeededWarmupTQC):
-    """TQC update with gated networks and critic disagreement regularization."""
+    """Gated TQC with critic disagreement and optional uncertainty-aware actor values."""
 
     def __init__(
         self, *args: Any, disagreement_coefficient: float = 0.01,
+        actor_uncertainty_coefficient: float = 0.0,
         training_origin: str = "transfer", actor_update_interval: int = 1,
         critic_warmup_updates: int = 10_000, critic_readiness_window: int = 200,
         critic_readiness_relative_change: float = 0.1,
@@ -176,6 +177,7 @@ class GRTQC(SeededWarmupTQC):
         self.critic_raw_actions = critic_raw_actions
         self._training_diagnostics: dict[str, Any] = {}
         self.disagreement_coefficient = disagreement_coefficient
+        self.actor_uncertainty_coefficient = actor_uncertainty_coefficient
         self.critic_warmup_updates = critic_warmup_updates
         self.critic_readiness_window = critic_readiness_window
         self.critic_readiness_relative_change = critic_readiness_relative_change
@@ -520,6 +522,16 @@ class GRTQC(SeededWarmupTQC):
             raise RuntimeError("non-finite GRTQC parameter gradient")
         return value
 
+    @staticmethod
+    def _lower_confidence_actor_value(
+        critic_quantiles: th.Tensor, uncertainty_coefficient: float,
+    ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
+        """Return mean Q minus ensemble uncertainty, averaged within each critic first."""
+        critic_values = critic_quantiles.mean(dim=2)
+        mean_value = critic_values.mean(dim=1, keepdim=True)
+        uncertainty = critic_values.std(dim=1, unbiased=False, keepdim=True)
+        return mean_value - uncertainty_coefficient * uncertainty, mean_value, uncertainty
+
     def train(self, gradient_steps: int, batch_size: int = 64) -> None:
         if self.replay_buffer is None:
             raise RuntimeError("GRTQC needs replay before training")
@@ -606,8 +618,15 @@ class GRTQC(SeededWarmupTQC):
                     self.ent_coef_optimizer.zero_grad()
                     ent_loss.backward()
                     self.ent_coef_optimizer.step()
-                q_pi = self.critic(actor_observations, actions_pi).mean(dim=(1, 2), keepdim=False).reshape(-1, 1)
+                q_pi, mean_q_pi, q_uncertainty = self._lower_confidence_actor_value(
+                    self.critic(actor_observations, actions_pi),
+                    getattr(self, "actor_uncertainty_coefficient", 0.0),
+                )
+                uncertainty_penalty = getattr(self, "actor_uncertainty_coefficient", 0.0) * q_uncertainty
                 actor_loss = (ent_coef * log_prob - q_pi).mean()
+                self._record("train/actor_q_mean", float(mean_q_pi.detach().mean().item()))
+                self._record("train/actor_q_uncertainty", float(q_uncertainty.detach().mean().item()))
+                self._record("train/actor_uncertainty_penalty", float(uncertainty_penalty.detach().mean().item()))
                 with th.no_grad():
                     before_actions = self.actor(data.observations, deterministic=True).detach()
                     reference_before = (
@@ -779,6 +798,7 @@ class GRTQCBackend(TQCBackend):
             warmup_forward_fraction=p.warmup_forward_fraction,
             warmup_steering_std=p.warmup_steering_std,
             disagreement_coefficient=p.disagreement_coefficient,
+            actor_uncertainty_coefficient=p.actor_uncertainty_coefficient,
             critic_warmup_updates=p.critic_warmup_updates,
             critic_readiness_window=p.critic_readiness_window,
             critic_readiness_relative_change=p.critic_readiness_relative_change,
@@ -874,6 +894,7 @@ class GRTQCBackend(TQCBackend):
         model.critic_mc_min_episodes = config.grtqc.critic_mc_min_episodes
         model.critic_reference_error_limit = config.grtqc.critic_reference_error_limit
         model.disagreement_coefficient = config.grtqc.disagreement_coefficient
+        model.actor_uncertainty_coefficient = config.grtqc.actor_uncertainty_coefficient
         model.critic_warmup_updates = config.grtqc.critic_warmup_updates
         model.critic_readiness_window = config.grtqc.critic_readiness_window
         model.critic_readiness_relative_change = config.grtqc.critic_readiness_relative_change
@@ -947,6 +968,10 @@ class GRTQCBackend(TQCBackend):
             "quantile_loss": values.get("train/quantile_loss"),
             "critic_disagreement": values.get("train/disagreement"),
             "disagreement_penalty": values.get("train/disagreement_penalty"),
+            "actor_q_mean": values.get("train/actor_q_mean"),
+            "actor_q_uncertainty": values.get("train/actor_q_uncertainty"),
+            "actor_uncertainty_penalty": values.get("train/actor_uncertainty_penalty"),
+            "actor_uncertainty_coefficient": getattr(model, "actor_uncertainty_coefficient", 0.0),
             "quantile_mean": values.get("train/quantile_mean"),
             "target_mean": values.get("train/target_mean"),
             "critic_warmup_updates": model.critic_updates_since_transfer,
