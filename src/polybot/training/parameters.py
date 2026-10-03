@@ -326,6 +326,10 @@ GRTQC_INFO = {**TQC_INFO, **_info("GRTQC", {
         "Initialize frozen-policy critics using discounted rewards from complete matching-policy episodes. "
         "Only critic weights change; ordinary TQC updates follow. Zero disables this initialization."
     ),
+    "critic_mc_recovery_updates": (
+        "Repeat this many critic-only complete-return updates after actor recovery so the frozen-policy value "
+        "gate can recalibrate before actor learning resumes."
+    ),
     "critic_mc_min_episodes": (
         "Minimum complete episodes matching the frozen policy before value initialization. "
         "Both finishes and failures count; noisy or incomplete episodes cannot supply its returns."

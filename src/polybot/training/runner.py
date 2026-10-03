@@ -780,6 +780,14 @@ class TrainingRunner:
         self.model._disagreement_history.clear()
         if hasattr(self.model, "invalidate_critic_reference"):
             self.model.invalidate_critic_reference()
+        mc_recovery_updates = min(
+            cfg.grtqc.critic_mc_recovery_updates,
+            self.model.critic_mc_initialization_updates,
+        )
+        self.model.critic_mc_updates_done = min(
+            self.model.critic_mc_updates_done,
+            self.model.critic_mc_initialization_updates - mc_recovery_updates,
+        )
         self.model._exploration_noise = None
         self._actor_unlock_seen = False
         self._grtqc_weak_evaluations = 0
@@ -791,6 +799,8 @@ class TrainingRunner:
             "rejected_median_lap_s": result.median_lap_s if result is not None else None,
             "actor_learning_rate": self.model.actor_lr,
             "critic_cooldown_updates": cooldown,
+            "critic_mc_recovery_updates": mc_recovery_updates,
+            "critic_mc_updates_pending": mc_recovery_updates,
             "critic_replay_preserved": True,
         })
 

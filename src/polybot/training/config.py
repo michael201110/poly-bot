@@ -190,6 +190,7 @@ class GRTQCConfig(TQCConfig):
     actor_controller_state: bool = False
     controller_adapter_only: bool = False
     critic_mc_initialization_updates: int = 0
+    critic_mc_recovery_updates: int = 0
     critic_mc_min_episodes: int = 5
     critic_reference_error_limit: float = 0.2
 
@@ -217,6 +218,8 @@ class GRTQCConfig(TQCConfig):
             raise ValueError("GRTQC controller-only adaptation requires actor controller inputs")
         if self.critic_mc_initialization_updates < 0 or self.critic_mc_min_episodes < 1:
             raise ValueError("GRTQC complete-return initialization needs nonnegative updates and positive episodes")
+        if not 0 <= self.critic_mc_recovery_updates <= self.critic_mc_initialization_updates:
+            raise ValueError("GRTQC critic recovery updates must fit within complete-return initialization")
         if not 0 < self.critic_reference_error_limit <= 1:
             raise ValueError("GRTQC critic reference error limit must be in (0, 1]")
         if not math.isfinite(self.disagreement_coefficient) or self.disagreement_coefficient < 0:

@@ -165,7 +165,8 @@ class GRTQC(SeededWarmupTQC):
         critic_exploration_fraction: float = 1.0,
         actor_step_action_limit: float = 1e-5,
         actor_reference_drift_limit: float = 0.01,
-        critic_mc_initialization_updates: int = 0, critic_mc_min_episodes: int = 5,
+        critic_mc_initialization_updates: int = 0, critic_mc_recovery_updates: int = 0,
+        critic_mc_min_episodes: int = 5,
         critic_reference_error_limit: float = 0.2,
         **kwargs: Any,
     ) -> None:
@@ -195,6 +196,7 @@ class GRTQC(SeededWarmupTQC):
         self._actor_reference_observations: th.Tensor | None = None
         self._actor_reference_actions: th.Tensor | None = None
         self.critic_mc_initialization_updates = critic_mc_initialization_updates
+        self.critic_mc_recovery_updates = critic_mc_recovery_updates
         self.critic_mc_min_episodes = critic_mc_min_episodes
         self.critic_reference_error_limit = critic_reference_error_limit
         self.critic_mc_updates_done = 0
@@ -771,6 +773,7 @@ class GRTQCBackend(TQCBackend):
             actor_step_action_limit=p.actor_step_action_limit,
             actor_reference_drift_limit=p.actor_reference_drift_limit,
             critic_mc_initialization_updates=p.critic_mc_initialization_updates,
+            critic_mc_recovery_updates=p.critic_mc_recovery_updates,
             critic_mc_min_episodes=p.critic_mc_min_episodes,
             critic_reference_error_limit=p.critic_reference_error_limit,
             policy_kwargs={
@@ -848,6 +851,7 @@ class GRTQCBackend(TQCBackend):
                 model.critic_mc_updates_done = 0
             model.invalidate_critic_reference()
         model.critic_mc_initialization_updates = config.grtqc.critic_mc_initialization_updates
+        model.critic_mc_recovery_updates = config.grtqc.critic_mc_recovery_updates
         model.critic_mc_min_episodes = config.grtqc.critic_mc_min_episodes
         model.critic_reference_error_limit = config.grtqc.critic_reference_error_limit
         model.disagreement_coefficient = config.grtqc.disagreement_coefficient
@@ -932,6 +936,7 @@ class GRTQCBackend(TQCBackend):
             "actor_evaluation_pending": int(model._actor_evaluation_hold),
             "critic_mc_updates": model.critic_mc_updates_done,
             "critic_mc_initialization_updates": model.critic_mc_initialization_updates,
+            "critic_mc_recovery_updates": model.critic_mc_recovery_updates,
             "critic_reference_episodes": model._critic_reference_episodes,
             "critic_reference_relative_error": model._critic_reference_error,
             "actor_controller_state": int(getattr(model.policy, "actor_controller_state", False)),

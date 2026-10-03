@@ -176,11 +176,16 @@ def test_controller_adapter_settings_require_real_controller_observations():
 def test_scratch_grtqc_can_calibrate_critics_from_its_own_complete_episodes():
     config = GRTQCConfig(
         architecture="tiny", training_origin="scratch", critic_mc_initialization_updates=4000,
+        critic_mc_recovery_updates=1000,
     )
 
     assert config.critic_mc_initialization_updates == 4000
+    assert config.critic_mc_recovery_updates == 1000
     assert not config.actor_verified_state_sampling
     assert not config.controller_adapter_only
+
+    with pytest.raises(ValueError, match="recovery updates"):
+        GRTQCConfig(critic_mc_initialization_updates=4000, critic_mc_recovery_updates=4001)
 
 
 def test_scratch_grtqc_can_sample_actor_updates_on_its_verified_states():
@@ -950,6 +955,8 @@ def test_cleaner_candidate_retains_faster_pace_without_adding_contacts(
 
 def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_path, monkeypatch) -> None:
     config = replace(_config("grtqc"), output_root=tmp_path / "models")
+    config.grtqc.critic_mc_initialization_updates = 6000
+    config.grtqc.critic_mc_recovery_updates = 1000
     runner = TrainingRunner(config)
     current = th.nn.Linear(2, 2)
     verified = th.nn.Linear(2, 2)
@@ -964,6 +971,8 @@ def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_p
         actor=current, critic=critic, actor_lr=1e-5, actor_unlocked=True,
         critic_warmup_updates=2100,
         critic_updates_since_transfer=2100,
+        critic_mc_initialization_updates=6000,
+        critic_mc_updates_done=6000,
         _critic_loss_history=deque([1.0]), _disagreement_history=deque([0.1]),
         log_ent_coef=None, num_timesteps=9000,
     )
@@ -981,8 +990,10 @@ def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_p
     assert runner.model.actor_lr == pytest.approx(1e-5)
     assert not runner.model.actor_unlocked
     assert runner.model.critic_updates_since_transfer == 1100
+    assert runner.model.critic_mc_updates_done == 5000
     assert events[0]["critic_replay_preserved"] is True
     assert events[0]["critic_cooldown_updates"] == 1000
+    assert events[0]["critic_mc_recovery_updates"] == 1000
 
 
 def test_first_cleaner_candidate_is_saved_and_can_be_recovered_without_champion(tmp_path, monkeypatch) -> None:
