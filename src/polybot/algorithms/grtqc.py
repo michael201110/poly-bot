@@ -195,6 +195,7 @@ class GRTQC(SeededWarmupTQC):
         self._disagreement_history: deque[float] = deque(maxlen=critic_readiness_window)
         self._actor_reference_observations: th.Tensor | None = None
         self._actor_reference_actions: th.Tensor | None = None
+        self._actor_reference_update_saturated = False
         self.critic_mc_initialization_updates = critic_mc_initialization_updates
         self.critic_mc_recovery_updates = critic_mc_recovery_updates
         self.critic_mc_min_episodes = critic_mc_min_episodes
@@ -313,6 +314,8 @@ class GRTQC(SeededWarmupTQC):
         self._actor_reference_observations = th.as_tensor(
             values, dtype=th.float32, device=self.device,
         )
+        # A clean verified lap gives the learner a new local trust region.
+        self._actor_reference_update_saturated = False
         reference_actor = reference_model.actor if reference_model is not None else self.actor
         with th.no_grad():
             self._actor_reference_actions = reference_actor(
@@ -702,7 +705,23 @@ class GRTQC(SeededWarmupTQC):
                     executed_drift = max(executed_local_drift, executed_reference_drift)
                 changes = {name: float((p.detach() - old).norm())
                            for (name, p), old in zip(self.actor.named_parameters(), before_parameters, strict=True)}
-                self._record("train/actor_update_norm", float(np.linalg.norm(list(changes.values()))))
+                actor_update_norm = float(np.linalg.norm(list(changes.values())))
+                reference_limit_tolerance = max(1e-9, self.actor_reference_drift_limit * 1e-7)
+                reference_cap_saturated = (
+                    self.actor_reference_drift_limit > 0
+                    and proposed_reference_cumulative_drift > self.actor_reference_drift_limit
+                    and executed_reference_cumulative_drift >= (
+                        self.actor_reference_drift_limit - reference_limit_tolerance
+                    )
+                    and actor_update_norm <= 1e-12
+                    and executed_drift <= 1e-10
+                )
+                if reference_cap_saturated:
+                    self._actor_reference_update_saturated = True
+                elif actor_update_norm > 1e-12:
+                    self._actor_reference_update_saturated = False
+                self._record("train/actor_update_norm", actor_update_norm)
+                self._record("train/actor_reference_update_saturated", int(reference_cap_saturated))
                 self._record("train/actor_layer_gradient_norms", layer_gradients)
                 self._record("train/actor_layer_update_norms", changes)
                 self._record("train/actor_adam_steps", max(
@@ -951,5 +970,6 @@ class GRTQCBackend(TQCBackend):
             "actor_reference_cumulative_action_drift": values.get(
                 "train/actor_reference_cumulative_action_drift"
             ),
+            "actor_reference_update_saturated": int(model._actor_reference_update_saturated),
         })
         return metrics

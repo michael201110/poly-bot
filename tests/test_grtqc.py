@@ -595,6 +595,28 @@ def test_enabled_reference_cap_bounds_cumulative_actor_drift() -> None:
         env.close()
 
 
+def test_reference_cap_saturation_is_reported_when_updates_are_fully_blocked() -> None:
+    config = _config("grtqc")
+    config.grtqc.actor_learning_rate = 1e-3
+    config.grtqc.actor_step_action_limit = 0.01
+    config.grtqc.actor_reference_drift_limit = 1e-12
+    model, env = _model(config)
+    try:
+        observations = np.random.default_rng(23).normal(
+            size=(256, model.observation_space.shape[0]),
+        ).astype(np.float32)
+        model.set_actor_reference_observations(observations)
+        model.actor_unlocked = True
+        # A tiny trust region makes every real optimizer proposal exceed the
+        # cumulative limit; backtracking must project it to no movement.
+        model.learn(16)
+        metrics = GRTQCBackend().metrics(model)
+        assert metrics["actor_reference_update_saturated"] == 1
+        assert metrics["actor_update_norm"] == 0.0
+    finally:
+        env.close()
+
+
 def test_correlated_exploration_resets_at_episode_end(monkeypatch) -> None:
     config = _config("grtqc")
     config.grtqc.exploration_correlation = 0.9
@@ -1543,6 +1565,61 @@ def test_clean_slower_scratch_candidate_recenters_and_counts_toward_recovery(tmp
     weak_event = next(event for event in events if event["type"] == "weaker_actor_evaluation")
     assert weak_event["count"] == 5
     assert weak_event["candidate_lap_s"] == 22.7
+
+
+def test_saturated_slower_scratch_candidate_recovers_immediately(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(
+        num_timesteps=12000,
+        actor_unlocked=True,
+        scratch_stage="pace",
+        _actor_reference_update_saturated=True,
+    )
+    champion = EvaluationResult(5, 1., 1., 1., 22.595, 22.595, 0., 0., 0.)
+    slower = EvaluationResult(5, 1., 1., 1., 22.872, 22.872, 0., 0., 0., barrier_contact_steps=5)
+    events = []
+    recovered = []
+    monkeypatch.setattr(runner, "_emit", events.append)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+
+    runner._select_scratch_candidate(slower, champion)
+
+    assert len(recovered) == 1
+    assert runner._grtqc_weak_evaluations == 0
+    event = next(event for event in events if event["type"] == "actor_reference_saturation_rollback")
+    assert event["candidate_lap_s"] == 22.872
+    assert event["champion_lap_s"] == 22.595
+
+
+def test_clean_scratch_candidate_clears_saturation_before_recovery_check(tmp_path, monkeypatch):
+    config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
+    config.grtqc.training_origin = "scratch"
+    runner = TrainingRunner(config)
+    runner.model = SimpleNamespace(
+        num_timesteps=12000,
+        actor_unlocked=True,
+        scratch_stage="pace",
+        _actor_reference_update_saturated=True,
+    )
+
+    def refresh_reference(_observations):
+        runner.model._actor_reference_update_saturated = False
+
+    runner.model.set_actor_reference_observations = refresh_reference
+    champion = EvaluationResult(5, 1., 1., 1., 22.595, 22.595, 0., 0., 0.)
+    slower = EvaluationResult(5, 1., 1., 1., 22.7, 22.7, 0., 0., 0.)
+    monkeypatch.setattr(runner, "_emit", lambda event: None)
+    monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
+    recovered = []
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+
+    runner._select_scratch_candidate(slower, champion, observations=[np.asarray([1., 2.])])
+
+    assert recovered == []
+    assert runner._grtqc_weak_evaluations == 1
 
 
 def test_contacting_scratch_candidate_does_not_recenter_anchor(tmp_path, monkeypatch):

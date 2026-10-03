@@ -611,6 +611,25 @@ class TrainingRunner:
                     and result.median_lap_s >= champion.median_lap_s
                 )
             )
+            reference_saturated = bool(
+                getattr(self.model, "_actor_reference_update_saturated", False)
+            )
+            if (
+                getattr(self.model, "actor_unlocked", False)
+                and champion is not None
+                and pace_is_weaker
+                and reference_saturated
+            ):
+                self._emit({
+                    "type": "actor_reference_saturation_rollback",
+                    "timesteps": self.model.num_timesteps,
+                    "champion_lap_s": champion.median_lap_s,
+                    "candidate_lap_s": result.median_lap_s,
+                    "actor_reference_drift_limit": self.config.grtqc.actor_reference_drift_limit,
+                    "training_origin": "scratch",
+                })
+                self._recover_grtqc_actor(result, path)
+                return result
             if (
                 getattr(self.model, "actor_unlocked", False)
                 and champion is not None
