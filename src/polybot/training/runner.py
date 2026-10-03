@@ -543,10 +543,9 @@ class TrainingRunner:
             self._emit({"type": "scratch_stage", "stage": "pace", "timesteps": self.model.num_timesteps,
                         "target_entropy": self.model.target_entropy, "finish_rate": result.finish_rate})
         if clean:
-            # A repeatable clean policy is valid local-search progress even
-            # when it has not yet beaten the protected champion. Let it move
-            # the search anchor without accumulating a regression count.
-            self._grtqc_weak_evaluations = 0
+            # Keep a clean local reference for conservative actor updates, but
+            # still count repeated pace regressions against the protected
+            # champion below. Clean completion alone is not pace progress.
             if observations:
                 self.model.set_actor_reference_observations(np.asarray(observations))
                 self._emit({
@@ -605,8 +604,12 @@ class TrainingRunner:
                 return result
             pace_is_weaker = (
                 not reliable
-                or not clean and champion is not None and champion.median_lap_s is not None
-                and result.median_lap_s is not None and result.median_lap_s >= champion.median_lap_s
+                or (
+                    champion is not None
+                    and champion.median_lap_s is not None
+                    and result.median_lap_s is not None
+                    and result.median_lap_s >= champion.median_lap_s
+                )
             )
             if (
                 getattr(self.model, "actor_unlocked", False)

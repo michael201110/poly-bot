@@ -1506,9 +1506,10 @@ def test_faster_scratch_champion_recenters_actor_reference_states(tmp_path, monk
     np.testing.assert_array_equal(reference_calls[0], np.asarray(observations))
 
 
-def test_clean_slower_scratch_candidate_recenters_without_replacing_champion(tmp_path, monkeypatch):
+def test_clean_slower_scratch_candidate_recenters_and_counts_toward_recovery(tmp_path, monkeypatch):
     config = replace(_config("grtqc"), output_root=tmp_path / "scratch")
     config.grtqc.training_origin = "scratch"
+    config.grtqc.recovery_weak_evaluations = 5
     runner = TrainingRunner(config)
     reference_calls = []
     saves = []
@@ -1535,11 +1536,13 @@ def test_clean_slower_scratch_candidate_recenters_without_replacing_champion(tmp
     assert len(reference_calls) == 1
     np.testing.assert_array_equal(reference_calls[0], np.asarray(observations))
     assert saves == ["checkpoints/step-12000-rejected"]
-    assert runner._grtqc_weak_evaluations == 0
-    assert not recovered
+    assert runner._grtqc_weak_evaluations == 5
+    assert recovered
     assert any(event["type"] == "scratch_clean_anchor_refreshed" for event in events)
     assert not any(event["type"] == "champion" for event in events)
-    assert not any(event["type"] == "weaker_actor_evaluation" for event in events)
+    weak_event = next(event for event in events if event["type"] == "weaker_actor_evaluation")
+    assert weak_event["count"] == 5
+    assert weak_event["candidate_lap_s"] == 22.7
 
 
 def test_contacting_scratch_candidate_does_not_recenter_anchor(tmp_path, monkeypatch):
