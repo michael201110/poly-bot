@@ -28,7 +28,6 @@ MAIN_TOKENS = (
     '"polytrack-single-instance"',
     PML_WORKER_CONSTRUCTOR,
     "this.setCarState(e, !1);",
-    '(0, l.GG)(this, Ue, null, "f"),',
     "submitLeaderboard(e, t, n, i, r, a, s, o) {",
     "submitUserProfile(e, t, n, i) {",
     "verifyRecordings(e, t, n, i, r) {",

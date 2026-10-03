@@ -59,6 +59,19 @@ worker directly to the Python WebSocket server and implements the versioned `hel
 `step` operations in [`protocol.md`](protocol.md). Driving uses worker messages; native Backspace keyboard events synchronize the
 main-thread recorder on finish and aborted-run resets.
 
+Bridge 0.1.34 sends every simulated tick to the native replay recorder, including
+PWM input changes within a 30-tick policy step and the ghost-driven curriculum
+prefix. Earlier bridges sent only final states (plus some checkpoint states),
+so live laps could finish correctly while their saved native replays desynced.
+Existing affected recordings lack the omitted inputs and must be replaced by
+fresh laps after loading 0.1.34. Recorder rewinds also clear the local player's
+input history before the first new tick is recorded.
+
+The 0.1.34 entry point bundles its worker runtime so it works with PML's cached
+blob imports and cannot load the old 0.1.32 runtime. To edit this release, change
+`pml-mod/0.1.34/main.template.js` or `worker_runtime.js`, then run
+`python tools/build_pml_mod.py` to regenerate `main.mod.js`.
+
 Read-only leaderboard access remains available solely to load a reference ghost. The mod rejects
 leaderboard/profile writes, verification calls, multiplayer sockets, and ICE-server requests, and
 allows local finish feedback before a native restart.
