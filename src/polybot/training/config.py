@@ -206,8 +206,7 @@ class GRTQCConfig(TQCConfig):
         if not 0 <= self.top_quantiles_to_drop_per_net < self.n_quantiles:
             raise ValueError("GRTQC truncation must leave target quantiles")
         if self.training_origin == "scratch" and (
-            self.actor_verified_state_sampling or self.controller_adapter_only or self.actor_controller_state
-            or self.pace_only_actor_acceptance
+            self.controller_adapter_only or self.actor_controller_state or self.pace_only_actor_acceptance
         ):
             raise ValueError("scratch GRTQC cannot require transferred-policy actor initialization")
         if self.critic_environment_state and not self.critic_controller_state:

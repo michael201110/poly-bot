@@ -183,6 +183,14 @@ def test_scratch_grtqc_can_calibrate_critics_from_its_own_complete_episodes():
     assert not config.controller_adapter_only
 
 
+def test_scratch_grtqc_can_sample_actor_updates_on_its_verified_states():
+    config = GRTQCConfig(
+        architecture="tiny", training_origin="scratch", actor_verified_state_sampling=True,
+    )
+
+    assert config.actor_verified_state_sampling
+
+
 def test_critic_updates_keep_transferred_actor_frozen_until_ready() -> None:
     model, env = _model(_config("grtqc"))
     try:
