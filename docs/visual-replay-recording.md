@@ -36,6 +36,10 @@ algorithm hierarchy:
     ...
 ```
 
+The track slug scopes this path, and the Replay Swarm GUI lists runs only for
+the selected track and algorithm. See [Track workspaces](tracks.md) for
+registry and migration details.
+
 The JSON index contains searchable episode metadata and is updated atomically
 after an NPZ is committed. It lets a future replay tool filter by training
 step, track, status, duration, and progress without opening every payload. A

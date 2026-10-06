@@ -187,12 +187,15 @@ def create_teacher_snapshot(config_path: Path, run_id: str | None = None) -> Pat
     if config.algorithm != "tqc":
         raise ValueError("distillation requires a TQC configuration")
     registry = ModelRegistry(config.output_root)
-    champion = registry.slot(config.track_name, "tqc", "champion")
+    champion = registry.slot(config.track_name, "tqc", "champion", track_slug=config.track_slug)
     metadata = registry.read_metadata(champion)
     if not metadata.evaluation or metadata.evaluation.get("median_lap_s") is None:
         raise ValueError("distillation requires a fully evaluated champion")
     stamp = run_id or datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    root = registry.algorithm_dir(config.track_name, "tqc") / "distillation" / stamp
+    root = (
+        registry.algorithm_dir(config.track_name, "tqc", track_slug=config.track_slug)
+        / "distillation" / stamp
+    )
     if root.exists():
         raise FileExistsError(f"distillation run already exists: {root}")
     root.parent.mkdir(parents=True, exist_ok=True)
@@ -747,7 +750,7 @@ def bake_student(run_dir: Path, *, tolerance_s: float = DEFAULT_TOLERANCE_S) -> 
     if not validation.get("accepted") or float(validation.get("tolerance_s", tolerance_s)) > tolerance_s:
         raise ValueError("distilled student has not passed the requested live validation gate")
     registry = ModelRegistry(config.output_root)
-    champion = registry.slot(config.track_name, "tqc", "champion")
+    champion = registry.slot(config.track_name, "tqc", "champion", track_slug=config.track_slug)
     current_hash = sha256_file(champion / "policy.zip")
     if current_hash != teacher_info["champion_hash"]:
         raise RuntimeError("champion changed after snapshot; refusing to replace a newer champion")
@@ -789,7 +792,7 @@ def rollback_student(run_dir: Path) -> Path:
     promotion_path = run_dir / "promotion.json"
     promotion = json.loads(promotion_path.read_text(encoding="utf-8"))
     registry = ModelRegistry(config.output_root)
-    champion = registry.slot(config.track_name, "tqc", "champion")
+    champion = registry.slot(config.track_name, "tqc", "champion", track_slug=config.track_slug)
     current_hash = sha256_file(champion / "policy.zip")
     if current_hash != promotion.get("promoted_policy_hash"):
         raise RuntimeError("champion changed after distillation; refusing to overwrite newer work")

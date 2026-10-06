@@ -99,7 +99,9 @@ def search(
     if confirmation_episodes < 5 or micro_confirmation_episodes < confirmation_episodes:
         raise ValueError("promotion requires five laps; micro-gains require at least as many")
     registry = ModelRegistry(requested_config.output_root)
-    champion_dir = registry.slot(requested_config.track_name, "tqc", "champion")
+    champion_dir = registry.slot(
+        requested_config.track_name, "tqc", "champion", track_slug=requested_config.track_slug,
+    )
     champion_meta = registry.read_metadata(champion_dir)
     config = champion_evaluation_config(requested_config, champion_meta)
     runner = TrainingRunner(config)

@@ -108,11 +108,15 @@ class SectionOptimizer:
             if not self.adaptive_arms:
                 raise ValueError("adaptive profile must contain at least one search arm")
         initial_runner = TrainingRunner(requested_config)
-        initial_champion = initial_runner.registry.slot(requested_config.track_name, "tqc", "champion")
+        initial_champion = initial_runner.registry.slot(
+            requested_config.track_name, "tqc", "champion", track_slug=requested_config.track_slug,
+        )
         initial_metadata = initial_runner.registry.read_metadata(initial_champion)
         self.config = champion_evaluation_config(requested_config, initial_metadata)
         self.runner = TrainingRunner(self.config)
-        self.champion = self.runner.registry.slot(self.config.track_name, "tqc", "champion")
+        self.champion = self.runner.registry.slot(
+            self.config.track_name, "tqc", "champion", track_slug=self.config.track_slug,
+        )
         self.root = self.champion.parent
         if self.adaptive_profile_data is not None:
             expected_hash = self.adaptive_profile_data.get("champion_reference", {}).get("policy_sha256")

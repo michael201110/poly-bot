@@ -988,23 +988,29 @@ def _new_student(config: TrainingConfig, observation_size: int) -> Any:
     return backend_for("ppo").create_model(config, env, config.device)
 
 
-def _initial_dagger_student(output: Path, registry: ModelRegistry, track_name: str) -> Path:
+def _initial_dagger_student(
+    output: Path, registry: ModelRegistry, track_name: str, track_slug: str | None = None,
+) -> Path:
     """Prefer the PPO actor distilled from this teacher over the global champion."""
     pretrained = output / "pretrained"
     if (pretrained / "policy.zip").is_file():
         return pretrained
-    champion = registry.slot(track_name, "ppo", "champion")
+    champion = registry.slot(track_name, "ppo", "champion", track_slug=track_slug)
     if (champion / "policy.zip").is_file():
         return champion
-    return registry.slot(track_name, "ppo", "latest")
+    return registry.slot(track_name, "ppo", "latest", track_slug=track_slug)
 
 
 def _dagger_seed_student(
-    requested: Path | None, output: Path, registry: ModelRegistry, track_name: str,
+    requested: Path | None,
+    output: Path,
+    registry: ModelRegistry,
+    track_name: str,
+    track_slug: str | None = None,
 ) -> Path:
     """Use an explicit evaluated PPO seed when supplied, else the teacher-pretrained actor."""
     if requested is None:
-        return _initial_dagger_student(output, registry, track_name)
+        return _initial_dagger_student(output, registry, track_name, track_slug)
     if not (requested / "policy.zip").is_file() or not (requested / "metadata.json").is_file():
         raise FileNotFoundError(f"DAgger seed must contain policy.zip and metadata.json: {requested}")
     return requested
@@ -1144,10 +1150,18 @@ def _should_resume_ppo_candidate(
 
 
 def _promote_ppo_champion_if_better(
-    source_registry: ModelRegistry, destination_registry: ModelRegistry, track_name: str,
+    source_registry: ModelRegistry,
+    destination_registry: ModelRegistry,
+    track_name: str,
+    track_slug: str | None = None,
 ) -> Path | None:
     """Copy an evaluated isolated PPO champion only when it beats the main registry."""
-    source = source_registry.slot(track_name, "ppo", "champion")
+    source_slug = track_slug
+    source = (
+        source_registry.slot(track_name, "ppo", "champion")
+        if source_slug is None
+        else source_registry.slot(track_name, "ppo", "champion", track_slug=source_slug)
+    )
     source_metadata_path = source / "metadata.json"
     if not source_metadata_path.is_file():
         return None
@@ -1155,7 +1169,14 @@ def _promote_ppo_champion_if_better(
     if candidate.algorithm != "ppo" or not candidate.evaluation:
         return None
     candidate_rank = _runner_evaluation_rank(candidate.evaluation)
-    destination = destination_registry.slot(track_name, "ppo", "champion")
+    destination_slug = getattr(candidate, "track_slug", None) or track_slug
+    destination = (
+        destination_registry.slot(track_name, "ppo", "champion")
+        if destination_slug is None
+        else destination_registry.slot(
+            track_name, "ppo", "champion", track_slug=destination_slug,
+        )
+    )
     incumbent_metadata_path = destination / "metadata.json"
     if incumbent_metadata_path.is_file():
         incumbent = destination_registry.read_metadata(destination)
@@ -1193,7 +1214,14 @@ def _seed_validated_ppo_champion(
     metadata.evaluation = evaluation.to_dict()
     metadata.finishes = int(round(evaluation.finish_rate * evaluation.episodes))
     metadata.crashes = int(round(evaluation.crash_rate * evaluation.episodes))
-    destination = registry.slot(metadata.track_name, "ppo", "champion")
+    metadata_slug = getattr(metadata, "track_slug", None)
+    destination = (
+        registry.slot(metadata.track_name, "ppo", "champion")
+        if metadata_slug is None
+        else registry.slot(
+            metadata.track_name, "ppo", "champion", track_slug=metadata_slug,
+        )
+    )
     if destination.is_dir():
         incumbent_path = destination / "metadata.json"
         if incumbent_path.is_file():
@@ -1544,7 +1572,7 @@ def main(argv: list[str] | None = None) -> int:
             first_round = last_round + 1
         else:
             student_path = _dagger_seed_student(
-                args.dagger_initial_student, output, registry, config.track_name,
+                args.dagger_initial_student, output, registry, config.track_name, config.track_slug,
             )
             first_round = 1
         if not (student_path / "policy.zip").is_file():
@@ -1789,9 +1817,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             config.output_root = rl_output_root
             rl_registry = ModelRegistry(rl_output_root)
-            isolated_latest = rl_registry.slot(config.track_name, "ppo", "latest")
+            isolated_latest = rl_registry.slot(
+                config.track_name, "ppo", "latest", track_slug=config.track_slug,
+            )
             if (isolated_latest / "metadata.json").is_file():
-                isolated_champion = rl_registry.slot(config.track_name, "ppo", "champion")
+                isolated_champion = rl_registry.slot(
+                    config.track_name, "ppo", "champion", track_slug=config.track_slug,
+                )
                 latest_evaluation = rl_registry.read_metadata(isolated_latest).evaluation or {}
                 champion_evaluation = (
                     rl_registry.read_metadata(isolated_champion).evaluation or {}
@@ -1857,7 +1889,9 @@ def main(argv: list[str] | None = None) -> int:
                 latest_meta = rl_registry.read_metadata(latest)
                 evaluation = latest_meta.evaluation or {}
                 best_lap = evaluation.get("best_lap_s")
-                isolated_champion = rl_registry.slot(config.track_name, "ppo", "champion")
+                isolated_champion = rl_registry.slot(
+                    config.track_name, "ppo", "champion", track_slug=config.track_slug,
+                )
                 champion_evaluation = (
                     rl_registry.read_metadata(isolated_champion).evaluation or {}
                 )
@@ -1867,7 +1901,7 @@ def main(argv: list[str] | None = None) -> int:
                     lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                 )
                 promoted = _promote_ppo_champion_if_better(
-                    rl_registry, registry, config.track_name,
+                    rl_registry, registry, config.track_name, config.track_slug,
                 )
                 print(json.dumps({
                     "target_reached": _evaluation_confirms_target(evaluation, 22.0),
@@ -2030,7 +2064,9 @@ def main(argv: list[str] | None = None) -> int:
                         required_finishes=args.reliability_finishes,
                     )
                     promoted = (
-                        _promote_ppo_champion_if_better(registry, global_registry, config.track_name)
+                        _promote_ppo_champion_if_better(
+                            registry, global_registry, config.track_name, config.track_slug,
+                        )
                         if seeded is not None else None
                     )
                     print(json.dumps({
@@ -2052,7 +2088,9 @@ def main(argv: list[str] | None = None) -> int:
                     raise SystemExit(0)
             else:
                 gate_registry = ModelRegistry(args.output_root)
-                gate_path = gate_registry.slot(config.track_name, "ppo", "champion")
+                gate_path = gate_registry.slot(
+                    config.track_name, "ppo", "champion", track_slug=config.track_slug,
+                )
                 if not (gate_path / "metadata.json").is_file():
                     raise ValueError("PPO needs an evaluated reliable champion before RL; run DAgger first")
                 gate_evaluation = gate_registry.read_metadata(gate_path).evaluation or {}
@@ -2066,7 +2104,9 @@ def main(argv: list[str] | None = None) -> int:
                 latest = args.output_root / "summer-1" / "ppo" / "latest"
                 if (latest / "metadata.json").is_file():
                     candidate_evaluation = registry.read_metadata(latest).evaluation or {}
-                    champion = registry.slot(config.track_name, "ppo", "champion")
+                    champion = registry.slot(
+                        config.track_name, "ppo", "champion", track_slug=config.track_slug,
+                    )
                     champion_evaluation = (
                         registry.read_metadata(champion).evaluation or {}
                         if (champion / "metadata.json").is_file() else {}
@@ -2104,7 +2144,9 @@ def main(argv: list[str] | None = None) -> int:
                 rounds = args.max_rounds if args.max_rounds > 0 else None
                 round_index = 0
                 incomplete_blocks = 0
-                champion_path = finetune_registry.slot(config.track_name, "ppo", "champion")
+                champion_path = finetune_registry.slot(
+                    config.track_name, "ppo", "champion", track_slug=config.track_slug,
+                )
                 if args.ppo_anchor_kl > 0:
                     anchor_dir = _ppo_teacher_anchor_dir_for_source(
                         args.output_root / "ppo-teacher-anchor", student_dir,
@@ -2172,7 +2214,7 @@ def main(argv: list[str] | None = None) -> int:
                         lap_tolerance_s=args.ppo_rollback_lap_tolerance,
                     )
                     promoted = _promote_ppo_champion_if_better(
-                        finetune_registry, global_registry, config.track_name,
+                        finetune_registry, global_registry, config.track_name, config.track_slug,
                     )
                     student_dir = champion_path if resume_champion else latest
                     if resume_champion:

@@ -2,6 +2,10 @@
 
 The GUI, CLI, and saved metadata use the same typed `TrainingConfig`. GRTQC is the active Summer 1 path; TQC is the immutable reference and legacy experiment path, while PPO remains for historical experiments. The real simulator connects to Python at `ws://127.0.0.1:8765` after training starts. The local mock track supports fast installation checks.
 
+Tracks use a persistent registry and separate model, replay, and log workspaces.
+See [Track workspaces](tracks.md) for creating and selecting tracks, legacy
+discovery, and the directory layout.
+
 ## Summer 1 GRTQC path
 
 1. Keep `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/` unchanged. Its verified five-lap median is 24.263 seconds. Its policy hash is recorded in the GRTQC transfer report.
@@ -32,3 +36,9 @@ An environment step is one policy decision; `frame_skip` specifies fixed physics
 Each model slot contains `policy.zip` and `metadata.json`; resumable off-policy slots also contain `replay.pkl`. Metadata records schemas, track, architecture, complete configuration, counters, device, overlays, Git commit, and the most recent evaluation only if that exact policy was evaluated. Changing reward coefficients while resuming requires fresh replay. Evaluations are deterministic full-track laps and rank completion before time. A stochastic training finish cannot promote a model.
 
 The GUI exposes all configuration fields under **Advanced settings**. `polybot-train --parameter-help` prints the same descriptions. `polybot-doctor --smoke grtqc` tests model construction and replay persistence; `polybot-eval --algorithm grtqc --track-name "Summer 1" --slot champion --backend websocket --episodes 5` tests a promoted policy. Legacy TQC and PPO controls remain available as separate experiment paths; they do not participate in GRTQC updates.
+
+The GUI's **AI HUD** tab configures the live, non-physical in-game overlay for
+WebSocket runs. It displays the actual policy observation and outputs,
+controller-applied controls, reward breakdown, and episode events. The HUD is
+separate from training and does not alter actions or rewards. See
+[Live AI HUD](ai-overlay.md) for bridge-version requirements and timing limits.

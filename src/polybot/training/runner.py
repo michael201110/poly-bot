@@ -22,6 +22,7 @@ import numpy as np
 import torch as th
 from stable_baselines3.common.callbacks import BaseCallback
 
+from polybot.ai_overlay import AIOverlaySettings, AIOverlaySettingsStore, AIOverlayTelemetryWrapper
 from polybot.algorithms.registry import backend_for
 from polybot.environment.curriculum import CurriculumPhase, build_plan
 from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
@@ -32,9 +33,10 @@ from polybot.models.registry import (
     REWARD_SEMANTICS,
     ModelMetadata,
     ModelRegistry,
-    track_slug,
 )
 from polybot.protocol import ProtocolViolation
+from polybot.tracks.registry import TrackDefinition
+from polybot.tracks.workspace import TrackWorkspace
 from polybot.training.config import CurriculumConfig, CurriculumPhaseConfig, TrainingConfig
 from polybot.training.devices import resolve_device
 from polybot.training.evaluation import EvaluationResult, PrefixObservationReference, evaluate_model
@@ -129,9 +131,23 @@ class TrainingRunner:
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
         self._ppo_speed_bias_schedule: list[list[float]] = []
         self._visual_replay_session: VisualReplaySession | None = None
+        self._hud_mode = "evaluation"
+        self._hud_model_context: dict[str, Any] = {}
+        self._run_id: str | None = None
+        try:
+            self.ai_overlay_settings = AIOverlaySettingsStore().load()
+        except ValueError as exc:
+            _LOG.warning("AI HUD settings are invalid; disabling the overlay: %s", exc)
+            self.ai_overlay_settings = AIOverlaySettings(enabled=False)
 
     def stop(self) -> None:
         self.stop_requested.set()
+
+    def set_ai_overlay_settings(self, settings: AIOverlaySettings) -> None:
+        self.ai_overlay_settings = settings
+
+    def set_hud_model_context(self, **context: Any) -> None:
+        self._hud_model_context = dict(context)
 
     def _transport(self) -> Any:
         if self.transport_factory is not None:
@@ -142,6 +158,7 @@ class TrainingRunner:
 
     def _environment(
         self, phase: CurriculumPhase | None = None, *, record_visual_replays: bool = False,
+        hud_mode: str | None = None,
     ) -> gym.Env:
         cfg = self.config
         env = PolyTrackEnv(
@@ -163,23 +180,57 @@ class TrainingRunner:
                 env, self._ppo_air_brake_overlays, self._ppo_speed_bias_schedule,
             )
         if record_visual_replays and self._visual_replay_session is not None:
-            return VisualReplayCaptureWrapper(env, self._visual_replay_session)
+            env = VisualReplayCaptureWrapper(env, self._visual_replay_session)
+        if cfg.backend == "websocket":
+            def hud_context() -> dict[str, Any]:
+                mode = hud_mode or self._hud_mode
+                context = {
+                    "mode": mode,
+                    "track_name": cfg.track_name,
+                    "algorithm": cfg.algorithm,
+                    "observation_schema": schema_for(cfg),
+                    "training_step": (
+                        int(getattr(self.model, "num_timesteps", 0))
+                        + int(mode == "training")
+                    ),
+                    "run_id": self._run_id,
+                    **self._hud_model_context,
+                }
+                if mode == "training":
+                    context["episode"] = self.episodes + 1
+                return context
+
+            env = AIOverlayTelemetryWrapper(
+                env,
+                settings_provider=lambda: self.ai_overlay_settings,
+                context_provider=hud_context,
+                frame_skip=cfg.frame_skip,
+                reward_scale_provider=lambda: (
+                    cfg.reward_scale if (hud_mode or self._hud_mode) == "training" else 1.0
+                ),
+            )
         return env
+
+    def _evaluation_environment(self) -> gym.Env:
+        return self._environment(hud_mode="evaluation")
 
     def _start_visual_replay_session(self, run_id: str) -> None:
         cfg = self.config
         if not cfg.records_visual_replays:
             self._visual_replay_session = None
             return
-        directory = self.registry.algorithm_dir(cfg.track_name, cfg.algorithm) / "visual_replays" / run_id
+        track = TrackDefinition(cfg.track_name, cfg.track_slug, cfg.track_id)
+        directory = TrackWorkspace(track, cfg.output_root, cfg.log_root).replay_run(cfg.algorithm, run_id)
         try:
             writer = AsyncReplayWriter(
                 directory,
                 run_metadata={
                     "run_id": run_id,
+                    "created_at": datetime.now(UTC).isoformat(),
                     "algorithm": cfg.algorithm,
                     "track_id": cfg.track_id,
                     "track_name": cfg.track_name,
+                    "track_slug": cfg.track_slug,
                     "frame_skip": cfg.frame_skip,
                     "sample_hz_limit": cfg.visual_replay_sample_hz,
                     "observations_recorded": cfg.visual_replay_observations,
@@ -191,6 +242,7 @@ class TrainingRunner:
                 algorithm=cfg.algorithm,
                 track_id=cfg.track_id,
                 track_name=cfg.track_name,
+                track_slug=cfg.track_slug,
                 frame_skip=cfg.frame_skip,
                 sample_hz=cfg.visual_replay_sample_hz,
                 record_observations=cfg.visual_replay_observations,
@@ -223,6 +275,7 @@ class TrainingRunner:
             observation_schema=schema_for(cfg),
             action_schema=self.backend.action_adapter(cfg).schema,
             track_name=cfg.track_name, track_id=cfg.track_id,
+            track_slug=cfg.track_slug,
             lookahead_count=cfg.lookahead_count, reward_profile=cfg.reward_profile,
             curriculum=asdict(cfg.curriculum), training_config=cfg.to_dict(),
             training_timesteps=int(self.model.num_timesteps), simulator_ticks=self.ticks,
@@ -250,7 +303,7 @@ class TrainingRunner:
 
     def _save(self, name: str, evaluation: EvaluationResult | None = None) -> Path:
         cfg = self.config
-        directory = self.registry.slot(cfg.track_name, cfg.algorithm, name)
+        directory = self.registry.slot(cfg.track_name, cfg.algorithm, name, track_slug=cfg.track_slug)
         staging = (
             directory.parent / f".{directory.name}-staging-{uuid4().hex}"
             if name == "champion" else directory
@@ -291,7 +344,9 @@ class TrainingRunner:
 
     def _preserve_grtqc_initialization(self, source: Path) -> Path:
         """Keep an external transfer seed in this experiment for future resumes."""
-        target = self.registry.slot(self.config.track_name, "grtqc", "initialization")
+        target = self.registry.slot(
+            self.config.track_name, "grtqc", "initialization", track_slug=self.config.track_slug,
+        )
         source = source.resolve()
         target = target.resolve()
         if source == target:
@@ -329,7 +384,7 @@ class TrainingRunner:
         reference_paths: list[list[dict[str, Any]]] = []
         observations: list[np.ndarray] = []
         result = evaluate_model(
-            self.model, self._environment, episodes=5,
+            self.model, self._evaluation_environment, episodes=5,
             seed=self.config.seed + 1_000_000, reference_model=reference,
             reference_telemetry_sink=reference_paths, observation_sink=observations,
         )
@@ -381,7 +436,7 @@ class TrainingRunner:
                     and getattr(self.model, "actor_unlocked", False)
                 ):
                     screen = evaluate_model(
-                        self.model, self._environment, episodes=1,
+                        self.model, self._evaluation_environment, episodes=1,
                         seed=cfg.seed + 1_000_000, transition_sink=transitions,
                     )
                     self._emit({
@@ -395,7 +450,7 @@ class TrainingRunner:
                         result = screen
                 if result is None:
                     result = evaluate_model(
-                        self.model, self._environment, episodes=cfg.evaluation.episodes,
+                        self.model, self._evaluation_environment, episodes=cfg.evaluation.episodes,
                         seed=cfg.seed + 1_000_000,
                         observation_sink=observations, transition_sink=transitions,
                     )
@@ -415,7 +470,9 @@ class TrainingRunner:
             self._retain_grtqc_evaluation_transitions(transitions)
         self.last_evaluation = result
         self._emit({"type": "evaluation", "timesteps": self.model.num_timesteps, **result.to_dict()})
-        champion_dir = self.registry.slot(cfg.track_name, cfg.algorithm, "champion")
+        champion_dir = self.registry.slot(
+            cfg.track_name, cfg.algorithm, "champion", track_slug=cfg.track_slug,
+        )
         champion = None
         champion_reward_mismatch = False
         if (champion_dir / "metadata.json").is_file():
@@ -438,13 +495,15 @@ class TrainingRunner:
                 and champion.median_lap_s is not None else reference_lap_s
             )
             contact_reference = champion
-            initialization = self.registry.slot(cfg.track_name, "grtqc", "initialization")
+            initialization = self.registry.slot(
+                cfg.track_name, "grtqc", "initialization", track_slug=cfg.track_slug,
+            )
             if contact_reference is None and (initialization / "metadata.json").is_file():
                 initial_evaluation = self.registry.read_metadata(initialization).evaluation
                 if initial_evaluation is not None:
                     contact_reference = EvaluationResult(**initial_evaluation)
             contact_candidate_dir = self.registry.slot(
-                cfg.track_name, "grtqc", "contact-candidate",
+                cfg.track_name, "grtqc", "contact-candidate", track_slug=cfg.track_slug,
             )
             if (contact_candidate_dir / "metadata.json").is_file():
                 contact_candidate_metadata = self.registry.read_metadata(contact_candidate_dir)
@@ -759,14 +818,16 @@ class TrainingRunner:
         """Use a reliable cleaner candidate even before the first faster champion."""
         cfg = self.config
         assert cfg.grtqc is not None
-        champion = self.registry.slot(cfg.track_name, "grtqc", "champion")
+        champion = self.registry.slot(cfg.track_name, "grtqc", "champion", track_slug=cfg.track_slug)
         source = (
             champion if (champion / "metadata.json").is_file()
-            else self.registry.slot(cfg.track_name, "grtqc", "initialization")
+            else self.registry.slot(cfg.track_name, "grtqc", "initialization", track_slug=cfg.track_slug)
         )
         if cfg.grtqc.pace_only_actor_acceptance:
             return source
-        contact_candidate = self.registry.slot(cfg.track_name, "grtqc", "contact-candidate")
+        contact_candidate = self.registry.slot(
+            cfg.track_name, "grtqc", "contact-candidate", track_slug=cfg.track_slug,
+        )
         if (contact_candidate / "metadata.json").is_file() and (source / "metadata.json").is_file():
             candidate_metadata = self.registry.read_metadata(contact_candidate)
             verified_metadata = self.registry.read_metadata(source)
@@ -802,7 +863,7 @@ class TrainingRunner:
             reference.speed_bias_schedule = list(reference_metadata.speed_bias_schedule)
         observations: list[np.ndarray] = []
         result = evaluate_model(
-            reference, self._environment, episodes=1,
+            reference, self._evaluation_environment, episodes=1,
             seed=self.config.seed + 1_000_000, observation_sink=observations,
         )
         if result.finish_rate != 1.0 or not observations:
@@ -879,7 +940,9 @@ class TrainingRunner:
         """Restore the verified GRTQC actor on request without discarding learner state."""
         if self.config.algorithm != "grtqc":
             return False
-        champion_dir = self.registry.slot(self.config.track_name, "grtqc", "champion")
+        champion_dir = self.registry.slot(
+            self.config.track_name, "grtqc", "champion", track_slug=self.config.track_slug,
+        )
         if not (champion_dir / "metadata.json").is_file():
             return False
         champion_evaluation = self.registry.read_metadata(champion_dir).evaluation
@@ -906,7 +969,7 @@ class TrainingRunner:
         progress_tolerance: float = 0.0, lap_tolerance_s: float = 0.0,
     ) -> bool:
         cfg = self.config
-        champion_dir = self.registry.slot(cfg.track_name, "ppo", "champion")
+        champion_dir = self.registry.slot(cfg.track_name, "ppo", "champion", track_slug=cfg.track_slug)
         metadata_path = champion_dir / "metadata.json"
         if not metadata_path.is_file():
             return False
@@ -1018,7 +1081,9 @@ class TrainingRunner:
         *, phase_start: int, phase_steps: int,
     ) -> bool:
         cfg = self.config
-        champion_dir = self.registry.slot(cfg.track_name, cfg.algorithm, "champion")
+        champion_dir = self.registry.slot(
+            cfg.track_name, cfg.algorithm, "champion", track_slug=cfg.track_slug,
+        )
         champion_meta = self.registry.read_metadata(champion_dir)
         if champion_meta.evaluation is None:
             return False
@@ -1129,7 +1194,7 @@ class TrainingRunner:
         if pace_polish:
             if cfg.algorithm != "tqc" or cfg.curriculum.mode != "full":
                 raise ValueError("pace polish requires TQC and full-track training")
-            champion = self.registry.slot(cfg.track_name, "tqc", "champion")
+            champion = self.registry.slot(cfg.track_name, "tqc", "champion", track_slug=cfg.track_slug)
             if resume is not None and resume.resolve() != champion.resolve():
                 raise ValueError("pace polish must resume the champion, not latest")
             resume = champion
@@ -1139,10 +1204,14 @@ class TrainingRunner:
                 raise ValueError("tuned champion must complete critic adaptation before pace polish")
             rollback_to_champion = True
         self.device = resolve_device(cfg.device, algorithm=cfg.algorithm)
+        self._hud_mode = "training"
         replay_run_id = uuid4().hex
+        self._run_id = replay_run_id
         self._start_visual_replay_session(replay_run_id)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        log_path = cfg.log_root / f"{track_slug(cfg.track_name)}-{cfg.algorithm}-{stamp}.jsonl"
+        track = TrackDefinition(cfg.track_name, cfg.track_slug, cfg.track_id)
+        workspace = TrackWorkspace(track, cfg.output_root, cfg.log_root)
+        log_path = workspace.log_file(cfg.algorithm, f"{stamp}.jsonl")
         self.sink = EventSink(log_path, self.status)
         plan = build_plan(cfg.curriculum, cfg.timesteps)
         self._emit({"type": "plan", "total_steps": plan.total_steps,
@@ -1155,13 +1224,19 @@ class TrainingRunner:
                 if fresh_replay:
                     raise ValueError("fresh replay requires a saved model")
                 if cfg.grtqc and cfg.grtqc.training_origin == "scratch":
-                    if self.registry.algorithm_dir(cfg.track_name, "grtqc").exists():
+                    if self.registry.algorithm_dir(
+                        cfg.track_name, "grtqc", track_slug=cfg.track_slug,
+                    ).exists():
                         raise FileExistsError(
                             "scratch output already exists; explicitly resume or choose a new experiment"
                         )
                 self.model = self.backend.create_model(cfg, training_env, self.device.resolved)
             else:
                 metadata = self.registry.read_metadata(resume)
+                self.set_hud_model_context(
+                    model_slot=resume.name,
+                    policy_checkpoint_step=getattr(metadata, "training_timesteps", 0),
+                )
                 self.registry.validate(metadata, cfg, self.backend.action_adapter(cfg).schema)
                 if metadata.architecture != self.backend.architecture(cfg):
                     raise ValueError("resume architecture differs from saved model")
@@ -1307,7 +1382,7 @@ class TrainingRunner:
                 training_env.close()
                 observations = []
                 baseline = evaluate_model(
-                    self.model, self._environment, episodes=1,
+                    self.model, self._evaluation_environment, episodes=1,
                     seed=cfg.seed + 1_000_000, observation_sink=observations,
                 )
                 self._champion_path_observations = observations
@@ -1650,3 +1725,4 @@ class TrainingRunner:
                     self._visual_replay_session.shutdown()
                     self._visual_replay_session = None
                 self.sink.close()
+                self._hud_mode = "evaluation"

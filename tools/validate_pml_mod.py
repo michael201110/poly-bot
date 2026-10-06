@@ -39,7 +39,7 @@ REPLAY_RENDER_TOKENS = {
     "0.6.2": ('update(e) {\n              const t = (0, R.gn)(this, jr, "m", ys).call(this);',),
     "0.6.3": ('update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);',),
 }
-SWARM_RELEASES = {"0.6.2": "0.1.37", "0.6.3": "0.1.38"}
+SWARM_RELEASES = {"0.6.2": "0.1.37", "0.6.3": "0.1.39"}
 SWARM_PROTOCOL_TOKENS = (
     'case "visual_replay_swarm_begin"',
     'case "visual_replay_swarm_episode_begin"',
@@ -47,6 +47,12 @@ SWARM_PROTOCOL_TOKENS = (
     'case "visual_replay_swarm_episode_commit"',
     'case "visual_replay_swarm_commit"',
     'case "visual_replay_status"',
+)
+HUD_PROTOCOL_TOKENS = (
+    '"ai_overlay_hud",',
+    "function publishHudFrame(frame)",
+    'frame.schema !== "polybot.ai-overlay-frame.v1"',
+    'request.op === "hud_frame"',
 )
 
 
@@ -129,6 +135,10 @@ def _validate_manifests(repository: Path) -> list[str]:
                         source=worker_source,
                     )
                 )
+                if version == "0.1.39":
+                    failures.extend(
+                        _validate_tokens(worker, HUD_PROTOCOL_TOKENS, source=worker_source)
+                    )
                 for operation in ("hello", "reset", "step", "close"):
                     if f'case "{operation}"' not in worker_source:
                         failures.append(f"{worker}: missing preserved {operation!r} operation")
@@ -146,6 +156,18 @@ def _validate_manifests(repository: Path) -> list[str]:
                         failures.append(f"{template}: missing renderer-only car token {token!r}")
                 if "const replayMaxGhosts = 500;" not in template_source or "replayBeginSwarm" not in template_source:
                     failures.append(f"{template}: missing swarm renderer implementation")
+                if version == "0.1.39":
+                    for token in (
+                        "POLYBOT_HUD_RENDERER",
+                        "installPolyBotHudOverlay",
+                        "__polybotHudUpdate",
+                    ):
+                        if token not in template_source:
+                            failures.append(f"{template}: missing AI HUD renderer token {token!r}")
+                    if not (mod_root / version / "hud_renderer.mjs").is_file():
+                        failures.append(f"{template}: missing AI HUD renderer source")
+                    if not main_file.read_text(encoding="utf-8").count("polybot-ai-hud{"):
+                        failures.append(f"{main_file}: missing bundled AI HUD renderer")
     return failures
 
 

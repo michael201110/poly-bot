@@ -16,6 +16,7 @@ from typing import Any
 import numpy as np
 
 from polybot.protocol import PROTOCOL_NAME, PROTOCOL_VERSION, ProtocolViolation, request_message, response_result
+from polybot.tracks.registry import TrackRegistry, track_slug
 from polybot.training.visual_replays import (
     ReplayFormatError,
     ReplayPayload,
@@ -836,6 +837,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Inspect or play selected visual replays as renderer-only PolyTrack ghosts.",
     )
     parser.add_argument("--run", type=Path, required=True, help="replay run directory or parent containing replay runs")
+    parser.add_argument("--track", help="require the registered track name or slug for every indexed replay")
     parser.add_argument("--steps", type=_parse_range, help="inclusive episode-start training-step range MIN:MAX")
     parser.add_argument("--episodes", type=_parse_range, help="inclusive numeric episode ID range MIN:MAX")
     filter_group = parser.add_mutually_exclusive_group()
@@ -884,6 +886,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         color_scale = ColorScale(args.color_min_step, args.color_max_step, stops)
         directories = resolve_replay_directories(args.run)
         entries = [(directory, metadata) for directory in directories for metadata in load_replay_index(directory)]
+        if args.track:
+            track = TrackRegistry().resolve(args.track)
+            mismatched = [
+                metadata for _, metadata in entries
+                if metadata.get("track_slug", track_slug(metadata["track_name"])) != track.slug
+            ]
+            if mismatched:
+                raise ValueError(
+                    f"replay selection contains episodes for another track; expected {track.slug}"
+                )
         matched_metadata = filter_replays(
             [metadata for _, metadata in entries],
             steps=args.steps,

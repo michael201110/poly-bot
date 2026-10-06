@@ -13,7 +13,7 @@ python -m venv .venv
 .\.venv\Scripts\polybot-gui.exe
 ```
 
-Install and load the [PolyModLoader bridge](docs/game-integration.md), open Summer 1, and leave the game running. The GUI loads the GRTQC causal-repair profile. Starting from its initialization verifies five live deterministic laps against the TQC reference before making any RL update. A mismatch stops training and preserves the source checkpoint.
+Install and load the [PolyModLoader bridge](docs/game-integration.md), select the intended track in the GUI, and leave the game running. The current 0.6.3 bridge includes a configurable [live AI HUD](docs/ai-overlay.md). The GUI does not silently load a track-specific training profile; load the configuration or preset intended for that workspace before starting. Starting from a GRTQC initialization verifies five live deterministic laps against its configured reference before making any RL update. A mismatch stops training and preserves the source checkpoint.
 
 The immutable TQC source is `models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion/`. The historical directory name does not indicate active support for its former algorithm. To recreate the separate GRTQC initialization checkpoint:
 
@@ -58,7 +58,7 @@ To check the local mock environment without the game, run the legacy TQC smoke t
 .\.venv\Scripts\polybot-train.exe --algorithm tqc --backend mock --timesteps 2048 --tqc-architecture tiny --tqc-learning-starts 256 --eval-interval 1024 --eval-episodes 2
 ```
 
-The GUI Status tab and `polybot-live-log logs/<run>.jsonl` show readable progress; the JSONL log retains full diagnostics. The [game integration](docs/game-integration.md) and [protocol](docs/protocol.md) explain the simulator connection.
+The GUI Status tab and `polybot-live-log logs/<track-slug>/<algorithm>/<run>.jsonl` show readable progress; the JSONL log retains full diagnostics. See [track workspaces](docs/tracks.md) for registry management, migration, and path layout. The [game integration](docs/game-integration.md) and [protocol](docs/protocol.md) explain the simulator connection.
 
 Run `python -m pytest`, `python -m ruff check src tests tools`, `git diff --check`, and `python tools/validate_pml_mod.py` before committing. Community contributions follow the [Code of Conduct](CODE_OF_CONDUCT.md), [Contributing](CONTRIBUTING.md), and [Security](SECURITY.md) policies.
 

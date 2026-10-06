@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 from collections.abc import Mapping
 from itertools import groupby
@@ -12,7 +14,12 @@ import numpy as np
 from gymnasium import spaces
 
 from polybot.control.actions import ActionAdapter, AppliedAction, ControlDemand, DigitalActionAdapter
-from polybot.environment.observations import TRAINING_STATE_SIZE, observe, size
+from polybot.environment.observations import (
+    TRAINING_STATE_SIZE,
+    describe_observation,
+    observe,
+    size,
+)
 from polybot.environment.rewards import (
     RewardConfig,
     RewardContext,
@@ -30,7 +37,7 @@ from polybot.protocol import (
     request_message,
     response_result,
 )
-from polybot.transport import SimulatorTransport
+from polybot.transport import SimulatorTransport, TransportClosed
 
 
 def _mean_tick_demand(tick_controls: list[Action]) -> ControlDemand:
@@ -261,15 +268,113 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self.simulator_capabilities: Mapping[str, Any] = {}
         self._native_finish_restart_pending = False
         self._curriculum_reset_diagnostics: dict[str, Any] | None = None
+        self._hud_feature_capture = False
+        self._hud_frame: dict[str, Any] | None = None
+        self._hud_last_sent = 0.0
+        self._hud_warned_unsupported = False
+        self.last_observation_features: list[dict[str, Any]] | None = None
+        self.last_observation_feature_error: str | None = None
 
     def _exchange(self, op: str, params: Mapping[str, Any]) -> Mapping[str, Any]:
         if self._closed:
             raise RuntimeError("environment is closed")
         request_id = self._next_request_id
         self._next_request_id += 1
-        request = request_message(request_id, op, params)
+        request_params = dict(params)
+        if op in {"reset", "step"} and self._hud_frame is not None:
+            features = self.simulator_capabilities.get("features", ())
+            if "ai_overlay_hud" in features:
+                now = time.monotonic()
+                if op == "reset" or now - self._hud_last_sent >= 1.0 / 30.0:
+                    request_params["hud_frame"] = self._hud_frame
+                    self._hud_frame = None
+                    self._hud_last_sent = now
+            else:
+                if (
+                    self._hud_frame.get("enabled")
+                    and self.simulator_capabilities.get("simulator") == "polytrack-pml-worker"
+                    and not self._hud_warned_unsupported
+                ):
+                    logging.getLogger(__name__).warning(
+                        "Installed PolyBot bridge does not support the AI HUD; "
+                        "training will continue without it"
+                    )
+                    self._hud_warned_unsupported = True
+                self._hud_frame = None
+        try:
+            request = request_message(request_id, op, request_params)
+        except ProtocolViolation:
+            if "hud_frame" not in request_params:
+                raise
+            request_params.pop("hud_frame")
+            if not self._hud_warned_unsupported:
+                logging.getLogger(__name__).warning(
+                    "Could not serialize an AI HUD frame; training will continue without it"
+                )
+                self._hud_warned_unsupported = True
+            request = request_message(request_id, op, request_params)
         response = self.transport.request(request, timeout_s=self.request_timeout_s)
         return response_result(response, expected_id=request_id)
+
+    def set_hud_feature_capture(self, enabled: bool) -> None:
+        self._hud_feature_capture = bool(enabled)
+
+    def set_hud_frame(self, frame: dict[str, Any] | None) -> None:
+        if frame is not None:
+            json.dumps(frame, allow_nan=False)
+        self._hud_frame = frame
+
+    def publish_hud_frame(self, frame: dict[str, Any] | None) -> None:
+        if frame is None:
+            return
+        features = self.simulator_capabilities.get("features", ())
+        if "ai_overlay_hud" not in features:
+            if (
+                frame.get("enabled")
+                and self.simulator_capabilities.get("simulator") == "polytrack-pml-worker"
+                and not self._hud_warned_unsupported
+            ):
+                logging.getLogger(__name__).warning(
+                    "Installed PolyBot bridge does not support the AI HUD; "
+                    "training will continue without it"
+                )
+                self._hud_warned_unsupported = True
+            return
+        now = time.monotonic()
+        if frame.get("enabled") and now - self._hud_last_sent < 1.0 / 30.0:
+            return
+        message = {
+            "protocol": PROTOCOL_NAME,
+            "v": PROTOCOL_VERSION,
+            "op": "hud_frame",
+            "params": {"frame": frame},
+        }
+        notify = getattr(self.transport, "notify", None)
+        if not callable(notify):
+            self.set_hud_frame(frame)
+            return
+        try:
+            notify(message)
+            self._hud_last_sent = now
+        except (ConnectionError, OSError, TypeError, ValueError, OverflowError, TransportClosed) as exc:
+            if not self._hud_warned_unsupported:
+                logging.getLogger(__name__).warning(
+                    "Could not send AI HUD frame; training will continue: %s", exc
+                )
+                self._hud_warned_unsupported = True
+
+    def capture_hud_features(self, policy_observation: np.ndarray) -> list[dict[str, Any]] | None:
+        if self.latest_telemetry is None:
+            raise ValueError("no simulator telemetry is available for the current policy observation")
+        previous_capture = self._hud_feature_capture
+        self._hud_feature_capture = True
+        try:
+            current = self._policy_observation(self.latest_telemetry)
+            if not np.array_equal(current, policy_observation):
+                raise ValueError("current policy observation differs from the simulator state")
+            return self.last_observation_features
+        finally:
+            self._hud_feature_capture = previous_capture
 
     def _handshake(self) -> None:
         if self._handshake_complete:
@@ -781,9 +886,23 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
 
     def _policy_observation(self, telemetry: Telemetry) -> np.ndarray:
         observation = observe(telemetry)
+        extra_features: list[tuple[str, str, str, str, float]] = []
         state = self._controller_observation()
         if state:
             observation = np.concatenate((observation, np.asarray(state, dtype=np.float32)))
+            if self._hud_feature_capture:
+                labels = (
+                    "Steering pulse accumulator",
+                    "Steering pulse direction",
+                    "Longitudinal pulse accumulator",
+                    "Longitudinal pulse direction",
+                )
+                for index, value in enumerate(state):
+                    label = labels[index] if index < len(labels) else f"Controller state {index + 1}"
+                    extra_features.append((
+                        f"controller_state.{index}", label, "controller_state", "normalized",
+                        float(value),
+                    ))
         if self.expose_training_state:
             p = self.reward_config
             context = (
@@ -797,7 +916,30 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 self._previous_control.steer, self._previous_control.throttle, self._previous_control.brake,
                 self._episode_steps / max(1, self.max_episode_steps),
             )
-            observation = np.concatenate((observation, np.clip(context, -5, 5).astype(np.float32)))
+            clipped_context = np.clip(context, -5, 5).astype(np.float32)
+            observation = np.concatenate((observation, clipped_context))
+            if self._hud_feature_capture:
+                labels = (
+                    "Elapsed time", "Checkpoint index", "Highest progress fraction",
+                    "Episode start progress fraction", "Stationary duration fraction",
+                    "Off-track duration fraction", "Airborne roll duration fraction",
+                    "Landing grace fraction", "Previous steering", "Previous throttle",
+                    "Previous brake", "Episode decision fraction",
+                )
+                for index, value in enumerate(clipped_context):
+                    extra_features.append((
+                        f"training_state.{index}", labels[index], "training_state", "normalized",
+                        float(value),
+                    ))
+        self.last_observation_features = None
+        self.last_observation_feature_error = None
+        if self._hud_feature_capture:
+            try:
+                self.last_observation_features = describe_observation(
+                    telemetry, observation, extra_features=extra_features,
+                )
+            except (TypeError, ValueError, OverflowError) as exc:
+                self.last_observation_feature_error = str(exc)
         return observation
 
     def _controller_observation(self) -> tuple[float, ...]:

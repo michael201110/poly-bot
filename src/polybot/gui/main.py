@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -27,6 +29,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QLineEdit,
+    QListWidget,
     QMessageBox,
     QPushButton,
     QScrollArea,
@@ -42,6 +45,7 @@ from PySide6.QtWidgets import (
     QWizardPage,
 )
 
+from polybot.ai_overlay import AIOverlaySettings, AIOverlaySettingsStore
 from polybot.environment.curriculum import build_plan
 from polybot.environment.rewards import RewardConfig
 from polybot.gui.events import format_event
@@ -62,6 +66,8 @@ from polybot.replay_swarm import (
     selection_report,
     send_replay_swarm,
 )
+from polybot.tracks.registry import TrackDefinition, TrackRegistry, track_slug
+from polybot.tracks.workspace import TrackWorkspace
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
@@ -242,13 +248,36 @@ class PolyBotWindow(QWidget):
         self.bridge.event.connect(self._event)
         self.bridge.failed.connect(self._error)
         self.profiles = RewardProfileStore()
+        self.track_registry = TrackRegistry()
+        self.track_registry.list_tracks()
         self.presets = PresetStore()
+        self.ai_overlay_store = AIOverlaySettingsStore()
+        self._ai_overlay_settings_error: str | None = None
+        try:
+            self.ai_overlay_settings = self.ai_overlay_store.load()
+        except ValueError as exc:
+            self.ai_overlay_settings = AIOverlaySettings(enabled=False)
+            self._ai_overlay_settings_error = str(exc)
         self._base_rewards = self.profiles.load("Balanced")
         self._reward_values = asdict(self._base_rewards)
 
         root = QVBoxLayout(self)
         intro = QLabel("Train a driving policy. Start with a preset; open Advanced for every setting.")
         root.addWidget(intro)
+        track_row = QHBoxLayout()
+        track_row.addWidget(QLabel("Track"))
+        self.track_selector = QComboBox()
+        self._populate_track_selector(self._saved_track_slug())
+        track_row.addWidget(self.track_selector, 1)
+        self.track_context = QLabel()
+        track_row.addWidget(self.track_context)
+        add_track = QPushButton("+ Add Track")
+        add_track.clicked.connect(self._add_track_dialog)
+        track_row.addWidget(add_track)
+        manage_tracks = QPushButton("Manage")
+        manage_tracks.clicked.connect(self._manage_tracks_dialog)
+        track_row.addWidget(manage_tracks)
+        root.addLayout(track_row)
         self.advanced = QCheckBox("Advanced settings")
         self.advanced.setToolTip("Reveal all algorithm and reward numbers for custom experiments.")
         self.advanced.toggled.connect(self._toggle_advanced)
@@ -277,20 +306,17 @@ class PolyBotWindow(QWidget):
         self._evaluation_tab()
         self._models_tab()
         self._replay_swarm_tab()
+        self._ai_overlay_tab()
         self._status_tab()
         self.algorithm.currentTextChanged.connect(self._algorithm_changed)
         self._algorithm_changed(self.algorithm.currentText())
         self._toggle_advanced(False)
-        contact_profile = Path("profiles/training/summer-1-grtqc-causal-30.json")
-        if contact_profile.is_file():
-            self.load_configuration(TrainingConfig.from_dict(
-                json.loads(contact_profile.read_text(encoding="utf-8"))
-            ))
-        else:
-            initialization = ModelRegistry().algorithm_dir("Summer 1", "grtqc") / "initialization"
-            if (initialization / "metadata.json").is_file():
-                saved = ModelRegistry().read_metadata(initialization)
-                self.load_configuration(TrainingConfig.from_dict(saved.training_config))
+        self.track_selector.currentIndexChanged.connect(self._track_changed)
+        self._track_changed()
+        for name in ("output_root", "log_root"):
+            widget = self.general[name]
+            if isinstance(widget, QLineEdit):
+                widget.editingFinished.connect(self._workspace_roots_changed)
         self.speed_search_watch = QTimer(self)
         self.speed_search_watch.timeout.connect(self._poll_speed_search_log)
         self.speed_search_watch.start(2000)
@@ -301,6 +327,193 @@ class PolyBotWindow(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.tabs.addTab(page, name)
         return page, layout
+
+    @staticmethod
+    def _selected_track_path() -> Path:
+        return Path("config") / "selected-track.json"
+
+    def _saved_track_slug(self) -> str | None:
+        path = self._selected_track_path()
+        if not path.is_file():
+            return None
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            value = payload["slug"]
+            return value if isinstance(value, str) else None
+        except (OSError, json.JSONDecodeError, KeyError) as exc:
+            raise ValueError(f"cannot read selected track from {path}") from exc
+
+    def _populate_track_selector(self, selected_slug: str | None = None) -> None:
+        tracks = self.track_registry.list_tracks()
+        previous = self.track_selector.blockSignals(True)
+        self.track_selector.clear()
+        for track in tracks:
+            self.track_selector.addItem(track.name, track.slug)
+        match = self.track_selector.findData(selected_slug) if selected_slug else -1
+        if match < 0:
+            match = self.track_selector.findData("summer-1")
+        self.track_selector.setCurrentIndex(match if match >= 0 else 0)
+        self.track_selector.blockSignals(previous)
+
+    def _selected_track(self) -> TrackDefinition:
+        selected_slug = self.track_selector.currentData()
+        if not isinstance(selected_slug, str):
+            raise ValueError("select a registered track")
+        return self.track_registry.resolve(selected_slug)
+
+    def _track_changed(self, _index: int = -1) -> None:
+        track = self._selected_track()
+        self.setWindowTitle(f"PolyBot Training — {track.name}")
+        path = self._selected_track_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(json.dumps({"slug": track.slug}, indent=2) + "\n", encoding="utf-8")
+        temporary.replace(path)
+        self.tabs.setTabText(self.tabs.indexOf(self.models_page), f"Models — {track.name}")
+        self.tabs.setTabText(self.tabs.indexOf(self.replay_swarm_page), f"Replay Swarm — {track.name}")
+        if (
+            hasattr(self, "preset")
+            and self.preset.currentText().startswith("Summer 1 -")
+            and track.slug != "summer-1"
+        ):
+            self.preset.setCurrentText("Balanced")
+        self._refresh_models()
+        self._refresh_replay_runs()
+        self.track_context.setText(f"Current workspace: {track.name} ({track.slug})")
+        if hasattr(self, "teacher_student_teacher"):
+            workspace = self._workspace(track)
+            self.teacher_student_teacher.setText(
+                str(workspace.algorithm_models("tqc") / "champion")
+            )
+            self.teacher_student_dataset.setText(
+                str(Path("runs") / "teacher-student" / track.slug / "teacher.npz")
+            )
+
+    def _workspace(self, track: TrackDefinition | None = None) -> TrackWorkspace:
+        selected = track or self._selected_track()
+        model_root = Path(str(_value(self.general.get("output_root")) or "models"))
+        log_root = Path(str(_value(self.general.get("log_root")) or "logs"))
+        return TrackWorkspace(selected, model_root, log_root)
+
+    def _workspace_roots_changed(self) -> None:
+        self._refresh_models()
+        self._refresh_replay_runs()
+
+    @staticmethod
+    def _workspace_for_config(config: TrainingConfig) -> TrackWorkspace:
+        track = TrackDefinition(config.track_name, config.track_slug, config.track_id)
+        return TrackWorkspace(track, config.output_root, config.log_root)
+
+    def _refresh_models(self) -> None:
+        if not hasattr(self, "models_inventory"):
+            return
+        track = self._selected_track()
+        self.models_heading.setText(f"Models — {track.name}")
+        registry = ModelRegistry(self._workspace(track).models_root)
+        lines: list[str] = []
+        for algorithm in ("grtqc", "tqc", "ppo"):
+            slots = registry.list_model_slots(track, algorithm)
+            if not slots:
+                continue
+            lines.append(f"{algorithm.upper()}")
+            for name, directory, metadata in slots:
+                if metadata is None:
+                    details = "metadata missing"
+                else:
+                    details = f"{metadata.training_timesteps:,} training steps"
+                    if metadata.evaluation:
+                        evaluation = metadata.evaluation
+                        details += (
+                            f"; finish rate {evaluation.get('finish_rate', 0):.0%}"
+                            if isinstance(evaluation.get("finish_rate"), (int, float))
+                            else ""
+                        )
+                lines.append(f"  {name}: {details} ({directory})")
+        self.models_inventory.setPlainText(
+            "\n".join(lines) if lines else f"No model slots saved for {track.name}."
+        )
+
+    def _add_track_dialog(self) -> None:
+        name, accepted = QInputDialog.getText(self, "Add Track", "Track name")
+        if not accepted:
+            return
+        try:
+            track = self.track_registry.add(name)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Add Track", str(exc))
+            return
+        self._populate_track_selector(track.slug)
+        self._track_changed()
+
+    def _manage_tracks_dialog(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Manage Tracks")
+        layout = QVBoxLayout(dialog)
+        listing = QListWidget()
+
+        def refresh() -> None:
+            listing.clear()
+            for definition in self.track_registry.list_tracks():
+                listing.addItem(f"{definition.name}  [{definition.slug}]")
+
+        refresh()
+        layout.addWidget(listing)
+        actions = QHBoxLayout()
+        rename = QPushButton("Rename")
+        remove = QPushButton("Remove registration")
+        actions.addWidget(rename)
+        actions.addWidget(remove)
+        layout.addLayout(actions)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(dialog.reject)
+        buttons.accepted.connect(dialog.accept)
+        layout.addWidget(buttons)
+
+        def selected() -> TrackDefinition | None:
+            row = listing.currentRow()
+            tracks = self.track_registry.list_tracks()
+            return tracks[row] if 0 <= row < len(tracks) else None
+
+        def rename_selected() -> None:
+            track = selected()
+            if track is None:
+                return
+            name, accepted = QInputDialog.getText(
+                dialog, "Rename Track", "Display name", text=track.name,
+            )
+            if accepted:
+                try:
+                    self.track_registry.rename(track.slug, name)
+                    refresh()
+                    self._populate_track_selector(track.slug)
+                    self._track_changed()
+                except (OSError, ValueError) as exc:
+                    QMessageBox.warning(dialog, "Rename Track", str(exc))
+
+        def remove_selected() -> None:
+            track = selected()
+            if track is None:
+                return
+            answer = QMessageBox.question(
+                dialog, "Remove Track",
+                f"Remove {track.name} from the registry? Workspace files will not be deleted.",
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+            try:
+                self.track_registry.remove(track.slug)
+                refresh()
+                self._populate_track_selector(
+                    self.track_selector.currentData()
+                    if self.track_selector.currentData() != track.slug else None
+                )
+                self._track_changed()
+            except (OSError, ValueError) as exc:
+                QMessageBox.warning(dialog, "Remove Track", str(exc))
+
+        rename.clicked.connect(rename_selected)
+        remove.clicked.connect(remove_selected)
+        dialog.exec()
 
     def _add_field(
         self, layout: QFormLayout, name: str, value: Any,
@@ -318,7 +531,7 @@ class PolyBotWindow(QWidget):
         page.addLayout(form)
         self.general: dict[str, QWidget] = {}
         values = {
-            "track_name": "Summer 1", "track_id": "current", "backend": "websocket", "websocket_port": 8765,
+            "backend": "websocket", "websocket_port": 8765,
             "device": "auto", "seed": 0, "frame_skip": 30, "timesteps": 100_000,
             "max_episode_seconds": 60.0, "max_episode_steps": 30_000,
             "lookahead_count": 12, "reward_scale": 0.01,
@@ -340,7 +553,7 @@ class PolyBotWindow(QWidget):
         self.general["backend"].currentTextChanged.connect(self._backend_changed)
         self.general_advanced = {
             name for name in values if name not in {
-                "track_name", "backend", "device", "seed", "frame_skip",
+                "backend", "device", "seed", "frame_skip",
                 "timesteps", "max_episode_seconds",
             }
         }
@@ -540,7 +753,15 @@ class PolyBotWindow(QWidget):
         page.addWidget(note)
 
     def _models_tab(self) -> None:
-        _, page = self._page("Models")
+        self.models_page, page = self._page("Models")
+        self.models_heading = QLabel()
+        self.models_heading.setStyleSheet("font-weight: bold; font-size: 16px")
+        page.addWidget(self.models_heading)
+        self.models_inventory = QTextEdit()
+        self.models_inventory.setReadOnly(True)
+        self.models_inventory.setMaximumHeight(180)
+        self.models_inventory.setPlaceholderText("No model slots have been saved for this track yet.")
+        page.addWidget(self.models_inventory)
         search_form = QFormLayout()
         self.speed_search_target = QDoubleSpinBox()
         self.speed_search_target.setRange(1.0, 600.0)
@@ -641,13 +862,11 @@ class PolyBotWindow(QWidget):
         self.teacher_student_section = QWidget()
         teacher_student_layout = QVBoxLayout(self.teacher_student_section)
         teacher_student_layout.addWidget(QLabel(
-            "Train continuous PPO from the frozen 24.263s TQC champion; target a confirmed lap below 22.000s."
+            "Train continuous PPO from the selected track's frozen TQC champion."
         ))
         teacher_student_form = QFormLayout()
-        self.teacher_student_teacher = QLineEdit(
-            "models/v2-dqn-qr-migrated-20260927/summer-1/tqc/champion"
-        )
-        self.teacher_student_dataset = QLineEdit("runs/teacher-student/summer-1-teacher.npz")
+        self.teacher_student_teacher = QLineEdit()
+        self.teacher_student_dataset = QLineEdit()
         self.teacher_student_laps = QSpinBox()
         self.teacher_student_laps.setRange(2, 100)
         self.teacher_student_laps.setValue(20)
@@ -714,7 +933,7 @@ class PolyBotWindow(QWidget):
         self.wr_target.setRange(1.0, 600.0)
         self.wr_target.setDecimals(3)
         self.wr_target.setValue(22.262)
-        self.wr_target.setToolTip("Summer 1 no-fancy-cut world record target. It is configurable.")
+        self.wr_target.setToolTip("Target lap time in seconds. Tune this value for the selected track.")
         wr_form.addRow("Target lap (s)", self.wr_target)
         self.wr_trials = QSpinBox()
         self.wr_trials.setRange(1, 2000)
@@ -819,7 +1038,7 @@ class PolyBotWindow(QWidget):
         polish_layout.addLayout(polish_actions)
         for label, steps in (("Polish champion 25k", 25_000), ("Polish champion 50k", 50_000)):
             button = QPushButton(label)
-            button.setToolTip("Load Summer 1 safe-polish settings and resume the evaluated champion.")
+            button.setToolTip("Load the saved Summer 1 safe-polish settings and resume its evaluated champion.")
             button.clicked.connect(lambda _checked=False, budget=steps: self._start_polish(budget))
             polish_actions.addWidget(button)
         search_actions = QHBoxLayout()
@@ -862,7 +1081,7 @@ class PolyBotWindow(QWidget):
         page.addWidget(self.stop_button)
 
     def _replay_swarm_tab(self) -> None:
-        _, tab_layout = self._page("Replay Swarm")
+        self.replay_swarm_page, tab_layout = self._page("Replay Swarm")
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
@@ -872,6 +1091,18 @@ class PolyBotWindow(QWidget):
         tab_layout.addWidget(scroll)
         form = QFormLayout()
 
+        self.replay_swarm_algorithm = QComboBox()
+        self.replay_swarm_algorithm.addItems(("grtqc", "tqc", "ppo"))
+        self.replay_swarm_algorithm.setCurrentText("grtqc")
+        self.replay_swarm_algorithm.currentTextChanged.connect(self._refresh_replay_runs)
+        form.addRow("Algorithm", self.replay_swarm_algorithm)
+        self.replay_swarm_run = QComboBox()
+        self.replay_swarm_run.currentIndexChanged.connect(self._replay_swarm_run_changed)
+        form.addRow("Recorded run", self.replay_swarm_run)
+
+        self.replay_swarm_external = QCheckBox("Browse external replay folder (Advanced)")
+        self.replay_swarm_external.toggled.connect(self._toggle_external_replay_path)
+        form.addRow(self.replay_swarm_external)
         self.replay_swarm_path = QLineEdit()
         self.replay_swarm_path.setPlaceholderText("Replay run folder or parent containing replay runs")
         path_row = QHBoxLayout()
@@ -879,7 +1110,10 @@ class PolyBotWindow(QWidget):
         browse = QPushButton("Browse...")
         browse.clicked.connect(self._browse_replay_swarm_path)
         path_row.addWidget(browse)
-        form.addRow("Replay run", path_row)
+        self.replay_swarm_external_row = QWidget()
+        self.replay_swarm_external_row.setLayout(path_row)
+        self.replay_swarm_external_row.setVisible(False)
+        form.addRow("External replay run", self.replay_swarm_external_row)
 
         self.replay_swarm_step_min = QSpinBox()
         self.replay_swarm_step_min.setRange(0, 2_000_000_000)
@@ -1018,6 +1252,46 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_output.document().setMaximumBlockCount(500)
         self.replay_swarm_output.setMinimumHeight(180)
         page.addWidget(self.replay_swarm_output, 1)
+        self._refresh_replay_runs()
+
+    def _toggle_external_replay_path(self, enabled: bool) -> None:
+        self.replay_swarm_external_row.setVisible(enabled)
+        self.replay_swarm_run.setEnabled(not enabled)
+        self.replay_swarm_algorithm.setEnabled(not enabled)
+        self._replay_swarm_run_changed()
+
+    def _refresh_replay_runs(self, _algorithm: str = "") -> None:
+        if not hasattr(self, "replay_swarm_run"):
+            return
+        workspace = self._workspace()
+        algorithm = self.replay_swarm_algorithm.currentText()
+        previous = self.replay_swarm_run.currentData()
+        self.replay_swarm_run.blockSignals(True)
+        self.replay_swarm_run.clear()
+        try:
+            for run in workspace.list_replay_runs(algorithm):
+                summary = f"{run.run_id} · {run.episode_count} episodes"
+                if run.minimum_step is not None and run.maximum_step is not None:
+                    summary += f" · steps {run.minimum_step:,}–{run.maximum_step:,}"
+                self.replay_swarm_run.addItem(summary, str(run.directory.resolve()))
+        except (OSError, ValueError) as exc:
+            self.replay_swarm_output.setPlainText(f"Could not list replay runs: {exc}")
+        selected = self.replay_swarm_run.findData(previous)
+        self.replay_swarm_run.setCurrentIndex(selected if selected >= 0 else 0)
+        self.replay_swarm_run.blockSignals(False)
+        self._replay_swarm_run_changed()
+
+    def _replay_swarm_run_changed(self, _index: int = -1) -> None:
+        if not hasattr(self, "replay_swarm_path") or self.replay_swarm_external.isChecked():
+            return
+        run_path = self.replay_swarm_run.currentData()
+        self.replay_swarm_path.setText(run_path if isinstance(run_path, str) else "")
+
+    def _replay_swarm_path_value(self) -> str:
+        if self.replay_swarm_external.isChecked():
+            return self.replay_swarm_path.text().strip()
+        path = self.replay_swarm_run.currentData()
+        return path if isinstance(path, str) else ""
 
     def _browse_replay_swarm_path(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "Choose replay run or parent folder")
@@ -1025,9 +1299,11 @@ class PolyBotWindow(QWidget):
             self.replay_swarm_path.setText(path)
 
     def _replay_swarm_config(self) -> dict[str, Any]:
-        path = self.replay_swarm_path.text().strip()
+        path = self._replay_swarm_path_value()
         if not path:
-            raise ValueError("Choose a replay run directory first.")
+            raise ValueError(
+                "Choose a replay run by selecting a recorded run or enabling external replay browsing."
+            )
         steps = (self.replay_swarm_step_min.value(), self.replay_swarm_step_max.value())
         if steps[1] < steps[0]:
             raise ValueError("The maximum training step must be at least the minimum.")
@@ -1059,6 +1335,8 @@ class PolyBotWindow(QWidget):
         )
         return {
             "path": path,
+            "track_slug": self._selected_track().slug,
+            "external_path": self.replay_swarm_external.isChecked(),
             "steps": steps,
             "episodes": episodes,
             "finished_only": self.replay_swarm_finished.isChecked(),
@@ -1082,6 +1360,16 @@ class PolyBotWindow(QWidget):
             for directory in directories
             for metadata in load_replay_index(directory)
         ]
+        if config.get("external_path"):
+            expected_slug = config["track_slug"]
+            mismatched = [
+                entry for entry in entries
+                if entry.get("track_slug", track_slug(entry["track_name"])) != expected_slug
+            ]
+            if mismatched:
+                raise ValueError(
+                    f"external replay contains episodes for another track; expected {expected_slug}"
+                )
         matching_count = len(
             filter_replays(
                 entries,
@@ -1105,7 +1393,7 @@ class PolyBotWindow(QWidget):
     def _submit_replay_swarm(self, action: str) -> None:
         try:
             if action == "range":
-                path = self.replay_swarm_path.text().strip()
+                path = self._replay_swarm_path_value()
                 if not path:
                     raise ValueError("Choose a replay run directory first.")
                 config = {"path": path}
@@ -1248,6 +1536,83 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_output.append(message)
         self.replay_swarm_output.moveCursor(QTextCursor.End)
 
+    def _ai_overlay_tab(self) -> None:
+        _, page = self._page("AI HUD")
+        description = QLabel(
+            "Show the policy's actual inputs and outputs, applied controls, episode state, "
+            "and reward breakdown inside PolyTrack. Updates follow policy decisions; "
+            "simulator ticks and frame skip are shown separately."
+        )
+        description.setWordWrap(True)
+        page.addWidget(description)
+        form = QFormLayout()
+        page.addLayout(form)
+        settings = self.ai_overlay_settings
+        self.ai_overlay_widgets: dict[str, QWidget] = {}
+        options: tuple[tuple[str, str, Any, str, tuple[str, ...]], ...] = (
+            ("enabled", "Enable overlay", settings.enabled,
+             "Send live AI telemetry frames to a bridge that advertises AI HUD support.", ()),
+            ("preset", "Layout", settings.preset,
+             "Compact shows key driving inputs; Full shows every mapped policy input.", ("compact", "full")),
+            ("scale", "Scale", settings.scale,
+             "Scale the non-interactive overlay from 0.5× to 1.5×.", ()),
+            ("show_episode_status", "Episode status", settings.show_episode_status,
+             "Show mode, track, algorithm, episode, progress, and timing.", ()),
+            ("show_labels", "Feature labels", settings.show_labels,
+             "Show names beside observation, control, and reward values.", ()),
+            ("show_observations", "Policy observations", settings.show_observations,
+             "Show the exact normalized feature values passed to the policy.", ()),
+            ("show_controls", "Policy and applied controls", settings.show_controls,
+             "Show model output, transformed output, adapter demand, and applied control fractions.", ()),
+            ("show_reward_breakdown", "Reward breakdown", settings.show_reward_breakdown,
+             "Show exact reward terms, groups, and episode return.", ()),
+            ("show_event_popups", "Event popups", settings.show_event_popups,
+             "Briefly surface finish, crash, timeout, and other episode events.", ()),
+            ("lookahead_points", "Lookahead points", settings.lookahead_points,
+             "Maximum number of route lookahead points shown when the Full layout is selected.", ()),
+        )
+        for name, label_text, value, help_text, choices in options:
+            widget = _editor(value, help_text, choices)
+            if name == "scale":
+                assert isinstance(widget, QDoubleSpinBox)
+                widget.setRange(0.5, 1.5)
+                widget.setDecimals(1)
+                widget.setSingleStep(0.1)
+            elif name == "lookahead_points":
+                assert isinstance(widget, QSpinBox)
+                widget.setRange(0, 12)
+            form.addRow(QLabel(label_text), widget)
+            self.ai_overlay_widgets[name] = widget
+        save = QPushButton("Save / apply HUD settings")
+        save.clicked.connect(self._save_ai_overlay_settings)
+        page.addWidget(save)
+        self.ai_overlay_status = QLabel()
+        self.ai_overlay_status.setWordWrap(True)
+        if self._ai_overlay_settings_error:
+            self.ai_overlay_status.setText(
+                f"Settings could not be loaded; the overlay is disabled until saved: "
+                f"{self._ai_overlay_settings_error}"
+            )
+        else:
+            self.ai_overlay_status.setText("Changes are applied to active training after saving.")
+        page.addWidget(self.ai_overlay_status)
+
+    def _save_ai_overlay_settings(self) -> bool:
+        values = {name: _value(widget) for name, widget in self.ai_overlay_widgets.items()}
+        try:
+            settings = AIOverlaySettings(**values)
+            self.ai_overlay_store.save(settings)
+        except (OSError, ValueError) as exc:
+            self.ai_overlay_status.setText(f"Could not save AI HUD settings: {exc}")
+            return False
+        self.ai_overlay_settings = settings
+        self._ai_overlay_settings_error = None
+        runner = getattr(self, "runner", None)
+        if runner is not None:
+            runner.set_ai_overlay_settings(settings)
+        self.ai_overlay_status.setText("HUD settings saved and applied.")
+        return True
+
     def _status_tab(self) -> None:
         _, page = self._page("Status")
         self.warnings = QLabel("Warnings will appear here; unusual settings are suggestions, not blocks.")
@@ -1302,13 +1667,10 @@ class PolyBotWindow(QWidget):
 
     def _backend_changed(self, backend: str) -> None:
         if backend == "mock":
-            _set(self.general["track_name"], "Mock straight")
-            _set(self.general["track_id"], "mock/straight")
             _set(self.general["frame_skip"], 4)
         else:
-            _set(self.general["track_name"], "Summer 1")
-            _set(self.general["track_id"], "current")
             _set(self.general["frame_skip"], 30)
+        self._refresh_models()
 
     def _algorithm_changed(self, algorithm: str) -> None:
         forms = {"ppo": self.ppo_form, "grtqc": self.grtqc_form, "tqc": self.tqc_form}
@@ -1352,6 +1714,11 @@ class PolyBotWindow(QWidget):
     def _preset_changed(self, name: str) -> None:
         if not name:
             return
+        if name.startswith("Summer 1 -") and self._selected_track().slug != "summer-1":
+            self.preset.blockSignals(True)
+            self.preset.setCurrentText("Balanced")
+            self.preset.blockSignals(False)
+            name = "Balanced"
         preset = algorithm_presets(self.algorithm.currentText()).get(name)
         if preset is None:
             path = self.presets.list(self.algorithm.currentText()).get(name)
@@ -1420,10 +1787,17 @@ class PolyBotWindow(QWidget):
             return item, layout
 
         _, track_layout = page("1. Choose a track")
-        track = QLineEdit(str(_value(self.general["track_name"])))
-        track.setToolTip(GENERAL_INFO["track_name"].description)
+        track = QComboBox()
+        for definition in self.track_registry.list_tracks():
+            track.addItem(definition.name, definition.slug)
+        track.setCurrentIndex(max(0, track.findData(self._selected_track().slug)))
+        track_actions = QHBoxLayout()
+        track_actions.addWidget(track, 1)
+        add_track = QPushButton("+ Add new track")
+        add_track.clicked.connect(lambda: self._add_track_to_combo(track))
+        track_actions.addWidget(add_track)
         backend = _editor("websocket", GENERAL_INFO["backend"].description, ("websocket", "mock"))
-        track_layout.addRow("Track name", track)
+        track_layout.addRow("Track", track_actions)
         track_layout.addRow("Simulator", backend)
 
         _, algorithm_layout = page("2. Choose an algorithm")
@@ -1467,14 +1841,19 @@ class PolyBotWindow(QWidget):
                 selected_algorithm = _value(algorithm)
                 selected_backend = _value(backend)
                 selected_goal = _value(goal)
+                track_definition = self.track_registry.resolve(track.currentData())
                 profile = {
                     "Learn the track": "Learning", "Improve consistency": "Balanced",
                     "Improve lap time": "Pace", "Experiment": "Balanced",
                 }[selected_goal]
                 data.update({
                     "algorithm": selected_algorithm, "backend": selected_backend,
-                    "track_name": track.text().strip(),
-                    "track_id": "current" if selected_backend == "websocket" else "mock/straight",
+                    "track_name": track_definition.name,
+                    "track_slug": track_definition.slug,
+                    "track_id": (
+                        track_definition.simulator_track_id
+                        if selected_backend == "websocket" else "mock/straight"
+                    ),
                     "frame_skip": 30 if selected_backend == "websocket" else 4,
                     "device": _value(device), "reward_profile": profile,
                     "rewards": asdict(self.profiles.load(profile)),
@@ -1495,6 +1874,20 @@ class PolyBotWindow(QWidget):
         if wizard.exec() and "config" in chosen:
             self.load_configuration(chosen["config"])
             self._start(False)
+
+    def _add_track_to_combo(self, combo: QComboBox) -> None:
+        name, accepted = QInputDialog.getText(self, "Add Track", "Track name")
+        if not accepted:
+            return
+        try:
+            track = self.track_registry.add(name)
+        except (OSError, ValueError) as exc:
+            QMessageBox.warning(self, "Add Track", str(exc))
+            return
+        self._populate_track_selector(track.slug)
+        self._track_changed()
+        combo.addItem(track.name, track.slug)
+        combo.setCurrentIndex(combo.findData(track.slug))
 
     def _load_reward_profile(self, name: str) -> None:
         if not name or name == "Custom":
@@ -1556,12 +1949,19 @@ class PolyBotWindow(QWidget):
 
     def configuration(self) -> TrainingConfig:
         values = {name: _value(widget) for name, widget in self.general.items()}
+        track = self._selected_track()
         values["visual_replay_enabled"] = {
             "automatic": None, "enabled": True, "disabled": False,
         }[values["visual_replay_enabled"]]
         values["output_root"] = Path(values["output_root"])
         values["log_root"] = Path(values["log_root"])
         values["algorithm"] = self.algorithm.currentText()
+        values["track_name"] = track.name
+        values["track_slug"] = track.slug
+        values["track_id"] = (
+            track.simulator_track_id
+            if values["backend"] == "websocket" else "mock/straight"
+        )
         selected_profile = self.reward_profile.currentText()
         values["reward_profile"] = None if selected_profile == "Custom" else selected_profile
         values["curriculum"] = self._curriculum_configuration()
@@ -1571,6 +1971,16 @@ class PolyBotWindow(QWidget):
         return TrainingConfig(**values)
 
     def load_configuration(self, config: TrainingConfig) -> None:
+        track = self.track_registry.register_legacy(
+            config.track_name,
+            simulator_track_id=config.track_id,
+            slug=config.track_slug,
+        )
+        self._populate_track_selector(track.slug)
+        if config.backend == "websocket":
+            config.track_id = track.simulator_track_id
+        config.track_name = track.name
+        config.track_slug = track.slug
         _set(self.algorithm, config.algorithm)
         self._algorithm_changed(config.algorithm)
         self.general["backend"].blockSignals(True)
@@ -1596,6 +2006,7 @@ class PolyBotWindow(QWidget):
         self.reward_profile.setCurrentText(config.reward_profile or "Custom")
         self.reward_profile.blockSignals(False)
         self._update_plan()
+        self._track_changed()
 
     def _save_config(self) -> None:
         try:
@@ -1620,8 +2031,12 @@ class PolyBotWindow(QWidget):
 
     def _best_resume_slot(self, cfg: TrainingConfig) -> Path:
         registry = ModelRegistry(cfg.output_root)
-        latest = registry.slot(cfg.track_name, cfg.algorithm, "latest")
-        champion = registry.slot(cfg.track_name, cfg.algorithm, "champion")
+        latest = registry.slot(
+            cfg.track_name, cfg.algorithm, "latest", track_slug=cfg.track_slug,
+        )
+        champion = registry.slot(
+            cfg.track_name, cfg.algorithm, "champion", track_slug=cfg.track_slug,
+        )
         if not (champion / "metadata.json").is_file():
             return latest
         if not (latest / "metadata.json").is_file():
@@ -1636,6 +2051,9 @@ class PolyBotWindow(QWidget):
         return latest
 
     def _start_polish(self, steps: int) -> None:
+        if self._selected_track().slug != "summer-1":
+            self._error("The safe-polish profile is specific to Summer 1; select Summer 1 to use it.")
+            return
         profile = Path("profiles/training/summer-1-tqc-safe-polish.json")
         try:
             config = TrainingConfig.from_dict(json.loads(profile.read_text(encoding="utf-8")))
@@ -1650,6 +2068,9 @@ class PolyBotWindow(QWidget):
         self._start_speed_search()
 
     def _load_adaptation_preset(self) -> None:
+        if self._selected_track().slug != "summer-1":
+            self._error("This saved adaptation preset is specific to Summer 1.")
+            return
         path = Path("profiles/training/summer-1-tqc-tuned-adaptation.json")
         try:
             self.load_configuration(TrainingConfig.from_dict(
@@ -1684,7 +2105,8 @@ class PolyBotWindow(QWidget):
                 raise RuntimeError("A live speed search is already using the simulator")
             if cfg.algorithm != "tqc":
                 raise ValueError("Tuned champion adaptation is available only for TQC")
-            config_path = cfg.log_root / f"tuned-adaptation-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.json"
+            log_directory = self._workspace_for_config(cfg).algorithm_logs(cfg.algorithm)
+            config_path = log_directory / f"tuned-adaptation-{datetime.now(UTC).strftime('%Y%m%dT%H%M%S')}.json"
             config_path.parent.mkdir(parents=True, exist_ok=True)
             config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
             process = QProcess(self)
@@ -1762,8 +2184,9 @@ class PolyBotWindow(QWidget):
                 )) or simulator_service_active():
                     raise RuntimeError("The live search owns the simulator; snapshot now and collect after it stops")
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-            cfg.log_root.mkdir(parents=True, exist_ok=True)
-            config_path = cfg.log_root / f"distillation-config-{stamp}.json"
+            log_directory = self._workspace_for_config(cfg).algorithm_logs(cfg.algorithm)
+            log_directory.mkdir(parents=True, exist_ok=True)
+            config_path = log_directory / f"distillation-config-{stamp}.json"
             config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
             args = ["-m", "polybot.training.distillation", command]
             if command in {"snapshot", "full"}:
@@ -1882,7 +2305,7 @@ class PolyBotWindow(QWidget):
             "--device", str(_value(self.general["device"])),
         ]
         if stage == "dagger":
-            stop_path = Path("runs/teacher-student/dagger.stop")
+            stop_path = Path("runs") / "teacher-student" / self._selected_track().slug / "dagger.stop"
             stop_path.parent.mkdir(parents=True, exist_ok=True)
             stop_path.unlink(missing_ok=True)
             self.teacher_student_stop_file = stop_path
@@ -2070,12 +2493,18 @@ class PolyBotWindow(QWidget):
                 raise RuntimeError("A live speed search is already using the simulator; watch it in Status")
             registry = ModelRegistry(cfg.output_root)
             slot = (
-                registry.slot(cfg.track_name, cfg.algorithm, "champion") if pace_polish
+                registry.slot(
+                    cfg.track_name, cfg.algorithm, "champion", track_slug=cfg.track_slug,
+                ) if pace_polish
                 else self._best_resume_slot(cfg) if best
-                else registry.slot(cfg.track_name, cfg.algorithm, "latest")
+                else registry.slot(
+                    cfg.track_name, cfg.algorithm, "latest", track_slug=cfg.track_slug,
+                )
             )
             if cfg.algorithm == "grtqc" and not resume:
-                slot = registry.algorithm_dir(cfg.track_name, "grtqc") / "initialization"
+                slot = registry.algorithm_dir(
+                    cfg.track_name, "grtqc", track_slug=cfg.track_slug,
+                ) / "initialization"
                 resume = True
             warnings = configuration_warnings(cfg)
             self.warnings.setText("\n".join(warnings) if warnings else "Settings look reasonable.")
@@ -2091,6 +2520,7 @@ class PolyBotWindow(QWidget):
                 )
             )
             self.runner = TrainingRunner(cfg, self.bridge.event.emit)
+            self.runner.set_ai_overlay_settings(self.ai_overlay_settings)
             self.worker = threading.Thread(
                 target=self._run_worker,
                 args=(slot if resume else None, fresh_replay, best or pace_polish, pace_polish),
@@ -2150,13 +2580,16 @@ class PolyBotWindow(QWidget):
                 raise ValueError("WR pace optimization requires a live websocket TQC champion")
             if self.wr_region_enabled.isChecked() and self.wr_region_start.value() >= self.wr_region_end.value():
                 raise ValueError("Selected progress region must have start < end")
-            champion = ModelRegistry(cfg.output_root).slot(cfg.track_name, "tqc", "champion")
+            champion = ModelRegistry(cfg.output_root).slot(
+                cfg.track_name, "tqc", "champion", track_slug=cfg.track_slug,
+            )
             if not (champion / "metadata.json").is_file():
                 raise FileNotFoundError("No evaluated TQC champion is saved for this track")
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-            cfg.log_root.mkdir(parents=True, exist_ok=True)
-            config_path = cfg.log_root / f"wr-pace-config-{stamp}.json"
-            stop_path = cfg.log_root / f"wr-pace-stop-{stamp}.txt"
+            log_directory = self._workspace_for_config(cfg).algorithm_logs(cfg.algorithm)
+            log_directory.mkdir(parents=True, exist_ok=True)
+            config_path = log_directory / f"wr-pace-config-{stamp}.json"
+            stop_path = log_directory / f"wr-pace-stop-{stamp}.txt"
             config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
             arguments = [
                 "-m", "polybot.training.wr_search", "--config", str(config_path),
@@ -2206,15 +2639,18 @@ class PolyBotWindow(QWidget):
             cfg = self.configuration()
             if cfg.algorithm != "tqc" or cfg.backend != "websocket":
                 raise ValueError("Section optimization needs a live websocket TQC champion")
-            champion = ModelRegistry(cfg.output_root).slot(cfg.track_name, "tqc", "champion")
+            champion = ModelRegistry(cfg.output_root).slot(
+                cfg.track_name, "tqc", "champion", track_slug=cfg.track_slug,
+            )
             if not (champion / "metadata.json").is_file():
                 raise FileNotFoundError("No evaluated TQC champion is saved for this track")
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-            cfg.log_root.mkdir(parents=True, exist_ok=True)
-            config_path = cfg.log_root / f"section-optimizer-config-{stamp}.json"
-            stop_path = cfg.log_root / f"section-optimizer-stop-{stamp}.txt"
-            skip_path = cfg.log_root / f"section-optimizer-skip-{stamp}.txt"
-            refine_path = cfg.log_root / f"section-optimizer-refine-{stamp}.txt"
+            log_directory = self._workspace_for_config(cfg).algorithm_logs(cfg.algorithm)
+            log_directory.mkdir(parents=True, exist_ok=True)
+            config_path = log_directory / f"section-optimizer-config-{stamp}.json"
+            stop_path = log_directory / f"section-optimizer-stop-{stamp}.txt"
+            skip_path = log_directory / f"section-optimizer-skip-{stamp}.txt"
+            refine_path = log_directory / f"section-optimizer-refine-{stamp}.txt"
             config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
             args = ["-m", "polybot.training.section_optimizer", "--config", str(config_path),
                     "--target", str(self.wr_target.value()), "--stop-file", str(stop_path),
@@ -2364,6 +2800,9 @@ class PolyBotWindow(QWidget):
         self.wr_sector_table.setSortingEnabled(True)
 
     def _load_wr_profile(self) -> None:
+        if self._selected_track().slug != "summer-1":
+            self._error("The saved WR profile applies only to Summer 1.")
+            return
         try:
             profile = json.loads(
                 Path("profiles/training/summer-1-wr-pace.json").read_text(encoding="utf-8")
@@ -2415,14 +2854,17 @@ class PolyBotWindow(QWidget):
                 raise RuntimeError("A live speed search is already running; watch it in Status")
             if cfg.algorithm != "tqc" or cfg.backend != "websocket":
                 raise ValueError("Speed search needs a TQC model connected to the live simulator")
-            champion = ModelRegistry(cfg.output_root).slot(cfg.track_name, "tqc", "champion")
+            champion = ModelRegistry(cfg.output_root).slot(
+                cfg.track_name, "tqc", "champion", track_slug=cfg.track_slug,
+            )
             if not (champion / "metadata.json").is_file():
                 raise FileNotFoundError("No evaluated TQC champion is saved for this track")
             stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-            cfg.log_root.mkdir(parents=True, exist_ok=True)
-            config_path = cfg.log_root / f"speed-search-config-{stamp}.json"
-            log_path = cfg.log_root / f"{cfg.track_name.lower().replace(' ', '-')}-tqc-speed-search-{stamp}.jsonl"
-            self.speed_search_stop_file = cfg.log_root / f"speed-search-stop-{stamp}.txt"
+            log_directory = self._workspace_for_config(cfg).algorithm_logs(cfg.algorithm)
+            log_directory.mkdir(parents=True, exist_ok=True)
+            config_path = log_directory / f"speed-search-config-{stamp}.json"
+            log_path = log_directory / f"speed-search-{stamp}.jsonl"
+            self.speed_search_stop_file = log_directory / f"speed-search-stop-{stamp}.txt"
             config_path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
             process = QProcess(self)
             process.setProgram(sys.executable)
@@ -2448,7 +2890,10 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _external_speed_search_running(self, cfg: TrainingConfig) -> bool:
-        candidates = list(cfg.log_root.glob("*-tqc-speed-search-*.jsonl"))
+        candidates = [
+            path for path in self._workspace_for_config(cfg).list_log_files("tqc")
+            if "speed-search" in path.name
+        ]
         if not candidates:
             return False
         latest = max(candidates, key=lambda item: item.stat().st_mtime)
@@ -2488,7 +2933,10 @@ class PolyBotWindow(QWidget):
             if path is None or not path.is_file():
                 return
         else:
-            candidates = list(Path("logs").glob("*-tqc-speed-search-*.jsonl"))
+            candidates = [
+                path for path in self._workspace().list_log_files("tqc")
+                if "speed-search" in path.name
+            ]
             if not candidates:
                 return
             path = max(candidates, key=lambda item: item.stat().st_mtime)
@@ -2531,7 +2979,9 @@ class PolyBotWindow(QWidget):
         if kind == "started":
             try:
                 cfg = self.configuration()
-                slot = ModelRegistry(cfg.output_root).slot(cfg.track_name, cfg.algorithm, "champion")
+                slot = ModelRegistry(cfg.output_root).slot(
+                    cfg.track_name, cfg.algorithm, "champion", track_slug=cfg.track_slug,
+                )
                 saved = ModelRegistry(cfg.output_root).read_metadata(slot).evaluation
                 self._pace_champion_lap = saved.get("median_lap_s") if saved else None
             except (OSError, ValueError, KeyError):

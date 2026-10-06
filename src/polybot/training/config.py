@@ -8,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from polybot.environment.rewards import RewardConfig, summer_1_reward_config
+from polybot.tracks.registry import TrackDefinition
+from polybot.tracks.registry import track_slug as make_track_slug
 
 CONFIG_SCHEMA = "polybot.config.v2"
 ARCHITECTURES = {
@@ -337,6 +339,7 @@ class TrainingConfig:
     backend: str = "mock"
     track_name: str = "Mock straight"
     track_id: str = "mock/straight"
+    track_slug: str = ""
     device: str = "auto"
     seed: int = 0
     frame_skip: int = 4
@@ -363,6 +366,15 @@ class TrainingConfig:
     def __post_init__(self) -> None:
         from polybot.algorithms.registry import backend_for
 
+        if not self.track_name.strip():
+            raise ValueError("track name must be non-empty")
+        identity = TrackDefinition(
+            self.track_name,
+            self.track_slug or make_track_slug(self.track_name),
+            self.track_id,
+        )
+        self.track_name = identity.name
+        self.track_slug = identity.slug
         backend_for(self.algorithm).validate_config(self)
         if self.backend not in {"mock", "websocket"} or self.device not in {"auto", "cpu", "cuda"}:
             raise ValueError("invalid simulator backend or device")

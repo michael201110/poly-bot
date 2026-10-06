@@ -36,10 +36,51 @@ from polybot.training.visual_replays import INDEX_SCHEMA
 
 
 @pytest.fixture
-def window(qt_app):
+def window(qt_app, tmp_path, monkeypatch):
+    registry_type = gui_main.TrackRegistry
+    settings_store_type = gui_main.AIOverlaySettingsStore
+    monkeypatch.setattr(
+        gui_main,
+        "TrackRegistry",
+        lambda: registry_type(tmp_path / "config" / "tracks.json", models_root=tmp_path / "models"),
+    )
+    monkeypatch.setattr(
+        gui_main,
+        "AIOverlaySettingsStore",
+        lambda: settings_store_type(tmp_path / "config" / "ai-overlay.json"),
+    )
+    monkeypatch.setattr(
+        PolyBotWindow,
+        "_selected_track_path",
+        staticmethod(lambda: tmp_path / "config" / "selected-track.json"),
+    )
     widget = PolyBotWindow()
     yield widget
     widget.close()
+
+
+def test_ai_hud_settings_persist_and_apply_to_active_runner(window, qt_app) -> None:
+    class ActiveRunner:
+        def __init__(self) -> None:
+            self.settings = None
+
+        def set_ai_overlay_settings(self, settings) -> None:
+            self.settings = settings
+
+    runner = ActiveRunner()
+    window.runner = runner
+    window.ai_overlay_widgets["enabled"].setChecked(False)
+    window.ai_overlay_widgets["preset"].setCurrentText("full")
+    window.ai_overlay_widgets["scale"].setValue(1.3)
+    window.ai_overlay_widgets["lookahead_points"].setValue(6)
+
+    assert window._save_ai_overlay_settings()
+    saved = window.ai_overlay_store.load()
+    assert saved.enabled is False
+    assert saved.preset == "full"
+    assert saved.scale == pytest.approx(1.3)
+    assert saved.lookahead_points == 6
+    assert runner.settings == saved
 
 
 @pytest.fixture
@@ -69,7 +110,7 @@ def test_every_training_field_has_plain_language_help(window) -> None:
 
 def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert window.algorithm.currentText() == "grtqc"
-    assert window.configuration().rewards.barrier_collision_impulse_threshold == 250.0
+    assert window.configuration().rewards.barrier_collision_impulse_threshold == 1_000_000_000.0
     assert window.algorithm_stack.currentWidget() is window.grtqc_form
     assert window.ppo_form.widgets["gamma"].isHidden()
     window.algorithm.setCurrentText("ppo")
@@ -82,7 +123,7 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert not window.adaptation_section.isHidden()
     assert not window.distillation_section.isHidden()
     assert not window.teacher_student_section.isHidden()
-    assert "below 22.000s" in window.teacher_student_section.findChild(QLabel).text()
+    assert "selected track's frozen TQC champion" in window.teacher_student_section.findChild(QLabel).text()
     assert window.dagger_rounds.value() == 3
     assert window.dagger_episodes.value() == 8
     assert window.dagger_nominal_weight.value() == pytest.approx(0.6)
@@ -182,6 +223,7 @@ def test_gui_exact_config_roundtrip_and_presets(window) -> None:
     assert window.configuration().ppo == algorithm_presets("ppo")["Fast training"]
     window.algorithm.setCurrentText("tqc")
     assert window.configuration().tqc == algorithm_presets("tqc")["Balanced"]
+    window.track_selector.setCurrentIndex(window.track_selector.findData("summer-1"))
     window.preset.setCurrentText("Summer 1 - TQC Safe Polish")
     assert window.configuration().tqc.learning_rate == 1e-5
     grtqc = TrainingConfig(algorithm="grtqc", grtqc=GRTQCConfig(architecture="standard"))
@@ -196,6 +238,7 @@ def test_gui_exact_config_roundtrip_and_presets(window) -> None:
     grtqc.grtqc.controller_adapter_only = True
     window.load_configuration(grtqc)
     assert window.configuration().to_dict() == grtqc.to_dict()
+    window.track_selector.setCurrentIndex(window.track_selector.findData("summer-1"))
     window.preset.setCurrentText("Summer 1 - Transferred Champion")
     assert window.configuration().grtqc == algorithm_presets("grtqc")["Summer 1 - Transferred Champion"]
     window._event({
@@ -318,6 +361,7 @@ def test_replay_swarm_tab_defaults_and_input_validation(window) -> None:
         window._replay_swarm_config()
 
     window.replay_swarm_path.setText("replays")
+    window.replay_swarm_external.setChecked(True)
     window.replay_swarm_episode_min.setText("3")
     with pytest.raises(ValueError, match="both episode ID"):
         window._replay_swarm_config()
@@ -338,7 +382,8 @@ def test_replay_swarm_inspect_uses_indexes_only(window, tmp_path, monkeypatch) -
     episodes = [
         {
             "run_id": "run", "episode_id": f"episode-{number:06d}",
-            "algorithm": "tqc", "track_id": "track", "track_name": "Track",
+            "algorithm": "tqc", "track_id": "current", "track_name": "Summer 1",
+            "track_slug": "summer-1",
             "training_step": step, "training_step_start": step, "training_step_end": step + 1,
             "episode_length_decisions": 1, "episode_length_ticks": 30,
             "status": status, "final_progress_m": 1.0, "frame_skip": 30,
@@ -356,6 +401,7 @@ def test_replay_swarm_inspect_uses_indexes_only(window, tmp_path, monkeypatch) -
 
     monkeypatch.setattr(gui_main, "WebSocketServerTransport", unexpected_transport)
     window.replay_swarm_path.setText(str(replay_run))
+    window.replay_swarm_external.setChecked(True)
     window.replay_swarm_step_min.setValue(10)
     window.replay_swarm_step_max.setValue(10)
     report = window._run_replay_swarm(window._replay_swarm_config() | {"action": "inspect"})
@@ -422,3 +468,108 @@ def test_replay_swarm_operations_run_off_gui_thread(window, monkeypatch) -> None
     assert worker_thread_ids and worker_thread_ids[0] != gui_thread_id
     assert window.replay_swarm_worker is None
     assert '"ok": true' in window.replay_swarm_output.toPlainText()
+
+
+def test_global_track_switch_scopes_models_replays_and_training_config(
+    qt_app, tmp_path, monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    window = PolyBotWindow()
+    try:
+        assert window.track_selector.currentData() == "summer-1"
+        autumn = window.track_registry.add("Autumn 2")
+        autumn_model = tmp_path / "models" / autumn.slug / "grtqc" / "champion"
+        summer_model = tmp_path / "models" / "summer-1" / "grtqc" / "champion"
+        autumn_model.mkdir(parents=True)
+        summer_model.mkdir(parents=True)
+
+        replay_dir = (
+            tmp_path / "models" / autumn.slug / "grtqc" / "visual_replays" / "run-new"
+        )
+        replay_dir.mkdir(parents=True)
+        episode = {
+            "run_id": "run-new", "episode_id": "episode-000001",
+            "algorithm": "grtqc", "track_id": "current", "track_name": autumn.name,
+            "track_slug": autumn.slug, "training_step": 10, "training_step_start": 10,
+            "training_step_end": 11, "episode_length_decisions": 1,
+            "episode_length_ticks": 30, "status": "failed", "final_progress_m": 1.0,
+            "frame_skip": 30, "sample_count": 1, "file": "episode-000001.npz",
+        }
+        (replay_dir / "index.json").write_text(
+            json.dumps({
+                "schema": "polybot.visual-replay-index.v1",
+                "run": {"run_id": "run-new", "created_at": "2026-10-01T00:00:00Z"},
+                "episodes": [episode],
+            }),
+            encoding="utf-8",
+        )
+
+        window._populate_track_selector(autumn.slug)
+        window._track_changed()
+        assert window.configuration().track_name == "Autumn 2"
+        assert window.configuration().track_slug == "autumn-2"
+        assert "autumn-2" in window.models_inventory.toPlainText()
+        assert "summer-1" not in window.models_inventory.toPlainText()
+        assert window.replay_swarm_run.count() == 1
+        assert window.replay_swarm_run.currentData() == str(replay_dir.resolve())
+        assert window.replay_swarm_path.text() == str(replay_dir.resolve())
+        assert "Autumn 2" in window.tabs.tabText(window.tabs.indexOf(window.models_page))
+        assert "Autumn 2" in window.tabs.tabText(window.tabs.indexOf(window.replay_swarm_page))
+
+        window.track_selector.setCurrentIndex(window.track_selector.findData("summer-1"))
+        assert "summer-1" in window.models_inventory.toPlainText()
+        assert "autumn-2" not in window.models_inventory.toPlainText()
+        assert window.replay_swarm_run.count() == 0
+    finally:
+        window.close()
+
+
+def test_custom_model_root_refreshes_models_and_replay_runs(window, tmp_path) -> None:
+    track = window._selected_track()
+    model_root = tmp_path / "custom-models"
+    (model_root / track.slug / "grtqc" / "champion").mkdir(parents=True)
+    replay_dir = model_root / track.slug / "grtqc" / "visual_replays" / "run-custom"
+    replay_dir.mkdir(parents=True)
+    episode = {
+        "run_id": "run-custom", "episode_id": "episode-000001",
+        "algorithm": "grtqc", "track_id": track.simulator_track_id,
+        "track_name": track.name, "track_slug": track.slug,
+        "training_step": 10, "training_step_start": 10, "training_step_end": 11,
+        "episode_length_decisions": 1, "episode_length_ticks": 30,
+        "status": "failed", "final_progress_m": 0.1, "frame_skip": 30,
+        "sample_count": 1, "file": "episode-000001.npz",
+    }
+    (replay_dir / "index.json").write_text(
+        json.dumps({
+            "schema": "polybot.visual-replay-index.v1",
+            "run": {"run_id": "run-custom"},
+            "episodes": [episode],
+        }),
+        encoding="utf-8",
+    )
+
+    root_field = window.general["output_root"]
+    root_field.setText(str(model_root))
+    root_field.editingFinished.emit()
+
+    assert "champion" in window.models_inventory.toPlainText()
+    assert window.replay_swarm_run.count() == 1
+    assert window.replay_swarm_run.currentData() == str(replay_dir.resolve())
+
+
+def test_legacy_saved_configuration_registers_and_selects_its_track(
+    window, tmp_path, monkeypatch,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    config = TrainingConfig(
+        algorithm="ppo",
+        backend="websocket",
+        track_name="Imported Circuit",
+        track_id="current",
+        ppo=PPOConfig(architecture="tiny"),
+    )
+    window.load_configuration(config)
+    assert window.track_selector.currentText() == "Imported Circuit"
+    resolved = window.configuration()
+    assert resolved.track_slug == "imported-circuit"
+    assert resolved.track_id == "current"

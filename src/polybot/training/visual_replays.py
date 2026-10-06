@@ -89,6 +89,10 @@ def _metadata_entry(metadata: dict[str, Any]) -> dict[str, Any]:
     for name in ("run_id", "episode_id", "algorithm", "track_id", "track_name", "status", "file"):
         if not isinstance(metadata[name], str) or not metadata[name]:
             raise ReplayFormatError(f"replay metadata {name} must be a non-empty string")
+    if "track_slug" in metadata and (
+        not isinstance(metadata["track_slug"], str) or not metadata["track_slug"]
+    ):
+        raise ReplayFormatError("replay metadata track_slug must be non-empty text")
     for name in (
         "training_step", "training_step_start", "training_step_end",
         "episode_length_decisions", "episode_length_ticks", "frame_skip", "sample_count",
@@ -344,6 +348,7 @@ class VisualReplaySession:
         algorithm: str,
         track_id: str,
         track_name: str,
+        track_slug: str = "",
         frame_skip: int,
         sample_hz: float,
         record_observations: bool,
@@ -356,6 +361,7 @@ class VisualReplaySession:
         self.algorithm = algorithm
         self.track_id = track_id
         self.track_name = track_name
+        self.track_slug = track_slug
         self.frame_skip = frame_skip
         self.sample_interval_s = 1.0 / sample_hz
         self.sample_hz = sample_hz
@@ -457,6 +463,7 @@ class VisualReplaySession:
             "algorithm": self.algorithm,
             "track_id": self.track_id,
             "track_name": self.track_name,
+            **({"track_slug": self.track_slug} if self.track_slug else {}),
             "training_step": episode.training_step_start,
             "training_step_start": episode.training_step_start,
             "training_step_end": end_step,

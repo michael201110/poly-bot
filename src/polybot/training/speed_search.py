@@ -70,11 +70,15 @@ def search(
     if requested_config.algorithm != "tqc" or requested_config.backend != "websocket":
         raise ValueError("live speed search requires a websocket TQC profile")
     requested_runner = TrainingRunner(requested_config)
-    requested_champion = requested_runner.registry.slot(requested_config.track_name, "tqc", "champion")
+    requested_champion = requested_runner.registry.slot(
+        requested_config.track_name, "tqc", "champion", track_slug=requested_config.track_slug,
+    )
     requested_metadata = requested_runner.registry.read_metadata(requested_champion)
     config = champion_evaluation_config(requested_config, requested_metadata)
     runner = TrainingRunner(config)
-    champion_dir = runner.registry.slot(config.track_name, "tqc", "champion")
+    champion_dir = runner.registry.slot(
+        config.track_name, "tqc", "champion", track_slug=config.track_slug,
+    )
     champion = runner.registry.read_metadata(champion_dir)
     if champion.evaluation is None or champion.evaluation["median_lap_s"] is None:
         raise ValueError("a completed evaluated champion is required")

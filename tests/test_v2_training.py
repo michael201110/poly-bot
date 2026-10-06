@@ -480,7 +480,7 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
         assert registry.read_metadata(latest).polybot_version == "2.0.0"
     assert any(event["type"] == "evaluation" for event in events)
     assert any(event["type"] == "champion" for event in events)
-    assert list(config.log_root.glob("*.jsonl"))
+    assert list(config.log_root.glob("*/*/*.jsonl"))
     before = metadata.training_timesteps
     TrainingRunner(config).run(resume=latest)
     assert registry.read_metadata(latest).training_timesteps > before

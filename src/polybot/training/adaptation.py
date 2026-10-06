@@ -118,7 +118,9 @@ def run_adaptation(
         )
     runner = TrainingRunner(config, status=status)
     runner.device = resolve_device(config.device, algorithm="tqc")
-    champion = runner.registry.slot(config.track_name, "tqc", "champion")
+    champion = runner.registry.slot(
+        config.track_name, "tqc", "champion", track_slug=config.track_slug,
+    )
     champion_metadata = runner.registry.read_metadata(champion)
     if champion_metadata.evaluation is not None:
         runner.last_evaluation = EvaluationResult(**champion_metadata.evaluation)

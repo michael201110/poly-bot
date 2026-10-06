@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import subprocess
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
@@ -11,22 +10,18 @@ from pathlib import Path
 from typing import Any
 
 from polybot.environment.observations import schema_for
+from polybot.tracks import TrackDefinition, TrackWorkspace
+from polybot.tracks import track_slug as canonical_track_slug
 
 MODEL_SCHEMA = "polybot.model.v2"
 POLYBOT_VERSION = "2.3.0"
 REWARD_SEMANTICS = "nonterminal-contact-v3-deadline"
 PPO_ACTION_SEMANTICS = "steering_signed_longitudinal_v1"
+track_slug = canonical_track_slug
 
 
 class IncompatibleModelError(ValueError):
     pass
-
-
-def track_slug(name: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
-    if not slug:
-        raise ValueError("track name needs letters or digits")
-    return slug
 
 
 def git_commit() -> str:
@@ -68,6 +63,7 @@ class ModelMetadata:
     speed_bias_schedule: list[list[float]] = field(default_factory=list)
     best_training_lap_s: float | None = None
     action_semantics: str | None = None
+    track_slug: str | None = None
     schema: str = MODEL_SCHEMA
     polybot_version: str = POLYBOT_VERSION
     git_commit: str = field(default_factory=git_commit)
@@ -82,18 +78,39 @@ class ModelRegistry:
     def __init__(self, root: str | Path = "models") -> None:
         self.root = Path(root)
 
-    def algorithm_dir(self, track_name: str, algorithm: str) -> Path:
+    def algorithm_dir(
+        self,
+        track_name: str | TrackDefinition,
+        algorithm: str,
+        *,
+        track_slug: str | None = None,
+    ) -> Path:
         from polybot.algorithms.registry import backend_for
 
         backend_for(algorithm)
-        return self.root / track_slug(track_name) / algorithm
+        if isinstance(track_name, TrackDefinition):
+            track = track_name
+        else:
+            slug = track_slug or canonical_track_slug(track_name)
+            track = TrackDefinition(track_name, slug)
+        return TrackWorkspace(track, self.root).algorithm_models(algorithm)
 
-    def slot(self, track_name: str, algorithm: str, name: str) -> Path:
+    def slot(
+        self,
+        track_name: str | TrackDefinition,
+        algorithm: str,
+        name: str,
+        *,
+        track_slug: str | None = None,
+    ) -> Path:
         if name not in {"initialization", "latest", "champion", "contact-candidate"} and not name.startswith(
             "checkpoints/step-"
         ):
             raise ValueError("unknown v2 model slot")
-        return self.algorithm_dir(track_name, algorithm) / name
+        slot_path = Path(name)
+        if slot_path.is_absolute() or ".." in slot_path.parts:
+            raise ValueError("model slot cannot escape the track workspace")
+        return self.algorithm_dir(track_name, algorithm, track_slug=track_slug) / slot_path
 
     def write_metadata(self, directory: Path, metadata: ModelMetadata) -> None:
         directory.mkdir(parents=True, exist_ok=True)
@@ -129,6 +146,11 @@ class ModelRegistry:
         for name, actual, expected in (
             ("algorithm", metadata.algorithm, config.algorithm),
             ("track", metadata.track_id, config.track_id),
+            (
+                "track identity",
+                metadata.track_slug or canonical_track_slug(metadata.track_name),
+                getattr(config, "track_slug", None) or canonical_track_slug(config.track_name),
+            ),
             ("observation", metadata.observation_schema, schema_for(config)),
             ("action", metadata.action_schema, action_schema),
             ("lookahead", metadata.lookahead_count, config.lookahead_count),
@@ -137,3 +159,32 @@ class ModelRegistry:
                 mismatches.append(name)
         if mismatches:
             raise IncompatibleModelError("incompatible " + ", ".join(mismatches))
+
+    def list_algorithms(self, track: str | TrackDefinition, *, track_slug: str | None = None) -> list[str]:
+        base = self.algorithm_dir(track, "grtqc", track_slug=track_slug).parent
+        return sorted(
+            algorithm for algorithm in ("grtqc", "tqc", "ppo")
+            if (base / algorithm).is_dir()
+        )
+
+    def list_model_slots(
+        self,
+        track: str | TrackDefinition,
+        algorithm: str,
+        *,
+        track_slug: str | None = None,
+    ) -> list[tuple[str, Path, ModelMetadata | None]]:
+        base = self.algorithm_dir(track, algorithm, track_slug=track_slug)
+        result: list[tuple[str, Path, ModelMetadata | None]] = []
+        for name in ("champion", "latest", "initialization", "contact-candidate"):
+            directory = base / name
+            if directory.is_dir():
+                metadata = self.read_metadata(directory) if (directory / "metadata.json").is_file() else None
+                result.append((name, directory, metadata))
+        checkpoints = base / "checkpoints"
+        if checkpoints.is_dir():
+            for directory in sorted(checkpoints.glob("step-*")):
+                if directory.is_dir():
+                    metadata = self.read_metadata(directory) if (directory / "metadata.json").is_file() else None
+                    result.append((f"checkpoints/{directory.name}", directory, metadata))
+        return result

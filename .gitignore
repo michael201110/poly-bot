@@ -13,6 +13,9 @@ build/
 /old-models-pending-delete/
 runs/
 logs/
+config/tracks.json
+config/selected-track.json
+config/ai-overlay.json
 checkpoints/
 *.replay.pkl
 *.ckpt

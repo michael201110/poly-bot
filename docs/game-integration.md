@@ -1,6 +1,6 @@
 # Running PolyBot in PolyTrack
 
-The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. It is for local training and
+The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. The latest 0.6.3 bridge is 0.1.39. It is for local training and
 demonstrations, not leaderboard or multiplayer automation.
 
 ## One-time setup
@@ -75,6 +75,11 @@ constructor path passes null worker-manager/physics arguments; ghosts never
 send simulation-worker `CreateCar` messages. Each release has its own pinned
 native renderer update anchor checked by `tools/validate_pml_mod.py`. The
 published 0.1.35/0.1.36 releases are not modified.
+
+Bridge 0.1.39 supersedes 0.1.38 for PolyTrack 0.6.3. It preserves replay-swarm
+rendering and adds the [live AI HUD](ai-overlay.md), relaying Python-built
+telemetry frames to a reusable main-thread DOM overlay. The 0.1.37 and 0.1.38
+release files remain unchanged.
 
 The 0.1.34 entry point bundles its worker runtime so it works with PML's cached
 blob imports and cannot load the old 0.1.32 runtime. To edit this release, change

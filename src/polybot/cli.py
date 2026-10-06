@@ -13,6 +13,7 @@ from polybot.algorithms.registry import ALGORITHMS, backend_for
 from polybot.controller import CenterlineController
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import ModelRegistry
+from polybot.tracks.registry import TrackNotFoundError, TrackRegistry
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
@@ -31,6 +32,7 @@ from polybot.training.runner import TrainingRunner
 def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--algorithm", choices=ALGORITHMS)
     parser.add_argument("--backend", choices=("mock", "websocket"), default="mock")
+    parser.add_argument("--track", help="registered track display name or stable slug")
     parser.add_argument("--track-name")
     parser.add_argument("--track-id")
     parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
@@ -176,12 +178,22 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
             key: value for key, value in mapping.items() if value is not None
         })}
     backend = args.backend
-    track_name = args.track_name or ("Summer 1" if backend == "websocket" else "Mock straight")
-    track_id = args.track_id or ("current" if backend == "websocket" else "mock/straight")
+    if args.track and args.track_name:
+        parser.error("use --track or the legacy --track-name, not both")
+    track_key = args.track or args.track_name or (
+        "Summer 1" if backend == "websocket" else "Mock straight"
+    )
+    tracks = TrackRegistry(models_root=args.output_root)
+    try:
+        track = tracks.resolve(track_key)
+    except TrackNotFoundError as exc:
+        parser.error(str(exc))
+    track_id = args.track_id or track.simulator_track_id
     profile = args.reward_profile or "Balanced"
     rewards = RewardProfileStore().load(profile)
     return TrainingConfig(
-        algorithm=args.algorithm, backend=backend, track_name=track_name, track_id=track_id,
+        algorithm=args.algorithm, backend=backend, track_name=track.name, track_id=track_id,
+        track_slug=track.slug,
         device=args.device, seed=args.seed,
         frame_skip=args.frame_skip or (30 if backend == "websocket" else 4),
         timesteps=args.timesteps, max_episode_seconds=args.episode_seconds,
@@ -242,15 +254,27 @@ def train_main(argv: Sequence[str] | None = None) -> int:
             TrainingConfig.from_dict(json.loads(args.config.read_text(encoding="utf-8")))
             if args.config else _config_from_args(args, parser)
         )
+        track = TrackRegistry(models_root=cfg.output_root).register_legacy(
+            cfg.track_name,
+            simulator_track_id=cfg.track_id,
+            slug=cfg.track_slug,
+        )
+        cfg.track_name = track.name
+        cfg.track_id = track.simulator_track_id
+        cfg.track_slug = track.slug
         registry = ModelRegistry(cfg.output_root)
         resume = None
         if args.resume is not None:
             resume = (
-                registry.slot(cfg.track_name, cfg.algorithm, "latest")
+                registry.slot(
+                    cfg.track_name, cfg.algorithm, "latest", track_slug=cfg.track_slug,
+                )
                 if args.resume == "latest" else Path(args.resume)
             )
         elif cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch":
-            resume = registry.algorithm_dir(cfg.track_name, "grtqc") / "initialization"
+            resume = registry.algorithm_dir(
+                cfg.track_name, "grtqc", track_slug=cfg.track_slug,
+            ) / "initialization"
         runner = TrainingRunner(cfg, _event)
         print(f"planned training steps: {cfg.timesteps}", flush=True)
         runner.run(resume=resume)
@@ -287,11 +311,21 @@ def _configure_saved_overlays(
 
 def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Path, Any]:
     registry = ModelRegistry(args.output_root)
-    directory = registry.slot(args.track_name, args.algorithm, args.slot)
+    if args.track and args.track_name:
+        raise ValueError("use --track or the legacy --track-name, not both")
+    track_key = args.track or args.track_name
+    if not track_key:
+        raise ValueError("a registered track is required; pass --track")
+    track = TrackRegistry(models_root=args.output_root).resolve(track_key)
+    directory = registry.slot(track, args.algorithm, args.slot)
     metadata = registry.read_metadata(directory)
     cfg = TrainingConfig.from_dict(metadata.training_config)
+    cfg.track_name = track.name
+    cfg.track_slug = track.slug
     cfg.backend = args.backend or cfg.backend
     cfg.device = args.device or cfg.device
+    if cfg.backend == "websocket":
+        cfg.track_id = track.simulator_track_id
     backend = backend_for(cfg.algorithm)
     registry.validate(metadata, cfg, backend.action_adapter(cfg).schema)
     runner = TrainingRunner(cfg)
@@ -309,7 +343,8 @@ def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Pa
 def _model_parser(description: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=description)
     parser.add_argument("--algorithm", choices=ALGORITHMS, required=True)
-    parser.add_argument("--track-name", required=True)
+    parser.add_argument("--track", help="registered track display name or stable slug")
+    parser.add_argument("--track-name", help="deprecated alias for --track")
     parser.add_argument("--slot", choices=("initialization", "latest", "champion"), default="champion")
     parser.add_argument("--output-root", type=Path, default=Path("models"))
     parser.add_argument("--backend", choices=("mock", "websocket"))
@@ -317,16 +352,54 @@ def _model_parser(description: str) -> argparse.ArgumentParser:
     return parser
 
 
+def tracks_main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="List and manage registered PolyBot tracks")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+    subparsers.add_parser("list", help="list registered tracks")
+    add_parser = subparsers.add_parser("add", help="register a track by display name")
+    add_parser.add_argument("name")
+    rename_parser = subparsers.add_parser("rename", help="rename a display name; its stable slug is retained")
+    rename_parser.add_argument("track")
+    rename_parser.add_argument("name")
+    remove_parser = subparsers.add_parser("remove", help="remove a registry entry without deleting its data")
+    remove_parser.add_argument("track")
+    args = parser.parse_args(argv)
+    try:
+        registry = TrackRegistry()
+        if args.command == "list":
+            for track in registry.list_tracks():
+                print(f"{track.name}\t{track.slug}\t{track.simulator_track_id}")
+        elif args.command == "add":
+            track = registry.add(args.name)
+            print(f"Added {track.name} ({track.slug}).")
+        elif args.command == "rename":
+            track = registry.rename(args.track, args.name)
+            print(f"Renamed track to {track.name}; stable slug remains {track.slug}.")
+        else:
+            track = registry.remove(args.track)
+            print(f"Removed {track.name} from the registry; workspace data was not deleted.")
+    except (OSError, ValueError) as exc:
+        parser.error(str(exc))
+    return 0
+
+
 def evaluate_main(argv: Sequence[str] | None = None) -> int:
     parser = _model_parser("Evaluate a saved v2 policy deterministically")
     parser.add_argument("--episodes", type=int)
     args = parser.parse_args(argv)
     try:
-        cfg, _, model, _, metadata = _saved_model(args)
+        cfg, _, model, directory, metadata = _saved_model(args)
         runner = TrainingRunner(cfg)
         _configure_saved_overlays(runner, model, metadata)
+        runner.set_hud_model_context(
+            model_slot=directory.name,
+            policy_checkpoint_step=metadata.training_timesteps,
+            episode_total=args.episodes or cfg.evaluation.episodes,
+        )
         result = evaluate_model(
-            model, runner._environment, episodes=args.episodes or cfg.evaluation.episodes,
+            model,
+            lambda: runner._environment(hud_mode="evaluation"),
+            episodes=args.episodes or cfg.evaluation.episodes,
             seed=cfg.seed + 1_000_000,
         )
         print(json.dumps(result.to_dict(), indent=2))
@@ -340,10 +413,14 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--realtime", action="store_true")
     args = parser.parse_args(argv)
     try:
-        cfg, _, model, _, metadata = _saved_model(args)
+        cfg, _, model, directory, metadata = _saved_model(args)
         runner = TrainingRunner(cfg)
         _configure_saved_overlays(runner, model, metadata)
-        env = runner._environment()
+        runner.set_hud_model_context(
+            model_slot=directory.name,
+            policy_checkpoint_step=metadata.training_timesteps,
+        )
+        env = runner._environment(hud_mode="manual_model_drive")
         try:
             observation, _ = env.reset(seed=cfg.seed)
             while True:

@@ -160,6 +160,25 @@ class WebSocketServerTransport:
                 raise ConnectionError("PolyTrack adapter connection failed") from response
             return response
 
+    def notify(self, message: Mapping[str, Any]) -> None:
+        """Send a bounded one-way message without waiting for a response."""
+        if self._closed.is_set():
+            raise TransportClosed("transport is closed")
+        try:
+            raw = json.dumps(dict(message), allow_nan=False, separators=(",", ":"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("one-way simulator message is not JSON serializable") from exc
+        if len(raw.encode("utf-8")) > self.max_message_bytes:
+            raise ValueError("one-way simulator message exceeds the configured size limit")
+        with self._connection_lock:
+            connection = self._connection
+        if connection is None:
+            raise ConnectionError("PolyTrack adapter disconnected before the notification")
+        try:
+            connection.send(raw)
+        except (ConnectionClosed, TypeError, ValueError) as exc:
+            raise ConnectionError("could not send one-way notification to PolyTrack adapter") from exc
+
     def close(self) -> None:
         if self._closed.is_set():
             return
