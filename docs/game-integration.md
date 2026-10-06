@@ -67,11 +67,14 @@ Existing affected recordings lack the omitted inputs and must be replaced by
 fresh laps after loading 0.1.34. Recorder rewinds also clear the local player's
 input history before the first new tick is recorded.
 
-Bridge 0.1.35 targets PolyTrack 0.6.2 and 0.1.36 targets 0.6.3. They add the
-single visual-replay control path: worker requests cross the existing local
-WebSocket and the main-thread mixin constructs a native renderer-only car with
-no worker manager or physics actor. The per-version renderer update anchors are
-checked by `tools/validate_pml_mod.py`; bridge 0.1.34 remains unchanged.
+Bridge 0.1.35/0.1.36 retain the original one-ghost playback implementation.
+Bridge 0.1.37 targets PolyTrack 0.6.2 and 0.1.38 targets 0.6.3; they transfer
+bounded multi-episode trajectories through the existing local WebSocket and
+construct renderer-only native cars on the main thread. The render-only
+constructor path passes null worker-manager/physics arguments; ghosts never
+send simulation-worker `CreateCar` messages. Each release has its own pinned
+native renderer update anchor checked by `tools/validate_pml_mod.py`. The
+published 0.1.35/0.1.36 releases are not modified.
 
 The 0.1.34 entry point bundles its worker runtime so it works with PML's cached
 blob imports and cannot load the old 0.1.32 runtime. To edit this release, change

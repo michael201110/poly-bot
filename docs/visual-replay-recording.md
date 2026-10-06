@@ -74,8 +74,8 @@ be approximately **15–30 MB**, depending on track motion, episode count, and
 ZIP/index overhead. This is an estimate, not a fixed size guarantee. Optional
 observation logging can make storage substantially larger.
 
-Stage 2 only records and stores data. Stage 3 adds dry-run replay selection and
-trajectory/color utilities; in-game ghost rendering remains a later stage.
+The current renderer interpolates from recorded samples. It does not yet add a
+native per-physics-tick recorder or wheel/suspension animation.
 
 ## Inspecting a swarm selection (Stage 3)
 
@@ -106,44 +106,102 @@ polybot-replay-swarm --run <replay-run> --steps 0:1000000 --max-cars 250 `
   --color-stop 1000000:#00ff00 --dry-run
 ```
 
-## Playing one replay in PolyTrack (Stage 4)
+## Playing a replay swarm in PolyTrack
 
-Stage 4 displays **one** selected episode as a non-physical native renderer car.
-It sends chunked transforms through the existing `polybot.sim` version-2
-WebSocket connection; it does not create a second server or change simulation
-steps. The player must be in a loaded race with the PolyBot mod enabled. Start
-no trainer/evaluator on the same port while controlling the ghost.
+The CLI reuses the existing `polybot.sim` version-2 WebSocket connection. It
+loads all selected trajectories once in bounded chunks; a single shared clock
+then drives renderer-only native cars on the game main thread. It creates no
+simulation-worker cars and starts no additional server. The active trainer or
+evaluator must be stopped while controlling the bridge on that same port.
+PML releases 0.1.37 and 0.1.38 target PolyTrack 0.6.2 and 0.6.3 respectively.
+
+### One, 50, and 250 cars
 
 ```powershell
 polybot-replay-swarm --run models/summer-1/tqc/visual_replays/run-id `
   --steps 0:25000 --max-cars 1 --color-min-step 0 `
   --color-max-step 1000000 --action play
+
+polybot-replay-swarm --run models/summer-1/tqc/visual_replays/run-id `
+  --steps 0:25000 --max-cars 50 --action play
+
+polybot-replay-swarm --run models/summer-1/tqc/visual_replays/run-id `
+  --steps 0:1000000 --max-cars 250 --color-min-step 0 `
+  --color-max-step 1000000 --opacity 0.45 --end-behavior fade --action play
 ```
 
-`play` loads and starts the selected replay. `load` loads it paused; `resume`,
-`pause`, `restart`, and `clear` control the already loaded ghost. `seek` requires
-`--seek-seconds` measured from the first sample; optional `--speed` (0.1–8),
-`--opacity` (0–1), `--color`, and `--end-behavior` (disappear/freeze/fade)
-configure playback (the default opacity is 0.5). Use `--action configure` to change settings without
-changing whether the ghost is playing:
+For a custom gradient:
 
 ```powershell
-polybot-replay-swarm --run <replay-run> --max-cars 1 --action pause
-polybot-replay-swarm --run <replay-run> --max-cars 1 --action resume --speed 2
-polybot-replay-swarm --run <replay-run> --max-cars 1 --action seek --seek-seconds 8.5
-polybot-replay-swarm --run <replay-run> --max-cars 1 --action configure --opacity 0.4 --color "#44cc88"
-polybot-replay-swarm --run <replay-run> --max-cars 1 --action clear
+polybot-replay-swarm --run <run> --max-cars 200 `
+  --color-stop 0:#ff0000 --color-stop 250000:#ff8000 `
+  --color-stop 500000:#ffff00 --color-stop 750000:#80ff00 `
+  --color-stop 1000000:#00ff00 --action play
 ```
 
-Manual integration checklist: load a track, enter its race, issue the play
-command, then verify the replay moves without moving/colliding with the player
-car; exercise pause/resume, seek, restart, color, opacity, end behavior, and
-clear. Repeat with PolyTrack 0.6.2 and 0.6.3. No live game session was available
-for this implementation, so rendering/FPS and CPU/GPU impact remain unmeasured.
+Each ghost receives its own color from `training_step_start`; step range
+selection, seeded stratified sampling, and the existing color-scale code are
+shared with dry-run inspection. All ghosts start at replay time zero and share
+one playback clock. A short episode may disappear, freeze, or fade at its own
+recorded endpoint while longer episodes continue.
+The loader skips optional observation/action arrays when preparing visual
+playback, even if those were recorded for training analysis.
+
+`load` loads the selected swarm paused. Controls address the loaded swarm:
+
+```powershell
+polybot-replay-swarm --run <run> --action status
+polybot-replay-swarm --run <run> --action pause
+polybot-replay-swarm --run <run> --action resume --speed 2
+polybot-replay-swarm --run <run> --action restart
+polybot-replay-swarm --run <run> --action seek --seek-seconds 8.5
+polybot-replay-swarm --run <run> --action configure --opacity 0.4
+polybot-replay-swarm --run <run> --action clear
+```
+
+`status` reports loaded/visible ghosts, shared playback position and duration,
+training-step range, and average replay-render update time (not GPU frame time).
+`--max-cars` supports 1–500, but actual comfortable counts depend on the game
+and hardware. Requests are rejected above 500 ghosts, 250,000 aggregate
+samples, 500,000 samples per episode, or 32 MiB of encoded trajectory data.
+No live GPU/FPS measurement has been made. The renderer currently constructs
+one native renderer car per selected episode; native geometry/material sharing
+and shadow costs have not been established from the public mod API.
+
+Repeat the synthetic renderer benchmark with
+`node --expose-gc tools/benchmark_replay_swarm.mjs`. It exercises the renderer
+state block from bridge 0.1.38 using mock cars and 120 samples per ghost. One run
+measured about 0.091/0.139/0.412/0.525 ms per measured frame for 50/100/250/500
+ghosts. Heap deltas were 1.14/1.84/4.29/4.04 MiB in that run; V8 heap values
+fluctuate. These figures exclude native car construction, game rendering,
+geometry, shadows, and GPU work; they are not PolyTrack FPS estimates.
+
+### Exact manual live-test checklist
+
+1. Train briefly with visual replay recording enabled, then stop training.
+2. Find the output under `<output-root>/<track-slug>/<algorithm>/visual_replays/<run-id>/`.
+3. Launch PolyTrack 0.6.3 and load Summer 1.
+4. Confirm PML has loaded bridge 0.1.38; use bridge 0.1.37 for PolyTrack 0.6.2.
+5. Run the one-car command above and verify its per-step color and recorded path.
+6. Clear the ghost, then run the 50-car command; note FPS and check age colors.
+7. Clear, then load 100 cars and note FPS.
+8. Clear, then load 250 cars and note FPS; stop if the game becomes unstable.
+9. If performance permits, repeat with 500 cars (the configured hard ceiling).
+10. Check the selected step range and that early and later attempts have distinct tints.
+11. Exercise pause and resume; verify all ghosts stop and move together.
+12. Exercise restart; verify all ghosts return to their own first sample together.
+13. Seek to a mid-run time and verify each ghost's position and orientation.
+14. Confirm early-ended replays fade while longer replays continue.
+15. Change `--end-behavior disappear` and `freeze` and verify both endpoints.
+16. Clear and verify every ghost disappears; reload and clear again to check for leaks.
+17. Check the real car does not collide with ghosts and remains controllable.
+18. Confirm ghosts do not activate checkpoints, affect results, or add leaderboard entries.
+19. Confirm the game has only the real player as a physics participant.
+20. Stop PolyTrack control, resume ordinary training, and confirm training still runs normally.
+21. Record FPS and `--action status` average render-update time at each tested count.
 
 Python currently records only the final transform returned for each
 policy/environment action. Rendering interpolation makes those samples move
 smoothly, but does not recover the missing intermediate physics-tick
 transforms (for frame skip 30, at most one recorded point per 30 ticks).
 High-frequency fidelity requires the future native/PML per-tick recorder.
-Stage 4 is single-car only; it does not yet implement the multi-episode swarm.

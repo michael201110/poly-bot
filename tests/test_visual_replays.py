@@ -118,6 +118,10 @@ def test_optional_policy_arrays_roundtrip_in_distinct_npz_arrays(tmp_path) -> No
     assert loaded.decision_elapsed_s == [0.03]
     np.testing.assert_array_equal(loaded.observations, [[1.0, 2.0]])
     np.testing.assert_array_equal(loaded.actions, [[0.5]])
+    visual_only = load_replay_episode(tmp_path, entry, include_optional=False)
+    assert visual_only.observations is None
+    assert visual_only.actions is None
+    assert visual_only.decision_ticks is None
 
 
 def test_index_metadata_and_backward_compatibility_without_replays(tmp_path) -> None:

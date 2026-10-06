@@ -28,6 +28,9 @@ from polybot.transport import WebSocketServerTransport
 FAILED_STATUSES = frozenset({"failed", "timeout"})
 MAX_REPLAY_SAMPLE_COUNT = 500_000
 REPLAY_CHUNK_SAMPLES = 256
+MAX_REPLAY_GHOSTS = 500
+MAX_REPLAY_TOTAL_SAMPLES = 250_000
+MAX_REPLAY_PAYLOAD_BYTES = 32 * 1024 * 1024
 _COLOR_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
 _NAMED_COLORS = {
     "red": "#ff0000",
@@ -57,6 +60,17 @@ class ReplaySelection:
     @property
     def training_step(self) -> int:
         return int(self.metadata["training_step_start"])
+
+
+@dataclass(frozen=True, slots=True)
+class SelectedReplayPayload:
+    selection: ReplaySelection
+    payload: ReplayPayload
+    color: str
+
+    @property
+    def episode_key(self) -> str:
+        return f"{self.selection.metadata['run_id']}:{self.selection.metadata['episode_id']}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +162,13 @@ def _validate_replay_samples(samples: Sequence[ReplaySample]) -> None:
         previous = sample
 
 
+def _chunk_payload_bytes(samples: Sequence[ReplaySample]) -> int:
+    return sum(
+        len(json.dumps(chunk["samples"], separators=(",", ":"), allow_nan=False).encode("utf-8")) + 8
+        for chunk in replay_sample_chunks(samples)
+    )
+
+
 def _send_replay_request(
     transport: WebSocketServerTransport,
     request_id: int,
@@ -223,6 +244,7 @@ def send_replay_playback(
     if action in {"play", "load"}:
         assert payload is not None
         chunks = replay_sample_chunks(payload.samples)
+        payload_bytes = _chunk_payload_bytes(payload.samples)
         _send_replay_request(
             transport,
             request_id,
@@ -234,6 +256,7 @@ def send_replay_playback(
                 "opacity": options.opacity,
                 "end_behavior": options.end_behavior,
                 "fade_duration_s": options.fade_duration_s,
+                "payload_bytes": payload_bytes,
             },
         )
         request_id += 1
@@ -272,6 +295,151 @@ def send_replay_playback(
                 {"value": value},
             )
         )
+    for operation, params in controls:
+        result = _send_replay_request(transport, request_id, operation, params)
+        request_id += 1
+    return result
+
+
+def send_replay_swarm(
+    transport: WebSocketServerTransport,
+    *,
+    action: str,
+    payloads: Sequence[SelectedReplayPayload] = (),
+    options: ReplayPlaybackOptions,
+    seek_seconds: float | None = None,
+    update_settings: Sequence[str] = (),
+) -> dict[str, Any]:
+    """Transfer selected trajectories once, then let the main-thread renderer play them."""
+    supported_actions = {
+        "play",
+        "load",
+        "resume",
+        "pause",
+        "restart",
+        "seek",
+        "configure",
+        "clear",
+        "status",
+    }
+    if action not in supported_actions:
+        raise ValueError(f"unsupported replay action: {action}")
+    if action in {"play", "load"} and not payloads:
+        raise ValueError(f"{action} requires at least one selected replay")
+    if len(payloads) > MAX_REPLAY_GHOSTS:
+        raise ValueError(f"swarm exceeds maximum ghost count ({MAX_REPLAY_GHOSTS})")
+    if action == "seek" and (
+        seek_seconds is None
+        or isinstance(seek_seconds, bool)
+        or not isinstance(seek_seconds, (int, float))
+        or not math.isfinite(seek_seconds)
+        or seek_seconds < 0
+    ):
+        raise ValueError("seek requires a finite, non-negative --seek-seconds value")
+    setting_values = {
+        "speed": options.speed,
+        "opacity": options.opacity,
+        "color": options.color,
+        "end_behavior": options.end_behavior,
+        "fade_duration": options.fade_duration_s,
+    }
+    if any(name not in setting_values for name in update_settings):
+        raise ValueError("unsupported playback setting")
+    if action == "configure" and not update_settings:
+        raise ValueError("configure requires at least one playback setting")
+    if len({item.episode_key for item in payloads}) != len(payloads):
+        raise ValueError("swarm contains duplicate replay episodes")
+
+    total_samples = 0
+    payload_bytes = 0
+    for item in payloads:
+        _validate_replay_samples(item.payload.samples)
+        total_samples += len(item.payload.samples)
+        if total_samples > MAX_REPLAY_TOTAL_SAMPLES:
+            raise ValueError(f"swarm exceeds maximum total sample count ({MAX_REPLAY_TOTAL_SAMPLES})")
+        payload_bytes += _chunk_payload_bytes(item.payload.samples)
+        if payload_bytes > MAX_REPLAY_PAYLOAD_BYTES:
+            raise ValueError(f"swarm exceeds maximum encoded payload size ({MAX_REPLAY_PAYLOAD_BYTES} bytes)")
+        if len(item.episode_key) > 128:
+            raise ValueError("replay run/episode identifier exceeds 128 characters")
+
+    request_id = 0
+    hello = _send_replay_request(
+        transport,
+        request_id,
+        "hello",
+        {
+            "protocol": PROTOCOL_NAME,
+            "protocol_version": PROTOCOL_VERSION,
+            "lookahead_count": 1,
+        },
+    )
+    if hello.get("protocol_version") != PROTOCOL_VERSION:
+        raise ProtocolViolation("PolyTrack bridge returned an incompatible protocol version")
+    request_id += 1
+
+    result: dict[str, Any] = {}
+    if action in {"play", "load"}:
+        _send_replay_request(
+            transport,
+            request_id,
+            "visual_replay_swarm_begin",
+            {
+                "ghost_count": len(payloads),
+                "total_sample_count": total_samples,
+                "payload_bytes": payload_bytes,
+                "speed": options.speed,
+                "opacity": options.opacity,
+                "end_behavior": options.end_behavior,
+                "fade_duration_s": options.fade_duration_s,
+            },
+        )
+        request_id += 1
+        for item in payloads:
+            _send_replay_request(
+                transport,
+                request_id,
+                "visual_replay_swarm_episode_begin",
+                {
+                    "episode_id": item.episode_key,
+                    "training_step_start": item.selection.training_step,
+                    "sample_count": len(item.payload.samples),
+                    "color": item.color,
+                },
+            )
+            request_id += 1
+            for chunk in replay_sample_chunks(item.payload.samples):
+                _send_replay_request(
+                    transport,
+                    request_id,
+                    "visual_replay_swarm_chunk",
+                    {"episode_id": item.episode_key, **chunk},
+                )
+                request_id += 1
+            _send_replay_request(
+                transport,
+                request_id,
+                "visual_replay_swarm_episode_commit",
+                {"episode_id": item.episode_key},
+            )
+            request_id += 1
+        result = _send_replay_request(
+            transport,
+            request_id,
+            "visual_replay_swarm_commit",
+            {"autoplay": action == "play"},
+        )
+        request_id += 1
+    controls: list[tuple[str, dict[str, Any]]] = []
+    if action == "resume":
+        controls.append(("visual_replay_play", {}))
+    elif action == "seek":
+        controls.append(("visual_replay_seek", {"seconds": seek_seconds}))
+    elif action in {"pause", "restart", "clear", "status"}:
+        operation = "status" if action == "status" else action
+        controls.append((f"visual_replay_{operation}", {}))
+    for name in update_settings:
+        controls.append(("visual_replay_" + name, {"value": setting_values[name]}))
     for operation, params in controls:
         result = _send_replay_request(transport, request_id, operation, params)
         request_id += 1
@@ -665,7 +833,7 @@ def _parse_range(value: str) -> tuple[int, int]:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="polybot-replay-swarm",
-        description="Inspect or play one saved visual replay as a native PolyTrack ghost.",
+        description="Inspect or play selected visual replays as renderer-only PolyTrack ghosts.",
     )
     parser.add_argument("--run", type=Path, required=True, help="replay run directory or parent containing replay runs")
     parser.add_argument("--steps", type=_parse_range, help="inclusive episode-start training-step range MIN:MAX")
@@ -673,13 +841,13 @@ def build_parser() -> argparse.ArgumentParser:
     filter_group = parser.add_mutually_exclusive_group()
     filter_group.add_argument("--finished-only", action="store_true")
     filter_group.add_argument("--failed-only", action="store_true", help="include failed and timed-out episodes")
-    parser.add_argument("--max-cars", type=int, default=250)
+    parser.add_argument("--max-cars", type=int, default=100, help=f"maximum ghosts to load (1-{MAX_REPLAY_GHOSTS})")
     parser.add_argument("--sample-seed", type=int, default=0)
     parser.add_argument("--color-min-step", type=int, default=0)
     parser.add_argument("--color-max-step", type=int, default=1_000_000)
     parser.add_argument(
         "--action",
-        choices=("play", "load", "resume", "pause", "restart", "seek", "configure", "clear"),
+        choices=("play", "load", "resume", "pause", "restart", "seek", "configure", "clear", "status"),
         default="play",
     )
     parser.add_argument("--seek-seconds", type=float, help="playback offset used with --action seek")
@@ -707,8 +875,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    if args.max_cars < 1:
-        parser.error("--max-cars must be positive")
+    if args.max_cars < 1 or args.max_cars > MAX_REPLAY_GHOSTS:
+        parser.error(f"--max-cars must be from 1 to {MAX_REPLAY_GHOSTS}")
     if args.sample_seed < 0:
         parser.error("--sample-seed must be non-negative")
     try:
@@ -755,24 +923,34 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(report, indent=2, allow_nan=False))
         if args.dry_run:
             return 0
-        selected_replay = None
-        if args.action != "clear":
-            try:
-                selected_replay = require_single_replay(selected, max_cars=args.max_cars)
-            except ValueError as exc:
-                parser.error(str(exc))
+        payloads: list[SelectedReplayPayload] = []
+        if args.action in {"play", "load"}:
+            if not selected:
+                raise ValueError(f"{args.action} requires at least one episode matching the selection")
+            if len(selected) > MAX_REPLAY_GHOSTS:
+                raise ValueError(f"selection exceeds maximum ghost count ({MAX_REPLAY_GHOSTS})")
+            indexed_total = sum(item.metadata["sample_count"] for item in selected)
+            if indexed_total > MAX_REPLAY_TOTAL_SAMPLES:
+                raise ValueError(f"selection exceeds maximum total sample count ({MAX_REPLAY_TOTAL_SAMPLES})")
+            for item in selected:
+                payload = load_replay_episode(
+                    item.replay_directory,
+                    item.metadata,
+                    include_optional=False,
+                )
+                payloads.append(
+                    SelectedReplayPayload(
+                        item,
+                        payload,
+                        args.color or color_scale.hex_color(item.training_step),
+                    )
+                )
         options = ReplayPlaybackOptions(
             speed=1.0 if args.speed is None else args.speed,
             opacity=0.5 if args.opacity is None else args.opacity,
-            color=args.color
-            or (color_scale.hex_color(selected_replay.training_step) if selected_replay is not None else "#ffffff"),
+            color=args.color or "#ffffff",
             end_behavior=args.end_behavior or "fade",
             fade_duration_s=0.75 if args.fade_duration is None else args.fade_duration,
-        )
-        payload = (
-            load_replay_episode(selected_replay.replay_directory, selected_replay.metadata)
-            if args.action in {"play", "load"} and selected_replay is not None
-            else None
         )
         transport = WebSocketServerTransport(
             port=args.port,
@@ -780,10 +958,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             request_timeout_s=35.0,
         )
         try:
-            result = send_replay_playback(
+            result = send_replay_swarm(
                 transport,
                 action=args.action,
-                payload=payload,
+                payloads=payloads,
                 options=options,
                 seek_seconds=args.seek_seconds,
                 update_settings=tuple(
@@ -804,15 +982,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(
                 {
                     "action": args.action,
-                    "episode": (
-                        {
-                            "run_id": selected_replay.metadata["run_id"],
-                            "episode_id": selected_replay.metadata["episode_id"],
-                            "training_step_start": selected_replay.training_step,
-                        }
-                        if selected_replay is not None
-                        else None
-                    ),
+                    "selected_episode_count": len(payloads),
                     "result": result,
                 },
                 indent=2,

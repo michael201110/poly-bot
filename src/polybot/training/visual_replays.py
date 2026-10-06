@@ -131,7 +131,7 @@ def load_replay_index(directory: str | Path) -> list[dict[str, Any]]:
 
 
 def load_replay_episode(
-    directory: str | Path, entry: dict[str, Any],
+    directory: str | Path, entry: dict[str, Any], *, include_optional: bool = True,
 ) -> ReplayPayload:
     """Load and validate one indexed NPZ without permitting object deserialization."""
     metadata = _metadata_entry(entry)
@@ -164,9 +164,12 @@ def load_replay_episode(
                 )
                 for tick, seconds, xyz, quat in zip(ticks, elapsed_s, position, quaternion, strict=True)
             ]
-            optional: dict[str, np.ndarray | None] = {}
-            for name in ("decision_ticks", "decision_elapsed_s", "observations", "actions"):
-                optional[name] = np.asarray(archive[name]) if name in archive else None
+            optional: dict[str, np.ndarray | None] = {
+                name: None for name in ("decision_ticks", "decision_elapsed_s", "observations", "actions")
+            }
+            if include_optional:
+                for name in optional:
+                    optional[name] = np.asarray(archive[name]) if name in archive else None
             decision_ticks = optional["decision_ticks"]
             decision_elapsed = optional["decision_elapsed_s"]
             if decision_ticks is not None and (

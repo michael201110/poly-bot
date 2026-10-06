@@ -189,6 +189,39 @@ def test_stage_four_ghost_uses_native_renderer_car_without_physics_manager(
     assert "CreateCar" not in create_car
 
 
+@pytest.mark.parametrize(
+    ("version", "constructor", "hook"),
+    [
+        ("0.1.37", "new U.A(", 'update(e) {\n              const t = (0, R.gn)(this, jr, "m", ys).call(this);'),
+        ("0.1.38", "new z.A(", 'update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);'),
+    ],
+)
+def test_current_swarm_releases_use_native_render_only_cars_and_exact_update_hooks(
+    version: str,
+    constructor: str,
+    hook: str,
+) -> None:
+    template = (MOD_ROOT / version / "main.template.js").read_text(encoding="utf-8")
+    worker = (MOD_ROOT / version / "worker_runtime.js").read_text(encoding="utf-8")
+    bundled = (MOD_ROOT / version / "main.mod.js").read_text(encoding="utf-8")
+
+    assert template.count(hook.replace("\n", "\\n")) == 1
+    assert constructor in template
+    renderer = template.split("createCar: (state) =>", maxsplit=1)[1].split("\n        ),", maxsplit=1)[0]
+    assert "null, state, null, null," in renderer
+    assert "CreateCar" not in renderer
+    for operation in (
+        "visual_replay_swarm_begin",
+        "visual_replay_swarm_episode_begin",
+        "visual_replay_swarm_chunk",
+        "visual_replay_swarm_episode_commit",
+        "visual_replay_swarm_commit",
+        "visual_replay_status",
+    ):
+        assert f'case "{operation}"' in worker
+        assert operation in bundled
+
+
 def test_v2_worker_exports_vehicle_dynamics_and_ghost_guidance() -> None:
     source = (MOD_ROOT / "0.1.27" / "worker_runtime.js").read_text(encoding="utf-8")
     for field in (

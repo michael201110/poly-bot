@@ -39,6 +39,15 @@ REPLAY_RENDER_TOKENS = {
     "0.6.2": ('update(e) {\n              const t = (0, R.gn)(this, jr, "m", ys).call(this);',),
     "0.6.3": ('update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);',),
 }
+SWARM_RELEASES = {"0.6.2": "0.1.37", "0.6.3": "0.1.38"}
+SWARM_PROTOCOL_TOKENS = (
+    'case "visual_replay_swarm_begin"',
+    'case "visual_replay_swarm_episode_begin"',
+    'case "visual_replay_swarm_chunk"',
+    'case "visual_replay_swarm_episode_commit"',
+    'case "visual_replay_swarm_commit"',
+    'case "visual_replay_status"',
+)
 
 
 def _sha256(path: Path) -> str:
@@ -105,6 +114,38 @@ def _validate_manifests(repository: Path) -> list[str]:
         main_file = mod_root / version / str(version_manifest.get("main"))
         if not main_file.is_file():
             failures.append(f"missing mod entry point: {main_file}")
+        if game_version in SWARM_RELEASES and version == SWARM_RELEASES[game_version]:
+            worker = mod_root / version / "worker_runtime.js"
+            template = mod_root / version / "main.template.js"
+            for path in (worker, template):
+                if not path.is_file():
+                    failures.append(f"missing swarm bridge source: {path}")
+            if worker.is_file():
+                worker_source = worker.read_text(encoding="utf-8")
+                failures.extend(
+                    _validate_tokens(
+                        worker,
+                        SWARM_PROTOCOL_TOKENS,
+                        source=worker_source,
+                    )
+                )
+                for operation in ("hello", "reset", "step", "close"):
+                    if f'case "{operation}"' not in worker_source:
+                        failures.append(f"{worker}: missing preserved {operation!r} operation")
+            if template.is_file():
+                template_source = template.read_text(encoding="utf-8")
+                failures.extend(
+                    _validate_tokens(
+                        template,
+                        tuple(token.replace("\n", "\\n") for token in REPLAY_RENDER_TOKENS[game_version]),
+                        source=template_source,
+                    )
+                )
+                for token in ("new U.A(" if game_version == "0.6.2" else "new z.A(", "null, state, null, null,"):
+                    if token not in template_source:
+                        failures.append(f"{template}: missing renderer-only car token {token!r}")
+                if "const replayMaxGhosts = 500;" not in template_source or "replayBeginSwarm" not in template_source:
+                    failures.append(f"{template}: missing swarm renderer implementation")
     return failures
 
 

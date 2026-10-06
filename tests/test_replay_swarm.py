@@ -12,6 +12,7 @@ from polybot.replay_swarm import (
     ColorStop,
     ReplayPlaybackOptions,
     ReplaySelection,
+    SelectedReplayPayload,
     filter_replays,
     interpolate_position,
     interpolate_quaternion,
@@ -23,6 +24,7 @@ from polybot.replay_swarm import (
     resolve_replay_directories,
     select_replays,
     send_replay_playback,
+    send_replay_swarm,
     stratified_sample,
 )
 from polybot.training.visual_replays import INDEX_SCHEMA, ReplayPayload, ReplaySample
@@ -465,3 +467,129 @@ def test_cli_selection_report_for_hypothetical_step_window(tmp_path, capsys) -> 
         "episode-000002",
         "episode-000003",
     ]
+
+
+class _RecordingTransport:
+    def __init__(self) -> None:
+        self.messages: list[dict] = []
+
+    def request(self, message):
+        self.messages.append(dict(message))
+        return {
+            "protocol": "polybot.sim",
+            "v": 2,
+            "id": message["id"],
+            "ok": True,
+            "result": {"protocol_version": 2},
+        }
+
+
+def _selected_payload(episode_number: int, step: int) -> SelectedReplayPayload:
+    metadata = entry(episode_number, step)
+    selection = ReplaySelection(Path("replays") / "run", metadata)
+    samples = [
+        ReplaySample(0, 0.0, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)),
+        ReplaySample(1, 0.03, (1.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)),
+    ]
+    return SelectedReplayPayload(selection, ReplayPayload(metadata={}, samples=samples), "#ff0000")
+
+
+def test_swarm_transfer_sends_all_episodes_with_individual_age_colors_once() -> None:
+    transport = _RecordingTransport()
+    payloads = [_selected_payload(1, 0), _selected_payload(2, 250_000)]
+    payloads[1] = SelectedReplayPayload(payloads[1].selection, payloads[1].payload, "#ff8000")
+    result = send_replay_swarm(
+        transport,
+        action="play",
+        payloads=payloads,
+        options=ReplayPlaybackOptions(),
+    )
+    operations = [message["op"] for message in transport.messages]
+    assert operations == [
+        "hello",
+        "visual_replay_swarm_begin",
+        "visual_replay_swarm_episode_begin",
+        "visual_replay_swarm_chunk",
+        "visual_replay_swarm_episode_commit",
+        "visual_replay_swarm_episode_begin",
+        "visual_replay_swarm_chunk",
+        "visual_replay_swarm_episode_commit",
+        "visual_replay_swarm_commit",
+    ]
+    begin = transport.messages[1]["params"]
+    assert begin["ghost_count"] == 2
+    assert begin["total_sample_count"] == 4
+    episodes = [
+        message["params"] for message in transport.messages if message["op"] == "visual_replay_swarm_episode_begin"
+    ]
+    assert [(item["training_step_start"], item["color"]) for item in episodes] == [
+        (0, "#ff0000"),
+        (250_000, "#ff8000"),
+    ]
+    assert transport.messages[-1]["params"] == {"autoplay": True}
+    assert result["protocol_version"] == 2
+
+
+@pytest.mark.parametrize(
+    ("action", "operation"),
+    [
+        ("resume", "visual_replay_play"),
+        ("pause", "visual_replay_pause"),
+        ("restart", "visual_replay_restart"),
+        ("clear", "visual_replay_clear"),
+        ("status", "visual_replay_status"),
+    ],
+)
+def test_swarm_controls_use_existing_bridge(action: str, operation: str) -> None:
+    transport = _RecordingTransport()
+    send_replay_swarm(transport, action=action, options=ReplayPlaybackOptions())
+    assert [message["op"] for message in transport.messages] == ["hello", operation]
+
+
+def test_swarm_preflight_rejects_duplicate_episodes_and_resource_limits(monkeypatch) -> None:
+    item = _selected_payload(1, 0)
+    transport = _RecordingTransport()
+    with pytest.raises(ValueError, match="duplicate"):
+        send_replay_swarm(
+            transport,
+            action="play",
+            payloads=[item, item],
+            options=ReplayPlaybackOptions(),
+        )
+    assert not transport.messages
+
+    monkeypatch.setattr("polybot.replay_swarm.MAX_REPLAY_GHOSTS", 1)
+    with pytest.raises(ValueError, match="ghost count"):
+        send_replay_swarm(
+            transport,
+            action="play",
+            payloads=[item, _selected_payload(2, 10)],
+            options=ReplayPlaybackOptions(),
+        )
+    monkeypatch.setattr("polybot.replay_swarm.MAX_REPLAY_GHOSTS", 500)
+    monkeypatch.setattr("polybot.replay_swarm.MAX_REPLAY_TOTAL_SAMPLES", 3)
+    with pytest.raises(ValueError, match="total sample count"):
+        send_replay_swarm(
+            transport,
+            action="play",
+            payloads=[item, _selected_payload(2, 10)],
+            options=ReplayPlaybackOptions(),
+        )
+    monkeypatch.setattr("polybot.replay_swarm.MAX_REPLAY_TOTAL_SAMPLES", 1_000_000)
+    monkeypatch.setattr("polybot.replay_swarm.MAX_REPLAY_PAYLOAD_BYTES", 1)
+    with pytest.raises(ValueError, match="payload size"):
+        send_replay_swarm(
+            transport,
+            action="play",
+            payloads=[item],
+            options=ReplayPlaybackOptions(),
+        )
+    assert not transport.messages
+
+
+def test_swarm_sender_rejects_missing_episodes_for_load_and_bad_seek() -> None:
+    transport = _RecordingTransport()
+    with pytest.raises(ValueError, match="at least one"):
+        send_replay_swarm(transport, action="load", options=ReplayPlaybackOptions())
+    with pytest.raises(ValueError, match="seek requires"):
+        send_replay_swarm(transport, action="seek", options=ReplayPlaybackOptions())
