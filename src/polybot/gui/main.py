@@ -183,6 +183,11 @@ class ParameterForm(QWidget):
             visible = self.basic is None or enabled or name in self.basic
             widget.setVisible(visible)
             self.labels[name].setVisible(visible)
+        layout = self.layout()
+        if layout is not None:
+            layout.invalidate()
+            layout.activate()
+        self.updateGeometry()
 
     def values(self) -> dict[str, Any]:
         result = {name: _value(widget) for name, widget in self.widgets.items()}
@@ -1664,6 +1669,11 @@ class PolyBotWindow(QWidget):
         for name in self.general_advanced:
             self.general[name].setVisible(enabled)
             self.general_labels[name].setVisible(enabled)
+        layout = self.layout()
+        if layout is not None:
+            layout.invalidate()
+            layout.activate()
+        self.updateGeometry()
 
     def _backend_changed(self, backend: str) -> None:
         if backend == "mock":
@@ -1946,6 +1956,17 @@ class PolyBotWindow(QWidget):
 
     def _reset_profile(self) -> None:
         self._load_reward_profile(self.reward_profile.currentText())
+
+    def _load_saved_replay_rewards(self, rewards: dict[str, object]) -> None:
+        saved = RewardConfig(**rewards)
+        self._base_rewards = saved
+        self._reward_values = asdict(saved)
+        for key, widget in self.reward_basic.items():
+            _set(widget, 1.0 if key.endswith("_multiplier") else self._reward_values[key])
+        self.reward_profile.blockSignals(True)
+        self.reward_profile.setCurrentText("Custom")
+        self.reward_profile.blockSignals(False)
+        self._refresh_reward_view()
 
     def configuration(self) -> TrainingConfig:
         values = {name: _value(widget) for name, widget in self.general.items()}
@@ -2506,19 +2527,32 @@ class PolyBotWindow(QWidget):
                     cfg.track_name, "grtqc", track_slug=cfg.track_slug,
                 ) / "initialization"
                 resume = True
+            resume_metadata = None
+            saved_replay = slot / "replay.pkl"
+            fresh_replay = False
+            if resume and cfg.algorithm in {"grtqc", "tqc"}:
+                resume_metadata = registry.read_metadata(slot)
+                saved_rewards = resume_metadata.training_config.get("rewards")
+                if isinstance(saved_rewards, dict) and saved_rewards != cfg.to_dict()["rewards"]:
+                    self._load_saved_replay_rewards(saved_rewards)
+                    cfg = self.configuration()
+                    self.log.append(
+                        "Loaded the reward settings saved with this checkpoint."
+                    )
+                if not saved_replay.is_file():
+                    fresh_replay = True
+                    self.log.append(
+                        "No replay buffer was saved with this checkpoint; a new buffer will be collected."
+                    )
+                elif resume_metadata.reward_semantics != REWARD_SEMANTICS:
+                    fresh_replay = True
+                    self.log.append(
+                        "The saved replay uses older reward semantics; its reward settings were loaded, "
+                        "but the buffer will be recollected to avoid mixing reward versions."
+                    )
             warnings = configuration_warnings(cfg)
             self.warnings.setText("\n".join(warnings) if warnings else "Settings look reasonable.")
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
-            fresh_replay = (
-                resume and slot.name == "champion" and cfg.algorithm in {"grtqc", "tqc"}
-                and (
-                    not (slot / "replay.pkl").is_file()
-                    or registry.read_metadata(slot).training_config["rewards"]
-                    != cfg.to_dict()["rewards"]
-                    or (cfg.algorithm in {"tqc", "grtqc"}
-                        and registry.read_metadata(slot).reward_semantics != REWARD_SEMANTICS)
-                )
-            )
             self.runner = TrainingRunner(cfg, self.bridge.event.emit)
             self.runner.set_ai_overlay_settings(self.ai_overlay_settings)
             self.worker = threading.Thread(

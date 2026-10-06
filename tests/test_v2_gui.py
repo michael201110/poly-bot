@@ -4,6 +4,7 @@ import json
 import os
 import threading
 from dataclasses import fields
+from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
@@ -81,6 +82,62 @@ def test_ai_hud_settings_persist_and_apply_to_active_runner(window, qt_app) -> N
     assert saved.scale == pytest.approx(1.3)
     assert saved.lookahead_points == 6
     assert runner.settings == saved
+
+
+@pytest.mark.parametrize(
+    ("saved_semantics", "expected_fresh_replay"),
+    [
+        (gui_main.REWARD_SEMANTICS, False),
+        ("executed-controls-v1", True),
+    ],
+)
+def test_resume_loads_saved_reward_settings_before_replay_validation(
+    window, tmp_path, monkeypatch, saved_semantics, expected_fresh_replay,
+) -> None:
+    slot = tmp_path / "latest"
+    slot.mkdir()
+    (slot / "replay.pkl").write_bytes(b"saved replay placeholder")
+    saved_rewards = window._reward_values.copy()
+    saved_rewards["finish_bonus"] += 123.0
+    metadata = SimpleNamespace(
+        reward_semantics=saved_semantics,
+        training_config={"rewards": saved_rewards},
+    )
+
+    class Registry:
+        def __init__(self, root) -> None:
+            pass
+
+        def slot(self, *args, **kwargs):
+            return slot
+
+        def read_metadata(self, path):
+            return metadata
+
+    class Thread:
+        def __init__(self, *, target, args, daemon) -> None:
+            self.args = args
+
+        def start(self) -> None:
+            pass
+
+        def is_alive(self) -> bool:
+            return False
+
+    monkeypatch.setattr(gui_main, "ModelRegistry", Registry)
+    monkeypatch.setattr(gui_main.threading, "Thread", Thread)
+    monkeypatch.setattr(window, "_external_speed_search_running", lambda config: False)
+
+    window._start(True)
+
+    assert window.runner is not None
+    assert window.runner.config.to_dict()["rewards"] == saved_rewards
+    assert window.configuration().to_dict()["rewards"] == saved_rewards
+    assert window.reward_profile.currentText() == "Custom"
+    assert window.worker.args == (slot, expected_fresh_replay, False, False)
+    assert "Loaded the reward settings saved with this checkpoint." in window.log.toPlainText()
+    if expected_fresh_replay:
+        assert "saved replay uses older reward semantics" in window.log.toPlainText()
 
 
 @pytest.fixture
@@ -161,6 +218,31 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert "tau" in window.grtqc_form.widgets
     assert window.configuration().grtqc is not None
     assert window.configuration().ppo is None and window.configuration().tqc is None
+
+
+def test_advanced_toggle_restores_basic_settings_in_shown_window(window, qt_app) -> None:
+    window.show()
+    qt_app.processEvents()
+
+    algorithm_page = window.algorithm_stack.parentWidget()
+    window.tabs.setCurrentWidget(algorithm_page)
+    window.advanced.setChecked(True)
+    qt_app.processEvents()
+    window.advanced.setChecked(False)
+    qt_app.processEvents()
+
+    assert window.grtqc_form.widgets["architecture"].isVisible()
+    assert window.grtqc_form.widgets["learning_rate"].isVisible()
+    assert window.grtqc_form.widgets["train_frequency"].isVisible()
+    assert window.grtqc_form.widgets["critic_warmup_updates"].isHidden()
+    assert window.grtqc_form.widgets["architecture"].height() > 0
+
+    general_page = window.general["backend"].parentWidget()
+    window.tabs.setCurrentWidget(general_page)
+    qt_app.processEvents()
+    assert window.general["backend"].isVisible()
+    assert window.general["timesteps"].isVisible()
+    assert window.general["visual_replay_enabled"].isHidden()
 
 
 def test_distillation_summary_surfaces_live_bake_metrics() -> None:
