@@ -54,6 +54,15 @@ def _common(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--checkpoint-interval", type=int, default=10_000)
     parser.add_argument("--output-root", type=Path, default=Path("models"))
     parser.add_argument("--log-root", type=Path, default=Path("logs"))
+    parser.add_argument(
+        "--visual-replay", action=argparse.BooleanOptionalAction, default=None,
+        help="record visual replays (default: on for WebSocket, off for mock)",
+    )
+    parser.add_argument("--visual-replay-sample-hz", type=float, default=20.0)
+    parser.add_argument(
+        "--visual-replay-observations", action="store_true",
+        help="also save each policy observation and requested action",
+    )
 
 
 def _algorithm_options(parser: argparse.ArgumentParser) -> None:
@@ -179,6 +188,9 @@ def _config_from_args(args: argparse.Namespace, parser: argparse.ArgumentParser)
         lookahead_count=args.lookahead, reward_profile=profile,
         reward_scale=args.reward_scale, checkpoint_interval=args.checkpoint_interval,
         output_root=args.output_root, log_root=args.log_root,
+        visual_replay_enabled=args.visual_replay,
+        visual_replay_sample_hz=args.visual_replay_sample_hz,
+        visual_replay_observations=args.visual_replay_observations,
         curriculum=CurriculumConfig(
             args.curriculum, args.section_start, args.section_end,
             args.time_start, args.time_end,

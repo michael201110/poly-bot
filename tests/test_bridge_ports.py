@@ -26,7 +26,9 @@ def test_native_instance_guard_is_scoped_to_each_simulator_port(tmp_path):
     import json
     import subprocess
 
-    main = (MOD_ROOT / "0.1.33" / "main.mod.js").read_text()
+    manifest = json.loads((MOD_ROOT / "manifest.json").read_text())
+    version = manifest["latest"]["0.6.3"]
+    main = (MOD_ROOT / version / "main.mod.js").read_text()
     main = "class PolyBotBridgeMod" + main.split("class PolyBotBridgeMod", 1)[1]
     main = main.replace("export const polyMod", "const polyMod")
     checks = """
@@ -49,8 +51,6 @@ if (instanceChannel(-1) !== instanceChannel(8765)) throw new Error('invalid port
     path = tmp_path / "instance-channels.js"
     path.write_text(checks)
     subprocess.run(["node", str(path)], check=True, capture_output=True, text=True)
-    manifest = json.loads((MOD_ROOT / "manifest.json").read_text())
-    assert manifest["latest"]["0.6.3"] == "0.1.33"
-    assert (MOD_ROOT / "0.1.33" / "worker_runtime.js").read_bytes() == (
-        MOD_ROOT / "0.1.32" / "worker_runtime.js"
-    ).read_bytes()
+    worker = (MOD_ROOT / version / "worker_runtime.js").read_text()
+    assert "const requestedBridgePort" in worker
+    assert 'case "visual_replay_begin"' in worker

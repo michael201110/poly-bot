@@ -350,6 +350,9 @@ class TrainingConfig:
     checkpoint_interval: int = 10_000
     output_root: Path = Path("models")
     log_root: Path = Path("logs")
+    visual_replay_enabled: bool | None = None
+    visual_replay_sample_hz: float = 20.0
+    visual_replay_observations: bool = False
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     evaluation: EvaluationConfig = field(default_factory=lambda: EvaluationConfig(episodes=5))
     rewards: RewardConfig = field(default_factory=summer_1_reward_config)
@@ -371,6 +374,12 @@ class TrainingConfig:
             raise ValueError("invalid episode limit")
         if self.checkpoint_interval < 0 or not math.isfinite(self.reward_scale) or self.reward_scale <= 0:
             raise ValueError("invalid checkpoint interval or reward scale")
+        if self.visual_replay_enabled is not None and not isinstance(self.visual_replay_enabled, bool):
+            raise ValueError("visual_replay_enabled must be true, false, or null")
+        if not math.isfinite(self.visual_replay_sample_hz) or self.visual_replay_sample_hz <= 0:
+            raise ValueError("visual_replay_sample_hz must be finite and positive")
+        if not isinstance(self.visual_replay_observations, bool):
+            raise ValueError("visual_replay_observations must be a boolean")
         if self.seed < 0:
             raise ValueError("seed must be nonnegative")
         if self.algorithm == "grtqc" and self.evaluation.episodes < 5:
@@ -383,6 +392,11 @@ class TrainingConfig:
         value["output_root"] = str(self.output_root)
         value["log_root"] = str(self.log_root)
         return value
+
+    @property
+    def records_visual_replays(self) -> bool:
+        """Default to recording live PolyTrack runs, not synthetic mock runs."""
+        return self.backend == "websocket" if self.visual_replay_enabled is None else self.visual_replay_enabled
 
     @classmethod
     def from_dict(cls, value: dict[str, Any]) -> TrainingConfig:

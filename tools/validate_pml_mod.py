@@ -35,6 +35,10 @@ MAIN_TOKENS = (
     "createMultiplayerHostWebSocket() {",
     "createMultiplayerJoinWebSocket() {",
 )
+REPLAY_RENDER_TOKENS = {
+    "0.6.2": ('update(e) {\n              const t = (0, R.gn)(this, jr, "m", ys).call(this);',),
+    "0.6.3": ('update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);',),
+}
 
 
 def _sha256(path: Path) -> str:
@@ -51,7 +55,10 @@ def _validate_tokens(path: Path, tokens: tuple[str, ...], *, source: str) -> lis
 
 
 def validate(
-    worker: Path, main: Path, *, game_version: str = DEFAULT_GAME_VERSION,
+    worker: Path,
+    main: Path,
+    *,
+    game_version: str = DEFAULT_GAME_VERSION,
     require_pinned_hash: bool = True,
 ) -> list[str]:
     """Return compatibility failures; an empty result means validation passed."""
@@ -63,20 +70,16 @@ def validate(
     main_source = main_source.replace(RAW_WORKER_CONSTRUCTOR, PML_WORKER_CONSTRUCTOR)
     failures = [
         *_validate_tokens(worker, WORKER_TOKENS, source=worker.read_text(encoding="utf-8")),
-        *_validate_tokens(main, MAIN_TOKENS, source=main_source),
+        *_validate_tokens(main, (*MAIN_TOKENS, *REPLAY_RENDER_TOKENS[game_version]), source=main_source),
     ]
     if require_pinned_hash:
         worker_hash = _sha256(worker)
         main_hash = _sha256(main)
         pinned_worker, pinned_main = PINNED_HASHES[game_version]
         if worker_hash != pinned_worker:
-            failures.append(
-                f"{worker}: SHA-256 {worker_hash} is not the pinned {game_version} worker hash"
-            )
+            failures.append(f"{worker}: SHA-256 {worker_hash} is not the pinned {game_version} worker hash")
         if main_hash != pinned_main:
-            failures.append(
-                f"{main}: SHA-256 {main_hash} is not the pinned {game_version} main hash"
-            )
+            failures.append(f"{main}: SHA-256 {main_hash} is not the pinned {game_version} main hash")
     return failures
 
 
@@ -93,9 +96,7 @@ def _validate_manifests(repository: Path) -> list[str]:
             failures.append(f"manifest does not map PolyTrack {game_version} to a mod version")
             continue
         try:
-            version_manifest = json.loads(
-                (mod_root / version / "version.json").read_text(encoding="utf-8")
-            )
+            version_manifest = json.loads((mod_root / version / "version.json").read_text(encoding="utf-8"))
         except (OSError, ValueError) as error:
             failures.append(f"cannot read mod {version} manifest: {error}")
             continue
@@ -126,7 +127,9 @@ def main() -> int:
     if args.worker is not None and args.main is not None:
         failures.extend(
             validate(
-                args.worker, args.main, game_version=args.game_version,
+                args.worker,
+                args.main,
+                game_version=args.game_version,
                 require_pinned_hash=not args.anchors_only,
             )
         )

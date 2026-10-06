@@ -46,6 +46,15 @@ GENERAL_INFO = _info("General", {
     "checkpoint_interval": "Save a resumable snapshot after this many training decisions. Zero disables it.",
     "output_root": "Folder for v2 latest, champion and checkpoint models.",
     "log_root": "Folder for structured JSONL training events.",
+    "visual_replay_enabled": (
+        "Record compressed visual replays. Automatic records live PolyTrack/WebSocket runs and skips mock runs."
+    ),
+    "visual_replay_sample_hz": (
+        "Maximum transform sample rate in hertz; actual rate cannot exceed telemetry available from the environment."
+    ),
+    "visual_replay_observations": (
+        "Also store the policy observation and requested action at every decision; this increases replay size."
+    ),
 })
 
 PPO_INFO = _info("PPO", {

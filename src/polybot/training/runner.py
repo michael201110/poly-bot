@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import shutil
 import statistics
 import threading
@@ -40,7 +41,14 @@ from polybot.training.evaluation import EvaluationResult, PrefixObservationRefer
 from polybot.training.metrics import EventSink
 from polybot.training.pace_history import append_pace_history
 from polybot.training.promotion import promote_directory
+from polybot.training.visual_replays import (
+    AsyncReplayWriter,
+    VisualReplayCaptureWrapper,
+    VisualReplaySession,
+)
 from polybot.transport import WebSocketServerTransport
+
+_LOG = logging.getLogger(__name__)
 
 
 def _evaluation_for_current_checkpoint(
@@ -120,6 +128,7 @@ class TrainingRunner:
         self.sink: EventSink | None = None
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
         self._ppo_speed_bias_schedule: list[list[float]] = []
+        self._visual_replay_session: VisualReplaySession | None = None
 
     def stop(self) -> None:
         self.stop_requested.set()
@@ -131,7 +140,9 @@ class TrainingRunner:
             return MockSimulatorTransport()
         return WebSocketServerTransport(port=self.config.websocket_port, connect_timeout_s=300, request_timeout_s=60)
 
-    def _environment(self, phase: CurriculumPhase | None = None) -> PolyTrackEnv:
+    def _environment(
+        self, phase: CurriculumPhase | None = None, *, record_visual_replays: bool = False,
+    ) -> gym.Env:
         cfg = self.config
         env = PolyTrackEnv(
             self._transport(), track_id=cfg.track_id, lookahead_count=cfg.lookahead_count,
@@ -148,10 +159,46 @@ class TrainingRunner:
         if cfg.algorithm == "ppo" and (
             self._ppo_air_brake_overlays or self._ppo_speed_bias_schedule
         ):
-            return AirBrakeActionWrapper(
+            env = AirBrakeActionWrapper(
                 env, self._ppo_air_brake_overlays, self._ppo_speed_bias_schedule,
             )
+        if record_visual_replays and self._visual_replay_session is not None:
+            return VisualReplayCaptureWrapper(env, self._visual_replay_session)
         return env
+
+    def _start_visual_replay_session(self, run_id: str) -> None:
+        cfg = self.config
+        if not cfg.records_visual_replays:
+            self._visual_replay_session = None
+            return
+        directory = self.registry.algorithm_dir(cfg.track_name, cfg.algorithm) / "visual_replays" / run_id
+        try:
+            writer = AsyncReplayWriter(
+                directory,
+                run_metadata={
+                    "run_id": run_id,
+                    "algorithm": cfg.algorithm,
+                    "track_id": cfg.track_id,
+                    "track_name": cfg.track_name,
+                    "frame_skip": cfg.frame_skip,
+                    "sample_hz_limit": cfg.visual_replay_sample_hz,
+                    "observations_recorded": cfg.visual_replay_observations,
+                },
+            )
+            self._visual_replay_session = VisualReplaySession(
+                writer,
+                run_id=run_id,
+                algorithm=cfg.algorithm,
+                track_id=cfg.track_id,
+                track_name=cfg.track_name,
+                frame_skip=cfg.frame_skip,
+                sample_hz=cfg.visual_replay_sample_hz,
+                record_observations=cfg.visual_replay_observations,
+                training_step_provider=lambda: int(getattr(self.model, "num_timesteps", 0)),
+            )
+        except Exception:
+            self._visual_replay_session = None
+            _LOG.warning("Could not start visual replay recording; training will continue", exc_info=True)
 
     def _emit(self, event: dict[str, Any]) -> None:
         assert self.sink is not None
@@ -1092,13 +1139,15 @@ class TrainingRunner:
                 raise ValueError("tuned champion must complete critic adaptation before pace polish")
             rollback_to_champion = True
         self.device = resolve_device(cfg.device, algorithm=cfg.algorithm)
+        replay_run_id = uuid4().hex
+        self._start_visual_replay_session(replay_run_id)
         stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
         log_path = cfg.log_root / f"{track_slug(cfg.track_name)}-{cfg.algorithm}-{stamp}.jsonl"
         self.sink = EventSink(log_path, self.status)
         plan = build_plan(cfg.curriculum, cfg.timesteps)
         self._emit({"type": "plan", "total_steps": plan.total_steps,
                     "phases": [asdict(phase) for phase in plan.phases]})
-        first_env = self._environment(plan.phases[0])
+        first_env = self._environment(plan.phases[0], record_visual_replays=True)
         training_env: Any = ScaledTrainingReward(first_env, cfg.reward_scale)
         resume_rng_seed: int | None = None
         try:
@@ -1409,7 +1458,9 @@ class TrainingRunner:
                     break
                 if index:
                     training_env.close()
-                    training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
+                    training_env = ScaledTrainingReward(
+                        self._environment(phase, record_visual_replays=True), cfg.reward_scale,
+                    )
                     self.model.set_env(training_env)
                 if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and phase.mode == "full":
                     self.model.scratch_curriculum_ready = True
@@ -1485,7 +1536,9 @@ class TrainingRunner:
                             if cfg.algorithm == "grtqc" and self.model.actor_unlocked
                             else cfg.evaluation.interval_steps
                         )
-                        training_env = ScaledTrainingReward(self._environment(phase), cfg.reward_scale)
+                        training_env = ScaledTrainingReward(
+                            self._environment(phase, record_visual_replays=True), cfg.reward_scale,
+                        )
                         ppo_restored = (
                             rollback_to_champion and cfg.algorithm == "ppo"
                             and self._restore_ppo_champion_if_worse(
@@ -1590,5 +1643,10 @@ class TrainingRunner:
                 self._checkpoint_after_transport_failure(exc)
             raise
         finally:
-            training_env.close()
-            self.sink.close()
+            try:
+                training_env.close()
+            finally:
+                if self._visual_replay_session is not None:
+                    self._visual_replay_session.shutdown()
+                    self._visual_replay_session = None
+                self.sink.close()

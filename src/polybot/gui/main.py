@@ -288,11 +288,15 @@ class PolyBotWindow(QWidget):
             "lookahead_count": 12, "reward_scale": 0.01,
             "checkpoint_interval": 10_000,
             "output_root": "models", "log_root": "logs",
+            "visual_replay_enabled": "automatic", "visual_replay_sample_hz": 20.0,
+            "visual_replay_observations": False,
         }
         for name, value in values.items():
             choices = ("mock", "websocket") if name == "backend" else (
                 ("auto", "cpu", "cuda") if name == "device" else ()
             )
+            if name == "visual_replay_enabled":
+                choices = ("automatic", "enabled", "disabled")
             self.general[name] = self._add_field(form, name, value, GENERAL_INFO[name], choices)
         self.algorithm = self._add_field(
             form, "algorithm", "grtqc", GENERAL_INFO["algorithm"], ("grtqc", "tqc", "ppo")
@@ -1129,6 +1133,9 @@ class PolyBotWindow(QWidget):
 
     def configuration(self) -> TrainingConfig:
         values = {name: _value(widget) for name, widget in self.general.items()}
+        values["visual_replay_enabled"] = {
+            "automatic": None, "enabled": True, "disabled": False,
+        }[values["visual_replay_enabled"]]
         values["output_root"] = Path(values["output_root"])
         values["log_root"] = Path(values["log_root"])
         values["algorithm"] = self.algorithm.currentText()
@@ -1145,7 +1152,10 @@ class PolyBotWindow(QWidget):
         self._algorithm_changed(config.algorithm)
         self.general["backend"].blockSignals(True)
         for name, widget in self.general.items():
-            _set(widget, getattr(config, name))
+            value = getattr(config, name)
+            if name == "visual_replay_enabled":
+                value = "automatic" if value is None else "enabled" if value else "disabled"
+            _set(widget, value)
         self.general["backend"].blockSignals(False)
         self.curriculum_form.load(config.curriculum)
         self.custom_phases.setPlainText(json.dumps([asdict(phase) for phase in config.curriculum.phases], indent=2))

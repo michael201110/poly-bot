@@ -27,7 +27,7 @@ def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
 
     assert manifest["id"] == "polybot-bridge"
     assert version_manifest == {
-        "targets": ["0.6.2", "0.6.3"],
+        "targets": [game_version],
         "dependencies": [],
         "main": "main.mod.js",
     }
@@ -35,9 +35,10 @@ def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
     runtime = (MOD_ROOT / version / "worker_runtime.js").read_text(encoding="utf-8")
     main_source = (MOD_ROOT / version / version_manifest["main"]).read_text(encoding="utf-8")
     assert 'from "./worker_runtime.js"' not in main_source
-    assert runtime.replace(
-        "export function polybotWorkerInjection()", "function polybotWorkerInjection()", 1
-    ) in main_source
+    assert (
+        runtime.replace("export function polybotWorkerInjection()", "function polybotWorkerInjection()", 1)
+        in main_source
+    )
 
 
 def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
@@ -47,13 +48,13 @@ def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
 
     for token in (*validator.WORKER_TOKENS, *validator.MAIN_TOKENS):
         assert token in source
+    assert 'ta, "m", Ps' in source
+    assert "__polybotBindVisualReplayRenderer" in source
 
 
 def test_worker_connects_when_player_is_created_and_started() -> None:
     source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
-    create_case = source.split("case messageTypes.CreateCar:", 1)[1].split(
-        "case messageTypes.DeleteCar:", 1
-    )[0]
+    create_case = source.split("case messageTypes.CreateCar:", 1)[1].split("case messageTypes.DeleteCar:", 1)[0]
     start_case = source.split("case messageTypes.StartCar:", 1)[1].split("default:", 1)[0]
 
     assert "connectSocket();" in create_case
@@ -125,9 +126,7 @@ def test_latest_mod_uses_native_backspace_after_finish() -> None:
 
 def test_latest_mod_bundles_worker_without_a_stale_import() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(
-        encoding="utf-8"
-    )
+    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(encoding="utf-8")
 
     assert "function polybotWorkerInjection()" in source
     assert "import { polybotWorkerInjection }" not in source
@@ -144,6 +143,50 @@ def test_latest_worker_keeps_curriculum_reset_kinematics_and_action_history() ->
     assert "previousAction: initialAction" in source
     assert "kinematicDtSeconds ?? ticksAdvanced * fixedDtSeconds" in source
     assert "null,\n              previousPlayerBuffer ? fixedDtSeconds : 0" in source
+
+
+@pytest.mark.parametrize("version", ["0.1.35", "0.1.36"])
+def test_stage_four_replay_commands_reuse_bridge_and_keep_training_dispatch(
+    version: str,
+) -> None:
+    source = (MOD_ROOT / version / "worker_runtime.js").read_text(encoding="utf-8")
+    for operation in (
+        "visual_replay_begin",
+        "visual_replay_chunk",
+        "visual_replay_commit",
+        "visual_replay_play",
+        "visual_replay_pause",
+        "visual_replay_restart",
+        "visual_replay_seek",
+        "visual_replay_speed",
+        "visual_replay_opacity",
+        "visual_replay_color",
+        "visual_replay_end_behavior",
+        "visual_replay_fade_duration",
+        "visual_replay_clear",
+    ):
+        assert f'case "{operation}"' in source
+    for operation in ("hello", "reset", "step", "close"):
+        assert f'case "{operation}"' in source
+
+
+@pytest.mark.parametrize(
+    ("version", "constructor"),
+    [
+        ("0.1.35", "new U.A("),
+        ("0.1.36", "new z.A("),
+    ],
+)
+def test_stage_four_ghost_uses_native_renderer_car_without_physics_manager(
+    version: str,
+    constructor: str,
+) -> None:
+    source = (MOD_ROOT / version / "main.template.js").read_text(encoding="utf-8")
+    create_car = source.split("createCar: (state) =>", maxsplit=1)[1].split("\n        ),", maxsplit=1)[0]
+
+    assert constructor in create_car
+    assert "null, state, null, null," in create_car
+    assert "CreateCar" not in create_car
 
 
 def test_v2_worker_exports_vehicle_dynamics_and_ghost_guidance() -> None:
@@ -172,9 +215,7 @@ def test_latest_ghost_guidance_is_position_aligned() -> None:
 def test_latest_mod_uses_native_backspace_before_aborted_reset() -> None:
     worker_source = (MOD_ROOT / "0.1.0" / "worker_runtime.js").read_text(encoding="utf-8")
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    main_source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(
-        encoding="utf-8"
-    )
+    main_source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(encoding="utf-8")
 
     assert "polybotAbortRestart: true" in worker_source
     assert "aborted run does not need the finish-only display pause." in worker_source
@@ -196,9 +237,7 @@ def test_latest_mod_resets_the_main_thread_control_recorder() -> None:
 
 def test_latest_mod_treats_equal_record_frames_as_rewinds() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(
-        encoding="utf-8"
-    )
+    source = (MOD_ROOT / manifest["latest"]["0.6.3"] / "main.mod.js").read_text(encoding="utf-8")
 
     assert "e.frames <= previous.frames" in source
 
@@ -218,19 +257,26 @@ def test_anchor_validator_rejects_missing_or_duplicate_tokens(tmp_path: Path) ->
 
 @pytest.mark.parametrize("game_version", ["0.6.2", "0.6.3"])
 def test_validator_checks_raw_bundles_and_version_specific_hashes(
-    tmp_path: Path, game_version: str, monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    game_version: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     validator = _load_validator()
     worker = tmp_path / "worker.js"
     main = tmp_path / "main.js"
     worker.write_text("\n".join(validator.WORKER_TOKENS), encoding="utf-8")
     main.write_text(
-        "\n".join(validator.MAIN_TOKENS).replace(
-            validator.PML_WORKER_CONSTRUCTOR, validator.RAW_WORKER_CONSTRUCTOR
-        ), encoding="utf-8",
+        "\n".join(
+            (
+                *validator.MAIN_TOKENS,
+                *validator.REPLAY_RENDER_TOKENS[game_version],
+            )
+        ).replace(validator.PML_WORKER_CONSTRUCTOR, validator.RAW_WORKER_CONSTRUCTOR),
+        encoding="utf-8",
     )
     monkeypatch.setitem(
-        validator.PINNED_HASHES, game_version,
+        validator.PINNED_HASHES,
+        game_version,
         (validator._sha256(worker), validator._sha256(main)),
     )
     assert validator.validate(worker, main, game_version=game_version) == []
@@ -238,9 +284,7 @@ def test_validator_checks_raw_bundles_and_version_specific_hashes(
     failures = validator.validate(worker, main, game_version=game_version)
     assert len(failures) == 1
     assert f"pinned {game_version} worker hash" in failures[0]
-    assert validator.validate(
-        worker, main, game_version=game_version, require_pinned_hash=False
-    ) == []
+    assert validator.validate(worker, main, game_version=game_version, require_pinned_hash=False) == []
 
 
 def test_manifests_cover_all_supported_games() -> None:
@@ -251,12 +295,8 @@ def test_manifest_validator_rejects_missing_target_and_entry_point(tmp_path: Pat
     root = tmp_path / "pml-mod"
     release = root / "test"
     release.mkdir(parents=True)
-    (root / "manifest.json").write_text(
-        json.dumps({"latest": {"0.6.2": "test", "0.6.3": "test"}}), encoding="utf-8"
-    )
-    (release / "version.json").write_text(
-        json.dumps({"targets": ["0.6.2"], "main": "missing.js"}), encoding="utf-8"
-    )
+    (root / "manifest.json").write_text(json.dumps({"latest": {"0.6.2": "test", "0.6.3": "test"}}), encoding="utf-8")
+    (release / "version.json").write_text(json.dumps({"targets": ["0.6.2"], "main": "missing.js"}), encoding="utf-8")
     failures = _load_validator()._validate_manifests(tmp_path)
     assert any("does not target PolyTrack 0.6.3" in failure for failure in failures)
     assert any("missing mod entry point" in failure for failure in failures)
