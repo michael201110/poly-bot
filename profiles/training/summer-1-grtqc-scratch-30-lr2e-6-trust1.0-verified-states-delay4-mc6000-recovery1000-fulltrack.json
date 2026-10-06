@@ -169,5 +169,5 @@
     "critic_mc_recovery_updates": 1000
   },
   "schema": "polybot.config.v2",
-  "websocket_port": 8766
+  "websocket_port": 8765
 }

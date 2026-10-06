@@ -1,4 +1,4 @@
-﻿{
+{
   "algorithm": "grtqc",
   "backend": "websocket",
   "track_name": "Summer 1",
@@ -168,5 +168,5 @@
     "actor_update_interval": 2
   },
   "schema": "polybot.config.v2",
-  "websocket_port": 8766
+  "websocket_port": 8765
 }

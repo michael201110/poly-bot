@@ -168,5 +168,5 @@
     "actor_update_interval": 4
   },
   "schema": "polybot.config.v2",
-  "websocket_port": 8766
+  "websocket_port": 8765
 }

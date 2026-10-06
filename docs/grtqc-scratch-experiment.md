@@ -4,7 +4,7 @@ Success requires a deterministic five-finish evaluation with median below 23.000
 
 ## Isolation and origin
 
-Profile: `profiles/training/summer-1-grtqc-scratch-30.json`. Output: `models/experiments/grtqc-scratch-20261002/`. Logs: `logs/grtqc-scratch-20261002/`. Seed: 20261002. Simulator: loopback port 8766, separate from the transferred branch's 8765. The original TQC source and all earlier experiment/replay/checkpoint directories remain intact. This experiment never invokes the transfer initializer, loads old replay, distills actions or installs source overlays. `initialization/` records the freshly generated actor/critics, empty replay and origin configuration. Scratch/transfer origin validation forbids silently resuming either as the other.
+Profile: `profiles/training/summer-1-grtqc-scratch-30.json`. Output: `models/experiments/grtqc-scratch-20261002/`. Logs: `logs/grtqc-scratch-20261002/`. Seed: 20261002. The original scratch run used loopback port 8766, separate from the transferred branch's 8765; current scratch profiles use the default port 8765. The original TQC source and all earlier experiment/replay/checkpoint directories remain intact. This experiment never invokes the transfer initializer, loads old replay, distills actions or installs source overlays. `initialization/` records the freshly generated actor/critics, empty replay and origin configuration. Scratch/transfer origin validation forbids silently resuming either as the other.
 
 Both actor and critics receive 121 actual physical/PWM/task-context inputs. Unlike the transferred actor, the new actor needs no preserved 105-input matrix and uses those inputs directly. Hidden gated layers use ordinary sigmoid scaling at fresh initialization. Two 128-unit hidden layers provide a practical baseline on this machine; two independent critics estimate 25 quantiles each and drop two upper quantiles per critic from the pooled target mixture. This architecture may change only in a separate controlled fresh experiment.
 
@@ -36,7 +36,7 @@ Logs include actor/critic loss, quantile/target mean and spread, TD residual, di
 .\.venv\Scripts\python.exe scripts/train_with_stop_file.py --config profiles/training/summer-1-grtqc-scratch-30.json --stop-file logs/grtqc-scratch-20261002/train.stop --retry-transport --continue-until-target
 ```
 
-Bridge 0.1.33 accepts a per-tab `polybotPort` URL parameter, tags worker initialization with that port and validates it to a loopback endpoint. Defaults remain 8765. Use `https://web.polymodloader.com/?polybotPort=8766` for this simulator after enabling the new version. Parallel learners require distinct game tabs and ports; output directories alone do not isolate simulation state.
+Bridge 0.1.33 accepts a per-tab `polybotPort` URL parameter, tags worker initialization with that port and validates it to a loopback endpoint. Defaults remain 8765, which is the port used by the current scratch profiles; use the plain `https://web.polymodloader.com/` URL for this simulator after enabling the new version. Parallel learners can use distinct game tabs and ports; output directories alone do not isolate simulation state. Earlier scratch runs used port 8766.
 
 Bridge 0.1.33 additionally scopes PolyTrack's native single-instance BroadcastChannel to the selected port. Without this, the second tab is blocked even with separate websocket endpoints. The native guard remains effective for two tabs using the same port. This only partitions offline client sessions; worker physics and training controls are unchanged.
 
