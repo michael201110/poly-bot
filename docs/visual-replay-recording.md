@@ -159,6 +159,24 @@ polybot-replay-swarm --run <run> --action configure --opacity 0.4
 polybot-replay-swarm --run <run> --action clear
 ```
 
+### Replay Swarm GUI
+
+The **Replay Swarm** tab provides the same index filtering, deterministic
+stratified selection, training-age colours, and bridge actions as the CLI.
+Choose a replay run directory (or its parent), set the inclusive episode-start
+step range, and optionally set episode IDs or a finish/failure filter. Custom
+colour stops use `STEP:#RRGGBB` entries separated by commas or newlines.
+**Inspect selection** reads only `index.json` files and prints the selection
+summary without connecting to PolyTrack; **Set full run range** fills in the
+observed training-step bounds.
+
+**Load swarm** loads ghosts paused and **Play swarm** loads and starts them.
+Pause, resume, restart, seek, settings, clear, and bridge-status actions work
+without a replay path once a swarm is loaded. These operations run in a
+background thread so index reads, compressed-payload loading, and bridge
+requests do not block the interface. Stop any active trainer/evaluator before
+using the GUI to control its local bridge.
+
 `status` reports loaded/visible ghosts, shared playback position and duration,
 training-step range, and average replay-render update time (not GPU frame time).
 `--max-cars` supports 1–500, but actual comfortable counts depend on the game

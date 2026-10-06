@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from dataclasses import fields
 
 import pytest
+from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QLabel, QPushButton
 
+import polybot.gui.main as gui_main
 from polybot.gui.events import format_event
 from polybot.gui.log_viewer import LiveLogWindow
 from polybot.gui.main import PolyBotWindow
@@ -29,6 +32,7 @@ from polybot.training.parameters import (
     validate_metadata,
 )
 from polybot.training.presets import algorithm_presets, configuration_warnings
+from polybot.training.visual_replays import INDEX_SCHEMA
 
 
 @pytest.fixture
@@ -297,3 +301,124 @@ def test_live_log_viewer_follows_appended_events(qt_app, tmp_path) -> None:
         assert "Episode 2" not in watcher.events.toPlainText()
     finally:
         watcher.close()
+
+
+def test_replay_swarm_tab_defaults_and_input_validation(window) -> None:
+    labels = {button.text() for button in window.replay_swarm_action_buttons}
+    assert {
+        "Inspect selection", "Set full run range", "Load swarm", "Play swarm",
+        "Pause", "Resume", "Restart", "Seek", "Apply settings", "Clear ghosts",
+        "Bridge status",
+    } <= labels
+    assert window.replay_swarm_step_min.value() == 0
+    assert window.replay_swarm_step_max.value() == 1_000_000
+    assert window.replay_swarm_max_cars.value() == 100
+    assert window.replay_swarm_color_max.value() == 1_000_000
+    with pytest.raises(ValueError, match="Choose a replay run"):
+        window._replay_swarm_config()
+
+    window.replay_swarm_path.setText("replays")
+    window.replay_swarm_episode_min.setText("3")
+    with pytest.raises(ValueError, match="both episode ID"):
+        window._replay_swarm_config()
+    window.replay_swarm_episode_max.setText("2")
+    with pytest.raises(ValueError, match="non-negative and ordered"):
+        window._replay_swarm_config()
+    window.replay_swarm_episode_max.setText("4")
+    window.replay_swarm_color_stops.setText("0:#ff0000, 100:#00ff00")
+    assert window._replay_swarm_config()["color_scale"].hex_color(50) == "#808000"
+    window.replay_swarm_color_stops.setText("broken")
+    with pytest.raises(ValueError):
+        window._replay_swarm_config()
+
+
+def test_replay_swarm_inspect_uses_indexes_only(window, tmp_path, monkeypatch) -> None:
+    replay_run = tmp_path / "run"
+    replay_run.mkdir()
+    episodes = [
+        {
+            "run_id": "run", "episode_id": f"episode-{number:06d}",
+            "algorithm": "tqc", "track_id": "track", "track_name": "Track",
+            "training_step": step, "training_step_start": step, "training_step_end": step + 1,
+            "episode_length_decisions": 1, "episode_length_ticks": 30,
+            "status": status, "final_progress_m": 1.0, "frame_skip": 30,
+            "sample_count": 1, "file": f"episode-{number:06d}.npz",
+        }
+        for number, step, status in ((1, 10, "finished"), (2, 20, "failed"))
+    ]
+    (replay_run / "index.json").write_text(
+        json.dumps({"schema": INDEX_SCHEMA, "run": {"run_id": "run"}, "episodes": episodes}),
+        encoding="utf-8",
+    )
+
+    def unexpected_transport(*args, **kwargs):
+        raise AssertionError("index-only inspection must not connect to the bridge")
+
+    monkeypatch.setattr(gui_main, "WebSocketServerTransport", unexpected_transport)
+    window.replay_swarm_path.setText(str(replay_run))
+    window.replay_swarm_step_min.setValue(10)
+    window.replay_swarm_step_max.setValue(10)
+    report = window._run_replay_swarm(window._replay_swarm_config() | {"action": "inspect"})
+    assert report["total_indexed_episodes"] == 2
+    assert report["episodes_matching_filters"] == 1
+    assert report["selected_episode_count"] == 1
+    assert report["selected_step_range"] == [10, 10]
+    assert report["finish_count"] == 1
+    assert report["failure_count"] == 0
+
+
+def test_replay_swarm_bridge_controls_do_not_require_replay_path(window, monkeypatch) -> None:
+    calls = []
+
+    class StubTransport:
+        def __init__(self, **kwargs):
+            calls.append(("transport", kwargs))
+
+        def close(self):
+            calls.append(("close",))
+
+    def send(transport, **kwargs):
+        calls.append(("send", kwargs))
+        return {"ok": True}
+
+    monkeypatch.setattr(gui_main, "WebSocketServerTransport", StubTransport)
+    monkeypatch.setattr(gui_main, "send_replay_swarm", send)
+    result = window._run_replay_swarm({"action": "status", "port": 8765})
+    assert result["result"] == {"ok": True}
+    assert calls[1][0] == "send"
+    assert calls[1][1]["action"] == "status"
+    assert calls[-1] == ("close",)
+
+    window._run_replay_swarm({
+        "action": "configure", "port": 8765, "speed": 2.0, "opacity": 0.4,
+        "end_behavior": "fade", "fade_duration_s": 1.25,
+    })
+    assert calls[-2][1]["update_settings"] == (
+        "speed", "opacity", "end_behavior", "fade_duration",
+    )
+
+
+def test_replay_swarm_operations_run_off_gui_thread(window, monkeypatch) -> None:
+    worker_thread_ids = []
+    gui_thread_id = threading.get_ident()
+
+    def operation(config):
+        worker_thread_ids.append(threading.get_ident())
+        return {"action": config["action"], "ok": True}
+
+    monkeypatch.setattr(window, "_run_replay_swarm", operation)
+    window._submit_replay_swarm("status")
+    loop = QEventLoop()
+    timer = QTimer()
+    timer.setInterval(10)
+    timer.timeout.connect(lambda: loop.quit() if window.replay_swarm_worker is None else None)
+    timeout = QTimer()
+    timeout.setSingleShot(True)
+    timeout.timeout.connect(loop.quit)
+    timer.start()
+    timeout.start(3000)
+    loop.exec()
+    timer.stop()
+    assert worker_thread_ids and worker_thread_ids[0] != gui_thread_id
+    assert window.replay_swarm_worker is None
+    assert '"ok": true' in window.replay_swarm_output.toPlainText()

@@ -13,14 +13,16 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, QProcess, Qt, QTimer, Signal
+from PySide6.QtCore import QObject, QProcess, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
+    QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -44,6 +46,22 @@ from polybot.environment.curriculum import build_plan
 from polybot.environment.rewards import RewardConfig
 from polybot.gui.events import format_event
 from polybot.models.registry import REWARD_SEMANTICS, ModelRegistry
+from polybot.replay_swarm import (
+    MAX_REPLAY_GHOSTS,
+    MAX_REPLAY_TOTAL_SAMPLES,
+    ColorScale,
+    ReplayPlaybackOptions,
+    ReplaySelection,
+    SelectedReplayPayload,
+    filter_replays,
+    load_replay_episode,
+    load_replay_index,
+    parse_color_stops,
+    resolve_replay_directories,
+    select_replays,
+    selection_report,
+    send_replay_swarm,
+)
 from polybot.training.config import (
     CurriculumConfig,
     CurriculumPhaseConfig,
@@ -68,6 +86,7 @@ from polybot.training.parameters import (
 from polybot.training.presets import PresetStore, algorithm_presets, configuration_warnings
 from polybot.training.reward_profiles import RewardProfileStore
 from polybot.training.runner import TrainingRunner
+from polybot.transport import WebSocketServerTransport
 
 
 def _editor(value: Any, help_text: str, choices: tuple[str, ...] = ()) -> QWidget:
@@ -176,6 +195,21 @@ class EventBridge(QObject):
     failed = Signal(str)
 
 
+class ReplaySwarmTask(QThread):
+    completed = Signal(object)
+    failed = Signal(str)
+
+    def __init__(self, operation: Any) -> None:
+        super().__init__()
+        self.operation = operation
+
+    def run(self) -> None:
+        try:
+            self.completed.emit(self.operation())
+        except Exception as exc:
+            self.failed.emit(str(exc))
+
+
 class PolyBotWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
@@ -183,6 +217,7 @@ class PolyBotWindow(QWidget):
         self.resize(900, 760)
         self.runner: TrainingRunner | None = None
         self.worker: threading.Thread | None = None
+        self.replay_swarm_worker: ReplaySwarmTask | None = None
         self.speed_search_process: QProcess | None = None
         self.adaptation_process: QProcess | None = None
         self.adaptation_stdout_buffer = ""
@@ -241,6 +276,7 @@ class PolyBotWindow(QWidget):
         self._curriculum_tab()
         self._evaluation_tab()
         self._models_tab()
+        self._replay_swarm_tab()
         self._status_tab()
         self.algorithm.currentTextChanged.connect(self._algorithm_changed)
         self._algorithm_changed(self.algorithm.currentText())
@@ -824,6 +860,393 @@ class PolyBotWindow(QWidget):
         self.stop_button.setToolTip("Ask training to stop after this step and save latest state.")
         self.stop_button.clicked.connect(self._stop)
         page.addWidget(self.stop_button)
+
+    def _replay_swarm_tab(self) -> None:
+        _, tab_layout = self._page("Replay Swarm")
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        content = QWidget()
+        page = QVBoxLayout(content)
+        page.setAlignment(Qt.AlignmentFlag.AlignTop)
+        scroll.setWidget(content)
+        tab_layout.addWidget(scroll)
+        form = QFormLayout()
+
+        self.replay_swarm_path = QLineEdit()
+        self.replay_swarm_path.setPlaceholderText("Replay run folder or parent containing replay runs")
+        path_row = QHBoxLayout()
+        path_row.addWidget(self.replay_swarm_path)
+        browse = QPushButton("Browse...")
+        browse.clicked.connect(self._browse_replay_swarm_path)
+        path_row.addWidget(browse)
+        form.addRow("Replay run", path_row)
+
+        self.replay_swarm_step_min = QSpinBox()
+        self.replay_swarm_step_min.setRange(0, 2_000_000_000)
+        self.replay_swarm_step_min.setValue(0)
+        self.replay_swarm_step_max = QSpinBox()
+        self.replay_swarm_step_max.setRange(0, 2_000_000_000)
+        self.replay_swarm_step_max.setValue(1_000_000)
+        steps_row = QHBoxLayout()
+        steps_row.addWidget(QLabel("From"))
+        steps_row.addWidget(self.replay_swarm_step_min)
+        steps_row.addWidget(QLabel("to"))
+        steps_row.addWidget(self.replay_swarm_step_max)
+        form.addRow("Episode-start training steps", steps_row)
+
+        self.replay_swarm_episode_min = QLineEdit()
+        self.replay_swarm_episode_min.setPlaceholderText("Any")
+        self.replay_swarm_episode_max = QLineEdit()
+        self.replay_swarm_episode_max.setPlaceholderText("Any")
+        episodes_row = QHBoxLayout()
+        episodes_row.addWidget(QLabel("From"))
+        episodes_row.addWidget(self.replay_swarm_episode_min)
+        episodes_row.addWidget(QLabel("to"))
+        episodes_row.addWidget(self.replay_swarm_episode_max)
+        form.addRow("Episode IDs (optional)", episodes_row)
+
+        self.replay_swarm_finished = QCheckBox("Finished only")
+        self.replay_swarm_failed = QCheckBox("Failed or timed out only")
+        self.replay_swarm_finished.toggled.connect(
+            lambda checked: self.replay_swarm_failed.setChecked(False) if checked else None
+        )
+        self.replay_swarm_failed.toggled.connect(
+            lambda checked: self.replay_swarm_finished.setChecked(False) if checked else None
+        )
+        status_row = QHBoxLayout()
+        status_row.addWidget(self.replay_swarm_finished)
+        status_row.addWidget(self.replay_swarm_failed)
+        form.addRow("Status filter", status_row)
+
+        self.replay_swarm_max_cars = QSpinBox()
+        self.replay_swarm_max_cars.setRange(1, MAX_REPLAY_GHOSTS)
+        self.replay_swarm_max_cars.setValue(100)
+        self.replay_swarm_seed = QSpinBox()
+        self.replay_swarm_seed.setRange(0, 2_000_000_000)
+        selection_row = QHBoxLayout()
+        selection_row.addWidget(QLabel("Maximum cars"))
+        selection_row.addWidget(self.replay_swarm_max_cars)
+        selection_row.addWidget(QLabel("Sampling seed"))
+        selection_row.addWidget(self.replay_swarm_seed)
+        form.addRow("Selection", selection_row)
+
+        self.replay_swarm_color_min = QSpinBox()
+        self.replay_swarm_color_min.setRange(0, 2_000_000_000)
+        self.replay_swarm_color_min.setValue(0)
+        self.replay_swarm_color_max = QSpinBox()
+        self.replay_swarm_color_max.setRange(0, 2_000_000_000)
+        self.replay_swarm_color_max.setValue(1_000_000)
+        color_row = QHBoxLayout()
+        color_row.addWidget(QLabel("Min step"))
+        color_row.addWidget(self.replay_swarm_color_min)
+        color_row.addWidget(QLabel("Max step"))
+        color_row.addWidget(self.replay_swarm_color_max)
+        form.addRow("Training-age colours", color_row)
+        self.replay_swarm_color_stops = QLineEdit()
+        self.replay_swarm_color_stops.setPlaceholderText("Optional stops, e.g. 0:#ff0000, 500000:#ffff00")
+        form.addRow("Custom colour stops", self.replay_swarm_color_stops)
+
+        self.replay_swarm_speed = QDoubleSpinBox()
+        self.replay_swarm_speed.setRange(0.1, 8.0)
+        self.replay_swarm_speed.setSingleStep(0.1)
+        self.replay_swarm_speed.setValue(1.0)
+        self.replay_swarm_opacity = QDoubleSpinBox()
+        self.replay_swarm_opacity.setRange(0.0, 1.0)
+        self.replay_swarm_opacity.setSingleStep(0.05)
+        self.replay_swarm_opacity.setValue(0.5)
+        self.replay_swarm_end = QComboBox()
+        self.replay_swarm_end.addItems(("fade", "disappear", "freeze"))
+        self.replay_swarm_fade = QDoubleSpinBox()
+        self.replay_swarm_fade.setRange(0.0, 10.0)
+        self.replay_swarm_fade.setSingleStep(0.1)
+        self.replay_swarm_fade.setValue(0.75)
+        self.replay_swarm_seek = QDoubleSpinBox()
+        self.replay_swarm_seek.setRange(0.0, 1_000_000.0)
+        self.replay_swarm_seek.setDecimals(2)
+        self.replay_swarm_port = QSpinBox()
+        self.replay_swarm_port.setRange(1, 65535)
+        self.replay_swarm_port.setValue(8765)
+        playback_row = QHBoxLayout()
+        for label, widget in (
+            ("Speed", self.replay_swarm_speed),
+            ("Opacity", self.replay_swarm_opacity),
+            ("End", self.replay_swarm_end),
+            ("Fade (s)", self.replay_swarm_fade),
+        ):
+            playback_row.addWidget(QLabel(label))
+            playback_row.addWidget(widget)
+        form.addRow("Playback", playback_row)
+        bridge_row = QHBoxLayout()
+        bridge_row.addWidget(QLabel("Seek to seconds"))
+        bridge_row.addWidget(self.replay_swarm_seek)
+        bridge_row.addWidget(QLabel("Local bridge port"))
+        bridge_row.addWidget(self.replay_swarm_port)
+        form.addRow("Bridge", bridge_row)
+        page.addLayout(form)
+
+        note = QLabel(
+            "Step filtering and colour use each episode's global training step at episode start. "
+            "Inspect reads indexes only; load and playback connect to the running PolyTrack bridge."
+        )
+        note.setWordWrap(True)
+        page.addWidget(note)
+
+        actions = QGridLayout()
+        self.replay_swarm_action_buttons: list[QPushButton] = []
+        for index, (label, action) in enumerate((
+            ("Inspect selection", "inspect"),
+            ("Set full run range", "range"),
+            ("Load swarm", "load"),
+            ("Play swarm", "play"),
+            ("Pause", "pause"),
+            ("Resume", "resume"),
+            ("Restart", "restart"),
+            ("Seek", "seek"),
+            ("Apply settings", "configure"),
+            ("Clear ghosts", "clear"),
+            ("Bridge status", "status"),
+        )):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, selected=action: self._submit_replay_swarm(selected))
+            actions.addWidget(button, index // 4, index % 4)
+            self.replay_swarm_action_buttons.append(button)
+        page.addLayout(actions)
+
+        self.replay_swarm_output = QTextEdit()
+        self.replay_swarm_output.setReadOnly(True)
+        self.replay_swarm_output.setPlaceholderText("Selection reports, bridge results, and errors appear here.")
+        self.replay_swarm_output.document().setMaximumBlockCount(500)
+        self.replay_swarm_output.setMinimumHeight(180)
+        page.addWidget(self.replay_swarm_output, 1)
+
+    def _browse_replay_swarm_path(self) -> None:
+        path = QFileDialog.getExistingDirectory(self, "Choose replay run or parent folder")
+        if path:
+            self.replay_swarm_path.setText(path)
+
+    def _replay_swarm_config(self) -> dict[str, Any]:
+        path = self.replay_swarm_path.text().strip()
+        if not path:
+            raise ValueError("Choose a replay run directory first.")
+        steps = (self.replay_swarm_step_min.value(), self.replay_swarm_step_max.value())
+        if steps[1] < steps[0]:
+            raise ValueError("The maximum training step must be at least the minimum.")
+        episode_values = (
+            self.replay_swarm_episode_min.text().strip(),
+            self.replay_swarm_episode_max.text().strip(),
+        )
+        if bool(episode_values[0]) != bool(episode_values[1]):
+            raise ValueError("Enter both episode ID boundaries, or leave both empty.")
+        episodes = None
+        if episode_values[0]:
+            try:
+                episodes = (int(episode_values[0]), int(episode_values[1]))
+            except ValueError as exc:
+                raise ValueError("Episode ID boundaries must be integers.") from exc
+            if episodes[0] < 0 or episodes[1] < episodes[0]:
+                raise ValueError("Episode IDs must be non-negative and ordered.")
+
+        raw_stops = [
+            stop.strip()
+            for stop in self.replay_swarm_color_stops.text().replace(",", "\n").splitlines()
+            if stop.strip()
+        ]
+        stops = parse_color_stops(raw_stops) if raw_stops else None
+        color_scale = ColorScale(
+            self.replay_swarm_color_min.value(),
+            self.replay_swarm_color_max.value(),
+            stops,
+        )
+        return {
+            "path": path,
+            "steps": steps,
+            "episodes": episodes,
+            "finished_only": self.replay_swarm_finished.isChecked(),
+            "failed_only": self.replay_swarm_failed.isChecked(),
+            "max_cars": self.replay_swarm_max_cars.value(),
+            "seed": self.replay_swarm_seed.value(),
+            "color_scale": color_scale,
+            "speed": self.replay_swarm_speed.value(),
+            "opacity": self.replay_swarm_opacity.value(),
+            "end_behavior": self.replay_swarm_end.currentText(),
+            "fade_duration_s": self.replay_swarm_fade.value(),
+            "seek_seconds": self.replay_swarm_seek.value(),
+            "port": self.replay_swarm_port.value(),
+        }
+
+    @staticmethod
+    def _replay_swarm_selection(config: dict[str, Any]) -> tuple[int, list[ReplaySelection], int]:
+        directories = resolve_replay_directories(config["path"])
+        entries = [
+            metadata
+            for directory in directories
+            for metadata in load_replay_index(directory)
+        ]
+        matching_count = len(
+            filter_replays(
+                entries,
+                steps=config["steps"],
+                episodes=config["episodes"],
+                finished_only=config["finished_only"],
+                failed_only=config["failed_only"],
+            )
+        )
+        total_indexed, selected = select_replays(
+            directories,
+            steps=config["steps"],
+            episodes=config["episodes"],
+            finished_only=config["finished_only"],
+            failed_only=config["failed_only"],
+            max_cars=config["max_cars"],
+            seed=config["seed"],
+        )
+        return total_indexed, selected, matching_count
+
+    def _submit_replay_swarm(self, action: str) -> None:
+        try:
+            if action == "range":
+                path = self.replay_swarm_path.text().strip()
+                if not path:
+                    raise ValueError("Choose a replay run directory first.")
+                config = {"path": path}
+            elif action in {"pause", "resume", "restart", "clear", "status"}:
+                config = {
+                    "port": self.replay_swarm_port.value(),
+                    "action": action,
+                }
+            elif action in {"seek", "configure"}:
+                config = {
+                    "port": self.replay_swarm_port.value(),
+                    "action": action,
+                    "seek_seconds": self.replay_swarm_seek.value(),
+                    "speed": self.replay_swarm_speed.value(),
+                    "opacity": self.replay_swarm_opacity.value(),
+                    "end_behavior": self.replay_swarm_end.currentText(),
+                    "fade_duration_s": self.replay_swarm_fade.value(),
+                }
+            else:
+                config = self._replay_swarm_config()
+                config["action"] = action
+        except (ValueError, OSError) as exc:
+            self._append_replay_swarm_output(f"Validation error: {exc}")
+            return
+
+        if self.replay_swarm_worker is not None and self.replay_swarm_worker.isRunning():
+            self._append_replay_swarm_output("A replay swarm operation is already running.")
+            return
+        for button in self.replay_swarm_action_buttons:
+            button.setEnabled(False)
+        self._append_replay_swarm_output(f"Running {action}...")
+        worker = ReplaySwarmTask(lambda: self._run_replay_swarm(config))
+        worker.completed.connect(self._replay_swarm_completed)
+        worker.failed.connect(lambda message: self._replay_swarm_failed(action, message))
+        worker.finished.connect(lambda: self._replay_swarm_worker_finished(worker))
+        self.replay_swarm_worker = worker
+        worker.start()
+
+    def _run_replay_swarm(self, config: dict[str, Any]) -> dict[str, Any]:
+        action = config["action"]
+        if action == "range":
+            directories = resolve_replay_directories(config["path"])
+            entries = [
+                metadata
+                for directory in directories
+                for metadata in load_replay_index(directory)
+            ]
+            if not entries:
+                raise ValueError("No visual replay episodes were found in this folder.")
+            steps = [int(metadata["training_step_start"]) for metadata in entries]
+            return {"_set_step_range": [min(steps), max(steps)], "episode_count": len(entries)}
+
+        if action in {"inspect", "play", "load"}:
+            total, selected, matching_count = self._replay_swarm_selection(config)
+            if action == "inspect":
+                report = selection_report(
+                    total,
+                    selected,
+                    matching_count=matching_count,
+                    color_scale=config["color_scale"],
+                )
+                report["step_filter"] = list(config["steps"])
+                report["episode_filter"] = list(config["episodes"]) if config["episodes"] else None
+                report["sample_seed"] = config["seed"]
+                return report
+            if not selected:
+                raise ValueError(f"{action.capitalize()} requires at least one matching replay episode.")
+            indexed_samples = sum(int(item.metadata["sample_count"]) for item in selected)
+            if indexed_samples > MAX_REPLAY_TOTAL_SAMPLES:
+                raise ValueError(
+                    f"Selection exceeds the maximum total sample count ({MAX_REPLAY_TOTAL_SAMPLES})."
+                )
+            payloads = [
+                SelectedReplayPayload(
+                    item,
+                    load_replay_episode(item.replay_directory, item.metadata, include_optional=False),
+                    config["color_scale"].hex_color(item.training_step),
+                )
+                for item in selected
+            ]
+            selection_info = {
+                "total_indexed_episodes": total,
+                "matching_episodes": matching_count,
+                "selected_episode_count": len(payloads),
+            }
+        else:
+            payloads = []
+            selection_info = {}
+
+        settings = ReplayPlaybackOptions(
+            speed=config.get("speed", 1.0),
+            opacity=config.get("opacity", 0.5),
+            end_behavior=config.get("end_behavior", "fade"),
+            fade_duration_s=config.get("fade_duration_s", 0.75),
+        )
+        update_settings = (
+            ("speed", "opacity", "end_behavior", "fade_duration")
+            if action in {"play", "load", "configure"}
+            else ()
+        )
+        transport = WebSocketServerTransport(
+            port=config["port"],
+            connect_timeout_s=60.0,
+            request_timeout_s=35.0,
+        )
+        try:
+            result = send_replay_swarm(
+                transport,
+                action=action,
+                payloads=payloads,
+                options=settings,
+                seek_seconds=config.get("seek_seconds") if action == "seek" else None,
+                update_settings=update_settings,
+            )
+        finally:
+            transport.close()
+        return {"action": action, "selection": selection_info, "result": result}
+
+    def _replay_swarm_completed(self, result: dict[str, Any]) -> None:
+        if "_set_step_range" in result:
+            minimum, maximum = result["_set_step_range"]
+            self.replay_swarm_step_min.setValue(minimum)
+            self.replay_swarm_step_max.setValue(maximum)
+            self._append_replay_swarm_output(
+                f"Set training-step window to {minimum}:{maximum} ({result['episode_count']} episodes indexed)."
+            )
+        else:
+            self._append_replay_swarm_output(json.dumps(result, indent=2, allow_nan=False))
+
+    def _replay_swarm_failed(self, action: str, message: str) -> None:
+        self._append_replay_swarm_output(f"{action.capitalize()} failed: {message}")
+
+    def _replay_swarm_worker_finished(self, worker: ReplaySwarmTask) -> None:
+        if self.replay_swarm_worker is worker:
+            self.replay_swarm_worker = None
+        for button in self.replay_swarm_action_buttons:
+            button.setEnabled(True)
+
+    def _append_replay_swarm_output(self, message: str) -> None:
+        self.replay_swarm_output.append(message)
+        self.replay_swarm_output.moveCursor(QTextCursor.End)
 
     def _status_tab(self) -> None:
         _, page = self._page("Status")
@@ -2177,6 +2600,11 @@ class PolyBotWindow(QWidget):
             return
         if self.worker is not None and self.worker.is_alive():
             self._stop()
+            event.ignore()
+        elif self.replay_swarm_worker is not None and self.replay_swarm_worker.isRunning():
+            self._append_replay_swarm_output(
+                "Wait for the replay swarm operation to finish before closing PolyBot."
+            )
             event.ignore()
         else:
             event.accept()
