@@ -64,6 +64,8 @@ def format_event(event: dict[str, Any]) -> str | None:
 
     if kind == "plan":
         return f"{prefix}Plan · {event['total_steps']:,} steps across {len(event['phases'])} phase(s)"
+    if kind == "warning":
+        return f"{prefix}WARNING · {event['message']}"
     if kind == "started":
         gpu = f" ({event['gpu_name']})" if event.get("gpu_name") else ""
         source = event.get("resume_source")

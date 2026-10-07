@@ -16,6 +16,7 @@ from polybot.tracks import track_slug as canonical_track_slug
 MODEL_SCHEMA = "polybot.model.v2"
 POLYBOT_VERSION = "2.3.0"
 REWARD_SEMANTICS = "nonterminal-contact-v3-deadline"
+MIXED_REPLAY_REWARD_SEMANTICS = "mixed-replay-v1"
 PPO_ACTION_SEMANTICS = "steering_signed_longitudinal_v1"
 track_slug = canonical_track_slug
 

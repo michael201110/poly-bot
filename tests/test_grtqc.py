@@ -892,7 +892,9 @@ def test_fresh_replay_resume_refreezes_actor_and_collects_reliable_initial_laps(
 
 
 @pytest.mark.parametrize("algorithm", ["tqc", "grtqc"])
-def test_old_reward_semantics_cannot_be_reused_from_replay(tmp_path, monkeypatch, algorithm) -> None:
+def test_old_reward_semantics_warns_without_forcing_fresh_replay(
+    tmp_path, monkeypatch, algorithm,
+) -> None:
     config = replace(_config(algorithm), output_root=tmp_path / "models", log_root=tmp_path / "logs")
     runner = TrainingRunner(config)
     monkeypatch.setattr(runner.registry, "validate", lambda *args: None)
@@ -900,8 +902,24 @@ def test_old_reward_semantics_cannot_be_reused_from_replay(tmp_path, monkeypatch
         training_config=config.to_dict(), reward_semantics="executed-controls-v1",
         critic_adaptation_required=False, architecture="tiny",
     ))
-    with pytest.raises(ValueError, match="resume reward settings differ"):
+    (tmp_path / "latest").mkdir()
+    (tmp_path / "latest" / "replay.pkl").write_bytes(b"existing replay")
+    events: list[dict] = []
+    monkeypatch.setattr(runner, "_emit", events.append)
+    reached_model_load = RuntimeError("model load reached")
+    calls: list[bool] = []
+
+    def load_model(*args, **kwargs):
+        calls.append(kwargs["resume"])
+        raise reached_model_load
+
+    monkeypatch.setattr(runner.backend, "load_model", load_model)
+    with pytest.raises(RuntimeError, match="model load reached"):
         runner.run(resume=tmp_path / "latest")
+    assert calls == [True]
+    assert runner._replay_reward_semantics == "mixed-replay-v1"
+    warning = next(event for event in events if event["type"] == "warning")
+    assert "existing replay is preserved" in warning["message"]
 
 
 @pytest.mark.parametrize(

@@ -37,8 +37,6 @@ function createRenderer() {
   };
   const host = {
     document,
-    setTimeout: () => 1,
-    clearTimeout: () => {},
   };
   return { document, update: installPolyBotHudOverlay(host) };
 }
@@ -126,8 +124,17 @@ test("renderer creates a non-interactive overlay and reuses feature rows", () =>
   assert.equal(sectionBody(root, 3).children[0], firstInput);
   assert.match(firstValue.textContent, /^0\.750/);
 
+  assert.equal(root.hidden, false);
   update({ enabled: false });
   assert.equal(root.hidden, true);
+});
+
+test("enabled overlay remains visible without later telemetry frames", () => {
+  const { document, update } = createRenderer();
+  update(sampleFrame());
+  const root = document.body.children.find((node) => node.className.includes("polybot-ai-hud"));
+  assert.ok(root);
+  assert.equal(root.hidden, false);
 });
 
 test("unsupported feature schemas are made explicit instead of being mislabeled", () => {

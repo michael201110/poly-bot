@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
+    QFrame,
     QGridLayout,
     QHBoxLayout,
     QInputDialog,
@@ -267,7 +268,11 @@ class PolyBotWindow(QWidget):
         self._reward_values = asdict(self._base_rewards)
 
         root = QVBoxLayout(self)
-        intro = QLabel("Train a driving policy. Start with a preset; open Advanced for every setting.")
+        intro = QLabel(
+            "Set up a run, train or resume a model, then inspect its results. "
+            "Hover over fields for explanations."
+        )
+        intro.setWordWrap(True)
         root.addWidget(intro)
         track_row = QHBoxLayout()
         track_row.addWidget(QLabel("Track"))
@@ -283,16 +288,23 @@ class PolyBotWindow(QWidget):
         manage_tracks.clicked.connect(self._manage_tracks_dialog)
         track_row.addWidget(manage_tracks)
         root.addLayout(track_row)
-        self.advanced = QCheckBox("Advanced settings")
-        self.advanced.setToolTip("Reveal all algorithm and reward numbers for custom experiments.")
+        self.run_summary = QLabel()
+        self.run_summary.setWordWrap(True)
+        self.run_summary.setStyleSheet("font-weight: 600; color: palette(highlight);")
+        root.addWidget(self.run_summary)
+        self.advanced = QCheckBox("Show advanced settings on all tabs")
+        self.advanced.setToolTip(
+            "Reveal secondary training fields and advanced workflows. Turn this off to return "
+            "to the recommended basic controls."
+        )
         self.advanced.toggled.connect(self._toggle_advanced)
         root.addWidget(self.advanced)
         quick_actions = QHBoxLayout()
-        guided = QPushButton("Guided new run")
+        guided = QPushButton("Guided setup")
         guided.setToolTip("Choose a track, algorithm, goal, hardware and preset before starting.")
         guided.clicked.connect(self._guided_new_run)
         quick_actions.addWidget(guided)
-        start = QPushButton("Start with these settings")
+        start = QPushButton("Start a new run")
         start.setToolTip("Validate the exact settings shown, then start a fresh model.")
         start.clicked.connect(lambda: self._start(False))
         quick_actions.addWidget(start)
@@ -302,6 +314,7 @@ class PolyBotWindow(QWidget):
         quick_actions.addWidget(continue_best)
         root.addLayout(quick_actions)
         self.tabs = QTabWidget()
+        self.tabs.setUsesScrollButtons(True)
         root.addWidget(self.tabs)
 
         self._general_tab()
@@ -317,7 +330,13 @@ class PolyBotWindow(QWidget):
         self._algorithm_changed(self.algorithm.currentText())
         self._toggle_advanced(False)
         self.track_selector.currentIndexChanged.connect(self._track_changed)
+        self.algorithm.currentTextChanged.connect(self._refresh_run_summary)
+        self.general["backend"].currentTextChanged.connect(self._refresh_run_summary)
+        self.general["timesteps"].valueChanged.connect(self._refresh_run_summary)
+        self.general["visual_replay_enabled"].currentTextChanged.connect(self._refresh_run_summary)
+        self.reward_profile.currentTextChanged.connect(self._refresh_run_summary)
         self._track_changed()
+        self._refresh_run_summary()
         for name in ("output_root", "log_root"):
             widget = self.general[name]
             if isinstance(widget, QLineEdit):
@@ -326,9 +345,22 @@ class PolyBotWindow(QWidget):
         self.speed_search_watch.timeout.connect(self._poll_speed_search_log)
         self.speed_search_watch.start(2000)
 
-    def _page(self, name: str) -> tuple[QWidget, QVBoxLayout]:
+    def _page(self, name: str, *, scrollable: bool = True) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
-        layout = QVBoxLayout(page)
+        page_layout = QVBoxLayout(page)
+        page_layout.setContentsMargins(0, 0, 0, 0)
+        if scrollable:
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            content = QWidget()
+            layout = QVBoxLayout(content)
+            layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+            scroll.setWidget(content)
+            page_layout.addWidget(scroll)
+        else:
+            layout = QVBoxLayout()
+            page_layout.addLayout(layout)
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.tabs.addTab(page, name)
         return page, layout
@@ -393,6 +425,27 @@ class PolyBotWindow(QWidget):
             self.teacher_student_dataset.setText(
                 str(Path("runs") / "teacher-student" / track.slug / "teacher.npz")
             )
+        if hasattr(self, "run_summary"):
+            self._refresh_run_summary()
+
+    def _refresh_run_summary(self, *_args: Any) -> None:
+        if not hasattr(self, "run_summary") or not hasattr(self, "general"):
+            return
+        track_name = self.track_selector.currentText() or "No track selected"
+        algorithm = self.algorithm.currentText().upper()
+        backend = self.general["backend"].currentText()
+        steps = int(_value(self.general["timesteps"]))
+        recording = self.general["visual_replay_enabled"].currentText()
+        profile = self.reward_profile.currentText()
+        recording_text = {
+            "automatic": "recording automatic for WebSocket",
+            "enabled": "replay recording on",
+            "disabled": "replay recording off",
+        }.get(recording, f"replay recording {recording}")
+        self.run_summary.setText(
+            f"Ready · {track_name} · {algorithm} · {backend} · "
+            f"{steps:,} decisions · rewards {profile} · {recording_text}"
+        )
 
     def _workspace(self, track: TrackDefinition | None = None) -> TrackWorkspace:
         selected = track or self._selected_track()
@@ -531,7 +584,13 @@ class PolyBotWindow(QWidget):
         return widget
 
     def _general_tab(self) -> None:
-        _, page = self._page("General")
+        self.general_page, page = self._page("General")
+        setup_note = QLabel(
+            "For real-game training: load the PolyBot bridge in PolyModLoader, open a track "
+            "with a ghost lap, and use the WebSocket backend. Mock mode is for local testing."
+        )
+        setup_note.setWordWrap(True)
+        page.addWidget(setup_note)
         form = QFormLayout()
         page.addLayout(form)
         self.general: dict[str, QWidget] = {}
@@ -571,7 +630,7 @@ class PolyBotWindow(QWidget):
         page.addWidget(basics)
 
     def _algorithm_tab(self) -> None:
-        _, page = self._page("Algorithm")
+        self.algorithm_page, page = self._page("Algorithm")
         self.algorithm_explanation = QLabel()
         self.algorithm_explanation.setWordWrap(True)
         page.addWidget(self.algorithm_explanation)
@@ -1086,7 +1145,7 @@ class PolyBotWindow(QWidget):
         page.addWidget(self.stop_button)
 
     def _replay_swarm_tab(self) -> None:
-        self.replay_swarm_page, tab_layout = self._page("Replay Swarm")
+        self.replay_swarm_page, tab_layout = self._page("Replay Swarm", scrollable=False)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
@@ -1104,6 +1163,9 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_run = QComboBox()
         self.replay_swarm_run.currentIndexChanged.connect(self._replay_swarm_run_changed)
         form.addRow("Recorded run", self.replay_swarm_run)
+        self.replay_swarm_runs_status = QLabel()
+        self.replay_swarm_runs_status.setWordWrap(True)
+        form.addRow(self.replay_swarm_runs_status)
 
         self.replay_swarm_external = QCheckBox("Browse external replay folder (Advanced)")
         self.replay_swarm_external.toggled.connect(self._toggle_external_replay_path)
@@ -1271,6 +1333,7 @@ class PolyBotWindow(QWidget):
         workspace = self._workspace()
         algorithm = self.replay_swarm_algorithm.currentText()
         previous = self.replay_swarm_run.currentData()
+        load_error: str | None = None
         self.replay_swarm_run.blockSignals(True)
         self.replay_swarm_run.clear()
         try:
@@ -1280,11 +1343,26 @@ class PolyBotWindow(QWidget):
                     summary += f" · steps {run.minimum_step:,}–{run.maximum_step:,}"
                 self.replay_swarm_run.addItem(summary, str(run.directory.resolve()))
         except (OSError, ValueError) as exc:
+            load_error = str(exc)
             self.replay_swarm_output.setPlainText(f"Could not list replay runs: {exc}")
         selected = self.replay_swarm_run.findData(previous)
         self.replay_swarm_run.setCurrentIndex(selected if selected >= 0 else 0)
         self.replay_swarm_run.blockSignals(False)
         self._replay_swarm_run_changed()
+        run_count = self.replay_swarm_run.count()
+        if load_error:
+            self.replay_swarm_runs_status.setText(f"Could not list replay runs: {load_error}")
+        elif run_count:
+            self.replay_swarm_runs_status.setText(
+                f"{run_count} recorded run(s) found for {self._selected_track().name} · "
+                f"{algorithm.upper()}. Select a run, then inspect its episodes."
+            )
+        else:
+            self.replay_swarm_runs_status.setText(
+                f"No saved replay runs found for {self._selected_track().name} · {algorithm.upper()}. "
+                "Start WebSocket training with visual replay recording set to Automatic or Enabled; "
+                "completed episodes will appear here."
+            )
 
     def _replay_swarm_run_changed(self, _index: int = -1) -> None:
         if not hasattr(self, "replay_swarm_path") or self.replay_swarm_external.isChecked():
@@ -1546,7 +1624,8 @@ class PolyBotWindow(QWidget):
         description = QLabel(
             "Show the policy's actual inputs and outputs, applied controls, episode state, "
             "and reward breakdown inside PolyTrack. Updates follow policy decisions; "
-            "simulator ticks and frame skip are shown separately."
+            "simulator ticks and frame skip are shown separately. Requires WebSocket training "
+            "and PolyBot bridge 0.1.39 or newer for PolyTrack 0.6.3."
         )
         description.setWordWrap(True)
         page.addWidget(description)
@@ -1919,11 +1998,17 @@ class PolyBotWindow(QWidget):
             self._reward_values[name] = base[name] * failure
         for name in ("finish_bonus", "finish_fast_bonus"):
             self._reward_values[name] = base[name] * finish
+        self._mark_reward_profile_custom()
         self._refresh_reward_view()
 
     def _advanced_reward_changed(self, name: str, value: float) -> None:
         self._reward_values[name] = value
+        self._mark_reward_profile_custom()
         self._refresh_reward_view(update_form=False)
+
+    def _mark_reward_profile_custom(self) -> None:
+        if self.reward_profile.currentText() != "Custom":
+            self.reward_profile.setCurrentText("Custom")
 
     def _refresh_reward_view(self, *, update_form: bool = True) -> None:
         if update_form:
@@ -2028,12 +2113,18 @@ class PolyBotWindow(QWidget):
         self.reward_profile.blockSignals(False)
         self._update_plan()
         self._track_changed()
+        self._refresh_run_summary()
 
     def _save_config(self) -> None:
         try:
             cfg = self.configuration()
-            name, ok = QInputDialog.getText(self, "Save configuration", "JSON path")
-            if ok and name.strip():
+            name, _ = QFileDialog.getSaveFileName(
+                self,
+                "Save training configuration",
+                str(Path("config") / "training-config.json"),
+                "PolyBot configuration (*.json);;All files (*)",
+            )
+            if name:
                 path = Path(name)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(json.dumps(cfg.to_dict(), indent=2) + "\n", encoding="utf-8")
@@ -2042,8 +2133,13 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _load_config_dialog(self) -> None:
-        name, ok = QInputDialog.getText(self, "Load configuration", "JSON path")
-        if ok and name.strip():
+        name, _ = QFileDialog.getOpenFileName(
+            self,
+            "Load training configuration",
+            str(Path("config")),
+            "PolyBot configuration (*.json);;All files (*)",
+        )
+        if name:
             try:
                 cfg = TrainingConfig.from_dict(json.loads(Path(name).read_text(encoding="utf-8")))
                 self.load_configuration(cfg)
@@ -2530,6 +2626,7 @@ class PolyBotWindow(QWidget):
             resume_metadata = None
             saved_replay = slot / "replay.pkl"
             fresh_replay = False
+            resume_warnings: list[str] = []
             if resume and cfg.algorithm in {"grtqc", "tqc"}:
                 resume_metadata = registry.read_metadata(slot)
                 saved_rewards = resume_metadata.training_config.get("rewards")
@@ -2545,12 +2642,14 @@ class PolyBotWindow(QWidget):
                         "No replay buffer was saved with this checkpoint; a new buffer will be collected."
                     )
                 elif resume_metadata.reward_semantics != REWARD_SEMANTICS:
-                    fresh_replay = True
-                    self.log.append(
-                        "The saved replay uses older reward semantics; its reward settings were loaded, "
-                        "but the buffer will be recollected to avoid mixing reward versions."
+                    warning = (
+                        "The saved replay contains rewards from older semantics. Its saved reward settings "
+                        "are loaded and the replay is preserved; newly collected rewards use current "
+                        "semantics, so the buffer may contain mixed reward versions."
                     )
-            warnings = configuration_warnings(cfg)
+                    resume_warnings.append(warning)
+                    self.log.append(f"WARNING: {warning}")
+            warnings = [*configuration_warnings(cfg), *resume_warnings]
             self.warnings.setText("\n".join(warnings) if warnings else "Settings look reasonable.")
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
             self.runner = TrainingRunner(cfg, self.bridge.event.emit)

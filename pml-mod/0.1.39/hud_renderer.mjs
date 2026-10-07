@@ -9,7 +9,6 @@ export function installPolyBotHudOverlay(host = globalThis) {
   const rows = new Map();
   let root = null;
   let sections = null;
-  let hideTimer = null;
   let lastEvent = "";
 
   const element = (tag, className, parent) => {
@@ -178,8 +177,6 @@ export function installPolyBotHudOverlay(host = globalThis) {
   function update(frame) {
     if (!frame || frame.enabled !== true) {
       if (root) root.hidden = true;
-      if (hideTimer !== null && host.clearTimeout) host.clearTimeout(hideTimer);
-      hideTimer = null;
       return;
     }
     ensureRoot();
@@ -272,13 +269,6 @@ export function installPolyBotHudOverlay(host = globalThis) {
       text(sections.event, "");
     }
     sections.event.hidden = !eventText;
-    if (hideTimer !== null && host.clearTimeout) host.clearTimeout(hideTimer);
-    if (host.setTimeout) {
-      hideTimer = host.setTimeout(() => {
-        if (root) root.hidden = true;
-        hideTimer = null;
-      }, 1500);
-    }
   }
 
   return update;

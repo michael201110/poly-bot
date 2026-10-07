@@ -29,6 +29,7 @@ from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
 from polybot.environment.observations import schema_for
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import (
+    MIXED_REPLAY_REWARD_SEMANTICS,
     PPO_ACTION_SEMANTICS,
     REWARD_SEMANTICS,
     ModelMetadata,
@@ -131,6 +132,7 @@ class TrainingRunner:
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
         self._ppo_speed_bias_schedule: list[list[float]] = []
         self._visual_replay_session: VisualReplaySession | None = None
+        self._replay_reward_semantics = REWARD_SEMANTICS
         self._hud_mode = "evaluation"
         self._hud_model_context: dict[str, Any] = {}
         self._run_id: str | None = None
@@ -289,7 +291,7 @@ class TrainingRunner:
                 "grtqc-gated-variance-pwm-state-v1" if cfg.grtqc and cfg.grtqc.critic_controller_state else
                 "grtqc-gated-variance-v1" if cfg.algorithm == "grtqc" else None
             ),
-            reward_semantics=REWARD_SEMANTICS,
+            reward_semantics=self._replay_reward_semantics,
             critic_adaptation_required=bool(getattr(self.model, "critic_adaptation_required", False)),
             adaptation_stage=getattr(self.model, "adaptation_stage", None),
             adaptation_rollback_count=int(getattr(self.model, "adaptation_rollback_count", 0)),
@@ -1240,16 +1242,34 @@ class TrainingRunner:
                 self.registry.validate(metadata, cfg, self.backend.action_adapter(cfg).schema)
                 if metadata.architecture != self.backend.architecture(cfg):
                     raise ValueError("resume architecture differs from saved model")
-                reward_changed = (
+                reward_config_changed = (
                     metadata.training_config["rewards"] != cfg.to_dict()["rewards"]
-                    or (cfg.algorithm in {"tqc", "grtqc"} and metadata.reward_semantics != REWARD_SEMANTICS)
                 )
-                if reward_changed and not (
+                reward_semantics_changed = (
+                    cfg.algorithm in {"tqc", "grtqc"}
+                    and metadata.reward_semantics != REWARD_SEMANTICS
+                )
+                reward_changed = reward_config_changed or reward_semantics_changed
+                if reward_config_changed and not (
                     fresh_replay or (cfg.algorithm == "grtqc" and resume.name == "initialization")
                 ) and not (
                     allow_ppo_reward_change and cfg.algorithm == "ppo"
                 ):
                     raise ValueError("resume reward settings differ from saved replay rewards")
+                legacy_replay = (
+                    reward_semantics_changed
+                    and not fresh_replay
+                    and (resume / "replay.pkl").is_file()
+                )
+                if legacy_replay:
+                    self._replay_reward_semantics = MIXED_REPLAY_REWARD_SEMANTICS
+                    warning = (
+                        "Resuming with a saved replay that contains rewards from older semantics. "
+                        "The existing replay is preserved and will not be recollected; newly collected "
+                        "rewards use current semantics, so the buffer may contain mixed reward versions."
+                    )
+                    _LOG.warning(warning)
+                    self._emit({"type": "warning", "message": warning})
                 if fresh_replay and cfg.algorithm not in {"tqc", "grtqc"}:
                     raise ValueError("fresh replay applies only to TQC and GRTQC")
                 self.model = self.backend.load_model(

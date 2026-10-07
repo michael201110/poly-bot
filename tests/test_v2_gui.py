@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 from PySide6.QtCore import QEventLoop, QTimer
-from PySide6.QtWidgets import QLabel, QPushButton
+from PySide6.QtWidgets import QLabel, QPushButton, QScrollArea
 
 import polybot.gui.main as gui_main
 from polybot.gui.events import format_event
@@ -84,15 +84,36 @@ def test_ai_hud_settings_persist_and_apply_to_active_runner(window, qt_app) -> N
     assert runner.settings == saved
 
 
-@pytest.mark.parametrize(
-    ("saved_semantics", "expected_fresh_replay"),
-    [
-        (gui_main.REWARD_SEMANTICS, False),
-        ("executed-controls-v1", True),
-    ],
-)
+def test_config_file_actions_use_native_file_picker(window, tmp_path, monkeypatch) -> None:
+    path = tmp_path / "training.json"
+    monkeypatch.setattr(gui_main.QFileDialog, "getSaveFileName", lambda *args: (str(path), ""))
+    window._save_config()
+    saved = TrainingConfig.from_dict(json.loads(path.read_text(encoding="utf-8")))
+    assert saved.to_dict() == window.configuration().to_dict()
+
+    expected = TrainingConfig(
+        algorithm="ppo",
+        reward_profile=None,
+        ppo=PPOConfig(architecture="tiny"),
+    )
+    path.write_text(json.dumps(expected.to_dict()), encoding="utf-8")
+    monkeypatch.setattr(gui_main.QFileDialog, "getOpenFileName", lambda *args: (str(path), ""))
+    window._load_config_dialog()
+    assert window.configuration().to_dict() == expected.to_dict()
+
+
+def test_editing_reward_values_marks_profile_custom(window) -> None:
+    assert window.reward_profile.currentText() == "Balanced"
+    window.reward_basic["failure_multiplier"].setValue(1.5)
+    assert window.reward_profile.currentText() == "Custom"
+    assert window.configuration().rewards.crash_penalty == pytest.approx(
+        window._base_rewards.crash_penalty * 1.5
+    )
+
+
+@pytest.mark.parametrize("saved_semantics", [gui_main.REWARD_SEMANTICS, "executed-controls-v1"])
 def test_resume_loads_saved_reward_settings_before_replay_validation(
-    window, tmp_path, monkeypatch, saved_semantics, expected_fresh_replay,
+    window, tmp_path, monkeypatch, saved_semantics,
 ) -> None:
     slot = tmp_path / "latest"
     slot.mkdir()
@@ -134,10 +155,11 @@ def test_resume_loads_saved_reward_settings_before_replay_validation(
     assert window.runner.config.to_dict()["rewards"] == saved_rewards
     assert window.configuration().to_dict()["rewards"] == saved_rewards
     assert window.reward_profile.currentText() == "Custom"
-    assert window.worker.args == (slot, expected_fresh_replay, False, False)
+    assert window.worker.args == (slot, False, False, False)
     assert "Loaded the reward settings saved with this checkpoint." in window.log.toPlainText()
-    if expected_fresh_replay:
-        assert "saved replay uses older reward semantics" in window.log.toPlainText()
+    if saved_semantics != gui_main.REWARD_SEMANTICS:
+        assert "replay is preserved" in window.log.toPlainText()
+        assert "mixed reward versions" in window.warnings.text()
 
 
 @pytest.fixture
@@ -224,8 +246,7 @@ def test_advanced_toggle_restores_basic_settings_in_shown_window(window, qt_app)
     window.show()
     qt_app.processEvents()
 
-    algorithm_page = window.algorithm_stack.parentWidget()
-    window.tabs.setCurrentWidget(algorithm_page)
+    window.tabs.setCurrentWidget(window.algorithm_page)
     window.advanced.setChecked(True)
     qt_app.processEvents()
     window.advanced.setChecked(False)
@@ -237,12 +258,31 @@ def test_advanced_toggle_restores_basic_settings_in_shown_window(window, qt_app)
     assert window.grtqc_form.widgets["critic_warmup_updates"].isHidden()
     assert window.grtqc_form.widgets["architecture"].height() > 0
 
-    general_page = window.general["backend"].parentWidget()
-    window.tabs.setCurrentWidget(general_page)
+    window.tabs.setCurrentWidget(window.general_page)
     qt_app.processEvents()
     assert window.general["backend"].isVisible()
     assert window.general["timesteps"].isVisible()
     assert window.general["visual_replay_enabled"].isHidden()
+
+
+def test_main_tabs_are_scrollable_and_setup_summary_tracks_choices(window, qt_app) -> None:
+    assert window.general_page.findChild(QScrollArea) is not None
+    assert window.algorithm_page.findChild(QScrollArea) is not None
+    assert window.replay_swarm_page.findChild(QScrollArea) is not None
+    assert "Summer 1" in window.run_summary.text()
+    assert "GRTQC" in window.run_summary.text()
+
+    window.general["timesteps"].setValue(250_000)
+    window.general["backend"].setCurrentText("mock")
+    qt_app.processEvents()
+    assert "250,000 decisions" in window.run_summary.text()
+    assert "mock" in window.run_summary.text()
+
+
+def test_replay_swarm_explains_empty_run_list(window) -> None:
+    assert window.replay_swarm_run.count() == 0
+    assert "No saved replay runs found" in window.replay_swarm_runs_status.text()
+    assert "WebSocket training" in window.replay_swarm_runs_status.text()
 
 
 def test_distillation_summary_surfaces_live_bake_metrics() -> None:

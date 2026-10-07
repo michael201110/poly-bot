@@ -628,17 +628,20 @@ def test_tqc_changed_rewards_require_and_refill_fresh_replay(tmp_path, monkeypat
     assert any(event["type"] == "champion_replay" for event in events)
 
 
-def test_old_tqc_reward_semantics_rejects_replay_even_with_same_coefficients(tmp_path) -> None:
-    config = configuration(tmp_path, "tqc")
+def test_old_tqc_reward_semantics_preserves_replay_with_warning(tmp_path) -> None:
+    config = replace(configuration(tmp_path, "tqc"), timesteps=8, checkpoint_interval=0)
     TrainingRunner(config).run()
     registry = ModelRegistry(config.output_root)
-    champion = registry.slot(config.track_name, "tqc", "champion")
-    metadata = registry.read_metadata(champion)
-    registry.write_metadata(champion, replace(metadata, reward_semantics=None))
-    with pytest.raises(ValueError, match="reward settings differ"):
-        TrainingRunner(replace(config, timesteps=4, checkpoint_interval=0)).run(
-            resume=champion, pace_polish=True
-        )
+    latest = registry.slot(config.track_name, "tqc", "latest")
+    metadata = registry.read_metadata(latest)
+    registry.write_metadata(latest, replace(metadata, reward_semantics=None))
+    events: list[dict] = []
+    resumed = TrainingRunner(config, events.append).run(resume=latest)
+    assert (resumed / "replay.pkl").is_file()
+    assert registry.read_metadata(resumed).reward_semantics == "mixed-replay-v1"
+    warning = next(event for event in events if event["type"] == "warning")
+    assert "existing replay is preserved" in warning["message"]
+    assert "mixed reward versions" in warning["message"]
 
 
 def test_tqc_champion_anchor_caps_actor_action_drift() -> None:
