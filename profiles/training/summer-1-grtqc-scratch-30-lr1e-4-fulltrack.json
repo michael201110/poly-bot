@@ -41,7 +41,7 @@
     "speed_pace_limit_mps": 55.0,
     "airborne_speed_per_m": 0.0,
     "airborne_brake_bonus_per_s": 0.0,
-    "ground_brake_penalty_per_s": 0.0,
+    "ground_brake_penalty_per_s": -1.5,
     "takeoff_target_speed_mps": 45.0,
     "takeoff_speed_reward_per_mps": 0.0,
     "takeoff_speed_reward_limit": 0.0,

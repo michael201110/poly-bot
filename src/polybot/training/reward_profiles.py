@@ -50,7 +50,7 @@ def scratch_completion_reward_config() -> RewardConfig:
         on_track_speed_per_m=0.0,
         speed_pace_reward_per_m_per_mps=0.01,
         speed_pace_limit_mps=55.0,
-        ground_brake_penalty_per_s=0.0,
+        ground_brake_penalty_per_s=-1.5,
         imitation_bonus_per_s=0.0,
         expert_action_bonus_per_s=0.0,
         ghost_speed_bonus_per_s=0.0,
