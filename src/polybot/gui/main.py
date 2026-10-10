@@ -489,6 +489,9 @@ class PolyBotWindow(QWidget):
         for label, handler, hint in (
             ("Continue best model", lambda: self._start(True, best=True),
              "Restore the best compatible checkpoint and its saved training settings."),
+            ("Continue latest with selected rewards",
+             lambda: self._start(True, reward_override=True),
+             "Keep the latest policy and critics, use the selected reward settings, and refill replay from scratch."),
             ("Play champion", lambda: self._model_command("drive", "champion"),
              "Watch the champion drive a live lap in PolyTrack."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
@@ -1075,7 +1078,9 @@ class PolyBotWindow(QWidget):
         page.addLayout(actions)
         for label, handler in (("Guided setup", self._guided_new_run),
                                ("Start a new run", lambda: self._start(False)),
-                               ("Continue best model", lambda: self._start(True, best=True))):
+                               ("Continue best model", lambda: self._start(True, best=True)),
+                               ("Continue latest with selected rewards",
+                                lambda: self._start(True, reward_override=True))):
             button = QPushButton(label)
             button.clicked.connect(handler)
             actions.addWidget(button)
@@ -3476,7 +3481,10 @@ class PolyBotWindow(QWidget):
             )
         return f"Distillation {command} finished successfully."
 
-    def _start(self, resume: bool, *, best: bool = False, pace_polish: bool = False) -> None:
+    def _start(
+        self, resume: bool, *, best: bool = False, pace_polish: bool = False,
+        reward_override: bool = False,
+    ) -> None:
         if not self._require_idle():
             return
         if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
@@ -3496,6 +3504,10 @@ class PolyBotWindow(QWidget):
             return
         try:
             cfg = self.configuration()
+            selected_reward_profile = cfg.reward_profile
+            selected_rewards = cfg.rewards
+            if reward_override and cfg.algorithm not in {"grtqc", "tqc"}:
+                raise ValueError("selected reward continuation is available for GRTQC and TQC")
             fitted_curriculum = _fit_custom_curriculum_budget(cfg.curriculum, cfg.timesteps)
             if fitted_curriculum != cfg.curriculum:
                 cfg.curriculum = fitted_curriculum
@@ -3551,27 +3563,38 @@ class PolyBotWindow(QWidget):
             if resume and cfg.algorithm in {"grtqc", "tqc"}:
                 resume_metadata = registry.read_metadata(slot)
                 cfg = self._resume_configuration(cfg, resume_metadata)
+                if reward_override:
+                    cfg.reward_profile = selected_reward_profile
+                    cfg.rewards = selected_rewards
                 registry.validate(
                     resume_metadata, cfg,
                     backend_for(cfg.algorithm).action_adapter(cfg).schema,
                 )
                 self.load_configuration(cfg)
                 self.log.append(
+                    "Loaded the checkpoint's policy, critic, and curriculum; kept the selected step budget."
+                    if reward_override else
                     "Loaded the checkpoint's policy, critic, curriculum, and reward settings; kept the selected step budget."
                 )
                 saved_rewards = resume_metadata.training_config.get("rewards")
                 if isinstance(saved_rewards, dict) and saved_rewards != cfg.to_dict()["rewards"]:
-                    self._load_saved_replay_rewards(saved_rewards)
-                    cfg = self.configuration()
-                    self.log.append(
-                        "Loaded the reward settings saved with this checkpoint."
-                    )
+                    if reward_override:
+                        fresh_replay = True
+                        self.log.append(
+                            "Using the selected reward settings; old replay will be discarded and refilled."
+                        )
+                    else:
+                        self._load_saved_replay_rewards(saved_rewards)
+                        cfg = self.configuration()
+                        self.log.append(
+                            "Loaded the reward settings saved with this checkpoint."
+                        )
                 if not saved_replay.is_file():
                     fresh_replay = True
                     self.log.append(
                         "No replay buffer was saved with this checkpoint; a new buffer will be collected."
                     )
-                elif resume_metadata.reward_semantics != REWARD_SEMANTICS:
+                elif not fresh_replay and resume_metadata.reward_semantics != REWARD_SEMANTICS:
                     warning = (
                         "The saved replay contains rewards from older semantics. Its saved reward settings "
                         "are loaded and the replay is preserved; newly collected rewards use current "
