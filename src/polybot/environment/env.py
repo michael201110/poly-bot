@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from itertools import groupby
 from typing import Any
 
@@ -156,6 +156,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         curriculum_random_quarters: bool = False,
         action_adapter: ActionAdapter | None = None,
         expose_training_state: bool = False,
+        racing_line: dict[str, Any] | None = None,
+        on_racing_line: Callable[[dict[str, Any]], None] | None = None,
+        racing_line_provider: Callable[[], dict[str, Any] | None] | None = None,
     ) -> None:
         super().__init__()
         if lookahead_count < 1:
@@ -222,6 +225,9 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._episode_curriculum_quarter: int | None = None
         self.action_adapter = action_adapter or DigitalActionAdapter()
         self.expose_training_state = expose_training_state
+        self.racing_line = racing_line
+        self.on_racing_line = on_racing_line
+        self.racing_line_provider = racing_line_provider
         self.action_space = self.action_adapter.action_space
         self.observation_space = spaces.Box(
             low=-5.0,
@@ -385,6 +391,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 "protocol": PROTOCOL_NAME,
                 "protocol_version": PROTOCOL_VERSION,
                 "lookahead_count": self.lookahead_count,
+                **({"racing_line": self.racing_line} if self.racing_line else {}),
             },
         )
         if result.get("protocol") != PROTOCOL_NAME:
@@ -422,6 +429,11 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         if self._native_finish_restart_pending:
             time.sleep(1.0)
             self._native_finish_restart_pending = False
+        if self.racing_line_provider is not None:
+            current_line = self.racing_line_provider()
+            if current_line is not self.racing_line:
+                self.racing_line = current_line
+                self._handshake_complete = False
         self._handshake()
         options = options or {}
         track_id = options.get("track_id", self.track_id)
@@ -464,9 +476,18 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
                 "start_progress_ratio": start_progress_ratio,
                 "start_time_s": self.curriculum_start_s,
                 "native_restart": False,
+                "export_reference": self.racing_line is None,
             },
         )
         transition = Transition.from_wire(result, lookahead_count=self.lookahead_count)
+        initialized_line = transition.simulator_info.get("initialized_racing_line")
+        if self.racing_line is None and isinstance(initialized_line, dict):
+            self.racing_line = initialized_line
+            # Subsequent resets must send the captured line even if the
+            # bootstrap ghost has since been removed from the game.
+            self._handshake_complete = False
+            if self.on_racing_line is not None:
+                self.on_racing_line(initialized_line)
         if transition.ticks_advanced != 0:
             raise ProtocolViolation("reset must not advance simulation ticks")
 

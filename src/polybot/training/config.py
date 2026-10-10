@@ -355,7 +355,7 @@ class TrainingConfig:
     log_root: Path = Path("logs")
     visual_replay_enabled: bool | None = None
     visual_replay_sample_hz: float = 20.0
-    visual_replay_observations: bool = False
+    visual_replay_observations: bool = True
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     evaluation: EvaluationConfig = field(default_factory=lambda: EvaluationConfig(episodes=5))
     rewards: RewardConfig = field(default_factory=summer_1_reward_config)

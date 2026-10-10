@@ -58,7 +58,7 @@ To check the local mock environment without the game, run the legacy TQC smoke t
 .\.venv\Scripts\polybot-train.exe --algorithm tqc --backend mock --timesteps 2048 --tqc-architecture tiny --tqc-learning-starts 256 --eval-interval 1024 --eval-episodes 2
 ```
 
-The GUI Status tab and `polybot-live-log logs/<track-slug>/<algorithm>/<run>.jsonl` show readable progress; the JSONL log retains full diagnostics. See [track workspaces](docs/tracks.md) for registry management, migration, and path layout. The [game integration](docs/game-integration.md) and [protocol](docs/protocol.md) explain the simulator connection.
+The GUI's **Activity & logs** page and `polybot-live-log logs/<track-slug>/<algorithm>/<run>.jsonl` show readable progress; the JSONL log retains full diagnostics. The [desktop workspace guide](docs/gui.md) covers setup, checkpoint actions, replays, search, and shortcuts. See [track workspaces](docs/tracks.md) for registry management, migration, and path layout. The [game integration](docs/game-integration.md) and [protocol](docs/protocol.md) explain the simulator connection.
 
 Run `python -m pytest`, `python -m ruff check src tests tools`, `git diff --check`, and `python tools/validate_pml_mod.py` before committing. Community contributions follow the [Code of Conduct](CODE_OF_CONDUCT.md), [Contributing](CONTRIBUTING.md), and [Security](SECURITY.md) policies.
 

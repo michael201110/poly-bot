@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { installPolyBotHudOverlay } from "../pml-mod/0.1.39/hud_renderer.mjs";
+import { HUD_MODES, importantInputs, installPolyBotHudOverlay } from "../pml-mod/0.1.41/hud_renderer.mjs";
 
 class FakeNode {
   constructor(tagName) {
@@ -11,6 +11,7 @@ class FakeNode {
     this.parentNode = null;
     this.style = {};
     this.attributes = {};
+    this.listeners = {};
     this.hidden = false;
     this.textContent = "";
   }
@@ -27,13 +28,33 @@ class FakeNode {
   setAttribute(name, value) {
     this.attributes[name] = value;
   }
+
+  getAttribute(name) {
+    return this.attributes[name] ?? null;
+  }
+
+  addEventListener(name, callback) {
+    this.listeners[name] = callback;
+  }
+
+  click() {
+    this.listeners.click?.({
+      preventDefault() {},
+      stopPropagation() {},
+    });
+  }
 }
 
-function createRenderer() {
+function createRenderer({ readyState = "complete" } = {}) {
   const document = {
+    readyState,
     body: new FakeNode("body"),
     head: new FakeNode("head"),
+    listeners: {},
     createElement: (tag) => new FakeNode(tag),
+    addEventListener(name, callback) {
+      this.listeners[name] = callback;
+    },
   };
   const host = {
     document,
@@ -101,13 +122,27 @@ function sectionBody(root, index) {
   return root.children[index].children.at(-1);
 }
 
-test("renderer creates a non-interactive overlay and reuses feature rows", () => {
+function hudRoot(document) {
+  return document.body.children.find((node) =>
+    node.className === "polybot-ai-hud" || node.className.startsWith("polybot-ai-hud "),
+  );
+}
+
+test("plugin toggle controls the overlay and telemetry updates reuse feature rows", () => {
   const { document, update } = createRenderer();
+  const toggle = document.body.children.find((node) => node.className.includes("polybot-ai-hud-toggle"));
+  const root = hudRoot(document);
+  assert.ok(toggle);
+  assert.ok(root);
+  assert.equal(toggle.textContent, "Show AI HUD");
+  assert.equal(root.hidden, true);
+  toggle.click();
+  assert.equal(toggle.textContent, "Hide AI HUD");
+  assert.equal(root.hidden, false);
+
   const frame = sampleFrame();
   update(frame);
-  const root = document.body.children.find((node) => node.className.includes("polybot-ai-hud"));
-  assert.ok(root);
-  assert.equal(root.attributes["aria-hidden"], "true");
+  assert.equal(root.attributes["aria-hidden"], "false");
   assert.equal(root.style.transform, "scale(1.00)");
   const firstInput = sectionBody(root, 3).children[0];
   const firstValue = firstInput.children[1];
@@ -118,29 +153,46 @@ test("renderer creates a non-interactive overlay and reuses feature rows", () =>
     features: frame.features.map((item) => ({ ...item, value: 0.75 })),
   }));
   assert.equal(
-    document.body.children.filter((node) => node.className.includes("polybot-ai-hud")).length,
+    document.body.children.filter((node) =>
+      node.className === "polybot-ai-hud" || node.className.startsWith("polybot-ai-hud "),
+    ).length,
     1,
   );
   assert.equal(sectionBody(root, 3).children[0], firstInput);
   assert.match(firstValue.textContent, /^0\.750/);
 
-  assert.equal(root.hidden, false);
   update({ enabled: false });
+  assert.equal(root.hidden, false);
+  toggle.click();
   assert.equal(root.hidden, true);
+  toggle.click();
+  assert.equal(root.hidden, false);
 });
 
-test("enabled overlay remains visible without later telemetry frames", () => {
+test("HUD control exists before Python telemetry is available", () => {
   const { document, update } = createRenderer();
-  update(sampleFrame());
-  const root = document.body.children.find((node) => node.className.includes("polybot-ai-hud"));
+  update();
+  const toggle = document.body.children.find((node) => node.className.includes("polybot-ai-hud-toggle"));
+  const root = hudRoot(document);
+  assert.ok(toggle);
   assert.ok(root);
+  toggle.click();
   assert.equal(root.hidden, false);
+  assert.match(root.children[1].textContent, /Waiting for Python telemetry/);
+});
+
+test("HUD control waits for the page body when PML initializes early", () => {
+  const { document, update } = createRenderer({ readyState: "loading" });
+  assert.equal(document.body.children.length, 0);
+  document.listeners.DOMContentLoaded();
+  update();
+  assert.ok(document.body.children.some((node) => node.className.includes("polybot-ai-hud-toggle")));
 });
 
 test("unsupported feature schemas are made explicit instead of being mislabeled", () => {
   const { document, update } = createRenderer();
   update(sampleFrame({ observation_schema: "polybot.observation.v3" }));
-  const root = document.body.children.find((node) => node.className.includes("polybot-ai-hud"));
+  const root = hudRoot(document);
   const inputSection = root.children[3];
   assert.match(inputSection.children[1].textContent, /Unsupported observation schema/);
   assert.equal(inputSection.children.at(-1).hidden, true);
@@ -158,4 +210,42 @@ test("renderer mock-DOM update work stays below one millisecond per full frame",
   const meanMs = elapsedMs / 1_000;
   console.info(`AI HUD mock-DOM average: ${meanMs.toFixed(4)} ms/update`);
   assert.ok(meanMs < 1, `average update took ${meanMs.toFixed(4)} ms`);
+});
+
+
+test("all requested modes switch live and OFF hides the overlay", () => {
+  const {document, update} = createRenderer();
+  const root = hudRoot(document);
+  const selector = document.body.children.find(n => n.className === "polybot-ai-hud-mode");
+  assert.equal(selector.children.length, 15);
+  for (const mode of HUD_MODES) {
+    selector.value = mode;
+    selector.listeners.change();
+    update(sampleFrame());
+    assert.equal(root.hidden, mode === "OFF", mode);
+    assert.equal(root.children[3].hidden, !["NEURAL_NET","RL_DEBUG","OBSERVATIONS"].includes(mode), mode);
+    assert.equal(root.children[5].hidden, !["RL_DEBUG","REWARD"].includes(mode), mode);
+    assert.equal(root.children[4].hidden, ["OFF","TRAINING","TRAINING_GRAPH"].includes(mode), mode);
+  }
+});
+
+test("input curation retains driving signals and leaves the complete vector unchanged", () => {
+  const features = sampleFrame().features;
+  features[99] = {...features[99], key:"velocity.forward"};
+  features[98] = {...features[98], key:"route.heading_error"};
+  const original = JSON.stringify(features);
+  const selected = importantInputs(features);
+  assert.equal(selected.length,60);
+  assert.ok(selected.some(f=>f.key === "velocity.forward"));
+  assert.ok(selected.some(f=>f.key === "route.heading_error"));
+  assert.equal(JSON.stringify(features), original);
+});
+
+test("missing WR trace is explicit and a target never becomes a fake live delta", () => {
+  const {document, update} = createRenderer();
+  update(sampleFrame({settings:{display_mode:"WR_CHASE",wr_target_s:22}}));
+  const texts = hudRoot(document).children.at(-1).children.at(-1).children.map(n=>n.textContent).join(" ");
+  assert.match(texts,/WR target 22.000 s/);
+  assert.match(texts,/WR split trace unavailable/);
+  assert.doesNotMatch(texts,/Live WR delta \+?3.000/);
 });

@@ -35,11 +35,19 @@ An environment step is one policy decision; `frame_skip` specifies fixed physics
 
 Each model slot contains `policy.zip` and `metadata.json`; resumable off-policy slots also contain `replay.pkl`. Metadata records schemas, track, architecture, complete configuration, counters, device, overlays, Git commit, and the most recent evaluation only if that exact policy was evaluated. On GUI resume, saved reward coefficients are loaded from the selected checkpoint so they match its replay. If reward semantics have changed, the existing replay is preserved and a warning explains that newly collected rewards use current semantics, so the buffer may contain mixed versions. Such continuations are marked `mixed-replay-v1`; explicitly starting with a fresh replay avoids mixing. Evaluations are deterministic full-track laps and rank completion before time. A stochastic training finish cannot promote a model.
 
-In the GUI, the header summarizes the selected track, algorithm, backend, step budget, and replay-recording mode. Training and settings tabs scroll when their contents exceed the window; the Replay Swarm tab explains how to create recordings if none are available. Editing a reward value marks the profile `Custom`, and configuration Save/Load opens a file picker.
+The GUI opens on an Overview with champion and latest checkpoint results. Choose
+the track and algorithm in the header, then use the sidebar for setup, learning
+settings, models, replays, the in-game display, and activity. Ctrl+K finds settings
+and actions, including hidden advanced controls. The activity bar and safe stop
+control remain visible on every page. Replay exposes the save choice and the
+basic watch/compare flow; filters and appearance settings expand separately.
+Advanced model workflows also expand independently. Editing a reward value marks
+the profile `Custom`, and configuration Save/Load opens a file picker. See the
+[desktop workspace guide](gui.md) for common tasks and shortcuts.
 
 The GUI exposes all configuration fields under **Advanced settings**. `polybot-train --parameter-help` prints the same descriptions. `polybot-doctor --smoke grtqc` tests model construction and replay persistence; `polybot-eval --algorithm grtqc --track-name "Summer 1" --slot champion --backend websocket --episodes 5` tests a promoted policy. Legacy TQC and PPO controls remain available as separate experiment paths; they do not participate in GRTQC updates.
 
-The GUI's **AI HUD** tab configures the live, non-physical in-game overlay for
+The GUI's **In-game display** page configures the live, non-physical in-game overlay for
 WebSocket runs. It displays the actual policy observation and outputs,
 controller-applied controls, reward breakdown, and episode events. The HUD is
 separate from training and does not alter actions or rewards. See

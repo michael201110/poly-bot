@@ -2996,10 +2996,15 @@ function installPolyBotHudOverlay(host = globalThis) {
       if (!replayState.batches.length || !context?.scene || !Matrix4) return;
       const matrix = new Matrix4();
       const hidden = new Matrix4().makeScale(0, 0, 0);
+      const updatedRoots = new Set();
       for (const batch of replayState.batches) {
         for (let index = 0; index < batch.items.length; index += 1) {
           const { ghost, object } = batch.items[index];
-          ghost.car.polybotReplayRoot?.updateWorldMatrix(true, true);
+          const root = ghost.car.polybotReplayRoot;
+          if (root && !updatedRoots.has(root)) {
+            root.updateWorldMatrix(true, true);
+            updatedRoots.add(root);
+          }
           batch.mesh.setMatrixAt(index, ghost.visible ? object.matrixWorld : hidden);
         }
         batch.mesh.instanceMatrix.needsUpdate = true;

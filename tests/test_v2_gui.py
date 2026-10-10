@@ -56,11 +56,18 @@ def window(qt_app, tmp_path, monkeypatch):
         staticmethod(lambda: tmp_path / "config" / "selected-track.json"),
     )
     widget = PolyBotWindow()
+    widget.general["output_root"].setText(str(tmp_path / "models"))
+    widget.general["log_root"].setText(str(tmp_path / "logs"))
+    widget._refresh_replay_runs()
+    widget.replay_swarm_step_min.setValue(0)
+    widget.replay_swarm_step_max.setValue(1_000_000)
+    widget.replay_swarm_color_min.setValue(0)
+    widget.replay_swarm_color_max.setValue(1_000_000)
     yield widget
     widget.close()
 
 
-def test_ai_hud_settings_persist_and_apply_to_active_runner(window, qt_app) -> None:
+def test_ai_hud_display_settings_persist_and_apply_to_active_runner(window, qt_app) -> None:
     class ActiveRunner:
         def __init__(self) -> None:
             self.settings = None
@@ -70,14 +77,13 @@ def test_ai_hud_settings_persist_and_apply_to_active_runner(window, qt_app) -> N
 
     runner = ActiveRunner()
     window.runner = runner
-    window.ai_overlay_widgets["enabled"].setChecked(False)
     window.ai_overlay_widgets["preset"].setCurrentText("full")
     window.ai_overlay_widgets["scale"].setValue(1.3)
     window.ai_overlay_widgets["lookahead_points"].setValue(6)
 
     assert window._save_ai_overlay_settings()
     saved = window.ai_overlay_store.load()
-    assert saved.enabled is False
+    assert saved.enabled is True
     assert saved.preset == "full"
     assert saved.scale == pytest.approx(1.3)
     assert saved.lookahead_points == 6
@@ -120,10 +126,10 @@ def test_resume_loads_saved_reward_settings_before_replay_validation(
     (slot / "replay.pkl").write_bytes(b"saved replay placeholder")
     saved_rewards = window._reward_values.copy()
     saved_rewards["finish_bonus"] += 123.0
-    metadata = SimpleNamespace(
-        reward_semantics=saved_semantics,
-        training_config={"rewards": saved_rewards},
-    )
+    saved_config = window.configuration().to_dict()
+    saved_config["rewards"] = saved_rewards
+    saved_config["reward_profile"] = None
+    metadata = SimpleNamespace(reward_semantics=saved_semantics, training_config=saved_config)
 
     class Registry:
         def __init__(self, root) -> None:
@@ -134,6 +140,12 @@ def test_resume_loads_saved_reward_settings_before_replay_validation(
 
         def read_metadata(self, path):
             return metadata
+
+        def validate(self, *args):
+            return None
+
+        def list_model_slots(self, *args):
+            return []
 
     class Thread:
         def __init__(self, *, target, args, daemon) -> None:
@@ -156,10 +168,79 @@ def test_resume_loads_saved_reward_settings_before_replay_validation(
     assert window.configuration().to_dict()["rewards"] == saved_rewards
     assert window.reward_profile.currentText() == "Custom"
     assert window.worker.args == (slot, False, False, False)
-    assert "Loaded the reward settings saved with this checkpoint." in window.log.toPlainText()
+    assert "Loaded the checkpoint's policy, critic, curriculum, and reward settings" in window.log.toPlainText()
     if saved_semantics != gui_main.REWARD_SEMANTICS:
         assert "replay is preserved" in window.log.toPlainText()
         assert "mixed reward versions" in window.warnings.text()
+
+
+@pytest.mark.parametrize("gui_origin", ["transfer", "scratch"])
+def test_continue_from_best_skips_a_faster_but_incompatible_transfer_latest(
+    window, tmp_path, monkeypatch, gui_origin,
+) -> None:
+    champion = tmp_path / "champion"
+    latest = tmp_path / "latest"
+    champion.mkdir()
+    latest.mkdir()
+    (champion / "metadata.json").touch()
+    (latest / "metadata.json").touch()
+    config = window.configuration()
+    config.output_root = tmp_path
+    config.grtqc.training_origin = gui_origin
+    metadata_configs = {}
+    for path, origin, env_state in (
+        (champion, "scratch", True), (latest, "transfer", False),
+    ):
+        saved = TrainingConfig.from_dict(config.to_dict())
+        saved.grtqc.training_origin = origin
+        saved.grtqc.critic_controller_state = env_state
+        saved.grtqc.critic_environment_state = env_state
+        metadata_configs[path] = saved.to_dict()
+
+    class Registry:
+        def __init__(self, root) -> None:
+            pass
+
+        def slot(self, _track, _algorithm, name, **_kwargs):
+            return champion if name == "champion" else latest
+
+        def read_metadata(self, path):
+            lap = 22.0 if path == latest else 22.595
+            return SimpleNamespace(
+                evaluation=gui_main.EvaluationResult(
+                    episodes=5, finish_rate=1.0, median_progress=1.0, mean_progress=1.0,
+                    best_lap_s=lap, median_lap_s=lap, crash_rate=0.0,
+                    off_track_rate=0.0, stall_rate=0.0,
+                ).to_dict(),
+                training_config=metadata_configs[path],
+            )
+
+        def validate(self, metadata, _config, _schema):
+            if metadata.training_config["grtqc"]["training_origin"] != "scratch":
+                raise ValueError("scratch and transferred GRTQC experiments cannot share model/replay")
+
+    monkeypatch.setattr(gui_main, "ModelRegistry", Registry)
+    assert window._best_resume_slot(config) == champion
+
+
+def test_resume_configuration_restores_saved_observation_shape_and_keeps_budget(window, tmp_path) -> None:
+    current = window.configuration()
+    current.output_root = tmp_path / "models"
+    current.log_root = tmp_path / "logs"
+    current.timesteps = 75_000
+    current.grtqc.training_origin = "scratch"
+    saved = TrainingConfig.from_dict(current.to_dict())
+    saved.grtqc.critic_controller_state = True
+    saved.grtqc.critic_environment_state = True
+    metadata = SimpleNamespace(training_config=saved.to_dict())
+
+    resumed = window._resume_configuration(current, metadata)
+
+    assert resumed.grtqc.critic_environment_state is True
+    assert resumed.grtqc.critic_controller_state is True
+    assert resumed.timesteps == 75_000
+    assert resumed.output_root == current.output_root
+    assert resumed.log_root == current.log_root
 
 
 @pytest.fixture
@@ -283,6 +364,9 @@ def test_replay_swarm_explains_empty_run_list(window) -> None:
     assert window.replay_swarm_run.count() == 0
     assert "No saved replay runs found" in window.replay_swarm_runs_status.text()
     assert "WebSocket training" in window.replay_swarm_runs_status.text()
+    assert "Each completed attempt" in window.replay_swarm_runs_status.text()
+    assert window.replay_recording.currentText() == "Automatic for live training"
+    assert window.replay_advanced_content.isHidden()
 
 
 def test_distillation_summary_surfaces_live_bake_metrics() -> None:
@@ -471,14 +555,14 @@ def test_live_log_viewer_follows_appended_events(qt_app, tmp_path) -> None:
 def test_replay_swarm_tab_defaults_and_input_validation(window) -> None:
     labels = {button.text() for button in window.replay_swarm_action_buttons}
     assert {
-        "Inspect selection", "Set full run range", "Load swarm", "Play swarm",
-        "Pause", "Resume", "Restart", "Seek", "Apply settings", "Clear ghosts",
-        "Bridge status",
+        "Watch selected attempt", "Compare selected attempts", "Pause", "Resume",
+        "Restart", "Clear replays", "Jump", "Inspect selection", "Set full run range",
+        "Load paused", "Apply settings", "Bridge status",
     } <= labels
     assert window.replay_swarm_step_min.value() == 0
     assert window.replay_swarm_step_max.value() == 1_000_000
     assert window.replay_swarm_max_cars.value() == 100
-    assert window.replay_swarm_color_max.value() == 1_000_000
+    assert window.replay_swarm_color_max.value() == 2_000_000
     with pytest.raises(ValueError, match="Choose a replay run"):
         window._replay_swarm_config()
 
@@ -496,6 +580,17 @@ def test_replay_swarm_tab_defaults_and_input_validation(window) -> None:
     window.replay_swarm_color_stops.setText("broken")
     with pytest.raises(ValueError):
         window._replay_swarm_config()
+
+
+def test_replay_recording_choice_updates_saved_training_configuration(window) -> None:
+    window.replay_recording.setCurrentText("Always record")
+    assert window.configuration().visual_replay_enabled is True
+    window.replay_recording.setCurrentText("Do not record")
+    assert window.configuration().visual_replay_enabled is False
+    config = window.configuration()
+    config.visual_replay_enabled = None
+    window.load_configuration(config)
+    assert window.replay_recording.currentText() == "Automatic for live training"
 
 
 def test_replay_swarm_inspect_uses_indexes_only(window, tmp_path, monkeypatch) -> None:
@@ -632,9 +727,12 @@ def test_global_track_switch_scopes_models_replays_and_training_config(
         assert window.configuration().track_slug == "autumn-2"
         assert "autumn-2" in window.models_inventory.toPlainText()
         assert "summer-1" not in window.models_inventory.toPlainText()
-        assert window.replay_swarm_run.count() == 1
+        assert window.replay_swarm_run.count() == 2
         assert window.replay_swarm_run.currentData() == str(replay_dir.resolve())
         assert window.replay_swarm_path.text() == str(replay_dir.resolve())
+        assert window.replay_episode_list.count() == 1
+        assert "Attempt 000001" in window.replay_episode_list.item(0).text()
+        assert "Failed" in window.replay_episode_list.item(0).text()
         assert "Autumn 2" in window.tabs.tabText(window.tabs.indexOf(window.models_page))
         assert "Autumn 2" in window.tabs.tabText(window.tabs.indexOf(window.replay_swarm_page))
 
@@ -642,6 +740,7 @@ def test_global_track_switch_scopes_models_replays_and_training_config(
         assert "summer-1" in window.models_inventory.toPlainText()
         assert "autumn-2" not in window.models_inventory.toPlainText()
         assert window.replay_swarm_run.count() == 0
+        assert window.replay_episode_list.count() == 0
     finally:
         window.close()
 
@@ -675,7 +774,7 @@ def test_custom_model_root_refreshes_models_and_replay_runs(window, tmp_path) ->
     root_field.editingFinished.emit()
 
     assert "champion" in window.models_inventory.toPlainText()
-    assert window.replay_swarm_run.count() == 1
+    assert window.replay_swarm_run.count() == 2
     assert window.replay_swarm_run.currentData() == str(replay_dir.resolve())
 
 
@@ -695,3 +794,30 @@ def test_legacy_saved_configuration_registers_and_selects_its_track(
     resolved = window.configuration()
     assert resolved.track_slug == "imported-circuit"
     assert resolved.track_id == "current"
+
+
+def test_resume_configuration_resizes_custom_curriculum_to_session_budget(window):
+    from polybot.environment.curriculum import build_plan
+    current = window.configuration()
+    current.timesteps = 100_000
+    saved = TrainingConfig.from_dict(current.to_dict())
+    saved.timesteps = 2_000_000
+    saved.curriculum = CurriculumConfig("custom", phases=(
+        CurriculumPhaseConfig("section", 500_000, start_ratio=0, end_ratio=.25),
+        CurriculumPhaseConfig("full", 1_500_000),
+    ))
+    resumed = window._resume_configuration(current, SimpleNamespace(training_config=saved.to_dict()))
+    plan = build_plan(resumed.curriculum, resumed.timesteps)
+    assert plan.total_steps == 100_000
+    assert plan.phases[0].mode == "section"
+    assert plan.phases[0].steps == 25_000
+    assert plan.phases[1].steps == 75_000
+
+
+def test_auto_resume_keeps_the_champions_verified_device(window):
+    current = window.configuration()
+    current.device = "auto"
+    saved = TrainingConfig.from_dict(current.to_dict())
+    saved.device = "cpu"
+    metadata = SimpleNamespace(training_config=saved.to_dict(), device="cpu")
+    assert window._resume_configuration(current, metadata).device == "cpu"

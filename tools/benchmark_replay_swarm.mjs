@@ -2,11 +2,8 @@ import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import vm from "node:vm";
 
-const template = readFileSync(new URL("../pml-mod/0.1.38/main.template.js", import.meta.url), "utf8");
-const start = template.indexOf("    const replayState = {");
-const end = template.indexOf("    pml.registerSimWorkerMixin(", start);
-if (start < 0 || end < 0) throw new Error("could not locate the renderer runtime in the PML template");
-const rendererSource = template.slice(start, end);
+const rendererSource = readFileSync(new URL("../pml-mod/0.1.41/replay_renderer.mjs", import.meta.url), "utf8")
+  .replace("export function installPolyBotReplayRenderer", "function installPolyBotReplayRenderer");
 const sampleCount = 120;
 const frameCount = 180;
 const warmupFrames = 30;
@@ -18,10 +15,11 @@ function run(ghostCount) {
   const vmContext = {
     performance: { now: () => (clock += 0.001) },
     TextEncoder,
+    structuredClone,
     console,
   };
   vmContext.globalThis = vmContext;
-  vm.runInNewContext(`(() => { ${rendererSource} })()`, vmContext);
+  vm.runInNewContext(`${rendererSource}; installPolyBotReplayRenderer();`, vmContext);
   const game = {
     owner: {},
     deltaSeconds: 0,
@@ -55,7 +53,7 @@ function run(ghostCount) {
   const rows = Array.from({ length: sampleCount }, (_, index) => [
     index, index * 0.03, index * 0.1, 0, 0, 0, 0, 0, 1,
   ]);
-  const rowBytes = Buffer.byteLength(JSON.stringify(rows));
+  const rowBytes = Buffer.byteLength(JSON.stringify({samples: rows}));
   const totalSamples = ghostCount * sampleCount;
   dispatch("swarm_begin", {
     ghost_count: ghostCount,

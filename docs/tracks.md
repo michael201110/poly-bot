@@ -30,7 +30,7 @@ use the GUI's **Manage** dialog to add it back. Renaming a track retains its
 slug and existing workspace.
 
 The GUI has a global track selector plus **Add Track** and **Manage** actions.
-The Models and Replay Swarm tabs follow the selected track. Training
+The Models and Replay tabs follow the selected track. Training
 configurations loaded from older files register and select their track rather
 than silently using the currently selected workspace.
 
@@ -57,7 +57,7 @@ logs/
 
 Model slots retain their existing names and contents. Visual replay indexes
 include the track slug and training metadata, and each run is discoverable from
-the Replay Swarm tab without searching other tracks. New training and
+the Replay tab without searching other tracks. New training and
 algorithm-sidecar logs are written under the matching track and algorithm.
 Readers also continue to discover legacy flat log names such as
 `logs/<track-slug>-<algorithm>-*.jsonl`.

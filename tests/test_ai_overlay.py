@@ -140,6 +140,24 @@ def test_hud_frames_are_exact_inputs_actions_controls_and_rewards() -> None:
     assert frame["status"] == "finished"
 
 
+def test_legacy_python_enabled_setting_does_not_control_plugin_hud() -> None:
+    env = _FeatureEnv()
+    wrapper = AIOverlayTelemetryWrapper(
+        env,
+        settings_provider=lambda: AIOverlaySettings(enabled=False),
+        context_provider=lambda: {"mode": "training"},
+        frame_skip=30,
+        reward_scale_provider=lambda: 1.0,
+    )
+
+    wrapper.reset(seed=1)
+    wrapper.step(np.zeros(2, dtype=np.float32))
+
+    assert env.capture_enabled == [True, True]
+    assert len(env.frames) == 2
+    assert all(frame["enabled"] is True for frame in env.frames)
+
+
 def test_hud_packaging_failure_does_not_fail_environment_step() -> None:
     env = _FeatureEnv(fail_frame=True)
     wrapper = AIOverlayTelemetryWrapper(
@@ -299,3 +317,36 @@ def test_websocket_one_way_notification_is_serialized_and_bounded() -> None:
         transport.notify({"op": "hud_frame"})
     assert transport._server is None
     transport.close()
+
+
+def test_hud_modes_validate_and_legacy_settings_load(tmp_path):
+    from polybot.ai_overlay import HUD_MODES
+    store = AIOverlaySettingsStore(tmp_path / "hud.json")
+    for mode in HUD_MODES:
+        settings = AIOverlaySettings(display_mode=mode, wr_target_s=22.123)
+        store.save(settings)
+        assert store.load() == settings
+    payload = json.loads(store.path.read_text())
+    del payload["settings"]["display_mode"]
+    del payload["settings"]["wr_target_s"]
+    store.path.write_text(json.dumps(payload))
+    assert store.load().display_mode == "RL_DEBUG"
+    with pytest.raises(ValueError):
+        AIOverlaySettings(display_mode="FAKE")
+    with pytest.raises(ValueError):
+        AIOverlaySettings(wr_target_s=float("nan"))
+
+
+def test_reference_delta_matches_saved_position_within_checkpoint():
+    env = _FeatureEnv()
+    env.racing_line = {"source_name": "human", "lap_time_s": 22.262, "points": [
+        {"tick": 1000, "checkpoint_index": 0, "position_m": [1, 0, 0]},
+        {"tick": 2000, "checkpoint_index": 1, "position_m": [0, 0, 0]},
+    ]}
+    wrapper = AIOverlayTelemetryWrapper(env, settings_provider=AIOverlaySettings,
+        context_provider=lambda: {}, frame_skip=30, reward_scale_provider=lambda: 1)
+    frame = wrapper._make_frame(info={"position_m": [0,0,0], "checkpoint_index": 0,
+        "elapsed_s": 1.5, "local_velocity_mps": [3,0,4]})
+    assert frame["reference"]["delta_s"] == .5
+    assert frame["speed_mps"] == 5
+    assert frame["reference"]["delta_method"] == "nearest saved position"

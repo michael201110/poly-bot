@@ -9,11 +9,13 @@ import random
 import re
 import sys
 from collections.abc import Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+from polybot.ai_overlay import AIOverlaySettings, AIOverlaySettingsStore
 
 from polybot.protocol import PROTOCOL_NAME, PROTOCOL_VERSION, ProtocolViolation, request_message, response_result
 from polybot.tracks.registry import TrackRegistry, track_slug
@@ -27,11 +29,32 @@ from polybot.training.visual_replays import (
 from polybot.transport import WebSocketServerTransport
 
 FAILED_STATUSES = frozenset({"failed", "timeout"})
+
+
+def _playback_hud_frames(frames: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+    """Use today's display preferences without changing recorded telemetry on disk."""
+    if frames is None:
+        return None
+    try:
+        settings = AIOverlaySettingsStore().load()
+    except ValueError:
+        settings = AIOverlaySettings()
+    totals: dict[str, dict[str, float]] = {key: {} for key in ("terms", "groups", "learner_terms", "learner_groups")}
+    result = []
+    for frame in frames:
+        reward = dict(frame.get("reward") or {})
+        for key, accumulated in totals.items():
+            for name, value in reward.get(key, {}).items():
+                accumulated[name] = accumulated.get(name, 0.0) + float(value)
+            # Calculate once from the full episode, so seeking and looping are exact.
+            reward.setdefault(f"episode_{key}", dict(accumulated))
+        result.append({**frame, "settings": asdict(settings), "reward": reward})
+    return result
 MAX_REPLAY_SAMPLE_COUNT = 500_000
 REPLAY_CHUNK_SAMPLES = 256
 MAX_REPLAY_GHOSTS = 500
 MAX_REPLAY_TOTAL_SAMPLES = 250_000
-MAX_REPLAY_PAYLOAD_BYTES = 32 * 1024 * 1024
+MAX_REPLAY_PAYLOAD_BYTES = 64 * 1024 * 1024
 _COLOR_RE = re.compile(r"^#?([0-9a-fA-F]{6})$")
 _NAMED_COLORS = {
     "red": "#ff0000",
@@ -74,6 +97,13 @@ class SelectedReplayPayload:
         return f"{self.selection.metadata['run_id']}:{self.selection.metadata['episode_id']}"
 
 
+def replay_camera_rank(selection: ReplaySelection) -> tuple[float, float]:
+    """Choose the same fixed best-run camera before loading expensive HUD data."""
+    lap = selection.metadata.get("lap_time_s")
+    lap = float(lap) if isinstance(lap, (int, float)) and math.isfinite(lap) and lap > 0 else math.inf
+    return lap, -float(selection.metadata.get("final_progress_m", 0.0))
+
+
 @dataclass(frozen=True, slots=True)
 class InterpolatedTransform:
     elapsed_s: float
@@ -85,10 +115,11 @@ class InterpolatedTransform:
 @dataclass(frozen=True, slots=True)
 class ReplayPlaybackOptions:
     speed: float = 1.0
-    opacity: float = 0.5
+    opacity: float = 1.0
     color: str = "#ffffff"
     end_behavior: str = "fade"
     fade_duration_s: float = 0.75
+    play_alongside_loaded_ghosts: bool = False
 
     def __post_init__(self) -> None:
         if (
@@ -105,6 +136,8 @@ class ReplayPlaybackOptions:
             or not 0 <= self.opacity <= 1
         ):
             raise ValueError("opacity must be between 0 and 1")
+        if not isinstance(self.play_alongside_loaded_ghosts, bool):
+            raise ValueError("play_alongside_loaded_ghosts must be a boolean")
         if not isinstance(self.color, str):
             raise ValueError("color must be text in #RRGGBB form")
         object.__setattr__(self, "color", "#{:02x}{:02x}{:02x}".format(*parse_color(self.color)))
@@ -132,13 +165,29 @@ def parse_color(value: str) -> tuple[int, int, int]:
 def replay_sample_chunks(
     samples: Sequence[ReplaySample],
     *,
+    hud_frames: Sequence[dict[str, Any]] | None = None,
     chunk_size: int = REPLAY_CHUNK_SAMPLES,
 ) -> Iterator[dict[str, Any]]:
     """Validate and encode one trajectory into bounded JSON-friendly chunks."""
     _validate_replay_samples(samples)
     if isinstance(chunk_size, bool) or not 1 <= chunk_size <= REPLAY_CHUNK_SAMPLES:
         raise ValueError(f"chunk_size must be from 1 to {REPLAY_CHUNK_SAMPLES}")
+    if hud_frames is not None and any(
+        not isinstance(frame, dict)
+        or not isinstance(frame.get("elapsed_simulation_s"), (int, float))
+        or not math.isfinite(float(frame["elapsed_simulation_s"]))
+        for frame in hud_frames
+    ):
+        raise ValueError("replay HUD frames must include elapsed simulation time")
+    if hud_frames is not None and any(
+        float(current["elapsed_simulation_s"]) < float(previous["elapsed_simulation_s"])
+        for previous, current in zip(hud_frames, hud_frames[1:])
+    ):
+        raise ValueError("replay HUD frames must be ordered by elapsed simulation time")
+    frame_index = 0
+    latest_frame: dict[str, Any] | None = None
     for start in range(0, len(samples), chunk_size):
+        selected_hud: list[dict[str, Any] | None] = []
         rows = [
             [
                 int(sample.tick),
@@ -148,7 +197,22 @@ def replay_sample_chunks(
             ]
             for sample in samples[start : start + chunk_size]
         ]
-        yield {"start": start, "samples": rows}
+        if hud_frames is not None:
+            for sample in samples[start : start + chunk_size]:
+                while (
+                    frame_index < len(hud_frames)
+                    and float(hud_frames[frame_index]["elapsed_simulation_s"]) <= sample.elapsed_s
+                ):
+                    latest_frame = hud_frames[frame_index]
+                    frame_index += 1
+                selected_hud.append(latest_frame)
+        chunk: dict[str, Any] = {"start": start, "samples": rows}
+        if any(sample.wheel_state is not None for sample in samples[start : start + chunk_size]):
+            chunk["wheel_states"] = [list(sample.wheel_state) if sample.wheel_state is not None else None
+                                     for sample in samples[start : start + chunk_size]]
+        if hud_frames is not None:
+            chunk["hud_frames"] = selected_hud
+        yield chunk
 
 
 def _validate_replay_samples(samples: Sequence[ReplaySample]) -> None:
@@ -163,10 +227,12 @@ def _validate_replay_samples(samples: Sequence[ReplaySample]) -> None:
         previous = sample
 
 
-def _chunk_payload_bytes(samples: Sequence[ReplaySample]) -> int:
+def _chunk_payload_bytes(
+    samples: Sequence[ReplaySample], hud_frames: Sequence[dict[str, Any]] | None = None,
+) -> int:
     return sum(
-        len(json.dumps(chunk["samples"], separators=(",", ":"), allow_nan=False).encode("utf-8")) + 8
-        for chunk in replay_sample_chunks(samples)
+        len(json.dumps(chunk, separators=(",", ":"), allow_nan=False).encode("utf-8"))
+        for chunk in replay_sample_chunks(samples, hud_frames=hud_frames)
     )
 
 
@@ -217,6 +283,7 @@ def send_replay_playback(
     setting_values = {
         "speed": options.speed,
         "opacity": options.opacity,
+        "loaded_ghosts": options.play_alongside_loaded_ghosts,
         "color": options.color,
         "end_behavior": options.end_behavior,
         "fade_duration": options.fade_duration_s,
@@ -244,17 +311,21 @@ def send_replay_playback(
     result: dict[str, Any]
     if action in {"play", "load"}:
         assert payload is not None
-        chunks = replay_sample_chunks(payload.samples)
-        payload_bytes = _chunk_payload_bytes(payload.samples)
+        hud_frames = _playback_hud_frames(payload.hud_frames)
+        chunks = replay_sample_chunks(payload.samples, hud_frames=hud_frames)
+        payload_bytes = _chunk_payload_bytes(payload.samples, hud_frames)
         _send_replay_request(
             transport,
             request_id,
             "visual_replay_begin",
             {
                 "sample_count": len(payload.samples),
+                "training_step_start": int(payload.metadata["training_step_start"]),
+                "lap_time_s": payload.metadata.get("lap_time_s"),
                 "color": options.color,
                 "speed": options.speed,
                 "opacity": options.opacity,
+                "play_alongside_loaded_ghosts": options.play_alongside_loaded_ghosts,
                 "end_behavior": options.end_behavior,
                 "fade_duration_s": options.fade_duration_s,
                 "payload_bytes": payload_bytes,
@@ -310,6 +381,7 @@ def send_replay_swarm(
     options: ReplayPlaybackOptions,
     seek_seconds: float | None = None,
     update_settings: Sequence[str] = (),
+    color_scale: ColorScale | None = None,
 ) -> dict[str, Any]:
     """Transfer selected trajectories once, then let the main-thread renderer play them."""
     supported_actions = {
@@ -340,16 +412,24 @@ def send_replay_swarm(
     setting_values = {
         "speed": options.speed,
         "opacity": options.opacity,
+        "loaded_ghosts": options.play_alongside_loaded_ghosts,
         "color": options.color,
         "end_behavior": options.end_behavior,
         "fade_duration": options.fade_duration_s,
     }
     if any(name not in setting_values for name in update_settings):
         raise ValueError("unsupported playback setting")
-    if action == "configure" and not update_settings:
+    if action == "configure" and not update_settings and color_scale is None:
         raise ValueError("configure requires at least one playback setting")
     if len({item.episode_key for item in payloads}) != len(payloads):
         raise ValueError("swarm contains duplicate replay episodes")
+
+    camera_episode = min(payloads, key=lambda item: replay_camera_rank(item.selection)) if payloads else None
+    playback_frames = _playback_hud_frames(camera_episode.payload.hud_frames) if camera_episode else None
+    # Only the fixed camera car supplies HUD data. Keep all recorded HUDs on
+    # disk, but avoid duplicating them across hundreds of invisible HUD streams.
+    def playback_hud(item: SelectedReplayPayload) -> list[dict[str, Any]] | None:
+        return playback_frames if item is camera_episode else None
 
     total_samples = 0
     payload_bytes = 0
@@ -358,7 +438,7 @@ def send_replay_swarm(
         total_samples += len(item.payload.samples)
         if total_samples > MAX_REPLAY_TOTAL_SAMPLES:
             raise ValueError(f"swarm exceeds maximum total sample count ({MAX_REPLAY_TOTAL_SAMPLES})")
-        payload_bytes += _chunk_payload_bytes(item.payload.samples)
+        payload_bytes += _chunk_payload_bytes(item.payload.samples, playback_hud(item))
         if payload_bytes > MAX_REPLAY_PAYLOAD_BYTES:
             raise ValueError(f"swarm exceeds maximum encoded payload size ({MAX_REPLAY_PAYLOAD_BYTES} bytes)")
         if len(item.episode_key) > 128:
@@ -391,6 +471,7 @@ def send_replay_swarm(
                 "payload_bytes": payload_bytes,
                 "speed": options.speed,
                 "opacity": options.opacity,
+                "play_alongside_loaded_ghosts": options.play_alongside_loaded_ghosts,
                 "end_behavior": options.end_behavior,
                 "fade_duration_s": options.fade_duration_s,
             },
@@ -405,11 +486,13 @@ def send_replay_swarm(
                     "episode_id": item.episode_key,
                     "training_step_start": item.selection.training_step,
                     "sample_count": len(item.payload.samples),
+                    "lap_time_s": item.selection.metadata.get("lap_time_s"),
+                    "final_progress_m": item.selection.metadata.get("final_progress_m"),
                     "color": item.color,
                 },
             )
             request_id += 1
-            for chunk in replay_sample_chunks(item.payload.samples):
+            for chunk in replay_sample_chunks(item.payload.samples, hud_frames=playback_hud(item)):
                 _send_replay_request(
                     transport,
                     request_id,
@@ -441,6 +524,10 @@ def send_replay_swarm(
         controls.append((f"visual_replay_{operation}", {}))
     for name in update_settings:
         controls.append(("visual_replay_" + name, {"value": setting_values[name]}))
+    if color_scale is not None:
+        controls.append(("visual_replay_color_scale", {"stops": [
+            {"step": stop.step, "color": stop.color} for stop in color_scale.stops
+        ]}))
     for operation, params in controls:
         result = _send_replay_request(transport, request_id, operation, params)
         request_id += 1
@@ -453,7 +540,7 @@ class ColorScale:
     def __init__(
         self,
         minimum_step: int = 0,
-        maximum_step: int = 1_000_000,
+        maximum_step: int = 2_000_000,
         stops: Sequence[ColorStop] | None = None,
     ) -> None:
         if isinstance(minimum_step, bool) or not isinstance(minimum_step, int):
@@ -471,6 +558,8 @@ class ColorScale:
                 ColorStop(minimum_step + (span * 3) // 4, "#80ff00"),
                 ColorStop(maximum_step, "#00ff00"),
             )
+            if span < 4:
+                self.stops = (self.stops[0], self.stops[-1])
         else:
             ordered = tuple(sorted(stops, key=lambda stop: stop.step))
             if len(ordered) < 2 or len({stop.step for stop in ordered}) != len(ordered):
@@ -766,6 +855,11 @@ def interpolate_replay(
     raise ValueError("could not locate replay interpolation interval")
 
 
+def swarm_colors(selected: Sequence[ReplaySelection], scale: ColorScale) -> list[str]:
+    """Colour every attempt by the training age of its recorded policy."""
+    return [scale.hex_color(item.training_step) for item in selected]
+
+
 def selection_report(
     total_indexed: int,
     selected: Sequence[ReplaySelection],
@@ -774,6 +868,8 @@ def selection_report(
     color_scale: ColorScale,
 ) -> dict[str, Any]:
     steps = [item.training_step for item in selected]
+    episode_colors = swarm_colors(selected, color_scale)
+    color_mode = "training_step"
     colors: dict[str, int] = {}
     for item in selected:
         bucket = color_scale.bucket(item.training_step)
@@ -805,17 +901,18 @@ def selection_report(
         "failure_count": failures,
         "status_counts": statuses,
         "color_buckets": colors,
+        "color_mode": color_mode,
         "selected_episodes": [
             {
                 "run_id": item.metadata["run_id"],
                 "episode_id": item.metadata["episode_id"],
                 "training_step_start": item.training_step,
                 "status": item.metadata["status"],
-                "color": color_scale.hex_color(item.training_step),
+                "color": episode_colors[index],
                 "color_bucket": color_scale.bucket(item.training_step),
                 "replay_file": str(item.replay_directory / item.metadata["file"]),
             }
-            for item in selected
+            for index, item in enumerate(selected)
         ],
     }
 
@@ -846,7 +943,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-cars", type=int, default=100, help=f"maximum ghosts to load (1-{MAX_REPLAY_GHOSTS})")
     parser.add_argument("--sample-seed", type=int, default=0)
     parser.add_argument("--color-min-step", type=int, default=0)
-    parser.add_argument("--color-max-step", type=int, default=1_000_000)
+    parser.add_argument("--color-max-step", type=int, help="training step shown as green (default: 2000000)")
     parser.add_argument(
         "--action",
         choices=("play", "load", "resume", "pause", "restart", "seek", "configure", "clear", "status"),
@@ -883,7 +980,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--sample-seed must be non-negative")
     try:
         stops = parse_color_stops(args.color_stop) if args.color_stop else None
-        color_scale = ColorScale(args.color_min_step, args.color_max_step, stops)
+        color_scale = ColorScale(args.color_min_step,
+                                 2_000_000 if args.color_max_step is None else args.color_max_step, stops)
         directories = resolve_replay_directories(args.run)
         entries = [(directory, metadata) for directory in directories for metadata in load_replay_index(directory)]
         if args.track:
@@ -944,22 +1042,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             indexed_total = sum(item.metadata["sample_count"] for item in selected)
             if indexed_total > MAX_REPLAY_TOTAL_SAMPLES:
                 raise ValueError(f"selection exceeds maximum total sample count ({MAX_REPLAY_TOTAL_SAMPLES})")
-            for item in selected:
+            camera_selection = min(selected, key=replay_camera_rank)
+            for item, color in zip(selected, swarm_colors(selected, color_scale), strict=True):
                 payload = load_replay_episode(
                     item.replay_directory,
                     item.metadata,
                     include_optional=False,
+                    include_hud=item is camera_selection,
                 )
                 payloads.append(
                     SelectedReplayPayload(
                         item,
                         payload,
-                        args.color or color_scale.hex_color(item.training_step),
+                        args.color or color,
                     )
                 )
         options = ReplayPlaybackOptions(
             speed=1.0 if args.speed is None else args.speed,
-            opacity=0.5 if args.opacity is None else args.opacity,
+            opacity=1.0 if args.opacity is None else args.opacity,
             color=args.color or "#ffffff",
             end_behavior=args.end_behavior or "fade",
             fade_duration_s=0.75 if args.fade_duration is None else args.fade_duration,
@@ -987,6 +1087,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                     if value is not None
                 ),
+                color_scale=color_scale if args.action == "configure" and (
+                    args.color_max_step is not None or args.color_min_step != 0 or args.color_stop
+                ) else None,
             )
         finally:
             transport.close()

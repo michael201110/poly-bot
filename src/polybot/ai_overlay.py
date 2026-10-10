@@ -18,11 +18,19 @@ from polybot.environment.observations import FEATURE_SCHEMA
 _LOG = logging.getLogger(__name__)
 HUD_SETTINGS_SCHEMA = "polybot.ai-overlay-settings.v1"
 HUD_FRAME_SCHEMA = "polybot.ai-overlay-frame.v1"
+HUD_MODES = (
+    "OFF", "CONTROLS", "NEURAL_NET", "RL_DEBUG", "REWARD", "OBSERVATIONS",
+    "TRAINING", "TRAINING_GRAPH", "GHOST_RACE", "WR_CHASE", "COMPARISON",
+    "RACING_LINE_ANALYSIS", "DETAILED_CONTROLS", "CHAMPION", "MINIMAL_RACE",
+)
 
 
 @dataclass(frozen=True, slots=True)
 class AIOverlaySettings:
+    # Kept for compatibility with saved settings; visibility is controlled by PML.
     enabled: bool = True
+    display_mode: str = "RL_DEBUG"
+    wr_target_s: float = 0.0
     preset: str = "compact"
     scale: float = 1.0
     show_episode_status: bool = True
@@ -34,6 +42,10 @@ class AIOverlaySettings:
     lookahead_points: int = 3
 
     def __post_init__(self) -> None:
+        if self.display_mode not in HUD_MODES:
+            raise ValueError("unsupported HUD display mode")
+        if not math.isfinite(self.wr_target_s) or self.wr_target_s < 0:
+            raise ValueError("WR target must be a finite non-negative time; zero means unknown")
         for name in (
             "enabled", "show_episode_status", "show_observations", "show_controls",
             "show_reward_breakdown", "show_event_popups", "show_labels",
@@ -112,11 +124,12 @@ class AIOverlayTelemetryWrapper(gym.Wrapper):
         self._episode_number = 0
         self._decision_count = 0
         self._episode_return = 0.0
+        self._episode_terms: dict[str, float] = {}
+        self._episode_groups: dict[str, float] = {}
         self._last_features: list[dict[str, Any]] | None = None
         self._policy_observation: np.ndarray | None = None
         self._warned_schema = False
         self._warned_frame = False
-        self._overlay_was_enabled = False
 
     def _set_capture(self, enabled: bool) -> None:
         setter = getattr(self._core, "set_hud_feature_capture", None)
@@ -194,7 +207,7 @@ class AIOverlayTelemetryWrapper(gym.Wrapper):
             status = "timeout"
         result: dict[str, Any] = {
             "schema": HUD_FRAME_SCHEMA,
-            "enabled": settings.enabled,
+            "enabled": True,
             "settings": asdict(settings),
             "mode": mode,
             "status": status,
@@ -215,7 +228,39 @@ class AIOverlayTelemetryWrapper(gym.Wrapper):
             "lap_time_s": telemetry_info.get("elapsed_s") if "finish" in events else None,
             "events": events,
             "reset": reset,
+            "speed_mps": (
+                float(np.linalg.norm(telemetry_info["local_velocity_mps"]))
+                if "local_velocity_mps" in telemetry_info else None
+            ),
+            "reference_speed_mps": telemetry_info.get("ghost_target_speed_mps"),
+            "checkpoint_index": telemetry_info.get("checkpoint_index"),
+            "lateral_offset_m": telemetry_info.get("lateral_offset_m"),
+            "heading_error_rad": telemetry_info.get("heading_error_rad"),
+            "training": state.get("training", {}),
+            "best_time_s": state.get("best_time_s"),
         }
+        line = getattr(self._core, "racing_line", None)
+        if isinstance(line, Mapping):
+            result["reference"] = {
+                "name": line.get("source_name", "Saved racing line"),
+                "target_time_s": line.get("lap_time_s"),
+            }
+            position = telemetry_info.get("position_m")
+            points = line.get("points", ())
+            # Match within the current checkpoint to avoid crossing-track shortcuts.
+            if position is not None and points:
+                candidates = [p for p in points if p.get("checkpoint_index") == result["checkpoint_index"]]
+                if candidates:
+                    nearest = min(candidates, key=lambda p: sum(
+                        (a - b) ** 2 for a, b in zip(position, p["position_m"], strict=True)
+                    ))
+                    reference_s = nearest["tick"] / 1000.0
+                    # PolyTrack's saved reference uses 1000 Hz physics ticks.
+                    result["reference"]["elapsed_s"] = reference_s
+                    elapsed = telemetry_info.get("elapsed_s")
+                    if elapsed is not None:
+                        result["reference"]["delta_s"] = float(elapsed) - reference_s
+                    result["reference"]["delta_method"] = "nearest saved position"
         active_features = self._last_features if use_current_features else features
         if settings.show_observations and active_features is not None:
             result["observation_schema"] = state.get("observation_schema", "")
@@ -257,40 +302,31 @@ class AIOverlayTelemetryWrapper(gym.Wrapper):
                 "learner_groups": {
                     name: float(value) * scale for name, value in raw_groups.items()
                 },
+                "episode_terms": dict(self._episode_terms),
+                "episode_groups": dict(self._episode_groups),
+                "episode_learner_terms": {name: value * scale for name, value in self._episode_terms.items()},
+                "episode_learner_groups": {name: value * scale for name, value in self._episode_groups.items()},
             }
         return result
 
     def reset(self, **kwargs: Any) -> tuple[np.ndarray, dict[str, Any]]:
         settings = self._settings_provider()
-        self._set_capture(settings.enabled and settings.show_observations)
+        self._set_capture(settings.show_observations)
         observation, info = self.env.reset(**kwargs)
         self._episode_number += 1
         self._decision_count = 0
         self._episode_return = 0.0
+        self._episode_terms.clear()
+        self._episode_groups.clear()
         self._last_features = getattr(self._core, "last_observation_features", None)
         self._policy_observation = np.asarray(observation, dtype=np.float32).copy()
-        self._overlay_was_enabled = settings.enabled
-        if settings.enabled:
-            self._queue_frame(self._make_frame(info=info, reset=True))
-        else:
-            self._queue_frame({"enabled": False})
+        self._queue_frame(self._make_frame(info=info, reset=True))
         return observation, info
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict[str, Any]]:
         settings = self._settings_provider()
-        self._set_capture(settings.enabled and settings.show_observations)
-        if not settings.enabled:
-            if self._overlay_was_enabled:
-                self._queue_frame({"enabled": False})
-            self._overlay_was_enabled = False
-            observation, reward, terminated, truncated, info = self.env.step(action)
-            self._decision_count += 1
-            self._episode_return += float(reward)
-            self._last_features = None
-            self._policy_observation = np.asarray(observation, dtype=np.float32).copy()
-            return observation, reward, terminated, truncated, info
-        self._overlay_was_enabled = True
-        if settings.enabled and settings.show_observations and self._last_features is None:
+        self._set_capture(settings.show_observations)
+        if settings.show_observations and self._last_features is None:
             capture = getattr(self._core, "capture_hud_features", None)
             if callable(capture) and self._policy_observation is not None:
                 try:
@@ -307,6 +343,9 @@ class AIOverlayTelemetryWrapper(gym.Wrapper):
         self._decision_count += 1
         raw_reward = float(reward)
         self._episode_return += raw_reward
+        for key, totals in (("reward_terms", self._episode_terms), ("reward_groups", self._episode_groups)):
+            for name, value in info.get(key, {}).items():
+                totals[name] = totals.get(name, 0.0) + float(value)
         self._last_features = getattr(self._core, "last_observation_features", None)
         self._policy_observation = np.asarray(observation, dtype=np.float32).copy()
         frame = self._make_frame(

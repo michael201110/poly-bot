@@ -130,6 +130,18 @@ class PolyBotBridgeMod extends PolyMod {
     });
     pml.registerGlobalMixin({
       type: MixinType.REPLACEBETWEEN,
+      tokenStart: "t.car.setOpacity(i);",
+      tokenEnd: "t.car.setOpacity(i);",
+      func: "t.car.setOpacity(!t.car.polybotVisualReplay && globalThis.__polybotLoadedGhostOpacity?.active && globalThis.__polybotLoadedGhostOpacity?.enabled ? globalThis.__polybotLoadedGhostOpacity.value : i);",
+    });
+    pml.registerGlobalMixin({
+      type: MixinType.REPLACEBETWEEN,
+      tokenStart: "n.car.setOpacity(r)",
+      tokenEnd: "n.car.setOpacity(r)",
+      func: "n.car.setOpacity(!n.car.polybotVisualReplay && globalThis.__polybotLoadedGhostOpacity?.active && globalThis.__polybotLoadedGhostOpacity?.enabled ? globalThis.__polybotLoadedGhostOpacity.value : r)",
+    });
+    pml.registerGlobalMixin({
+      type: MixinType.REPLACEBETWEEN,
       tokenStart: "const t = e.getFinishTime() ?? e.getTime();",
       tokenEnd: "const t = e.getFinishTime() ?? e.getTime();",
       // Override only the displayed time; replay playback never advances the player physics.
@@ -208,6 +220,7 @@ class PolyBotBridgeMod extends PolyMod {
               (0, R.gn)(this, ua, "f"),
               null,
             );
+            car.polybotVisualReplay = true;
             car.polybotReplayRoot = globalThis.__polybotReplayPendingRoot;
             return car;
           } finally {

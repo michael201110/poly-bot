@@ -267,3 +267,37 @@ With the 0.5 reference-drift cap, the five-lap screens were 22.861, 22.615, 22.7
 Repeating the interval-8 trial at LR `5e-7` and drift cap 0.5 failed its first deterministic screen at 64.53% progress with one contact; immediate severe-screen recovery restored the champion. The learner was cleanly saved at step 5,984,465 with replay intact. This matches the earlier interval-8 failure zone, so the next continuation returns to interval 4 with LR `5e-7`, coefficient 1 and cap 0.5; no interval-8 candidate is accepted.
 
 At actor LR `2e-6` with the 0.5 drift cap, the first five-lap candidates were 22.856 and 22.877 seconds; the third screen went off track at 94.11% with one contact and triggered recovery at step 6,054,089. The learner was cleanly saved at step 6,058,150. The tighter cap did not retain the faster 22.605-second candidate from the prior 1.0-cap run; continuation returns to that known actor update setting, with the 22.595-second champion still protected.
+
+## 2026-10-09 — cached initialization reference verified
+
+The canonical 22.595-second GRTQC champion retains the same policy archive (SHA256 `f6b5ca24af18e9f4e050c6e003dd89292038e9a50b11ea8eb662057880c487d0`). Its reference is now a cached copy of Youngfella's 22.262-second initialization run: 1,102 geometry samples and 22,262 native control ticks. A five-lap bootstrap evaluation reproduced 22.595 seconds with no contacts or failures.
+
+Youngfella was then deselected and the entire game page reloaded to clear worker/ghost caches. A separate deterministic five-lap evaluation again produced 22.595 seconds on every lap, with zero crashes, off-track events, stalls or barrier contacts. Every recorded reference source was `saved_racing_line`. Evidence: `logs/champion-without-youngfella-20261009.json`. Quarter curriculum resets at 25%, 50% and 75% also succeeded from the cached initialization run; evidence: `logs/cached-youngfella-curriculum-20261009.json`.
+
+The saved-transform loader previously left every arc distance at zero, destroying track length and lookahead. It now computes arc length consistently and reconstructs recorded controls at the original native reference sampling cadence. New initialization captures the bootstrap ghost into metadata; curriculum retains that initialization run when a later champion supplies a new line. A candidate must pass another five-lap evaluation using its proposed saved line before promotion. Scratch profiles now resolve the canonical model root `models`, following the removal of the experiments directory.
+
+These bridge changes are installed from the local repository for verification and have not been published.
+# Continuation and replay fixes — 2026-10-09
+
+Continue best selects the protected champion's experiment family and restores its
+saved policy, critic, reward and curriculum settings. The session budget resizes
+custom curriculum phases. Automatic device selection retains the checkpoint's
+verified device: the Summer 1 champion was verified on CPU. Actor recovery checks
+origin, observation schema, architecture and tensor shapes before copying weights.
+
+The full continuation startup was exercised in a temporary workspace: champion
+actor recovery and a cached-line reference lap succeeded, then the runner stopped
+before collecting training steps or performing updates. The protected policy hash
+remains `f6b5ca24af18e9f4e050c6e003dd89292038e9a50b11ea8eb662057880c487d0`.
+
+Evaluate champion now records replay episodes with rewards and controls. The CLI
+equivalent is `polybot-eval --algorithm grtqc --track summer-1 --episodes 5 --record-replays`.
+Five fresh laps were all clean at 22.595 s with the cached Youngfella reference and
+no loaded ghost. Evaluation replay metadata retains the fixed policy checkpoint
+step; playback does not imply training updates. Selecting a replay run fits the
+step filter to its episodes, including runs beyond the former default 1M range.
+
+`swarm-exploration-preview-20261009` contains five separate playback previews
+generated from the frozen champion with action noise (standard deviation 0.015,
+probability 0.03 per decision). Two finished and three failed. These deliberately
+varying paths are swarm test data, not champion verification or training results.

@@ -13,7 +13,7 @@
   "reward_profile": "Summer 1 - scratch completion to pace",
   "reward_scale": 0.01,
   "checkpoint_interval": 25000,
-  "output_root": "models/experiments/grtqc-scratch-20261002",
+  "output_root": "models",
   "log_root": "logs/grtqc-scratch-20261002",
   "curriculum": {
     "mode": "custom",

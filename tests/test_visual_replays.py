@@ -165,6 +165,22 @@ def test_sampling_caps_visual_rate_and_keeps_episode_end() -> None:
     assert payload.metadata["sample_hz_limit"] == 20.0
 
 
+def test_evaluation_replays_keep_the_fixed_checkpoint_step() -> None:
+    writer = MemoryWriter()
+    session = make_session(writer, step=100)
+    session.advance_training_steps = False
+    for _ in range(2):
+        session.reset(telemetry(tick=0, elapsed_s=0.0))
+        session.step(
+            np.array([0.0]), np.array([0.0]), telemetry(tick=30, elapsed_s=.03),
+            terminated=True, truncated=False,
+        )
+    assert len(writer.payloads) == 2
+    for payload in writer.payloads:
+        assert payload.metadata["training_step_start"] == 100
+        assert payload.metadata["training_step_end"] == 100
+
+
 def test_observations_and_actions_are_separate_and_opt_in() -> None:
     writer = MemoryWriter()
     session = make_session(writer, record_observations=True)

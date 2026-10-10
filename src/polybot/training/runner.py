@@ -132,6 +132,8 @@ class TrainingRunner:
         self._ppo_air_brake_overlays: list[dict[str, Any]] = []
         self._ppo_speed_bias_schedule: list[list[float]] = []
         self._visual_replay_session: VisualReplaySession | None = None
+        self.racing_line: dict[str, Any] | None = None
+        self._candidate_racing_line: dict[str, Any] | None = None
         self._replay_reward_semantics = REWARD_SEMANTICS
         self._hud_mode = "evaluation"
         self._hud_model_context: dict[str, Any] = {}
@@ -139,11 +141,29 @@ class TrainingRunner:
         try:
             self.ai_overlay_settings = AIOverlaySettingsStore().load()
         except ValueError as exc:
-            _LOG.warning("AI HUD settings are invalid; disabling the overlay: %s", exc)
-            self.ai_overlay_settings = AIOverlaySettings(enabled=False)
+            _LOG.warning("AI HUD settings are invalid; using default display settings: %s", exc)
+            self.ai_overlay_settings = AIOverlaySettings()
+        champion_dir = self.registry.slot(
+            config.track_name, config.algorithm, "champion", track_slug=config.track_slug,
+        )
+        self._hud_best_time_s = None
+        if (champion_dir / "metadata.json").is_file():
+            try:
+                champion_metadata = self.registry.read_metadata(champion_dir)
+                self.racing_line = champion_metadata.racing_line
+                self._hud_best_time_s = (champion_metadata.evaluation or {}).get("best_lap_s")
+            except (OSError, ValueError, TypeError):
+                _LOG.warning("Could not load the protected champion racing line", exc_info=True)
 
     def stop(self) -> None:
         self.stop_requested.set()
+
+    def _capture_initialized_line(self, line: dict[str, Any]) -> None:
+        if self.racing_line is None:
+            self.racing_line = {
+                **line, "track_slug": self.config.track_slug,
+                "track_id": self.config.track_id,
+            }
 
     def set_ai_overlay_settings(self, settings: AIOverlaySettings) -> None:
         self.ai_overlay_settings = settings
@@ -173,6 +193,9 @@ class TrainingRunner:
             request_timeout_s=180.0 if cfg.backend == "websocket" else 10.0,
             action_adapter=self.backend.action_adapter(cfg),
             expose_training_state=bool(cfg.grtqc and cfg.grtqc.critic_environment_state),
+            racing_line=self.racing_line,
+            on_racing_line=self._capture_initialized_line,
+            racing_line_provider=lambda: self.racing_line,
             **(phase.env_kwargs() if phase is not None else {}),
         )
         if cfg.algorithm == "ppo" and (
@@ -196,6 +219,8 @@ class TrainingRunner:
                         + int(mode == "training")
                     ),
                     "run_id": self._run_id,
+                    "best_time_s": self._hud_best_time_s,
+                    "training": {"stage": f"Phase {self.phase_index + 1}", "budget": cfg.timesteps},
                     **self._hud_model_context,
                 }
                 if mode == "training":
@@ -213,10 +238,12 @@ class TrainingRunner:
             )
         return env
 
-    def _evaluation_environment(self) -> gym.Env:
-        return self._environment(hud_mode="evaluation")
+    def _evaluation_environment(self, *, record_visual_replays: bool = False) -> gym.Env:
+        env = self._environment(hud_mode="evaluation", record_visual_replays=record_visual_replays)
+        env.unwrapped.capture_tick_controls = True
+        return env
 
-    def _start_visual_replay_session(self, run_id: str) -> None:
+    def _start_visual_replay_session(self, run_id: str, *, training: bool = True) -> None:
         cfg = self.config
         if not cfg.records_visual_replays:
             self._visual_replay_session = None
@@ -228,6 +255,7 @@ class TrainingRunner:
                 directory,
                 run_metadata={
                     "run_id": run_id,
+                    "mode": "training" if training else "evaluation",
                     "created_at": datetime.now(UTC).isoformat(),
                     "algorithm": cfg.algorithm,
                     "track_id": cfg.track_id,
@@ -249,6 +277,14 @@ class TrainingRunner:
                 sample_hz=cfg.visual_replay_sample_hz,
                 record_observations=cfg.visual_replay_observations,
                 training_step_provider=lambda: int(getattr(self.model, "num_timesteps", 0)),
+                reward_scale=cfg.reward_scale,
+                advance_training_steps=training,
+                hud_context_provider=lambda: {
+                    "best_time_s": self._hud_best_time_s,
+                    "run_id": run_id,
+                    "training": {"stage": f"Phase {self.phase_index + 1}", "budget": cfg.timesteps},
+                    **self._hud_model_context,
+                },
             )
         except Exception:
             self._visual_replay_session = None
@@ -298,6 +334,7 @@ class TrainingRunner:
             policy_overlays=list(overlays),
             speed_bias_schedule=list(speed_bias_schedule),
             best_training_lap_s=self.best_training_lap_s,
+            racing_line=self.racing_line,
             action_semantics=(
                 "grtqc.raw-policy.v1" if cfg.grtqc and cfg.grtqc.critic_raw_actions else PPO_ACTION_SEMANTICS
             ),
@@ -430,6 +467,7 @@ class TrainingRunner:
             or (cfg.algorithm == "tqc" and self.model._champion_actor is not None) else None
         )
         transitions = [] if cfg.grtqc and cfg.grtqc.learn_from_actor_evaluations else None
+        telemetry_paths: list[list[dict[str, Any]]] = []
         for attempt in range(2):
             try:
                 result = None
@@ -440,6 +478,7 @@ class TrainingRunner:
                     screen = evaluate_model(
                         self.model, self._evaluation_environment, episodes=1,
                         seed=cfg.seed + 1_000_000, transition_sink=transitions,
+                        telemetry_sink=telemetry_paths,
                     )
                     self._emit({
                         "type": "evaluation_screen", "timesteps": self.model.num_timesteps,
@@ -451,10 +490,12 @@ class TrainingRunner:
                     if screen.finish_rate != 1.0:
                         result = screen
                 if result is None:
+                    telemetry_paths.clear()
                     result = evaluate_model(
                         self.model, self._evaluation_environment, episodes=cfg.evaluation.episodes,
                         seed=cfg.seed + 1_000_000,
                         observation_sink=observations, transition_sink=transitions,
+                        telemetry_sink=telemetry_paths,
                     )
                 break
             except ProtocolViolation as exc:
@@ -464,12 +505,33 @@ class TrainingRunner:
                     observations.clear()
                 if transitions is not None:
                     transitions.clear()
+                telemetry_paths.clear()
                 self._emit({
                     "type": "evaluation_retry", "timesteps": self.model.num_timesteps,
                     "reason": str(exc),
                 })
         if transitions:
             self._retain_grtqc_evaluation_transitions(transitions)
+        self._candidate_racing_line = self._line_from_evaluation(telemetry_paths)
+        if (
+            self._candidate_racing_line is not None and result.episodes >= 5
+            and result.finish_rate == 1.0 and result.crash_rate == 0.0
+            and result.off_track_rate == 0.0 and result.stall_rate == 0.0
+            and result.barrier_contact_steps == 0
+        ):
+            # Changing geometry changes policy inputs. A candidate is only
+            # verified for the line that will actually be saved with it.
+            previous_line = self.racing_line
+            self.racing_line = self._candidate_racing_line
+            try:
+                result = evaluate_model(
+                    self.model, self._evaluation_environment, episodes=5,
+                    seed=cfg.seed + 1_000_000,
+                )
+            finally:
+                self.racing_line = previous_line
+            self._emit({"type": "saved_line_evaluation",
+                        "timesteps": self.model.num_timesteps, **result.to_dict()})
         self.last_evaluation = result
         self._emit({"type": "evaluation", "timesteps": self.model.num_timesteps, **result.to_dict()})
         champion_dir = self.registry.slot(
@@ -543,6 +605,8 @@ class TrainingRunner:
                 self.model.set_actor_reference_observations(np.asarray(observations))
             if faster_promotion:
                 self._grtqc_weak_evaluations = 0
+                if self._candidate_racing_line is not None:
+                    self.racing_line = self._candidate_racing_line
                 path = self._save("champion", result)
                 self._emit({
                     "type": "champion", "path": str(path),
@@ -613,6 +677,8 @@ class TrainingRunner:
             and self.model.num_timesteps < self.model.learning_starts
         )
         if champion is None or (result.rank() > champion.rank() and not refill_in_progress):
+            if self._candidate_racing_line is not None:
+                self.racing_line = self._candidate_racing_line
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps})
             if cfg.algorithm == "tqc":
@@ -629,6 +695,71 @@ class TrainingRunner:
                     cfg.tqc.champion_action_drift_limit, observations
                 )
         return result
+
+    def _line_from_evaluation(
+        self, paths: list[list[dict[str, Any]]],
+    ) -> dict[str, Any] | None:
+        """Compact the fastest finished evaluation trajectory for champion metadata."""
+        completed = [
+            path for path in paths
+            if path and "finish" in set(path[-1].get("events", ()))
+        ]
+        if not completed:
+            return None
+        path = min(completed, key=lambda samples: float(samples[-1].get("elapsed_s", float("inf"))))
+        # Evaluation runs at policy-step cadence; retain a sample every ~0.15s.
+        sampled: list[dict[str, Any]] = []
+        prefix_actions: list[list[int]] = []
+        last_elapsed = -1.0
+        for sample in path:
+            for control in sample.get("executed_tick_controls", ()):
+                try:
+                    prefix_actions.append([
+                        int(control["steer"]),
+                        int(bool(control["throttle"])),
+                        int(bool(control["brake"])),
+                    ])
+                except (KeyError, TypeError, ValueError):
+                    prefix_actions = []
+                    break
+            elapsed = float(sample.get("elapsed_s", 0.0))
+            if sampled and elapsed - last_elapsed < 0.15 and sample is not path[-1]:
+                continue
+            position = sample.get("position_m")
+            quaternion = sample.get("quaternion_xyzw")
+            tick = sample.get("tick")
+            if not isinstance(position, (list, tuple)) or len(position) != 3:
+                continue
+            if not isinstance(quaternion, (list, tuple)) or len(quaternion) != 4:
+                continue
+            if isinstance(tick, bool) or not isinstance(tick, (int, float)):
+                continue
+            sampled.append({
+                # Native player frames start one tick after reset; the first
+                # saved control replays that neutral initialization tick.
+                "tick": int(tick) + 1,
+                "position_m": [float(value) for value in position],
+                "quaternion_xyzw": [float(value) for value in quaternion],
+                "checkpoint_index": int(sample.get("checkpoint_index", 0)),
+            })
+            last_elapsed = elapsed
+        if len(sampled) < 10:
+            return None
+        if not prefix_actions or len(prefix_actions) < sampled[-1]["tick"]:
+            return None
+        return {
+            "schema": "polybot.racing-line.v1",
+            "track_slug": self.config.track_slug,
+            "track_id": self.config.track_id,
+            "lap_time_s": float(path[-1]["elapsed_s"]),
+            "sample_count": len(sampled),
+            "points": sampled,
+            "prefix_actions": prefix_actions,
+            "initialization_line": (
+                self.racing_line.get("initialization_line", self.racing_line)
+                if self.racing_line else None
+            ),
+        }
 
     def _select_scratch_candidate(
         self, result: EvaluationResult, champion: EvaluationResult | None,
@@ -666,6 +797,8 @@ class TrainingRunner:
                 })
         if better:
             self._grtqc_weak_evaluations = 0
+            if self._candidate_racing_line is not None:
+                self.racing_line = self._candidate_racing_line
             path = self._save("champion", result)
             self._emit({"type": "champion", "path": str(path), "timesteps": self.model.num_timesteps,
                         "promotion_reason": "scratch_verified_pace", "median_lap_s": result.median_lap_s,
@@ -821,16 +954,27 @@ class TrainingRunner:
         cfg = self.config
         assert cfg.grtqc is not None
         champion = self.registry.slot(cfg.track_name, "grtqc", "champion", track_slug=cfg.track_slug)
-        source = (
-            champion if (champion / "metadata.json").is_file()
-            else self.registry.slot(cfg.track_name, "grtqc", "initialization", track_slug=cfg.track_slug)
+        initialization = self.registry.slot(
+            cfg.track_name, "grtqc", "initialization", track_slug=cfg.track_slug,
         )
+        source = initialization
+        for candidate in (champion, initialization):
+            if (candidate / "metadata.json").is_file() and self._compatible_grtqc_actor_source(candidate):
+                source = candidate
+                break
+        else:
+            if (champion / "metadata.json").is_file() or (initialization / "metadata.json").is_file():
+                raise ValueError("No compatible verified GRTQC actor exists for this learner; continue from best model")
         if cfg.grtqc.pace_only_actor_acceptance:
             return source
         contact_candidate = self.registry.slot(
             cfg.track_name, "grtqc", "contact-candidate", track_slug=cfg.track_slug,
         )
-        if (contact_candidate / "metadata.json").is_file() and (source / "metadata.json").is_file():
+        if (
+            (contact_candidate / "metadata.json").is_file()
+            and (source / "metadata.json").is_file()
+            and self._compatible_grtqc_actor_source(contact_candidate)
+        ):
             candidate_metadata = self.registry.read_metadata(contact_candidate)
             verified_metadata = self.registry.read_metadata(source)
             candidate_evaluation = candidate_metadata.evaluation or {}
@@ -850,6 +994,19 @@ class TrainingRunner:
             ):
                 source = contact_candidate
         return source
+
+    def _compatible_grtqc_actor_source(self, source: Path) -> bool:
+        """Never restore an actor from a different observation/replay family."""
+        metadata = self.registry.read_metadata(source)
+        try:
+            self.registry.validate(metadata, self.config, self.backend.action_adapter(self.config).schema)
+            saved = TrainingConfig.from_dict(metadata.training_config)
+            return (
+                saved.grtqc.architecture == self.config.grtqc.architecture
+                and saved.grtqc.actor_controller_state == self.config.grtqc.actor_controller_state
+            )
+        except (ValueError, KeyError, TypeError):
+            return False
 
     def _set_grtqc_actor_reference(
         self, source: Path, reference_model: Any | None = None,
@@ -887,6 +1044,7 @@ class TrainingRunner:
         source = self._grtqc_verified_actor_source()
         verified = self.backend.load_model(source / "policy.zip", None, self.device.resolved)
         self.backend.restore_actor_weights(self.model, verified)
+        self.racing_line = self.registry.read_metadata(source).racing_line
         self.model.actor.optimizer.state.clear()
         reference_observations = getattr(self.model, "_actor_reference_observations", None)
         if reference_observations is not None:
@@ -946,6 +1104,8 @@ class TrainingRunner:
             self.config.track_name, "grtqc", "champion", track_slug=self.config.track_slug,
         )
         if not (champion_dir / "metadata.json").is_file():
+            return False
+        if not self._compatible_grtqc_actor_source(champion_dir):
             return False
         champion_evaluation = self.registry.read_metadata(champion_dir).evaluation
         if champion_evaluation is None:
@@ -1218,6 +1378,8 @@ class TrainingRunner:
         plan = build_plan(cfg.curriculum, cfg.timesteps)
         self._emit({"type": "plan", "total_steps": plan.total_steps,
                     "phases": [asdict(phase) for phase in plan.phases]})
+        if resume is not None:
+            self.racing_line = self.registry.read_metadata(resume).racing_line
         first_env = self._environment(plan.phases[0], record_visual_replays=True)
         training_env: Any = ScaledTrainingReward(first_env, cfg.reward_scale)
         resume_rng_seed: int | None = None
@@ -1343,6 +1505,12 @@ class TrainingRunner:
                 if rollback_to_champion and cfg.algorithm == "grtqc":
                     self._restore_grtqc_resume_actor_if_worse(metadata, resume, force=True)
             if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and resume is None:
+                if cfg.backend == "websocket":
+                    first_env.reset(seed=cfg.seed)
+                    if self.racing_line is None:
+                        raise RuntimeError(
+                            "bridge did not export the initialization ghost; update the bridge before training"
+                        )
                 path = self._save("initialization")
                 self._emit({"type": "scratch_initialization", "path": str(path),
                             "seed": cfg.seed, "teacher": None, "replay_size": 0,

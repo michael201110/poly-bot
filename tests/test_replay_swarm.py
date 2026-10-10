@@ -26,6 +26,7 @@ from polybot.replay_swarm import (
     send_replay_playback,
     send_replay_swarm,
     stratified_sample,
+    swarm_colors,
 )
 from polybot.training.visual_replays import INDEX_SCHEMA, ReplayPayload, ReplaySample
 
@@ -189,7 +190,7 @@ def test_live_playback_selection_is_capped_at_one_replay() -> None:
 
 
 def test_playback_options_validate_and_normalize_visual_settings() -> None:
-    assert ReplayPlaybackOptions().opacity == 0.5
+    assert ReplayPlaybackOptions().opacity == 1.0
     assert ReplayPlaybackOptions(color="red").color == "#ff0000"
     for options in (
         {"speed": 0.09},
@@ -593,3 +594,33 @@ def test_swarm_sender_rejects_missing_episodes_for_load_and_bad_seek() -> None:
         send_replay_swarm(transport, action="load", options=ReplayPlaybackOptions())
     with pytest.raises(ValueError, match="seek requires"):
         send_replay_swarm(transport, action="seek", options=ReplayPlaybackOptions())
+
+
+def test_color_scale_supports_single_checkpoint_ranges():
+    scale = ColorScale(4378332, 4378333)
+    assert scale.hex_color(4378332) == "#ff0000"
+    assert scale.hex_color(4378333) == "#00ff00"
+
+
+def test_same_checkpoint_swarm_has_same_training_step_color(tmp_path):
+    selected = [ReplaySelection(tmp_path, entry(index, 123, "finished")) for index in range(1, 6)]
+    colors = swarm_colors(selected, ColorScale())
+    assert colors == [ColorScale().hex_color(123)] * 5
+    assert colors == swarm_colors(selected, ColorScale())
+
+
+def test_swarm_transfers_hud_only_for_fixed_best_run() -> None:
+    transport = _RecordingTransport()
+    payloads = [_selected_payload(1, 0), _selected_payload(2, 0)]
+    for item, lap in zip(payloads, (23.0, 22.6), strict=True):
+        item.selection.metadata["lap_time_s"] = lap
+        item.payload.hud_frames = [{
+            "schema": "polybot.ai-overlay-frame.v1",
+            "elapsed_simulation_s": 0.0,
+            "episode": item.episode_key,
+        }]
+    send_replay_swarm(transport, action="load", payloads=payloads, options=ReplayPlaybackOptions())
+    chunks = [message["params"] for message in transport.messages if message["op"] == "visual_replay_swarm_chunk"]
+    assert "hud_frames" not in chunks[0]
+    assert chunks[1]["hud_frames"][0]["episode"] == payloads[1].episode_key
+    assert all(item.payload.hud_frames for item in payloads)

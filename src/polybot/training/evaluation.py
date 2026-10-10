@@ -143,9 +143,14 @@ def evaluate_model(
                     reference_lap = float(ref_info["elapsed_s"])
                 if reference_telemetry_sink is not None:
                     reference_telemetry_sink.append(reference_samples)
-            observation, _ = env.reset(seed=seed + index)
+            observation, reset_info = env.reset(seed=seed + index)
             candidate_path: list[dict[str, Any]] = []
             candidate_samples: list[dict[str, Any]] = []
+            if telemetry_sink is not None:
+                candidate_samples.append({
+                    **reset_info,
+                    "executed_tick_controls": [{"steer": 0, "throttle": 0, "brake": 0}],
+                })
             while True:
                 if observation_sink is not None:
                     observation_sink.append(np.array(observation, copy=True))

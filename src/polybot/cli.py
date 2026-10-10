@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 import time
+from datetime import UTC, datetime
+from uuid import uuid4
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -62,8 +64,8 @@ def _common(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--visual-replay-sample-hz", type=float, default=20.0)
     parser.add_argument(
-        "--visual-replay-observations", action="store_true",
-        help="also save each policy observation and requested action",
+        "--visual-replay-observations", action=argparse.BooleanOptionalAction, default=True,
+        help="save exact policy inputs, actions and full HUD telemetry (default: on)",
     )
 
 
@@ -320,6 +322,7 @@ def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Pa
     directory = registry.slot(track, args.algorithm, args.slot)
     metadata = registry.read_metadata(directory)
     cfg = TrainingConfig.from_dict(metadata.training_config)
+    cfg.output_root = args.output_root
     cfg.track_name = track.name
     cfg.track_slug = track.slug
     cfg.backend = args.backend or cfg.backend
@@ -329,6 +332,7 @@ def _saved_model(args: argparse.Namespace) -> tuple[TrainingConfig, Any, Any, Pa
     backend = backend_for(cfg.algorithm)
     registry.validate(metadata, cfg, backend.action_adapter(cfg).schema)
     runner = TrainingRunner(cfg)
+    runner.racing_line = metadata.racing_line
     _configure_saved_overlays(runner, None, metadata)
     env = runner._environment()
     try:
@@ -386,22 +390,75 @@ def tracks_main(argv: Sequence[str] | None = None) -> int:
 def evaluate_main(argv: Sequence[str] | None = None) -> int:
     parser = _model_parser("Evaluate a saved v2 policy deterministically")
     parser.add_argument("--episodes", type=int)
+    parser.add_argument("--record-replays", action="store_true",
+                        help="save evaluated laps with rewards and controls in the Replay library")
+    parser.add_argument("--bootstrap-reference", action="store_true",
+                        help="verify and cache the currently loaded initialization ghost")
     args = parser.parse_args(argv)
     try:
         cfg, _, model, directory, metadata = _saved_model(args)
         runner = TrainingRunner(cfg)
+        runner.racing_line = None if args.bootstrap_reference else metadata.racing_line
+        runner.model = model
+        if args.record_replays:
+            cfg.visual_replay_enabled = True
+            runner._start_visual_replay_session(
+                f"{directory.name}-evaluation-{datetime.now(UTC).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:8]}",
+                training=False,
+            )
         _configure_saved_overlays(runner, model, metadata)
         runner.set_hud_model_context(
             model_slot=directory.name,
             policy_checkpoint_step=metadata.training_timesteps,
             episode_total=args.episodes or cfg.evaluation.episodes,
         )
-        result = evaluate_model(
-            model,
-            lambda: runner._environment(hud_mode="evaluation"),
-            episodes=args.episodes or cfg.evaluation.episodes,
-            seed=cfg.seed + 1_000_000,
-        )
+        telemetry_paths: list[list[dict[str, Any]]] = []
+        try:
+            result = evaluate_model(
+                model,
+                lambda: runner._evaluation_environment(record_visual_replays=args.record_replays),
+                episodes=args.episodes or cfg.evaluation.episodes,
+                seed=cfg.seed + 1_000_000,
+                telemetry_sink=telemetry_paths,
+            )
+        finally:
+            if runner._visual_replay_session is not None:
+                runner._visual_replay_session.shutdown()
+        if args.bootstrap_reference and (
+            result.episodes >= 5 and result.finish_rate == 1.0
+            and result.crash_rate == 0.0 and result.off_track_rate == 0.0
+            and result.stall_rate == 0.0 and result.barrier_contact_steps == 0
+        ):
+            if runner.racing_line is None:
+                raise RuntimeError("bridge did not export the initialization reference; update the bridge")
+            metadata.racing_line = runner.racing_line
+            ModelRegistry(args.output_root).write_metadata(directory, metadata)
+        elif (
+            not isinstance(metadata.racing_line, dict)
+            or not metadata.racing_line.get("prefix_actions")
+        ) and (
+            result.episodes >= 5
+            and result.finish_rate == 1.0
+            and result.crash_rate == 0.0
+            and result.off_track_rate == 0.0
+            and result.stall_rate == 0.0
+            and result.barrier_contact_steps == 0
+        ):
+            line = runner._line_from_evaluation(telemetry_paths)
+            if line is not None:
+                runner.racing_line = line
+                saved_result = evaluate_model(
+                    model, runner._evaluation_environment, episodes=5,
+                    seed=cfg.seed + 1_000_000,
+                )
+                if (
+                    saved_result.finish_rate == 1.0 and saved_result.crash_rate == 0.0
+                    and saved_result.off_track_rate == 0.0 and saved_result.stall_rate == 0.0
+                    and saved_result.barrier_contact_steps == 0
+                ):
+                    metadata.racing_line = line
+                    ModelRegistry(args.output_root).write_metadata(directory, metadata)
+                result = saved_result
         print(json.dumps(result.to_dict(), indent=2))
     except (ValueError, RuntimeError, FileNotFoundError) as exc:
         parser.error(str(exc))
@@ -415,6 +472,7 @@ def drive_main(argv: Sequence[str] | None = None) -> int:
     try:
         cfg, _, model, directory, metadata = _saved_model(args)
         runner = TrainingRunner(cfg)
+        runner.racing_line = metadata.racing_line
         _configure_saved_overlays(runner, model, metadata)
         runner.set_hud_model_context(
             model_slot=directory.name,

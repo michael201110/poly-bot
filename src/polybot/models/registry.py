@@ -63,6 +63,7 @@ class ModelMetadata:
     policy_overlays: list[dict[str, Any]] = field(default_factory=list)
     speed_bias_schedule: list[list[float]] = field(default_factory=list)
     best_training_lap_s: float | None = None
+    racing_line: dict[str, Any] | None = None
     action_semantics: str | None = None
     track_slug: str | None = None
     schema: str = MODEL_SCHEMA

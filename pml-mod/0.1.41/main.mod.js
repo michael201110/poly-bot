@@ -1569,6 +1569,7 @@ function polybotWorkerInjection() {
               return await sendVisualReplayCommand("seek", params);
             case "visual_replay_speed":
             case "visual_replay_opacity":
+            case "visual_replay_loaded_ghosts":
             case "visual_replay_color":
             case "visual_replay_color_scale":
             case "visual_replay_end_behavior":
@@ -2634,6 +2635,7 @@ function installPolyBotHudOverlay(host = globalThis) {
       playing: false,
       speed: 1,
       opacity: 1,
+      playAlongsideLoadedGhosts: false,
       endBehavior: "fade",
       fadeDuration: 0.75,
       renderFrames: 0,
@@ -2659,6 +2661,7 @@ function installPolyBotHudOverlay(host = globalThis) {
     const replayMaxTotalSamples = 250000;
     const replayMaxPayloadBytes = 67108864;
     const replayPendingCommands = [];
+    globalThis.__polybotLoadedGhostOpacity = { enabled: false, active: false, value: 1 };
     const replayTextureEntries = new WeakMap();
     globalThis.__polybotReplaySharedTexture = {
       lookup(renderer, pattern) {
@@ -2698,6 +2701,7 @@ function installPolyBotHudOverlay(host = globalThis) {
       return value.toLowerCase();
     };
     const replayClear = ({ restoreCamera = true } = {}) => {
+      globalThis.__polybotLoadedGhostOpacity = { enabled: false, active: false, value: 1 };
       for (const batch of replayState.batches) {
         replayState.context?.scene?.remove(batch.mesh);
         replayState.context?.removeMaterial?.(batch.mesh.material);
@@ -2737,6 +2741,7 @@ function installPolyBotHudOverlay(host = globalThis) {
       }
       replayState.ghosts.length = 0;
       replayState.playbackSeconds = 0;
+      replayState.playAlongsideLoadedGhosts = false;
       replayState.renderFrames = 0;
       replayState.renderTimeMs = 0;
     };
@@ -2996,10 +3001,15 @@ function installPolyBotHudOverlay(host = globalThis) {
       if (!replayState.batches.length || !context?.scene || !Matrix4) return;
       const matrix = new Matrix4();
       const hidden = new Matrix4().makeScale(0, 0, 0);
+      const updatedRoots = new Set();
       for (const batch of replayState.batches) {
         for (let index = 0; index < batch.items.length; index += 1) {
           const { ghost, object } = batch.items[index];
-          ghost.car.polybotReplayRoot?.updateWorldMatrix(true, true);
+          const root = ghost.car.polybotReplayRoot;
+          if (root && !updatedRoots.has(root)) {
+            root.updateWorldMatrix(true, true);
+            updatedRoots.add(root);
+          }
           batch.mesh.setMatrixAt(index, ghost.visible ? object.matrixWorld : hidden);
         }
         batch.mesh.instanceMatrix.needsUpdate = true;
@@ -3029,9 +3039,19 @@ function installPolyBotHudOverlay(host = globalThis) {
       if (fadeDuration < 0 || fadeDuration > 10) {
         throw new Error("fade_duration_s must be from 0 to 10");
       }
+      if (params.play_alongside_loaded_ghosts !== undefined &&
+          typeof params.play_alongside_loaded_ghosts !== "boolean") {
+        throw new Error("play_alongside_loaded_ghosts must be a boolean");
+      }
       replayClear();
       replayState.speed = speed;
       replayState.opacity = opacity;
+      replayState.playAlongsideLoadedGhosts = params.play_alongside_loaded_ghosts === true;
+      globalThis.__polybotLoadedGhostOpacity = {
+        enabled: replayState.playAlongsideLoadedGhosts,
+        active: true,
+        value: opacity,
+      };
       replayState.endBehavior = params.end_behavior;
       replayState.fadeDuration = fadeDuration;
       replayState.loading = {
@@ -3215,6 +3235,7 @@ function installPolyBotHudOverlay(host = globalThis) {
         playing: replayState.playing,
         playback_seconds: replayState.playbackSeconds,
         duration_seconds: duration,
+        play_alongside_loaded_ghosts: replayState.playAlongsideLoadedGhosts,
         instanced_batches: replayState.batches.length,
         batched_parts: replayState.batchedParts,
         training_step_range: minimumStep === null ? null : [minimumStep, maximumStep],
@@ -3440,6 +3461,7 @@ function installPolyBotHudOverlay(host = globalThis) {
             payload_bytes: params.payload_bytes ?? replayMaxPayloadBytes,
             speed: params.speed,
             opacity: params.opacity,
+            play_alongside_loaded_ghosts: params.play_alongside_loaded_ghosts,
             end_behavior: params.end_behavior,
             fade_duration_s: params.fade_duration_s,
           });
@@ -3506,6 +3528,9 @@ function installPolyBotHudOverlay(host = globalThis) {
           const opacity = replayFinite(params.value, "opacity");
           if (opacity < 0 || opacity > 1) throw new Error("opacity must be from 0 to 1");
           replayState.opacity = opacity;
+          if (replayState.playAlongsideLoadedGhosts) {
+            globalThis.__polybotLoadedGhostOpacity.value = opacity;
+          }
           for (const batch of replayState.batches) {
             batch.mesh.material.opacity = opacity;
             batch.mesh.material.transparent = opacity < 1;
@@ -3516,6 +3541,18 @@ function installPolyBotHudOverlay(host = globalThis) {
             ghost.lastOpacity = opacity;
           }
           replayRender(0);
+          return replayStatus();
+        }
+        case "loaded_ghosts": {
+          if (typeof params.value !== "boolean") {
+            throw new Error("play_alongside_loaded_ghosts must be a boolean");
+          }
+          replayState.playAlongsideLoadedGhosts = params.value;
+          globalThis.__polybotLoadedGhostOpacity = {
+            enabled: params.value,
+            active: replayState.ghosts.length > 0,
+            value: replayState.opacity,
+          };
           return replayStatus();
         }
         case "color": {
@@ -3670,6 +3707,18 @@ function installPolyBotHudOverlay(host = globalThis) {
     });
     pml.registerGlobalMixin({
       type: MixinType.REPLACEBETWEEN,
+      tokenStart: "t.car.setOpacity(i);",
+      tokenEnd: "t.car.setOpacity(i);",
+      func: "t.car.setOpacity(!t.car.polybotVisualReplay && globalThis.__polybotLoadedGhostOpacity?.active && globalThis.__polybotLoadedGhostOpacity?.enabled ? globalThis.__polybotLoadedGhostOpacity.value : i);",
+    });
+    pml.registerGlobalMixin({
+      type: MixinType.REPLACEBETWEEN,
+      tokenStart: "n.car.setOpacity(r)",
+      tokenEnd: "n.car.setOpacity(r)",
+      func: "n.car.setOpacity(!n.car.polybotVisualReplay && globalThis.__polybotLoadedGhostOpacity?.active && globalThis.__polybotLoadedGhostOpacity?.enabled ? globalThis.__polybotLoadedGhostOpacity.value : r)",
+    });
+    pml.registerGlobalMixin({
+      type: MixinType.REPLACEBETWEEN,
       tokenStart: "const t = e.getFinishTime() ?? e.getTime();",
       tokenEnd: "const t = e.getFinishTime() ?? e.getTime();",
       // Override only the displayed time; replay playback never advances the player physics.
@@ -3748,6 +3797,7 @@ function installPolyBotHudOverlay(host = globalThis) {
               (0, R.gn)(this, ua, "f"),
               null,
             );
+            car.polybotVisualReplay = true;
             car.polybotReplayRoot = globalThis.__polybotReplayPendingRoot;
             return car;
           } finally {

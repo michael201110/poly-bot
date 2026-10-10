@@ -4,17 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import threading
 import time
-from dataclasses import asdict, fields
+from math import floor, log10
+from dataclasses import asdict, fields, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, QProcess, Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QTextCursor
+from PySide6.QtCore import QObject, QProcess, QSize, Qt, QThread, QTimer, Signal
+from PySide6.QtGui import QKeySequence, QShortcut, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -25,20 +25,24 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
+    QGroupBox,
     QGridLayout,
     QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QPushButton,
+    QProgressBar,
     QScrollArea,
     QSpinBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QToolButton,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -46,10 +50,12 @@ from PySide6.QtWidgets import (
     QWizardPage,
 )
 
-from polybot.ai_overlay import AIOverlaySettings, AIOverlaySettingsStore
+from polybot.algorithms.registry import backend_for
+from polybot.ai_overlay import AIOverlaySettings, AIOverlaySettingsStore, HUD_MODES
 from polybot.environment.curriculum import build_plan
 from polybot.environment.rewards import RewardConfig
 from polybot.gui.events import format_event
+from polybot.gui.presentation import ActionGrid, CompactDoubleSpinBox, ExpandableSection
 from polybot.models.registry import REWARD_SEMANTICS, ModelRegistry
 from polybot.replay_swarm import (
     MAX_REPLAY_GHOSTS,
@@ -57,6 +63,7 @@ from polybot.replay_swarm import (
     ColorScale,
     ReplayPlaybackOptions,
     ReplaySelection,
+    replay_camera_rank,
     SelectedReplayPayload,
     filter_replays,
     load_replay_episode,
@@ -65,7 +72,9 @@ from polybot.replay_swarm import (
     resolve_replay_directories,
     select_replays,
     selection_report,
+    swarm_colors,
     send_replay_swarm,
+    send_replay_playback,
 )
 from polybot.tracks.registry import TrackDefinition, TrackRegistry, track_slug
 from polybot.tracks.workspace import TrackWorkspace
@@ -109,14 +118,16 @@ def _editor(value: Any, help_text: str, choices: tuple[str, ...] = ()) -> QWidge
         widget.setRange(-2_000_000_000, 2_000_000_000)
         widget.setValue(value)
     elif isinstance(value, float):
-        widget = QDoubleSpinBox()
+        widget = CompactDoubleSpinBox()
         widget.setRange(-1e12, 1e12)
         widget.setDecimals(8)
-        widget.setSingleStep(0.001)
+        widget.setSingleStep(10 ** floor(log10(abs(value))) if 0 < abs(value) < 0.01 else 0.001)
         widget.setValue(value)
     else:
         widget = QLineEdit("" if value is None else str(value))
     widget.setToolTip(help_text)
+    if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+        widget.setKeyboardTracking(False)
     return widget
 
 
@@ -140,6 +151,8 @@ def _set(widget: QWidget, value: Any) -> None:
             widget.setChecked(value)
         elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
             widget.setValue(value)
+            if isinstance(widget, CompactDoubleSpinBox) and isinstance(value, (int, float)) and 0 < abs(value) < 0.01:
+                widget.setSingleStep(10 ** (floor(log10(abs(value))) - 1))
         else:
             assert isinstance(widget, QLineEdit)
             widget.setText("" if value is None else str(value))
@@ -172,6 +185,7 @@ class ParameterForm(QWidget):
             else:
                 choices = ()
             widget = _editor(current, metadata.description, choices)
+            widget.setObjectName(field.name)
             label = QLabel(metadata.label)
             label.setToolTip(metadata.description)
             layout.addRow(label, widget)
@@ -226,11 +240,18 @@ class PolyBotWindow(QWidget):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("PolyBot Training")
-        self.resize(900, 760)
+        self.resize(1160, 820)
+        self.setMinimumSize(940, 640)
+        self.workflow_sections: list[ExpandableSection] = []
+        self._last_activity = ""
+        self._stop_requested = False
+        self._session_start_step: int | None = None
+        self._close_when_idle = False
         self.runner: TrainingRunner | None = None
         self.worker: threading.Thread | None = None
         self.replay_swarm_worker: ReplaySwarmTask | None = None
         self.speed_search_process: QProcess | None = None
+        self.model_command_processes: set[QProcess] = set()
         self.adaptation_process: QProcess | None = None
         self.adaptation_stdout_buffer = ""
         self.distillation_process: QProcess | None = None
@@ -262,25 +283,33 @@ class PolyBotWindow(QWidget):
         try:
             self.ai_overlay_settings = self.ai_overlay_store.load()
         except ValueError as exc:
-            self.ai_overlay_settings = AIOverlaySettings(enabled=False)
+            self.ai_overlay_settings = AIOverlaySettings()
             self._ai_overlay_settings_error = str(exc)
         self._base_rewards = self.profiles.load("Balanced")
+        self._session_reward_profiles: dict[str, RewardConfig] = {}
+        self._last_algorithm_preset: dict[str, str] = {}
         self._reward_values = asdict(self._base_rewards)
 
         root = QVBoxLayout(self)
-        intro = QLabel(
-            "Set up a run, train or resume a model, then inspect its results. "
-            "Hover over fields for explanations."
-        )
-        intro.setWordWrap(True)
-        root.addWidget(intro)
+        root.setContentsMargins(18, 16, 18, 12)
+        root.setSpacing(12)
         track_row = QHBoxLayout()
+        brand = QLabel("PolyBot")
+        brand.setObjectName("brand")
+        track_row.addWidget(brand)
+        track_row.addSpacing(20)
         track_row.addWidget(QLabel("Track"))
         self.track_selector = QComboBox()
         self._populate_track_selector(self._saved_track_slug())
         track_row.addWidget(self.track_selector, 1)
+        track_row.addWidget(QLabel("Algorithm"))
+        self.header_algorithm = QComboBox()
+        self.header_algorithm.addItems(("grtqc", "tqc", "ppo"))
+        self.header_algorithm.setMinimumWidth(95)
+        self.header_algorithm.setToolTip("Choose which algorithm's models to train, evaluate, and drive.")
+        track_row.addWidget(self.header_algorithm)
         self.track_context = QLabel()
-        track_row.addWidget(self.track_context)
+        self.track_context.hide()
         add_track = QPushButton("+ Add Track")
         add_track.clicked.connect(self._add_track_dialog)
         track_row.addWidget(add_track)
@@ -292,31 +321,66 @@ class PolyBotWindow(QWidget):
         self.run_summary.setWordWrap(True)
         self.run_summary.setStyleSheet("font-weight: 600; color: palette(highlight);")
         root.addWidget(self.run_summary)
+        self.feedback_bar = QFrame()
+        self.feedback_bar.setObjectName("feedbackBar")
+        feedback = QHBoxLayout(self.feedback_bar)
+        self.feedback_label = QLabel()
+        self.feedback_label.setWordWrap(True)
+        self.feedback_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.feedback_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        feedback.addWidget(self.feedback_label, 1)
+        dismiss = QPushButton("Dismiss")
+        self.dismiss_feedback_button = dismiss
+        dismiss.clicked.connect(self._dismiss_feedback)
+        feedback.addWidget(dismiss)
+        root.addWidget(self.feedback_bar)
+        self.feedback_bar.hide()
         self.advanced = QCheckBox("Show advanced settings on all tabs")
         self.advanced.setToolTip(
             "Reveal secondary training fields and advanced workflows. Turn this off to return "
             "to the recommended basic controls."
         )
         self.advanced.toggled.connect(self._toggle_advanced)
-        root.addWidget(self.advanced)
-        quick_actions = QHBoxLayout()
-        guided = QPushButton("Guided setup")
-        guided.setToolTip("Choose a track, algorithm, goal, hardware and preset before starting.")
-        guided.clicked.connect(self._guided_new_run)
-        quick_actions.addWidget(guided)
-        start = QPushButton("Start a new run")
-        start.setToolTip("Validate the exact settings shown, then start a fresh model.")
-        start.clicked.connect(lambda: self._start(False))
-        quick_actions.addWidget(start)
-        continue_best = QPushButton("Continue best model")
-        continue_best.setToolTip("Continue the best evaluated checkpoint for these settings.")
-        continue_best.clicked.connect(lambda: self._start(True, best=True))
-        quick_actions.addWidget(continue_best)
-        root.addLayout(quick_actions)
+        body = QHBoxLayout()
+        body.setSpacing(16)
+        root.addLayout(body, 1)
+        sidebar = QWidget()
+        sidebar.setFixedWidth(180)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        self.navigation = QListWidget()
+        self.navigation.setObjectName("navigation")
+        self.navigation.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        sidebar_layout.addWidget(self.navigation, 1)
+        self.advanced.setText("Advanced settings")
+        sidebar_layout.addWidget(self.advanced)
+        for label, handler in (("Load configuration…", self._load_config_dialog),
+                               ("Save configuration…", self._save_config)):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            sidebar_layout.addWidget(button)
+        body.addWidget(sidebar)
+        content = QVBoxLayout()
+        content.setSpacing(8)
+        body.addLayout(content, 1)
+        self.setting_search = QLineEdit()
+        self.setting_search.setPlaceholderText("Find a setting or action…  Ctrl+K")
+        self.setting_search.setClearButtonEnabled(True)
+        self.setting_search.setToolTip("Search all pages, including hidden advanced settings.")
+        content.addWidget(self.setting_search)
+        self.search_results = QListWidget()
+        self.search_results.setMaximumHeight(210)
+        self.search_results.hide()
+        content.addWidget(self.search_results)
+        self.page_description = QLabel()
+        self.page_description.setWordWrap(True)
+        content.addWidget(self.page_description)
         self.tabs = QTabWidget()
         self.tabs.setUsesScrollButtons(True)
-        root.addWidget(self.tabs)
+        self.tabs.tabBar().hide()
+        content.addWidget(self.tabs, 1)
 
+        self._overview_tab()
         self._general_tab()
         self._algorithm_tab()
         self._reward_tab()
@@ -326,7 +390,9 @@ class PolyBotWindow(QWidget):
         self._replay_swarm_tab()
         self._ai_overlay_tab()
         self._status_tab()
+        self._finish_workspace(root)
         self.algorithm.currentTextChanged.connect(self._algorithm_changed)
+        self.header_algorithm.currentTextChanged.connect(self.algorithm.setCurrentText)
         self._algorithm_changed(self.algorithm.currentText())
         self._toggle_advanced(False)
         self.track_selector.currentIndexChanged.connect(self._track_changed)
@@ -344,6 +410,10 @@ class PolyBotWindow(QWidget):
         self.speed_search_watch = QTimer(self)
         self.speed_search_watch.timeout.connect(self._poll_speed_search_log)
         self.speed_search_watch.start(2000)
+        self.activity_watch = QTimer(self)
+        self.activity_watch.timeout.connect(self._refresh_activity)
+        self.activity_watch.start(500)
+        self._refresh_activity()
 
     def _page(self, name: str, *, scrollable: bool = True) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
@@ -355,6 +425,8 @@ class PolyBotWindow(QWidget):
             scroll.setFrameShape(QFrame.Shape.NoFrame)
             content = QWidget()
             layout = QVBoxLayout(content)
+            layout.setContentsMargins(18, 16, 18, 16)
+            layout.setSpacing(12)
             layout.setAlignment(Qt.AlignmentFlag.AlignTop)
             scroll.setWidget(content)
             page_layout.addWidget(scroll)
@@ -364,6 +436,283 @@ class PolyBotWindow(QWidget):
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.tabs.addTab(page, name)
         return page, layout
+
+    def _overview_tab(self) -> None:
+        self.overview_page, page = self._page("Overview")
+        heading = QLabel("What would you like to do?")
+        heading.setObjectName("pageHeading")
+        page.addWidget(heading)
+        cards = QHBoxLayout()
+        page.addLayout(cards)
+        self.checkpoint_cards: dict[str, QLabel] = {}
+        for slot, title in (("champion", "Champion · best evaluated"),
+                            ("latest", "Latest · most recent training")):
+            card = QGroupBox(title)
+            layout = QVBoxLayout(card)
+            value = QLabel("No checkpoint saved yet")
+            value.setWordWrap(True)
+            value.setTextFormat(Qt.TextFormat.PlainText)
+            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(value)
+            self.checkpoint_cards[slot] = value
+            cards.addWidget(card, 1)
+        actions = QGroupBox("Use your model")
+        grid = ActionGrid()
+        actions.setLayout(grid)
+        page.addWidget(actions)
+        self.overview_model_buttons: list[QPushButton] = []
+        for label, handler, hint in (
+            ("Continue best model", lambda: self._start(True, best=True),
+             "Restore the best compatible checkpoint and its saved training settings."),
+            ("Play champion", lambda: self._model_command("drive", "champion"),
+             "Watch the champion drive a live lap in PolyTrack."),
+            ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
+             "Run a deterministic evaluation and save the recorded attempts."),
+        ):
+            button = QPushButton(label)
+            button.setToolTip(hint)
+            button.clicked.connect(handler)
+            grid.addWidget(button)
+            self.overview_model_buttons.append(button)
+        self.overview_model_buttons[0].setObjectName("primaryAction")
+        explore = QGroupBox("Set up and explore")
+        grid = ActionGrid()
+        explore.setLayout(grid)
+        page.addWidget(explore)
+        for label, handler in (
+            ("Guided setup", self._guided_new_run),
+            ("Configure a new run", lambda: self.tabs.setCurrentWidget(self.general_page)),
+            ("Watch saved replays", lambda: self.tabs.setCurrentWidget(self.replay_swarm_page)),
+        ):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            grid.addWidget(button)
+        self.overview_setup = QLabel()
+        self.overview_setup.setWordWrap(True)
+        page.addWidget(self.overview_setup)
+        self.overview_activity = QLabel("Ready when you are.")
+        self.overview_activity.setWordWrap(True)
+        page.addWidget(self.overview_activity)
+
+    def _finish_workspace(self, root: QVBoxLayout) -> None:
+        self._page_hints = {
+            "Overview": "Your selected track, saved models, and next steps.",
+            "General": "Run setup · Choose the algorithm, simulator, device, and training budget.",
+            "Algorithm": "Learning settings · Presets provide a starting point; every value stays editable.",
+            "Rewards": "Rewards · Decide what the agent learns to value.",
+            "Curriculum": "Curriculum · Choose full laps or a progression of training sections.",
+            "Evaluation": "Evaluation · Deterministic full laps decide whether a candidate becomes champion.",
+            "Models": "Models · Train, evaluate, and drive saved checkpoints. Expand advanced workflows below.",
+            "Replay": "Replays · Watch one saved attempt or compare a group in a swarm.",
+            "AI HUD": "In-game display · Choose which controls, observations, and rewards to show.",
+            "Status": "Activity · Follow training metrics, evaluations, and detailed event messages.",
+        }
+        self._navigation_names = {
+            "General": "Run setup", "Algorithm": "Learning settings",
+            "AI HUD": "In-game display", "Status": "Activity & logs",
+        }
+        for index in range(self.tabs.count()):
+            title = self.tabs.tabText(index)
+            item = QListWidgetItem(self._navigation_names.get(title, title))
+            item.setToolTip(self._page_hints.get(title, title))
+            item.setSizeHint(QSize(166, 36))
+            self.navigation.addItem(item)
+        self.navigation.currentRowChanged.connect(self.tabs.setCurrentIndex)
+        self.tabs.currentChanged.connect(self._page_changed)
+        self.navigation.setCurrentRow(0)
+        self._page_changed(0)
+        self.setting_search.textChanged.connect(self._search_settings)
+        self.setting_search.returnPressed.connect(self._open_search_result)
+        self.search_results.itemActivated.connect(lambda _item: self._open_search_result())
+        shortcut = QShortcut(QKeySequence("Ctrl+K"), self)
+        shortcut.activated.connect(self.setting_search.setFocus)
+        escape = QShortcut(QKeySequence("Escape"), self.setting_search)
+        escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        escape.activated.connect(self.setting_search.clear)
+        down = QShortcut(QKeySequence("Down"), self.setting_search)
+        down.setContext(Qt.ShortcutContext.WidgetShortcut)
+        down.activated.connect(lambda: self.search_results.setFocus() if self.search_results.isVisible() else None)
+        for sequence, handler in (("Ctrl+O", self._load_config_dialog),
+                                   ("Ctrl+Shift+S", self._save_config)):
+            QShortcut(QKeySequence(sequence), self).activated.connect(handler)
+        footer = QHBoxLayout()
+        self.activity_label = QLabel("Ready")
+        self.activity_label.setWordWrap(True)
+        footer.addWidget(self.activity_label, 1)
+        self.session_progress = QProgressBar()
+        self.session_progress.setFixedWidth(170)
+        self.session_progress.setRange(0, 1000)
+        self.session_progress.setFormat("Session %p%")
+        self.session_progress.hide()
+        footer.addWidget(self.session_progress)
+        details = QPushButton("View activity")
+        details.clicked.connect(lambda: self.tabs.setCurrentIndex(self.tabs.count() - 1))
+        footer.addWidget(details)
+        footer.addWidget(self.stop_button)
+        root.addLayout(footer)
+        dark = self.palette().window().color().lightness() < 128
+        border, surface, accent, muted = (
+            ("#424750", "#282d35", "#65b8ff", "#aab4c2") if dark else
+            ("#d7dee7", "#f2f6fb", "#1769aa", "#596a7e")
+        )
+        self.setStyleSheet(f"""
+            QWidget {{ font-size: 13px; }}
+            QLabel#brand {{ font-size: 23px; font-weight: 700; }}
+            QLabel#pageHeading {{ font-size: 22px; font-weight: 600; }}
+            QTabWidget::pane {{ border: 1px solid {border}; border-radius: 8px; }}
+            QListWidget#navigation {{ border: none; background: transparent; outline: 0; }}
+            QListWidget#navigation::item {{ padding: 6px 8px; margin: 1px 0; border-radius: 6px; }}
+            QListWidget#navigation::item:selected {{ background: {surface}; color: {accent}; font-weight: 600; }}
+            QPushButton {{ padding: 7px 10px; min-height: 20px; }}
+            QPushButton#primaryAction {{ font-weight: 600; border: 1px solid {accent}; border-radius: 5px; }}
+            QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ min-height: 26px; padding: 2px 5px; }}
+            QGroupBox {{ border: 1px solid {border}; border-radius: 7px; margin-top: 14px; padding: 16px 12px 12px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 5px; font-weight: 600; }}
+            QToolButton#sectionToggle {{ padding: 9px; background: {surface}; border: 1px solid {border}; border-radius: 5px; }}
+            QToolTip {{ padding: 5px; }}
+            QFrame#feedbackBar {{ border: 1px solid #b58035; border-radius: 6px; }}
+        """)
+        self.page_description.setStyleSheet(f"color: {muted}; padding: 4px 0;")
+
+    def _page_changed(self, index: int) -> None:
+        if index < 0:
+            return
+        self.navigation.setCurrentRow(index)
+        key = self.tabs.tabText(index).split(" — ", 1)[0]
+        self.page_description.setText(self._page_hints.get(key, key))
+
+    def _search_settings(self, query: str) -> None:
+        self.search_results.clear()
+        words = query.casefold().split()
+        self.search_results.setVisible(bool(words))
+        if not words:
+            return
+        matches = []
+        for index in range(self.tabs.count()):
+            page = self.tabs.widget(index)
+            title = self.tabs.tabText(index).split(" — ", 1)[0]
+            # The inactive algorithm forms are not relevant to the chosen model.
+            inactive = [form for form in (self.ppo_form, self.grtqc_form, self.tqc_form)
+                        if form is not self.algorithm_stack.currentWidget()]
+            candidates: list[tuple[str, QWidget]] = []
+            for layout in page.findChildren(QFormLayout):
+                for row in range(layout.rowCount()):
+                    label_item = layout.itemAt(row, QFormLayout.ItemRole.LabelRole)
+                    field_item = layout.itemAt(row, QFormLayout.ItemRole.FieldRole)
+                    label = label_item.widget() if label_item else None
+                    field = field_item.widget() if field_item else None
+                    if isinstance(label, QLabel) and field is not None:
+                        candidates.append((label.text(), field))
+            candidates.extend((button.text().replace("&", ""), button)
+                              for button in page.findChildren(QPushButton))
+            for label, target in candidates:
+                if any(form.isAncestorOf(target) for form in inactive):
+                    continue
+                haystack = f"{title} {label} {target.objectName().replace('_', ' ')} {target.toolTip()}".casefold()
+                if not all(word in haystack for word in words):
+                    continue
+                score = sum(word in label.casefold() for word in words)
+                matches.append((score, title, label, index, target))
+        for _score, title, label, index, target in sorted(matches, key=lambda match: -match[0])[:60]:
+            item = QListWidgetItem(f"{title}  ›  {label}")
+            item.setToolTip(target.toolTip())
+            item.setData(Qt.ItemDataRole.UserRole, (index, target))
+            self.search_results.addItem(item)
+        if self.search_results.count():
+            self.search_results.setCurrentRow(0)
+        else:
+            item = QListWidgetItem("No matches. Try ‘learning rate’, ‘replay’, or ‘port’.")
+            item.setFlags(Qt.ItemFlag.NoItemFlags)
+            self.search_results.addItem(item)
+
+    def _open_search_result(self) -> None:
+        item = self.search_results.currentItem()
+        data = item.data(Qt.ItemDataRole.UserRole) if item else None
+        if not data:
+            return
+        index, target = data
+        self.tabs.setCurrentIndex(index)
+        if not target.isVisibleTo(self.tabs.widget(index)):
+            self.advanced.setChecked(True)
+        parent = target.parentWidget()
+        scrolls = []
+        while parent is not None and parent is not self:
+            if isinstance(parent, ExpandableSection):
+                parent.expand()
+            if parent is self.replay_advanced_content:
+                self.replay_advanced_toggle.setChecked(True)
+            if isinstance(parent, QScrollArea):
+                scrolls.append(parent)
+            parent = parent.parentWidget()
+        self.setting_search.clear()
+        target.setFocus(Qt.FocusReason.ShortcutFocusReason)
+        if isinstance(target, (QLineEdit, QSpinBox, QDoubleSpinBox)):
+            target.selectAll()
+        QTimer.singleShot(0, lambda: [scroll.ensureWidgetVisible(target, 20, 50) for scroll in scrolls])
+
+    def _active_operations(self) -> list[str]:
+        active = []
+        if self.worker is not None and self.worker.is_alive():
+            active.append("Training")
+        for attribute, label in (
+            ("speed_search_process", "Speed search"), ("wr_search_process", "WR pace search"),
+            ("section_optimizer_process", "Section optimizer"), ("adaptation_process", "Champion adaptation"),
+            ("distillation_process", "Policy distillation"), ("teacher_student_process", "Teacher-student transfer"),
+        ):
+            process = getattr(self, attribute)
+            if process is not None and process.state() != QProcess.ProcessState.NotRunning:
+                active.append(label)
+        for process in self.model_command_processes:
+            if process.state() != QProcess.ProcessState.NotRunning:
+                verb = "Driving" if process.property("polybot_command") == "drive" else "Evaluating"
+                active.append(f"{verb} {process.property('polybot_slot')}")
+        if self.replay_swarm_worker is not None and self.replay_swarm_worker.isRunning():
+            active.append("Replay request")
+        return active
+
+    def _require_idle(self) -> bool:
+        active = self._active_operations()
+        if active:
+            self._error(f"{', '.join(active)} is active. Finish or stop it before starting another simulator task.")
+            return False
+        return True
+
+    def _refresh_activity(self) -> None:
+        active = self._active_operations()
+        text = " · ".join(active)
+        if text:
+            message = f"Stopping safely · {text}" if self._stop_requested else f"Active · {text}"
+            self.activity_label.setText(message)
+            self.overview_activity.setText(message + ". Open Activity & logs for details.")
+        else:
+            self.activity_label.setText("Ready · no task running")
+            self.overview_activity.setText("Ready when you are. Choose an action above.")
+            self._stop_requested = False
+        # Replay requests have a bounded connection timeout, rather than a stop API.
+        stoppable = any(label in active for label in (
+            "Training", "Speed search", "WR pace search", "Section optimizer",
+        )) or bool(self.model_command_processes) or (
+            "Teacher-student transfer" in active and self.teacher_student_stop_file is not None
+        )
+        self.stop_button.setEnabled(stoppable and not self._stop_requested)
+        self.stop_button.setToolTip(
+            "Stop training or search safely; cancel a live drive or evaluation."
+            if stoppable else "No cancellable task. An active replay request or offline command will finish on its own."
+        )
+        for button in self.overview_model_buttons:
+            button.setEnabled(not active)
+        training = "Training" in active
+        self.session_progress.setVisible(training)
+        self.track_selector.setEnabled(not active)
+        self.header_algorithm.setEnabled(not active)
+        self.algorithm.setEnabled(not active)
+        if text != self._last_activity:
+            if not text and self._last_activity:
+                self._refresh_models()
+                self._refresh_replay_runs()
+            self._last_activity = text
+        if not active and self._close_when_idle:
+            self.close()
 
     @staticmethod
     def _selected_track_path() -> Path:
@@ -407,7 +756,10 @@ class PolyBotWindow(QWidget):
         temporary.write_text(json.dumps({"slug": track.slug}, indent=2) + "\n", encoding="utf-8")
         temporary.replace(path)
         self.tabs.setTabText(self.tabs.indexOf(self.models_page), f"Models — {track.name}")
-        self.tabs.setTabText(self.tabs.indexOf(self.replay_swarm_page), f"Replay Swarm — {track.name}")
+        self.tabs.setTabText(self.tabs.indexOf(self.replay_swarm_page), f"Replay — {track.name}")
+        if hasattr(self, "navigation"):
+            self.navigation.item(self.tabs.indexOf(self.models_page)).setToolTip(f"Models for {track.name}")
+            self.navigation.item(self.tabs.indexOf(self.replay_swarm_page)).setToolTip(f"Replays for {track.name}")
         if (
             hasattr(self, "preset")
             and self.preset.currentText().startswith("Summer 1 -")
@@ -436,15 +788,14 @@ class PolyBotWindow(QWidget):
         backend = self.general["backend"].currentText()
         steps = int(_value(self.general["timesteps"]))
         recording = self.general["visual_replay_enabled"].currentText()
-        profile = self.reward_profile.currentText()
         recording_text = {
             "automatic": "recording automatic for WebSocket",
             "enabled": "replay recording on",
             "disabled": "replay recording off",
         }.get(recording, f"replay recording {recording}")
         self.run_summary.setText(
-            f"Ready · {track_name} · {algorithm} · {backend} · "
-            f"{steps:,} decisions · rewards {profile} · {recording_text}"
+            f"{track_name} · {algorithm} · {'Live simulator' if backend == 'websocket' else 'Local mock simulator'} · "
+            f"{steps:,} decisions · {recording_text}"
         )
 
     def _workspace(self, track: TrackDefinition | None = None) -> TrackWorkspace:
@@ -468,13 +819,28 @@ class PolyBotWindow(QWidget):
         track = self._selected_track()
         self.models_heading.setText(f"Models — {track.name}")
         registry = ModelRegistry(self._workspace(track).models_root)
+        _set(self.header_algorithm, self.algorithm.currentText())
+        self.model_actions_group.setTitle(f"{self.algorithm.currentText().upper()} actions · {track.name}")
         lines: list[str] = []
+        selected_slots = {}
+        inventory_errors = {}
+        self.models_table.setRowCount(0)
         for algorithm in ("grtqc", "tqc", "ppo"):
-            slots = registry.list_model_slots(track, algorithm)
+            try:
+                slots = registry.list_model_slots(track, algorithm)
+            except (OSError, ValueError, TypeError) as exc:
+                inventory_errors[algorithm] = str(exc)
+                lines.append(f"{algorithm.upper()}: could not read inventory: {exc}")
+                continue
+            if not self.show_archived_checkpoints.isChecked():
+                slots = [slot for slot in slots if not slot[0].startswith("checkpoints/")]
             if not slots:
                 continue
             lines.append(f"{algorithm.upper()}")
             for name, directory, metadata in slots:
+                if algorithm == self.algorithm.currentText():
+                    selected_slots[name] = (directory, metadata)
+                lap_text, verification = self._checkpoint_result(metadata)
                 if metadata is None:
                     details = "metadata missing"
                 else:
@@ -487,9 +853,52 @@ class PolyBotWindow(QWidget):
                             else ""
                         )
                 lines.append(f"  {name}: {details} ({directory})")
+                row = self.models_table.rowCount()
+                self.models_table.insertRow(row)
+                for column, value in enumerate((algorithm.upper(), name.title(), lap_text, verification)):
+                    item = QTableWidgetItem(value)
+                    item.setFlags(item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+                    item.setToolTip(str(directory))
+                    self.models_table.setItem(row, column, item)
         self.models_inventory.setPlainText(
             "\n".join(lines) if lines else f"No model slots saved for {track.name}."
         )
+        self.models_table.resizeColumnsToContents()
+        self.models_table.horizontalHeader().setStretchLastSection(True)
+        for slot, label in self.checkpoint_cards.items():
+            entry = selected_slots.get(slot)
+            metadata = entry[1] if entry else None
+            if entry:
+                lap, verification = self._checkpoint_result(metadata)
+                steps = f"{metadata.training_timesteps:,} training decisions" if metadata else "Metadata missing"
+                label.setText(f"{self.algorithm.currentText().upper()} · {lap}\n{verification}\n{steps}")
+                label.setToolTip(str(entry[0]))
+            elif self.algorithm.currentText() in inventory_errors:
+                label.setText("Checkpoint details could not be read. Open Models → Checkpoint details for the error.")
+                label.setToolTip(inventory_errors[self.algorithm.currentText()])
+            else:
+                label.setText(f"No {self.algorithm.currentText().upper()} {slot} saved for {track.name}.")
+                label.setToolTip("")
+        has_champion = "champion" in selected_slots
+        self.overview_setup.setText(
+            "Open PolyTrack with the PolyBot bridge to drive or train. Saved models use their cached "
+            "racing line; a ghost is needed when initializing a new model.\n"
+            + ("Continue best restores the checkpoint's policy, curriculum, and reward settings. "
+               "The session budget comes from Run setup." if has_champion else
+               "No champion yet? Start with Guided setup, then train and evaluate your first model.")
+        )
+
+    @staticmethod
+    def _checkpoint_result(metadata: Any) -> tuple[str, str]:
+        evaluation = metadata.evaluation if metadata is not None else None
+        if not evaluation:
+            return "No evaluated lap", "Awaiting evaluation"
+        lap = evaluation.get("median_lap_s")
+        lap_text = f"{lap:.3f} s median" if isinstance(lap, (int, float)) else "No completed lap"
+        episodes, rate = evaluation.get("episodes"), evaluation.get("finish_rate")
+        if isinstance(episodes, int) and isinstance(rate, (int, float)):
+            return lap_text, f"{round(episodes * rate)}/{episodes} laps finished"
+        return lap_text, "Evaluation recorded"
 
     def _add_track_dialog(self) -> None:
         name, accepted = QInputDialog.getText(self, "Add Track", "Track name")
@@ -578,6 +987,7 @@ class PolyBotWindow(QWidget):
         info: ParameterInfo, choices: tuple[str, ...] = (),
     ) -> QWidget:
         widget = _editor(value, info.description, choices)
+        widget.setObjectName(name)
         label = QLabel(info.label)
         label.setToolTip(info.description)
         layout.addRow(label, widget)
@@ -586,8 +996,9 @@ class PolyBotWindow(QWidget):
     def _general_tab(self) -> None:
         self.general_page, page = self._page("General")
         setup_note = QLabel(
-            "For real-game training: load the PolyBot bridge in PolyModLoader, open a track "
-            "with a ghost lap, and use the WebSocket backend. Mock mode is for local testing."
+            "For live training, open this track in PolyTrack with the PolyBot bridge and choose "
+            "WebSocket. Existing models use their saved racing line. Load a ghost when initializing "
+            "a new model. Mock mode runs locally without the game."
         )
         setup_note.setWordWrap(True)
         page.addWidget(setup_note)
@@ -602,7 +1013,7 @@ class PolyBotWindow(QWidget):
             "checkpoint_interval": 10_000,
             "output_root": "models", "log_root": "logs",
             "visual_replay_enabled": "automatic", "visual_replay_sample_hz": 20.0,
-            "visual_replay_observations": False,
+            "visual_replay_observations": True,
         }
         for name, value in values.items():
             choices = ("mock", "websocket") if name == "backend" else (
@@ -624,10 +1035,25 @@ class PolyBotWindow(QWidget):
         self.general_labels = {
             name: form.labelForField(widget) for name, widget in self.general.items()
         }
+        for name, label in (
+            ("backend", "Simulator connection"), ("device", "Compute device"),
+            ("seed", "Random seed"), ("timesteps", "Training budget (decisions)"),
+            ("max_episode_seconds", "Time limit per attempt (s)"),
+            ("frame_skip", "Physics ticks per decision"),
+        ):
+            self.general_labels[name].setText(label)
         basics = QPushButton("What do these training words mean?")
         basics.setToolTip("Plain-language explanation of the terms used in GRTQC, TQC and PPO training.")
         basics.clicked.connect(self._show_glossary)
         page.addWidget(basics)
+        actions = ActionGrid()
+        page.addLayout(actions)
+        for label, handler in (("Guided setup", self._guided_new_run),
+                               ("Start a new run", lambda: self._start(False)),
+                               ("Continue best model", lambda: self._start(True, best=True))):
+            button = QPushButton(label)
+            button.clicked.connect(handler)
+            actions.addWidget(button)
 
     def _algorithm_tab(self) -> None:
         self.algorithm_page, page = self._page("Algorithm")
@@ -664,6 +1090,16 @@ class PolyBotWindow(QWidget):
         self.algorithm_stack.addWidget(self.ppo_form)
         self.algorithm_stack.addWidget(self.grtqc_form)
         self.algorithm_stack.addWidget(self.tqc_form)
+        for form in (self.ppo_form, self.grtqc_form, self.tqc_form):
+            for widget in form.widgets.values():
+                if isinstance(widget, QComboBox):
+                    widget.currentTextChanged.connect(self._mark_algorithm_custom)
+                elif isinstance(widget, QCheckBox):
+                    widget.toggled.connect(self._mark_algorithm_custom)
+                elif isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                    widget.valueChanged.connect(self._mark_algorithm_custom)
+                elif isinstance(widget, QLineEdit):
+                    widget.textEdited.connect(self._mark_algorithm_custom)
         self.parameter_label = QLabel("Network and total parameter counts appear when training starts.")
         self.parameter_label.setToolTip(
             "GRTQC, TQC and PPO report actor and critic counts. Larger networks train slower."
@@ -697,7 +1133,7 @@ class PolyBotWindow(QWidget):
         for name, label in (
             ("progress_per_m", "Progress importance"),
             ("on_track_speed_per_m", "Speed importance"),
-            ("guidance_reward_scale", "Ghost guidance"),
+            ("guidance_reward_scale", "Racing line guidance"),
             ("action_change_penalty", "Smooth driving"),
         ):
             widget = _editor(self._reward_values[name], REWARD_INFO[name].description)
@@ -739,7 +1175,7 @@ class PolyBotWindow(QWidget):
         self.reward_preview.setReadOnly(True)
         self.reward_preview.setToolTip("Exact reward coefficients sent to training and saved in metadata.")
         self.reward_preview.setMaximumHeight(120)
-        page.addWidget(self.reward_preview)
+        page.addWidget(ExpandableSection("Exact reward coefficients", self.reward_preview))
         self._refresh_reward_view()
 
     def _curriculum_tab(self) -> None:
@@ -821,11 +1257,36 @@ class PolyBotWindow(QWidget):
         self.models_heading = QLabel()
         self.models_heading.setStyleSheet("font-weight: bold; font-size: 16px")
         page.addWidget(self.models_heading)
+        inventory_options = QHBoxLayout()
+        self.show_archived_checkpoints = QCheckBox("Show archived checkpoints")
+        self.show_archived_checkpoints.setToolTip("Include saved and rejected training snapshots in the inventory.")
+        self.show_archived_checkpoints.toggled.connect(self._refresh_models)
+        inventory_options.addWidget(self.show_archived_checkpoints)
+        inventory_options.addStretch()
+        refresh_models = QPushButton("Refresh models")
+        refresh_models.clicked.connect(self._refresh_models)
+        inventory_options.addWidget(refresh_models)
+        page.addLayout(inventory_options)
+        self.models_table = QTableWidget(0, 4)
+        self.models_table.setHorizontalHeaderLabels(("Algorithm", "Checkpoint", "Median lap", "Evaluation"))
+        self.models_table.verticalHeader().hide()
+        self.models_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.models_table.setMinimumHeight(160)
+        self.models_table.setMaximumHeight(230)
+        self.models_table.setToolTip("Champion is the best evaluated checkpoint. Latest may have regressed. Hover for its folder.")
+        page.addWidget(self.models_table)
         self.models_inventory = QTextEdit()
         self.models_inventory.setReadOnly(True)
         self.models_inventory.setMaximumHeight(180)
         self.models_inventory.setPlaceholderText("No model slots have been saved for this track yet.")
-        page.addWidget(self.models_inventory)
+        details = ExpandableSection("Checkpoint details and file locations", self.models_inventory)
+        page.addWidget(details)
+        self.model_actions_group = QGroupBox()
+        model_actions = ActionGrid()
+        self.model_actions_group.setLayout(model_actions)
+        page.addWidget(self.model_actions_group)
+        self.speed_search_section = QWidget()
+        speed_layout = QVBoxLayout(self.speed_search_section)
         search_form = QFormLayout()
         self.speed_search_target = QDoubleSpinBox()
         self.speed_search_target.setRange(1.0, 600.0)
@@ -845,20 +1306,21 @@ class PolyBotWindow(QWidget):
             "Whole-lap search adjusts actor outputs; section search changes forward control in one window."
         )
         search_form.addRow("Search method", self.speed_search_mode)
-        page.addLayout(search_form)
+        speed_layout.addLayout(search_form)
         speed_button = QPushButton("Optimize TQC champion speed")
         speed_button.setToolTip(
             "Test small actor-output changes on live laps. Save faster champions only after full confirmation."
         )
         speed_button.clicked.connect(self._start_speed_search)
-        page.addWidget(speed_button)
+        speed_layout.addWidget(speed_button)
+        self._add_workflow(page, "TQC · Actor speed search", self.speed_search_section)
         self.adaptation_section = QWidget()
         adaptation_layout = QVBoxLayout(self.adaptation_section)
         adaptation_layout.addWidget(QLabel("Tuned champion adaptation (advanced)"))
         preset = QPushButton("Load tuned champion adaptation preset")
         preset.clicked.connect(self._load_adaptation_preset)
         adaptation_layout.addWidget(preset)
-        adaptation_actions = QHBoxLayout()
+        adaptation_actions = ActionGrid(2)
         adaptation_layout.addLayout(adaptation_actions)
         for label, stage in (("Collect local replay", "collect"),
                               ("Validate local replay", "validate"),
@@ -870,7 +1332,7 @@ class PolyBotWindow(QWidget):
             button = QPushButton(label)
             button.clicked.connect(lambda _checked=False, selected=stage: self._start_adaptation(selected))
             adaptation_actions.addWidget(button)
-        page.addWidget(self.adaptation_section)
+        self._add_workflow(page, "TQC · Champion adaptation", self.adaptation_section)
         self.distillation_section = QWidget()
         distill_layout = QVBoxLayout(self.distillation_section)
         distill_layout.addWidget(QLabel("Bake proven TQC policy overlays into the actor (advanced)"))
@@ -908,7 +1370,7 @@ class PolyBotWindow(QWidget):
         )
         distill_form.addRow("Bake kinds (optional)", self.distillation_bake_kinds)
         distill_layout.addLayout(distill_form)
-        distill_actions = QHBoxLayout()
+        distill_actions = ActionGrid(2)
         for label, command in (
             ("Snapshot champion", "snapshot"), ("Collect teacher data", "collect"),
             ("Train actor student", "train"), ("Validate student", "validate"),
@@ -922,7 +1384,7 @@ class PolyBotWindow(QWidget):
         self.distillation_status = QLabel("Air-brake controls remain low-level and are retained through baking.")
         self.distillation_status.setWordWrap(True)
         distill_layout.addWidget(self.distillation_status)
-        page.addWidget(self.distillation_section)
+        self._add_workflow(page, "TQC · Policy distillation", self.distillation_section)
         self.teacher_student_section = QWidget()
         teacher_student_layout = QVBoxLayout(self.teacher_student_section)
         teacher_student_layout.addWidget(QLabel(
@@ -965,7 +1427,7 @@ class PolyBotWindow(QWidget):
         teacher_student_layout.addLayout(teacher_student_form)
         teacher_student_layout.addWidget(self.dagger_until_finishing)
         teacher_student_layout.addWidget(self.dagger_continue_rl)
-        teacher_student_actions = QHBoxLayout()
+        teacher_student_actions = ActionGrid(2)
         for label, stage in (
             ("Collect", "collect"), ("Pretrain actor", "pretrain"),
             ("Validate (5 laps)", "validate"), ("Value warmup", "value_warmup"),
@@ -988,7 +1450,7 @@ class PolyBotWindow(QWidget):
         self.teacher_student_log.setReadOnly(True)
         self.teacher_student_log.setMaximumHeight(100)
         teacher_student_layout.addWidget(self.teacher_student_log)
-        page.addWidget(self.teacher_student_section)
+        self._add_workflow(page, "PPO · Learn from a TQC teacher", self.teacher_student_section)
         self.wr_search_section = QWidget()
         wr_layout = QVBoxLayout(self.wr_search_section)
         wr_layout.addWidget(QLabel("WR Pace Optimizer · frozen TQC policy · live lap-time search"))
@@ -1042,7 +1504,7 @@ class PolyBotWindow(QWidget):
         region_row.addWidget(self.wr_region_end)
         wr_layout.addLayout(region_row)
         wr_layout.addLayout(wr_form)
-        wr_actions = QHBoxLayout()
+        wr_actions = ActionGrid(2)
         load_wr_profile = QPushButton("Load Summer 1 WR profile")
         load_wr_profile.clicked.connect(self._load_wr_profile)
         wr_actions.addWidget(load_wr_profile)
@@ -1069,7 +1531,7 @@ class PolyBotWindow(QWidget):
         section_layout.addWidget(QLabel(
             "Autonomous Section Optimizer · sequential 10% sweep, then promising-section refinement"
         ))
-        section_actions = QHBoxLayout()
+        section_actions = ActionGrid(2)
         for label, hours in (("Start 1 hour", 1), ("Start 4 hours", 4), ("Run until stopped", None)):
             button = QPushButton(label)
             button.clicked.connect(lambda _checked=False, budget=hours: self._start_section_optimizer(budget))
@@ -1094,7 +1556,7 @@ class PolyBotWindow(QWidget):
         self.section_optimizer_status.setWordWrap(True)
         section_layout.addWidget(self.section_optimizer_status)
         wr_layout.addWidget(self.section_optimizer_section)
-        page.addWidget(self.wr_search_section)
+        self._add_workflow(page, "TQC · Pace and section optimization", self.wr_search_section)
         self.pace_polish_section = QWidget()
         polish_layout = QVBoxLayout(self.pace_polish_section)
         polish_layout.addWidget(QLabel("Pace polishing: conservative TQC gradients from champion"))
@@ -1112,7 +1574,7 @@ class PolyBotWindow(QWidget):
             button.setToolTip("Screen candidates, then confirm faster laps before saving champion.")
             button.clicked.connect(lambda _checked=False, selected=mode: self._start_pace_search(selected))
             search_actions.addWidget(button)
-        page.addWidget(self.pace_polish_section)
+        self._add_workflow(page, "TQC · Conservative pace polishing", self.pace_polish_section)
         for label, handler, description in (
             ("Guided new run", self._guided_new_run,
              "Choose a track, algorithm, goal, device and preset, then review exact values."),
@@ -1126,6 +1588,8 @@ class PolyBotWindow(QWidget):
              "Test latest deterministically without updating it."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
              "Test the best proven policy deterministically."),
+            ("Cache initialization ghost", lambda: self._model_command("evaluate", "champion", bootstrap=True),
+             "Verify the champion for five laps and save the loaded initialization ghost for future sessions."),
             ("Play champion", lambda: self._model_command("drive", "champion"),
              "Drive one real-time lap using the champion policy."),
             ("Play latest", lambda: self._model_command("drive", "latest"),
@@ -1138,40 +1602,154 @@ class PolyBotWindow(QWidget):
             button = QPushButton(label)
             button.setToolTip(description)
             button.clicked.connect(handler)
-            page.addWidget(button)
+            model_actions.addWidget(button)
         self.stop_button = QPushButton("Stop cleanly")
         self.stop_button.setToolTip("Ask training to stop after this step and save latest state.")
         self.stop_button.clicked.connect(self._stop)
-        page.addWidget(self.stop_button)
+
+    def _add_workflow(self, layout: QVBoxLayout, title: str, content: QWidget) -> None:
+        for label in content.findChildren(QLabel):
+            label.setWordWrap(True)
+        section = ExpandableSection(title, content)
+        self.workflow_sections.append(section)
+        layout.addWidget(section)
 
     def _replay_swarm_tab(self) -> None:
-        self.replay_swarm_page, tab_layout = self._page("Replay Swarm", scrollable=False)
+        self.replay_swarm_page, tab_layout = self._page("Replay", scrollable=False)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
         page = QVBoxLayout(content)
+        page.setContentsMargins(18, 16, 18, 16)
+        page.setSpacing(10)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
         page.setAlignment(Qt.AlignmentFlag.AlignTop)
         scroll.setWidget(content)
         tab_layout.addWidget(scroll)
-        form = QFormLayout()
 
+        intro = QLabel(
+            "Replays are saved automatically during live training. Pick a run and watch one attempt, "
+            "or tick several attempts and compare them together."
+        )
+        intro.setWordWrap(True)
+        page.addWidget(intro)
+        self.replay_recording = QComboBox()
+        self.replay_recording.addItems(("Automatic for live training", "Always record", "Do not record"))
+        self.replay_recording.setToolTip("Automatic records PolyTrack/WebSocket runs and skips mock runs.")
+        self.replay_recording.currentIndexChanged.connect(self._replay_recording_changed)
+        self.general["visual_replay_enabled"].currentTextChanged.connect(
+            self._general_replay_recording_changed
+        )
+        recording_row = QHBoxLayout()
+        recording_row.addWidget(QLabel("Save replays"))
+        recording_row.addWidget(self.replay_recording)
+        page.addLayout(recording_row)
+
+        run_form = QFormLayout()
         self.replay_swarm_algorithm = QComboBox()
         self.replay_swarm_algorithm.addItems(("grtqc", "tqc", "ppo"))
         self.replay_swarm_algorithm.setCurrentText("grtqc")
         self.replay_swarm_algorithm.currentTextChanged.connect(self._refresh_replay_runs)
-        form.addRow("Algorithm", self.replay_swarm_algorithm)
+        run_form.addRow("Algorithm", self.replay_swarm_algorithm)
         self.replay_swarm_run = QComboBox()
         self.replay_swarm_run.currentIndexChanged.connect(self._replay_swarm_run_changed)
-        form.addRow("Recorded run", self.replay_swarm_run)
+        run_form.addRow("Saved run", self.replay_swarm_run)
+        refresh_runs = QPushButton("Refresh runs")
+        refresh_runs.setToolTip("Find replays saved since this window opened.")
+        refresh_runs.clicked.connect(self._refresh_replay_runs)
+        run_form.addRow(refresh_runs)
         self.replay_swarm_runs_status = QLabel()
         self.replay_swarm_runs_status.setWordWrap(True)
-        form.addRow(self.replay_swarm_runs_status)
+        run_form.addRow(self.replay_swarm_runs_status)
+        page.addLayout(run_form)
 
-        self.replay_swarm_external = QCheckBox("Browse external replay folder (Advanced)")
+        page.addWidget(QLabel("Click an attempt to watch it. Tick its box to include it in a comparison:"))
+        self.replay_episode_list = QListWidget()
+        self.replay_episode_list.setSelectionMode(QListWidget.SelectionMode.SingleSelection)
+        self.replay_episode_list.setMinimumHeight(160)
+        self.replay_episode_list.itemChanged.connect(self._update_replay_group_count)
+        page.addWidget(self.replay_episode_list)
+        group_actions = QHBoxLayout()
+        select_all = QPushButton("Select all attempts")
+        select_all.clicked.connect(lambda: self._check_replay_group(True))
+        uncheck_all = QPushButton("Clear selection")
+        uncheck_all.clicked.connect(lambda: self._check_replay_group(False))
+        self.replay_group_count = QLabel("No attempts selected; comparison uses all matching attempts")
+        self.replay_group_count.setWordWrap(True)
+        group_actions.addWidget(select_all)
+        group_actions.addWidget(uncheck_all)
+        group_actions.addWidget(self.replay_group_count)
+        page.addLayout(group_actions)
+
+        self.replay_swarm_action_buttons: list[QPushButton] = []
+        action_row = QHBoxLayout()
+        self.replay_single_play = QPushButton("Watch selected attempt")
+        self.replay_single_play.setToolTip("Play the highlighted attempt in PolyTrack.")
+        self.replay_single_play.clicked.connect(lambda: self._submit_replay_swarm("single_play"))
+        action_row.addWidget(self.replay_single_play)
+        self.replay_swarm_action_buttons.append(self.replay_single_play)
+        compare_button = QPushButton("Compare selected attempts")
+        compare_button.setToolTip(
+            "Play checked attempts together. With none checked, compare all matching attempts in this run."
+        )
+        compare_button.clicked.connect(lambda: self._submit_replay_swarm("play"))
+        action_row.addWidget(compare_button)
+        self.replay_swarm_action_buttons.append(compare_button)
+        page.addLayout(action_row)
+        self.replay_swarm_loaded_ghosts = QCheckBox("Play alongside loaded ghosts")
+        self.replay_swarm_loaded_ghosts.setToolTip(
+            "Keep PolyTrack ghosts already loaded in the race visible during replay, and match their opacity to the replay."
+        )
+        self.replay_swarm_loaded_ghosts.toggled.connect(
+            lambda _enabled: self._submit_replay_swarm("configure")
+        )
+        page.addWidget(self.replay_swarm_loaded_ghosts)
+
+        controls = QHBoxLayout()
+        for label, action in (("Pause", "pause"), ("Resume", "resume"),
+                              ("Restart", "restart"), ("Clear replays", "clear")):
+            button = QPushButton(label)
+            button.clicked.connect(lambda _checked=False, selected=action: self._submit_replay_swarm(selected))
+            controls.addWidget(button)
+            self.replay_swarm_action_buttons.append(button)
+        page.addLayout(controls)
+        seek_row = QHBoxLayout()
+        self.replay_swarm_seek = QDoubleSpinBox()
+        self.replay_swarm_seek.setRange(0.0, 1_000_000.0)
+        self.replay_swarm_seek.setDecimals(2)
+        seek_row.addWidget(QLabel("Jump to time (seconds)"))
+        seek_row.addWidget(self.replay_swarm_seek)
+        jump = QPushButton("Jump")
+        jump.clicked.connect(lambda: self._submit_replay_swarm("seek"))
+        seek_row.addWidget(jump)
+        self.replay_swarm_action_buttons.append(jump)
+        page.addLayout(seek_row)
+
+        advanced_toggle = QToolButton()
+        self.replay_advanced_toggle = advanced_toggle
+        advanced_toggle.setText("Advanced filters and playback settings")
+        advanced_toggle.setCheckable(True)
+        advanced_toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        advanced_toggle.setArrowType(Qt.ArrowType.RightArrow)
+        page.addWidget(advanced_toggle)
+        advanced_content = QWidget()
+        self.replay_advanced_content = advanced_content
+        advanced_layout = QVBoxLayout(advanced_content)
+        advanced_content.setVisible(False)
+        advanced_toggle.toggled.connect(advanced_content.setVisible)
+        advanced_toggle.toggled.connect(
+            lambda expanded: advanced_toggle.setArrowType(
+                Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+            )
+        )
+        page.addWidget(advanced_content)
+
+        advanced_form = QFormLayout()
+        self.replay_swarm_external = QCheckBox("Browse an external replay folder")
         self.replay_swarm_external.toggled.connect(self._toggle_external_replay_path)
-        form.addRow(self.replay_swarm_external)
+        advanced_form.addRow(self.replay_swarm_external)
         self.replay_swarm_path = QLineEdit()
-        self.replay_swarm_path.setPlaceholderText("Replay run folder or parent containing replay runs")
+        self.replay_swarm_path.setPlaceholderText("Replay run folder or parent folder")
         path_row = QHBoxLayout()
         path_row.addWidget(self.replay_swarm_path)
         browse = QPushButton("Browse...")
@@ -1180,8 +1758,11 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_external_row = QWidget()
         self.replay_swarm_external_row.setLayout(path_row)
         self.replay_swarm_external_row.setVisible(False)
-        form.addRow("External replay run", self.replay_swarm_external_row)
+        advanced_form.addRow("External replay folder", self.replay_swarm_external_row)
 
+        self.replay_swarm_container = QGroupBox("Compare filters and appearance")
+        swarm_layout = QVBoxLayout(self.replay_swarm_container)
+        swarm_form = QFormLayout()
         self.replay_swarm_step_min = QSpinBox()
         self.replay_swarm_step_min.setRange(0, 2_000_000_000)
         self.replay_swarm_step_min.setValue(0)
@@ -1193,19 +1774,17 @@ class PolyBotWindow(QWidget):
         steps_row.addWidget(self.replay_swarm_step_min)
         steps_row.addWidget(QLabel("to"))
         steps_row.addWidget(self.replay_swarm_step_max)
-        form.addRow("Episode-start training steps", steps_row)
-
+        swarm_form.addRow("Training-step range", steps_row)
         self.replay_swarm_episode_min = QLineEdit()
         self.replay_swarm_episode_min.setPlaceholderText("Any")
         self.replay_swarm_episode_max = QLineEdit()
         self.replay_swarm_episode_max.setPlaceholderText("Any")
         episodes_row = QHBoxLayout()
-        episodes_row.addWidget(QLabel("From"))
+        episodes_row.addWidget(QLabel("From episode"))
         episodes_row.addWidget(self.replay_swarm_episode_min)
         episodes_row.addWidget(QLabel("to"))
         episodes_row.addWidget(self.replay_swarm_episode_max)
-        form.addRow("Episode IDs (optional)", episodes_row)
-
+        swarm_form.addRow("Episode range", episodes_row)
         self.replay_swarm_finished = QCheckBox("Finished only")
         self.replay_swarm_failed = QCheckBox("Failed or timed out only")
         self.replay_swarm_finished.toggled.connect(
@@ -1217,8 +1796,7 @@ class PolyBotWindow(QWidget):
         status_row = QHBoxLayout()
         status_row.addWidget(self.replay_swarm_finished)
         status_row.addWidget(self.replay_swarm_failed)
-        form.addRow("Status filter", status_row)
-
+        swarm_form.addRow("Attempt status", status_row)
         self.replay_swarm_max_cars = QSpinBox()
         self.replay_swarm_max_cars.setRange(1, MAX_REPLAY_GHOSTS)
         self.replay_swarm_max_cars.setValue(100)
@@ -1229,24 +1807,42 @@ class PolyBotWindow(QWidget):
         selection_row.addWidget(self.replay_swarm_max_cars)
         selection_row.addWidget(QLabel("Sampling seed"))
         selection_row.addWidget(self.replay_swarm_seed)
-        form.addRow("Selection", selection_row)
-
+        swarm_form.addRow("Large groups", selection_row)
         self.replay_swarm_color_min = QSpinBox()
-        self.replay_swarm_color_min.setRange(0, 2_000_000_000)
+        self.replay_swarm_color_min.setRange(0, 0)
         self.replay_swarm_color_min.setValue(0)
+        self.replay_swarm_color_min.setEnabled(False)
         self.replay_swarm_color_max = QSpinBox()
-        self.replay_swarm_color_max.setRange(0, 2_000_000_000)
-        self.replay_swarm_color_max.setValue(1_000_000)
+        self.replay_swarm_color_max.setRange(1, 2_000_000_000)
+        self.replay_swarm_color_max.setValue(2_000_000)
+        self.replay_swarm_color_max.setGroupSeparatorShown(True)
+        self.replay_swarm_color_max.setToolTip(
+            "Training step shown as green. Earlier steps blend from red through orange, yellow, "
+            "and yellow-green. Later steps stay green. Changing runs keeps this setting."
+        )
         color_row = QHBoxLayout()
-        color_row.addWidget(QLabel("Min step"))
-        color_row.addWidget(self.replay_swarm_color_min)
-        color_row.addWidget(QLabel("Max step"))
+        color_row.addWidget(QLabel("Training age"))
+        gradient = QLabel("0")
+        gradient.setMinimumWidth(140)
+        gradient.setStyleSheet(
+            "color: black; padding: 4px; border-radius: 3px; "
+            "background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            "stop:0 #ff0000,stop:0.25 #ff8000,stop:0.5 #ffff00,"
+            "stop:0.75 #80ff00,stop:1 #00ff00);"
+        )
+        gradient.setToolTip("Red → orange → yellow → yellow-green → green, based on recorded training steps.")
+        color_row.addWidget(gradient, 1)
+        color_row.addWidget(QLabel("Green at step"))
         color_row.addWidget(self.replay_swarm_color_max)
-        form.addRow("Training-age colours", color_row)
+        apply_colors = QPushButton("Apply colours")
+        apply_colors.setToolTip("Update the loaded replay colours without restarting playback.")
+        apply_colors.clicked.connect(lambda: self._submit_replay_swarm("configure"))
+        color_row.addWidget(apply_colors)
+        self.replay_swarm_action_buttons.append(apply_colors)
+        page.insertLayout(page.indexOf(self.replay_episode_list), color_row)
         self.replay_swarm_color_stops = QLineEdit()
-        self.replay_swarm_color_stops.setPlaceholderText("Optional stops, e.g. 0:#ff0000, 500000:#ffff00")
-        form.addRow("Custom colour stops", self.replay_swarm_color_stops)
-
+        self.replay_swarm_color_stops.setPlaceholderText("Optional, e.g. 0:#ff0000, 500000:#ffff00")
+        swarm_form.addRow("Custom colors", self.replay_swarm_color_stops)
         self.replay_swarm_speed = QDoubleSpinBox()
         self.replay_swarm_speed.setRange(0.1, 8.0)
         self.replay_swarm_speed.setSingleStep(0.1)
@@ -1254,72 +1850,69 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_opacity = QDoubleSpinBox()
         self.replay_swarm_opacity.setRange(0.0, 1.0)
         self.replay_swarm_opacity.setSingleStep(0.05)
-        self.replay_swarm_opacity.setValue(0.5)
+        self.replay_swarm_opacity.setValue(1.0)
         self.replay_swarm_end = QComboBox()
-        self.replay_swarm_end.addItems(("fade", "disappear", "freeze"))
+        self.replay_swarm_end.addItems(("fade", "disappear"))
         self.replay_swarm_fade = QDoubleSpinBox()
         self.replay_swarm_fade.setRange(0.0, 10.0)
         self.replay_swarm_fade.setSingleStep(0.1)
         self.replay_swarm_fade.setValue(0.75)
-        self.replay_swarm_seek = QDoubleSpinBox()
-        self.replay_swarm_seek.setRange(0.0, 1_000_000.0)
-        self.replay_swarm_seek.setDecimals(2)
+        appearance_row = QHBoxLayout()
+        for label, widget in (("Speed", self.replay_swarm_speed),
+                              ("Opacity", self.replay_swarm_opacity),
+                              ("When done", self.replay_swarm_end),
+                              ("Fade seconds", self.replay_swarm_fade)):
+            appearance_row.addWidget(QLabel(label))
+            appearance_row.addWidget(widget)
+        swarm_form.addRow("Appearance", appearance_row)
         self.replay_swarm_port = QSpinBox()
         self.replay_swarm_port.setRange(1, 65535)
         self.replay_swarm_port.setValue(8765)
-        playback_row = QHBoxLayout()
-        for label, widget in (
-            ("Speed", self.replay_swarm_speed),
-            ("Opacity", self.replay_swarm_opacity),
-            ("End", self.replay_swarm_end),
-            ("Fade (s)", self.replay_swarm_fade),
-        ):
-            playback_row.addWidget(QLabel(label))
-            playback_row.addWidget(widget)
-        form.addRow("Playback", playback_row)
-        bridge_row = QHBoxLayout()
-        bridge_row.addWidget(QLabel("Seek to seconds"))
-        bridge_row.addWidget(self.replay_swarm_seek)
-        bridge_row.addWidget(QLabel("Local bridge port"))
-        bridge_row.addWidget(self.replay_swarm_port)
-        form.addRow("Bridge", bridge_row)
-        page.addLayout(form)
-
-        note = QLabel(
-            "Step filtering and colour use each episode's global training step at episode start. "
-            "Inspect reads indexes only; load and playback connect to the running PolyTrack bridge."
-        )
-        note.setWordWrap(True)
-        page.addWidget(note)
-
-        actions = QGridLayout()
-        self.replay_swarm_action_buttons: list[QPushButton] = []
+        swarm_form.addRow("Bridge port", self.replay_swarm_port)
+        swarm_layout.addLayout(swarm_form)
+        advanced_layout.addLayout(advanced_form)
+        advanced_layout.addWidget(self.replay_swarm_container)
+        advanced_actions = QGridLayout()
         for index, (label, action) in enumerate((
-            ("Inspect selection", "inspect"),
-            ("Set full run range", "range"),
-            ("Load swarm", "load"),
-            ("Play swarm", "play"),
-            ("Pause", "pause"),
-            ("Resume", "resume"),
-            ("Restart", "restart"),
-            ("Seek", "seek"),
-            ("Apply settings", "configure"),
-            ("Clear ghosts", "clear"),
+            ("Load paused", "load"), ("Inspect selection", "inspect"),
+            ("Set full run range", "range"), ("Apply settings", "configure"),
             ("Bridge status", "status"),
         )):
             button = QPushButton(label)
             button.clicked.connect(lambda _checked=False, selected=action: self._submit_replay_swarm(selected))
-            actions.addWidget(button, index // 4, index % 4)
+            advanced_actions.addWidget(button, index // 3, index % 3)
             self.replay_swarm_action_buttons.append(button)
-        page.addLayout(actions)
+        advanced_layout.addLayout(advanced_actions)
 
         self.replay_swarm_output = QTextEdit()
         self.replay_swarm_output.setReadOnly(True)
-        self.replay_swarm_output.setPlaceholderText("Selection reports, bridge results, and errors appear here.")
+        self.replay_swarm_output.setPlaceholderText("Replay status and messages appear here.")
         self.replay_swarm_output.document().setMaximumBlockCount(500)
-        self.replay_swarm_output.setMinimumHeight(180)
-        page.addWidget(self.replay_swarm_output, 1)
+        self.replay_swarm_output.setMinimumHeight(95)
+        page.addWidget(self.replay_swarm_output)
         self._refresh_replay_runs()
+
+    def _replay_recording_changed(self, index: int) -> None:
+        if not hasattr(self, "general"):
+            return
+        value = ("automatic", "enabled", "disabled")[index]
+        widget = self.general["visual_replay_enabled"]
+        widget.blockSignals(True)
+        widget.setCurrentText(value)
+        widget.blockSignals(False)
+        self._refresh_run_summary()
+
+    def _general_replay_recording_changed(self, value: str) -> None:
+        if not hasattr(self, "replay_recording"):
+            return
+        text = {
+            "automatic": "Automatic for live training",
+            "enabled": "Always record",
+            "disabled": "Do not record",
+        }.get(value, "Automatic for live training")
+        self.replay_recording.blockSignals(True)
+        self.replay_recording.setCurrentText(text)
+        self.replay_recording.blockSignals(False)
 
     def _toggle_external_replay_path(self, enabled: bool) -> None:
         self.replay_swarm_external_row.setVisible(enabled)
@@ -1337,11 +1930,27 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_run.blockSignals(True)
         self.replay_swarm_run.clear()
         try:
-            for run in workspace.list_replay_runs(algorithm):
-                summary = f"{run.run_id} · {run.episode_count} episodes"
-                if run.minimum_step is not None and run.maximum_step is not None:
-                    summary += f" · steps {run.minimum_step:,}–{run.maximum_step:,}"
+            runs = workspace.list_replay_runs(algorithm)
+            for run in runs:
+                entries = load_replay_index(run.directory)
+                finished = [entry for entry in entries if entry.get("lap_time_s") is not None]
+                best = min((float(entry["lap_time_s"]) for entry in finished), default=None)
+                timestamp = run.timestamp if isinstance(run.timestamp, str) else run.run_id
+                try:
+                    timestamp = datetime.fromisoformat(timestamp.replace("Z", "+00:00")).astimezone().strftime(
+                        "%d %b %H:%M"
+                    )
+                except ValueError:
+                    pass
+                summary = f"{timestamp} · {run.episode_count} attempts"
+                if best is not None:
+                    summary += f" · best {best:.3f}s"
                 self.replay_swarm_run.addItem(summary, str(run.directory.resolve()))
+            if runs:
+                self.replay_swarm_run.addItem(
+                    f"All runs · {sum(run.episode_count for run in runs)} episodes",
+                    str(workspace.visual_replays(algorithm).resolve()),
+                )
         except (OSError, ValueError) as exc:
             load_error = str(exc)
             self.replay_swarm_output.setPlainText(f"Could not list replay runs: {exc}")
@@ -1349,19 +1958,20 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_run.setCurrentIndex(selected if selected >= 0 else 0)
         self.replay_swarm_run.blockSignals(False)
         self._replay_swarm_run_changed()
+        self._refresh_replay_episodes()
         run_count = self.replay_swarm_run.count()
         if load_error:
             self.replay_swarm_runs_status.setText(f"Could not list replay runs: {load_error}")
         elif run_count:
             self.replay_swarm_runs_status.setText(
-                f"{run_count} recorded run(s) found for {self._selected_track().name} · "
-                f"{algorithm.upper()}. Select a run, then inspect its episodes."
+                f"{run_count - 1} saved run(s) for {self._selected_track().name}. "
+                "Refresh runs after training to see new attempts."
             )
         else:
             self.replay_swarm_runs_status.setText(
                 f"No saved replay runs found for {self._selected_track().name} · {algorithm.upper()}. "
-                "Start WebSocket training with visual replay recording set to Automatic or Enabled; "
-                "completed episodes will appear here."
+                "Start WebSocket training in PolyTrack with Save replays set to Automatic or Always record. "
+                "Each completed attempt will appear here."
             )
 
     def _replay_swarm_run_changed(self, _index: int = -1) -> None:
@@ -1369,6 +1979,67 @@ class PolyBotWindow(QWidget):
             return
         run_path = self.replay_swarm_run.currentData()
         self.replay_swarm_path.setText(run_path if isinstance(run_path, str) else "")
+        self._refresh_replay_episodes()
+        steps = [
+            self.replay_episode_list.item(index).data(Qt.ItemDataRole.UserRole)[1]["training_step_start"]
+            for index in range(self.replay_episode_list.count())
+        ]
+        if steps:
+            self.replay_swarm_step_min.setValue(min(steps))
+            self.replay_swarm_step_max.setValue(max(steps))
+
+    def _refresh_replay_episodes(self) -> None:
+        if not hasattr(self, "replay_episode_list"):
+            return
+        self.replay_episode_list.clear()
+        self._update_replay_group_count()
+        run_path = self._replay_swarm_path_value()
+        if not run_path:
+            return
+        try:
+            directories = resolve_replay_directories(run_path)
+            for directory in directories:
+                for entry in load_replay_index(directory):
+                    step = int(entry["training_step_start"])
+                    lap = entry.get("lap_time_s")
+                    status = str(entry["status"]).capitalize()
+                    lap_text = f"{float(lap):.3f}s" if lap is not None else f"{status} · {float(entry.get('final_progress_ratio', 0.0)):.0%} complete"
+                    label = f"Attempt {entry['episode_id'].rsplit('-', 1)[-1]} · {lap_text}"
+                    tooltip = (
+                        f"{status} · {float(entry.get('final_progress_m', 0.0)):.1f} m · "
+                        f"{entry['sample_count']} recorded positions · training step {step:,}"
+                    )
+                    item = QListWidgetItem(label)
+                    item.setToolTip(tooltip)
+                    item.setData(Qt.ItemDataRole.UserRole, (str(directory), entry))
+                    item.setFlags(item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                    item.setCheckState(Qt.CheckState.Unchecked)
+                    self.replay_episode_list.addItem(item)
+            if self.replay_episode_list.count():
+                self.replay_episode_list.setCurrentRow(0)
+        except (OSError, ValueError, KeyError) as exc:
+            self._append_replay_swarm_output(f"Could not list replay episodes: {exc}")
+
+    def _check_replay_group(self, checked: bool) -> None:
+        self.replay_episode_list.blockSignals(True)
+        for index in range(self.replay_episode_list.count()):
+            self.replay_episode_list.item(index).setCheckState(
+                Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked,
+            )
+        self.replay_episode_list.blockSignals(False)
+        self._update_replay_group_count()
+
+    def _update_replay_group_count(self, *_args: Any) -> None:
+        if not hasattr(self, "replay_group_count"):
+            return
+        count = sum(
+            self.replay_episode_list.item(index).checkState() == Qt.CheckState.Checked
+            for index in range(self.replay_episode_list.count())
+        )
+        self.replay_group_count.setText(
+            f"{count} attempt(s) selected for comparison" if count
+            else "No attempts selected; comparison uses all matching attempts",
+        )
 
     def _replay_swarm_path_value(self) -> str:
         if self.replay_swarm_external.isChecked():
@@ -1405,17 +2076,7 @@ class PolyBotWindow(QWidget):
             if episodes[0] < 0 or episodes[1] < episodes[0]:
                 raise ValueError("Episode IDs must be non-negative and ordered.")
 
-        raw_stops = [
-            stop.strip()
-            for stop in self.replay_swarm_color_stops.text().replace(",", "\n").splitlines()
-            if stop.strip()
-        ]
-        stops = parse_color_stops(raw_stops) if raw_stops else None
-        color_scale = ColorScale(
-            self.replay_swarm_color_min.value(),
-            self.replay_swarm_color_max.value(),
-            stops,
-        )
+        color_scale = self._replay_color_scale()
         return {
             "path": path,
             "track_slug": self._selected_track().slug,
@@ -1429,11 +2090,27 @@ class PolyBotWindow(QWidget):
             "color_scale": color_scale,
             "speed": self.replay_swarm_speed.value(),
             "opacity": self.replay_swarm_opacity.value(),
+            "play_alongside_loaded_ghosts": self.replay_swarm_loaded_ghosts.isChecked(),
             "end_behavior": self.replay_swarm_end.currentText(),
             "fade_duration_s": self.replay_swarm_fade.value(),
             "seek_seconds": self.replay_swarm_seek.value(),
             "port": self.replay_swarm_port.value(),
+            "selected_episodes": [
+                [item.data(Qt.ItemDataRole.UserRole)[1]["run_id"],
+                 item.data(Qt.ItemDataRole.UserRole)[1]["episode_id"]]
+                for index in range(self.replay_episode_list.count())
+                if (item := self.replay_episode_list.item(index)).checkState() == Qt.CheckState.Checked
+            ],
         }
+
+    def _replay_color_scale(self) -> ColorScale:
+        raw_stops = [
+            stop.strip()
+            for stop in self.replay_swarm_color_stops.text().replace(",", "\n").splitlines()
+            if stop.strip()
+        ]
+        return ColorScale(0, self.replay_swarm_color_max.value(),
+                          parse_color_stops(raw_stops) if raw_stops else None)
 
     @staticmethod
     def _replay_swarm_selection(config: dict[str, Any]) -> tuple[int, list[ReplaySelection], int]:
@@ -1453,6 +2130,17 @@ class PolyBotWindow(QWidget):
                 raise ValueError(
                     f"external replay contains episodes for another track; expected {expected_slug}"
                 )
+        selected_keys = {tuple(key) for key in config.get("selected_episodes", ())}
+        if selected_keys:
+            selected = [
+                ReplaySelection(directory, metadata)
+                for directory in directories
+                for metadata in load_replay_index(directory)
+                if (metadata["run_id"], metadata["episode_id"]) in selected_keys
+            ]
+            if len(selected) > config["max_cars"]:
+                raise ValueError("The checked episode group exceeds Maximum cars.")
+            return len(entries), sorted(selected, key=lambda item: (item.training_step, item.metadata["episode_id"])), len(selected)
         matching_count = len(
             filter_replays(
                 entries,
@@ -1474,6 +2162,8 @@ class PolyBotWindow(QWidget):
         return total_indexed, selected, matching_count
 
     def _submit_replay_swarm(self, action: str) -> None:
+        if action not in {"inspect", "range"} and not self._require_idle():
+            return
         try:
             if action == "range":
                 path = self._replay_swarm_path_value()
@@ -1492,12 +2182,23 @@ class PolyBotWindow(QWidget):
                     "seek_seconds": self.replay_swarm_seek.value(),
                     "speed": self.replay_swarm_speed.value(),
                     "opacity": self.replay_swarm_opacity.value(),
+                    "play_alongside_loaded_ghosts": self.replay_swarm_loaded_ghosts.isChecked(),
                     "end_behavior": self.replay_swarm_end.currentText(),
                     "fade_duration_s": self.replay_swarm_fade.value(),
+                    "color_scale": self._replay_color_scale() if action == "configure" else None,
                 }
             else:
-                config = self._replay_swarm_config()
-                config["action"] = action
+                if action in {"single_play", "single_load"}:
+                    item = self.replay_episode_list.currentItem()
+                    data = item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+                    if not isinstance(data, tuple) or len(data) != 2:
+                        raise ValueError("Select a replay episode first.")
+                    config = self._replay_swarm_config()
+                    config["single_selection"] = [data[0], data[1]]
+                    config["action"] = action
+                else:
+                    config = self._replay_swarm_config()
+                    config["action"] = action
         except (ValueError, OSError) as exc:
             self._append_replay_swarm_output(f"Validation error: {exc}")
             return
@@ -1529,6 +2230,32 @@ class PolyBotWindow(QWidget):
             steps = [int(metadata["training_step_start"]) for metadata in entries]
             return {"_set_step_range": [min(steps), max(steps)], "episode_count": len(entries)}
 
+        if action in {"single_play", "single_load"}:
+            directory_text, metadata = config["single_selection"]
+            directory = Path(directory_text)
+            selection = ReplaySelection(directory, metadata)
+            payload = load_replay_episode(
+                directory, metadata, include_optional=False, include_hud=True,
+            )
+            options = ReplayPlaybackOptions(
+                speed=config.get("speed", 1.0), opacity=config.get("opacity", 1.0),
+                play_alongside_loaded_ghosts=config.get("play_alongside_loaded_ghosts", False),
+                color=config["color_scale"].hex_color(selection.training_step),
+                end_behavior=config.get("end_behavior", "fade"),
+                fade_duration_s=config.get("fade_duration_s", 0.75),
+            )
+            transport = WebSocketServerTransport(
+                port=config["port"], connect_timeout_s=60.0, request_timeout_s=35.0,
+            )
+            try:
+                result = send_replay_playback(
+                    transport, action="play" if action == "single_play" else "load",
+                    payload=payload, options=options,
+                )
+            finally:
+                transport.close()
+            return {"action": action, "episode": selection.metadata["episode_id"], "result": result}
+
         if action in {"inspect", "play", "load"}:
             total, selected, matching_count = self._replay_swarm_selection(config)
             if action == "inspect":
@@ -1549,13 +2276,17 @@ class PolyBotWindow(QWidget):
                 raise ValueError(
                     f"Selection exceeds the maximum total sample count ({MAX_REPLAY_TOTAL_SAMPLES})."
                 )
+            camera_selection = min(selected, key=replay_camera_rank)
             payloads = [
                 SelectedReplayPayload(
                     item,
-                    load_replay_episode(item.replay_directory, item.metadata, include_optional=False),
-                    config["color_scale"].hex_color(item.training_step),
+                    load_replay_episode(
+                        item.replay_directory, item.metadata,
+                        include_optional=False, include_hud=item is camera_selection,
+                    ),
+                    color,
                 )
-                for item in selected
+                for item, color in zip(selected, swarm_colors(selected, config["color_scale"]), strict=True)
             ]
             selection_info = {
                 "total_indexed_episodes": total,
@@ -1568,12 +2299,13 @@ class PolyBotWindow(QWidget):
 
         settings = ReplayPlaybackOptions(
             speed=config.get("speed", 1.0),
-            opacity=config.get("opacity", 0.5),
+            opacity=config.get("opacity", 1.0),
+            play_alongside_loaded_ghosts=config.get("play_alongside_loaded_ghosts", False),
             end_behavior=config.get("end_behavior", "fade"),
             fade_duration_s=config.get("fade_duration_s", 0.75),
         )
         update_settings = (
-            ("speed", "opacity", "end_behavior", "fade_duration")
+            ("speed", "opacity", "end_behavior", "fade_duration", "loaded_ghosts")
             if action in {"play", "load", "configure"}
             else ()
         )
@@ -1590,6 +2322,7 @@ class PolyBotWindow(QWidget):
                 options=settings,
                 seek_seconds=config.get("seek_seconds") if action == "seek" else None,
                 update_settings=update_settings,
+                color_scale=config.get("color_scale") if action == "configure" else None,
             )
         finally:
             transport.close()
@@ -1604,7 +2337,21 @@ class PolyBotWindow(QWidget):
                 f"Set training-step window to {minimum}:{maximum} ({result['episode_count']} episodes indexed)."
             )
         else:
-            self._append_replay_swarm_output(json.dumps(result, indent=2, allow_nan=False))
+            outcome = result.get("result")
+            if isinstance(outcome, dict) and "loaded_ghosts" in outcome:
+                message = (
+                    f"Loaded {outcome['loaded_ghosts']} replay car(s); "
+                    f"{outcome['visible_ghosts']} visible at {outcome['playback_seconds']:.2f}s."
+                )
+                camera = outcome.get("leader_episode_id")
+                if camera:
+                    message += f" Camera follows the best run ({camera.rsplit(':', 1)[-1]})."
+                self._append_replay_swarm_output(message)
+            elif result.get("action") in {"single_play", "single_load"}:
+                verb = "Playing" if result["action"] == "single_play" else "Loaded"
+                self._append_replay_swarm_output(f"{verb} attempt {result['episode']}.")
+            else:
+                self._append_replay_swarm_output(json.dumps(result, indent=2, allow_nan=False))
 
     def _replay_swarm_failed(self, action: str, message: str) -> None:
         self._append_replay_swarm_output(f"{action.capitalize()} failed: {message}")
@@ -1625,7 +2372,7 @@ class PolyBotWindow(QWidget):
             "Show the policy's actual inputs and outputs, applied controls, episode state, "
             "and reward breakdown inside PolyTrack. Updates follow policy decisions; "
             "simulator ticks and frame skip are shown separately. Requires WebSocket training "
-            "and PolyBot bridge 0.1.39 or newer for PolyTrack 0.6.3."
+            "and PolyBot bridge 0.1.41 or newer for PolyTrack 0.6.3."
         )
         description.setWordWrap(True)
         page.addWidget(description)
@@ -1634,10 +2381,12 @@ class PolyBotWindow(QWidget):
         settings = self.ai_overlay_settings
         self.ai_overlay_widgets: dict[str, QWidget] = {}
         options: tuple[tuple[str, str, Any, str, tuple[str, ...]], ...] = (
-            ("enabled", "Enable overlay", settings.enabled,
-             "Send live AI telemetry frames to a bridge that advertises AI HUD support.", ()),
+            ("display_mode", "HUD mode", settings.display_mode,
+             "Choose a presentation for live driving or saved replay telemetry. Also switch modes in the game.", HUD_MODES),
+            ("wr_target_s", "World record target (seconds)", settings.wr_target_s,
+             "Set the verified WR target for WR Chase. Zero leaves the target unknown.", ()),
             ("preset", "Layout", settings.preset,
-             "Compact shows key driving inputs; Full shows every mapped policy input.", ("compact", "full")),
+             "Full uses a wider input grid. Modes show the most important 60% of inputs.", ("compact", "full")),
             ("scale", "Scale", settings.scale,
              "Scale the non-interactive overlay from 0.5× to 1.5×.", ()),
             ("show_episode_status", "Episode status", settings.show_episode_status,
@@ -1653,7 +2402,7 @@ class PolyBotWindow(QWidget):
             ("show_event_popups", "Event popups", settings.show_event_popups,
              "Briefly surface finish, crash, timeout, and other episode events.", ()),
             ("lookahead_points", "Lookahead points", settings.lookahead_points,
-             "Maximum number of route lookahead points shown when the Full layout is selected.", ()),
+             "Maximum route points shown in the upcoming-track diagram. The input list separately selects the most important 60%.", ()),
         )
         for name, label_text, value, help_text, choices in options:
             widget = _editor(value, help_text, choices)
@@ -1665,20 +2414,27 @@ class PolyBotWindow(QWidget):
             elif name == "lookahead_points":
                 assert isinstance(widget, QSpinBox)
                 widget.setRange(0, 12)
+            elif name == "wr_target_s":
+                assert isinstance(widget, QDoubleSpinBox)
+                widget.setRange(0, 3600)
+                widget.setDecimals(3)
             form.addRow(QLabel(label_text), widget)
             self.ai_overlay_widgets[name] = widget
-        save = QPushButton("Save / apply HUD settings")
+        save = QPushButton("Save / apply telemetry display settings")
         save.clicked.connect(self._save_ai_overlay_settings)
         page.addWidget(save)
         self.ai_overlay_status = QLabel()
         self.ai_overlay_status.setWordWrap(True)
         if self._ai_overlay_settings_error:
             self.ai_overlay_status.setText(
-                f"Settings could not be loaded; the overlay is disabled until saved: "
+                f"Settings could not be loaded; default display settings will be used until saved: "
                 f"{self._ai_overlay_settings_error}"
             )
         else:
-            self.ai_overlay_status.setText("Changes are applied to active training after saving.")
+            self.ai_overlay_status.setText(
+                "Use the PolyBot HUD button in the game page to show or hide the HUD. "
+                "These display settings affect incoming telemetry."
+            )
         page.addWidget(self.ai_overlay_status)
 
     def _save_ai_overlay_settings(self) -> bool:
@@ -1699,7 +2455,7 @@ class PolyBotWindow(QWidget):
 
     def _status_tab(self) -> None:
         _, page = self._page("Status")
-        self.warnings = QLabel("Warnings will appear here; unusual settings are suggestions, not blocks.")
+        self.warnings = QLabel("Configuration notes appear here when you start a run.")
         self.warnings.setWordWrap(True)
         self.warnings.setToolTip("These messages explain possible speed or stability tradeoffs.")
         page.addWidget(self.warnings)
@@ -1713,8 +2469,10 @@ class PolyBotWindow(QWidget):
         self.pace_status.setWordWrap(True)
         page.addWidget(self.pace_status)
         self._pace_champion_lap: float | None = None
-        metric_form = QFormLayout()
-        page.addLayout(metric_form)
+        metric_content = QWidget()
+        metric_form = QFormLayout(metric_content)
+        self.metric_details = ExpandableSection("Detailed training metrics", metric_content)
+        page.addWidget(self.metric_details)
         self.metric_widgets: dict[str, QLabel] = {}
         for name, info in METRIC_INFO.items():
             label = QLabel(info.label)
@@ -1730,20 +2488,18 @@ class PolyBotWindow(QWidget):
         self.log = QTextEdit()
         self.log.setReadOnly(True)
         self.log.document().setMaximumBlockCount(400)
+        self.log.setMinimumHeight(230)
         self.log.setToolTip(
             "Short summaries of training events. The JSONL file keeps every metric and reward term."
         )
-        page.addWidget(self.log)
+        page.addWidget(self.log, 1)
 
     def _toggle_advanced(self, enabled: bool) -> None:
         for form in (self.ppo_form, self.grtqc_form, self.tqc_form, self.curriculum_form):
             form.set_advanced(enabled)
         self.reward_scroll.setVisible(enabled)
-        self.pace_polish_section.setVisible(enabled)
-        self.adaptation_section.setVisible(enabled)
-        self.distillation_section.setVisible(enabled)
-        self.teacher_student_section.setVisible(enabled)
-        self.wr_search_section.setVisible(enabled)
+        for section in self.workflow_sections:
+            section.setVisible(enabled)
         self.section_optimizer_section.setVisible(enabled)
         for name in self.general_advanced:
             self.general[name].setVisible(enabled)
@@ -1770,8 +2526,9 @@ class PolyBotWindow(QWidget):
                 "It directly outputs continuous steering and signed throttle/brake demand."
             ),
             "grtqc": (
-                "GRTQC: the primary off-policy learner. It starts from the proven TQC actor, "
-                "warms gated quantile critics, then fine-tunes continuous controls."
+                "GRTQC: the primary off-policy learner. It learns continuous controls with gated "
+                "quantile critics and a replay buffer. Its training origin can be scratch or transfer; "
+                "continuing a checkpoint restores the origin saved with that model."
             ),
             "tqc": (
                 "TQC: off-policy. It reuses replay and learns continuous steering and pedal demand "
@@ -1796,12 +2553,14 @@ class PolyBotWindow(QWidget):
         self.preset.clear()
         self.preset.addItems(algorithm_presets(algorithm))
         self.preset.addItems(self.presets.list(algorithm))
+        self.preset.addItem("Custom")
         self.preset.setCurrentText("Balanced")
         self.preset.blockSignals(current)
         self._preset_changed("Balanced")
+        self._refresh_models()
 
     def _preset_changed(self, name: str) -> None:
-        if not name:
+        if not name or name == "Custom":
             return
         if name.startswith("Summer 1 -") and self._selected_track().slug != "summer-1":
             self.preset.blockSignals(True)
@@ -1814,6 +2573,7 @@ class PolyBotWindow(QWidget):
             if path is None:
                 return
             preset = self.presets.load(path)
+        self._last_algorithm_preset[self.algorithm.currentText()] = name
         {"ppo": self.ppo_form, "grtqc": self.grtqc_form, "tqc": self.tqc_form}[
             self.algorithm.currentText()
         ].load(preset)
@@ -1842,12 +2602,19 @@ class PolyBotWindow(QWidget):
         self._save_preset()
 
     def _reset_preset(self) -> None:
-        self._preset_changed(self.preset.currentText())
+        name = self.preset.currentText()
+        if name == "Custom":
+            name = self._last_algorithm_preset.get(self.algorithm.currentText(), "Balanced")
+            _set(self.preset, name)
+        self._preset_changed(name)
+
+    def _mark_algorithm_custom(self, *_args: Any) -> None:
+        _set(self.preset, "Custom")
 
     def _show_glossary(self) -> None:
         glossary = (
             "Policy / actor: a network that chooses steering and pedals in PPO or TQC.\n"
-            "Q-value: mean predicted future reward for one digital action.\n"
+            "Q-value: predicted future reward for a chosen action.\n"
             "Quantiles: critics' estimates of low-to-high possible future returns.\n"
             "Critic: a network estimating how useful actions or states may be.\n"
             "Environment step: one driving decision. Physics tick: one fixed simulator update.\n"
@@ -1859,7 +2626,7 @@ class PolyBotWindow(QWidget):
             "Learning rate: size of a gradient update. Gamma: weight on future reward.\n"
             "Entropy / exploration: encouragement to try different actions.\n"
             "Curriculum: shorter practice sections before or alongside full laps.\n"
-            "Teacher / ghost: an optional reference; the ghost also defines the route.\n"
+            "Racing line: saved route guidance used by the model. A ghost can initialize it.\n"
             "Evaluation: frozen, repeatable full-track test. Champion: best evaluated policy."
         )
         QMessageBox.information(self, "Training basics", glossary)
@@ -1981,7 +2748,7 @@ class PolyBotWindow(QWidget):
     def _load_reward_profile(self, name: str) -> None:
         if not name or name == "Custom":
             return
-        self._base_rewards = self.profiles.load(name)
+        self._base_rewards = self._session_reward_profiles.get(name) or self.profiles.load(name)
         self._reward_values = asdict(self._base_rewards)
         for key, widget in self.reward_basic.items():
             _set(widget, 1.0 if key.endswith("_multiplier") else self._reward_values[key])
@@ -2096,6 +2863,11 @@ class PolyBotWindow(QWidget):
                 value = "automatic" if value is None else "enabled" if value else "disabled"
             _set(widget, value)
         self.general["backend"].blockSignals(False)
+        if hasattr(self, "replay_recording"):
+            replay_index = {None: 0, True: 1, False: 2}[config.visual_replay_enabled]
+            self.replay_recording.blockSignals(True)
+            self.replay_recording.setCurrentIndex(replay_index)
+            self.replay_recording.blockSignals(False)
         self.curriculum_form.load(config.curriculum)
         self.custom_phases.setPlainText(json.dumps([asdict(phase) for phase in config.curriculum.phases], indent=2))
         self.custom_phases.setVisible(config.curriculum.mode == "custom")
@@ -2103,12 +2875,19 @@ class PolyBotWindow(QWidget):
         self.ppo_form.load(config.ppo or PPOConfig())
         self.grtqc_form.load(config.grtqc or GRTQCConfig())
         self.tqc_form.load(config.tqc or TQCConfig())
+        settings = {"ppo": config.ppo, "grtqc": config.grtqc, "tqc": config.tqc}[config.algorithm]
+        matching_preset = next((name for name, preset in algorithm_presets(config.algorithm).items()
+                                if preset == settings), "Custom")
+        _set(self.preset, matching_preset)
         self._reward_values = asdict(config.rewards)
         self._base_rewards = config.rewards
         self._refresh_reward_view()
         for key, widget in self.reward_basic.items():
             _set(widget, 1.0 if key.endswith("_multiplier") else self._reward_values[key])
         self.reward_profile.blockSignals(True)
+        if config.reward_profile and self.reward_profile.findText(config.reward_profile) < 0:
+            self.reward_profile.addItem(config.reward_profile)
+            self._session_reward_profiles[config.reward_profile] = config.rewards
         self.reward_profile.setCurrentText(config.reward_profile or "Custom")
         self.reward_profile.blockSignals(False)
         self._update_plan()
@@ -2133,6 +2912,8 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _load_config_dialog(self) -> None:
+        if not self._require_idle():
+            return
         name, _ = QFileDialog.getOpenFileName(
             self,
             "Load training configuration",
@@ -2154,18 +2935,77 @@ class PolyBotWindow(QWidget):
         champion = registry.slot(
             cfg.track_name, cfg.algorithm, "champion", track_slug=cfg.track_slug,
         )
-        if not (champion / "metadata.json").is_file():
-            return latest
-        if not (latest / "metadata.json").is_file():
-            return champion
-        best_eval = registry.read_metadata(champion).evaluation
-        latest_eval = registry.read_metadata(latest).evaluation
-        if best_eval is not None and (
-            latest_eval is None
-            or EvaluationResult(**best_eval).rank() >= EvaluationResult(**latest_eval).rank()
-        ):
-            return champion
-        return latest
+        compatible: list[tuple[Path, Any]] = []
+        champion_origin = None
+        if cfg.algorithm == "grtqc" and (champion / "metadata.json").is_file():
+            champion_origin = TrainingConfig.from_dict(
+                registry.read_metadata(champion).training_config,
+            ).grtqc.training_origin
+        for candidate in (champion, latest):
+            if not (candidate / "metadata.json").is_file():
+                continue
+            metadata = registry.read_metadata(candidate)
+            try:
+                saved_config = TrainingConfig.from_dict(metadata.training_config)
+                if saved_config.algorithm != cfg.algorithm or saved_config.track_slug != cfg.track_slug:
+                    continue
+                if cfg.algorithm == "grtqc" and (
+                    champion_origin is not None
+                    and saved_config.grtqc.training_origin != champion_origin
+                ):
+                    continue
+                registry.validate(
+                    metadata, saved_config,
+                    backend_for(saved_config.algorithm).action_adapter(saved_config).schema,
+                )
+            except (TypeError, ValueError, KeyError):
+                # Resume uses the saved model configuration, not GUI defaults.
+                # Keep competing learners in the champion's experiment family.
+                continue
+            compatible.append((candidate, metadata.evaluation))
+        if not compatible:
+            raise ValueError("No compatible champion or latest checkpoint exists for this profile")
+        compatible.sort(
+            key=lambda item: EvaluationResult(**item[1]).rank() if item[1] else (0,),
+            reverse=True,
+        )
+        return compatible[0][0]
+
+    @staticmethod
+    def _resume_configuration(cfg: TrainingConfig, metadata: Any) -> TrainingConfig:
+        """Restore checkpoint architecture and learning settings before loading its weights."""
+        saved = TrainingConfig.from_dict(metadata.training_config)
+        if saved.algorithm != cfg.algorithm or saved.track_slug != cfg.track_slug:
+            raise ValueError("selected checkpoint does not match the current algorithm and track")
+        if saved.backend != cfg.backend:
+            raise ValueError("select the checkpoint's simulator backend before continuing it")
+        # The user may choose a new session budget, output/log destinations or
+        # compute device. All policy and replay semantics come from the model.
+        saved.timesteps = cfg.timesteps
+        if saved.curriculum.mode == "custom":
+            phases = saved.curriculum.phases
+            if cfg.timesteps < len(phases):
+                raise ValueError("training budget is smaller than the saved curriculum's phase count")
+            total = sum(phase.steps for phase in phases)
+            if total != cfg.timesteps:
+                available = cfg.timesteps - len(phases)
+                cumulative = previous = 0
+                resized = []
+                for phase in phases:
+                    cumulative += phase.steps
+                    allocated = available * cumulative // total
+                    resized.append(replace(phase, steps=1 + allocated - previous))
+                    previous = allocated
+                saved.curriculum.phases = tuple(resized)
+        saved.output_root = cfg.output_root
+        saved.log_root = cfg.log_root
+        # PWM decisions can diverge across CPU/CUDA floating-point kernels.
+        # Auto continuation keeps the device on which this actor was verified.
+        saved.device = getattr(metadata, "device", saved.device) if cfg.device == "auto" else cfg.device
+        saved.visual_replay_enabled = cfg.visual_replay_enabled
+        saved.visual_replay_sample_hz = cfg.visual_replay_sample_hz
+        saved.visual_replay_observations = cfg.visual_replay_observations
+        return saved
 
     def _start_polish(self, steps: int) -> None:
         if self._selected_track().slug != "summer-1":
@@ -2198,6 +3038,8 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _start_adaptation(self, stage: str) -> None:
+        if not self._require_idle():
+            return
         if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
             self._error("Wait for distillation to finish before starting champion adaptation.")
             return
@@ -2284,6 +3126,8 @@ class PolyBotWindow(QWidget):
     def _start_distillation(self, command: str) -> None:
         from polybot.training.distillation import simulator_service_active
 
+        if command != "snapshot" and not self._require_idle():
+            return
         if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
             self._error("A distillation command is already running.")
             return
@@ -2397,6 +3241,8 @@ class PolyBotWindow(QWidget):
         self.distillation_process = None
 
     def _start_teacher_student(self, stage: str) -> None:
+        if not self._require_idle():
+            return
         if self.teacher_student_process is not None and self.teacher_student_process.state() != QProcess.NotRunning:
             self._error("The PPO teacher-student pipeline is already running.")
             return
@@ -2414,6 +3260,7 @@ class PolyBotWindow(QWidget):
         if not teacher or not dataset:
             self._error("Choose the frozen TQC champion and teacher dataset paths.")
             return
+        self.teacher_student_stop_file = None
         args = [
             "-m", "polybot.training.teacher_student", "--stage", stage,
             "--teacher", teacher, "--dataset", dataset,
@@ -2453,7 +3300,7 @@ class PolyBotWindow(QWidget):
             self.teacher_student_process = None
             self._error("Could not start the teacher-student process: " + process.errorString())
             return
-        self.tabs.setCurrentWidget(self.teacher_student_section.parentWidget())
+        self.tabs.setCurrentWidget(self.models_page)
 
     def _stop_teacher_student_after_round(self) -> None:
         process = self.teacher_student_process
@@ -2589,6 +3436,8 @@ class PolyBotWindow(QWidget):
         return f"Distillation {command} finished successfully."
 
     def _start(self, resume: bool, *, best: bool = False, pace_polish: bool = False) -> None:
+        if not self._require_idle():
+            return
         if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
             self._error("Wait for the current distillation command to finish before training.")
             return
@@ -2629,6 +3478,15 @@ class PolyBotWindow(QWidget):
             resume_warnings: list[str] = []
             if resume and cfg.algorithm in {"grtqc", "tqc"}:
                 resume_metadata = registry.read_metadata(slot)
+                cfg = self._resume_configuration(cfg, resume_metadata)
+                registry.validate(
+                    resume_metadata, cfg,
+                    backend_for(cfg.algorithm).action_adapter(cfg).schema,
+                )
+                self.load_configuration(cfg)
+                self.log.append(
+                    "Loaded the checkpoint's policy, critic, curriculum, and reward settings; kept the selected step budget."
+                )
                 saved_rewards = resume_metadata.training_config.get("rewards")
                 if isinstance(saved_rewards, dict) and saved_rewards != cfg.to_dict()["rewards"]:
                     self._load_saved_replay_rewards(saved_rewards)
@@ -2653,6 +3511,10 @@ class PolyBotWindow(QWidget):
             self.warnings.setText("\n".join(warnings) if warnings else "Settings look reasonable.")
             self.tabs.setCurrentIndex(self.tabs.count() - 1)
             self.runner = TrainingRunner(cfg, self.bridge.event.emit)
+            self.session_progress.setValue(0)
+            self._session_start_step = None
+            self.feedback_bar.hide()
+            self._stop_requested = False
             self.runner.set_ai_overlay_settings(self.ai_overlay_settings)
             self.worker = threading.Thread(
                 target=self._run_worker,
@@ -2660,6 +3522,7 @@ class PolyBotWindow(QWidget):
                 daemon=True,
             )
             self.worker.start()
+            self._refresh_activity()
         except (ValueError, RuntimeError, FileNotFoundError) as exc:
             self._error(str(exc))
 
@@ -2679,6 +3542,20 @@ class PolyBotWindow(QWidget):
             self.bridge.failed.emit(f"Training failed: {exc}")
 
     def _stop(self) -> None:
+        self._stop_requested = True
+        if self.section_optimizer_process is not None and self.section_optimizer_process.state() != QProcess.NotRunning:
+            self._stop_section_optimizer()
+            self._refresh_activity()
+            return
+        if self.teacher_student_process is not None and self.teacher_student_process.state() != QProcess.NotRunning:
+            self._stop_teacher_student_after_round()
+            self._refresh_activity()
+            return
+        for process in tuple(self.model_command_processes):
+            if process.state() != QProcess.NotRunning:
+                process.setProperty("polybot_cancelled", True)
+                process.terminate()
+                self.log.append(f"Cancelling {process.property('polybot_command')}.")
         if self.wr_search_process is not None and self.wr_search_process.state() != QProcess.NotRunning:
             self._stop_wr_search()
             return
@@ -2687,11 +3564,14 @@ class PolyBotWindow(QWidget):
             self.speed_search_stop_file.write_text("stop\n", encoding="utf-8")
             self.log.append("Stopping speed search after the current candidate; champion remains saved.")
             return
-        if self.runner is not None:
+        if self.runner is not None and self.worker is not None and self.worker.is_alive():
             self.runner.stop()
             self.log.append("Stopping after the current simulator step; latest will be saved.")
+        self._refresh_activity()
 
     def _start_wr_search(self, *, analyze_only: bool = False) -> None:
+        if not self._require_idle():
+            return
         if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
             self._error("Wait for distillation to finish before starting WR search.")
             return
@@ -2757,6 +3637,8 @@ class PolyBotWindow(QWidget):
             self._error(str(exc))
 
     def _start_section_optimizer(self, hours: int | None) -> None:
+        if not self._require_idle():
+            return
         if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
             self._error("Wait for distillation to finish before starting the section optimizer.")
             return
@@ -2969,6 +3851,8 @@ class PolyBotWindow(QWidget):
         self.wr_search_process = None
 
     def _start_speed_search(self) -> None:
+        if not self._require_idle():
+            return
         if self.distillation_process is not None and self.distillation_process.state() != QProcess.NotRunning:
             self._error("Wait for distillation to finish before starting speed search.")
             return
@@ -3094,18 +3978,97 @@ class PolyBotWindow(QWidget):
             self.log.append(f"Speed search exited with code {exit_code}: {error[-1200:]}")
         self.speed_search_process = None
 
-    def _model_command(self, command: str, slot: str) -> None:
+    def _model_command(self, command: str, slot: str, *, bootstrap: bool = False) -> None:
+        if not self._require_idle():
+            return
         try:
             cfg = self.configuration()
+            directory = ModelRegistry(cfg.output_root).slot(
+                cfg.track_name, cfg.algorithm, slot, track_slug=cfg.track_slug,
+            )
+            if not (directory / "metadata.json").is_file():
+                raise ValueError(
+                    f"No {cfg.algorithm.upper()} {slot} is saved for {cfg.track_name}. "
+                    "Choose the matching algorithm in Run setup or train a model first."
+                )
             args = [sys.executable, "-m", "polybot", command, "--algorithm", cfg.algorithm,
                     "--track-name", cfg.track_name, "--slot", slot,
                     "--output-root", str(cfg.output_root)]
             if command == "drive":
                 args.append("--realtime")
-            subprocess.Popen(args, creationflags=subprocess.CREATE_NO_WINDOW)
-            self.log.append(f"Started {command} for {slot} model.")
+            if bootstrap:
+                args.extend(["--bootstrap-reference", "--episodes", "5"])
+            if command == "evaluate":
+                args.append("--record-replays")
+            process = QProcess(self)
+            process.setProgram(args[0])
+            process.setArguments(args[1:])
+            process.setWorkingDirectory(str(Path.cwd()))
+            process.setProcessChannelMode(QProcess.ProcessChannelMode.SeparateChannels)
+            process.setProperty("polybot_command", command)
+            process.setProperty("polybot_slot", slot)
+            process.setProperty("polybot_stdout", "")
+            process.setProperty("polybot_stderr", "")
+            process.started.connect(lambda p=process: self._model_command_started(p))
+            process.readyReadStandardOutput.connect(lambda p=process: self._model_command_output(p, False))
+            process.readyReadStandardError.connect(lambda p=process: self._model_command_output(p, True))
+            process.errorOccurred.connect(lambda error, p=process: self._model_command_error(p, error))
+            process.finished.connect(
+                lambda code, status, p=process: self._model_command_finished(p, code, status)
+            )
+            self.model_command_processes.add(process)
+            self.feedback_bar.hide()
+            process.start()
+            self._refresh_activity()
         except (OSError, ValueError) as exc:
             self._error(str(exc))
+
+    def _model_command_started(self, process: QProcess) -> None:
+        command = process.property("polybot_command")
+        slot = process.property("polybot_slot")
+        message = f"Launched {command} for {slot} model."
+        if command == "drive":
+            message += " Waiting for the simulator bridge."
+        self.log.append(message)
+        self.tabs.setCurrentIndex(self.tabs.count() - 1)
+
+    def _model_command_output(self, process: QProcess, stderr: bool) -> None:
+        channel = process.readAllStandardError() if stderr else process.readAllStandardOutput()
+        text = bytes(channel).decode("utf-8", errors="replace")
+        key = "polybot_stderr" if stderr else "polybot_stdout"
+        accumulated = str(process.property(key) or "") + text
+        process.setProperty(key, accumulated[-16_000:])
+        if text.strip():
+            level = "error" if stderr else "output"
+            self.log.append(
+                f"{process.property('polybot_command')} {level}: {text.strip()[-1200:]}"
+            )
+
+    def _model_command_error(self, process: QProcess, error: QProcess.ProcessError) -> None:
+        if error == QProcess.ProcessError.FailedToStart:
+            self._error(f"Could not start {process.property('polybot_command')}: {process.errorString()}")
+            self.model_command_processes.discard(process)
+            process.deleteLater()
+
+    def _model_command_finished(
+        self, process: QProcess, exit_code: int, _status: QProcess.ExitStatus,
+    ) -> None:
+        self._model_command_output(process, False)
+        self._model_command_output(process, True)
+        command = process.property("polybot_command")
+        if process.property("polybot_cancelled"):
+            self.log.append(f"{command} cancelled.")
+        elif exit_code:
+            detail = str(process.property("polybot_stderr") or "").strip()
+            if not detail:
+                detail = str(process.property("polybot_stdout") or "").strip()
+            self._error(f"{command} exited with code {exit_code}: {detail[-1600:]}")
+        elif command != "drive":
+            output = str(process.property("polybot_stdout") or "").strip()
+            if output:
+                self.log.append(output[-1600:])
+        self.model_command_processes.discard(process)
+        process.deleteLater()
 
     def _event(self, event: dict[str, Any]) -> None:
         kind = event["type"]
@@ -3128,6 +4091,13 @@ class PolyBotWindow(QWidget):
             ) or "Settings look reasonable.")
             self.log_location.setText(f"Recent events · full JSONL detail: {event['log']}")
         if kind == "progress":
+            budget = self.runner.config.timesteps if self.runner is not None else int(_value(self.general["timesteps"]))
+            if self._session_start_step is None:
+                # The first callback follows one decision; resumed counters include past sessions.
+                self._session_start_step = max(0, int(event["timesteps"]) - 1)
+            completed = max(0, int(event["timesteps"]) - self._session_start_step)
+            self.session_progress.setValue(min(1000, int(completed * 1000 / max(1, budget))))
+            self.session_progress.setToolTip(f"{completed:,} / {budget:,} decisions in this session")
             stage = event.get("curriculum_stage", "full track")
             section = event.get("section_progress")
             section_text = f"section {section:.1%}" if section is not None else "full track"
@@ -3174,20 +4144,22 @@ class PolyBotWindow(QWidget):
 
     def _error(self, message: str) -> None:
         self.log.append(message)
-        QMessageBox.warning(self, "PolyBot", message)
+        self.feedback_label.setText(f"Could not complete the action.\n{message}")
+        self.feedback_bar.show()
+
+    def _dismiss_feedback(self) -> None:
+        self._close_when_idle = False
+        self.dismiss_feedback_button.setText("Dismiss")
+        self.feedback_bar.hide()
 
     def closeEvent(self, event: Any) -> None:
-        if self.speed_search_process is not None and self.speed_search_process.state() != QProcess.NotRunning:
-            self._stop()
-            event.ignore()
-            return
-        if self.worker is not None and self.worker.is_alive():
-            self._stop()
-            event.ignore()
-        elif self.replay_swarm_worker is not None and self.replay_swarm_worker.isRunning():
-            self._append_replay_swarm_output(
-                "Wait for the replay swarm operation to finish before closing PolyBot."
-            )
+        if self._active_operations():
+            self._close_when_idle = True
+            if self.stop_button.isEnabled():
+                self._stop()
+            self.feedback_label.setText("Closing when the active task finishes. Training and searches stop safely first.")
+            self.dismiss_feedback_button.setText("Keep open")
+            self.feedback_bar.show()
             event.ignore()
         else:
             event.accept()
@@ -3203,3 +4175,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.check:
         QTimer.singleShot(150, app.quit)
     return app.exec()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

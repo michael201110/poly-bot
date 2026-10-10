@@ -1563,6 +1563,7 @@ export function polybotWorkerInjection() {
               return await sendVisualReplayCommand("seek", params);
             case "visual_replay_speed":
             case "visual_replay_opacity":
+            case "visual_replay_loaded_ghosts":
             case "visual_replay_color":
             case "visual_replay_color_scale":
             case "visual_replay_end_behavior":

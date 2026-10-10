@@ -4,11 +4,19 @@ Training can save a compact, render-oriented transform history for each attempt.
 Recording observes the environment result only; it does not change actions,
 rewards, observations supplied to the learner, or simulator stepping.
 
+During visual playback, the native in-game timer follows the fixed camera run's
+replay clock, including pause and seek. It holds that run's finish time while
+the car coasts away. Clearing playback restores the normal player timer.
+Only the fixed camera run produces car audio during visual playback; other
+swarm cars, the hidden player and native ghosts are muted. Pausing mutes it,
+and its sound fades while it coasts away at the end. Native SFX volume applies.
+
 ## Configuration
 
 `visual_replay_enabled` accepts `true`, `false`, or `null` (automatic). Automatic
 is the default: it records WebSocket/PolyTrack runs and skips mock runs. In the
-GUI, choose **automatic**, **enabled**, or **disabled** under General settings.
+GUI Replay tab, choose **Automatic for live training**, **Always record**, or
+**Do not record**. The same setting remains available under General settings.
 The CLI accepts:
 
 ```powershell
@@ -19,7 +27,7 @@ polybot-train --algorithm tqc --backend websocket --no-visual-replay
 `visual_replay_sample_hz` is a maximum transform sampling rate; its default is
 20 Hz. Samples are selected from telemetry already returned to Python and the
 episode's initial and final transforms are retained. It cannot increase the
-available telemetry rate. `visual_replay_observations` defaults to `false`;
+available telemetry rate. `visual_replay_observations` defaults to `true`;
 enabling it stores the policy observation and requested action separately at
 every policy decision.
 
@@ -51,11 +59,26 @@ Each compressed NPZ contains arrays:
 * `ticks` (`int64`) and `elapsed_s` (`float64`)
 * `position_m` (`float32`, N×3)
 * `quaternion_xyzw` (`float32`, N×4)
+* optional `wheel_state` (`float32`, N×42), captured by bridge 0.1.41: for
+  each wheel, contact flag, contact position XYZ, contact normal XYZ,
+  suspension length, rotation delta, and skid value; followed by steering and
+  the brake-light flag.
 
 When observation recording is enabled, the payload additionally contains
 `decision_ticks`, `decision_elapsed_s`, `observations`, and `actions`. These
 decision-rate arrays are separate from the visual transform samples. No model
 weights or neural-network replay-buffer entries are included.
+
+Observation recording also embeds labelled features in the replay HUD, independently
+of which live HUD panels are visible. Features are captured **before** the action
+and match its saved policy input exactly, including controller/training-state
+features. `observation_tick` and `observation_elapsed_s` identify that input;
+the frame's simulator tick/time identify the action's resulting state and reward.
+`observation_source: recorded` distinguishes these values from any estimates.
+The HUD also saves raw simulator telemetry, speed, checkpoint/line alignment,
+reference information and delta estimates, plus the protected best time and
+model context when available. Native wheel state remains in the separate
+transform-rate array. Recording does not modify policy inputs or train the model.
 
 Writes use a bounded background queue and temporary files followed by atomic
 replacement. If the queue is full or persistence fails, PolyBot emits a
@@ -76,10 +99,17 @@ at most about 600,000 visual samples. The four required arrays occupy about
 26 MB before compression at that sample count. A typical compressed run should
 be approximately **15–30 MB**, depending on track motion, episode count, and
 ZIP/index overhead. This is an estimate, not a fixed size guarantee. Optional
-observation logging can make storage substantially larger.
+wheel telemetry adds 168 bytes per sample before compression (about 101 MB at
+600,000 samples); optional observation logging can also increase storage.
 
-The current renderer interpolates from recorded samples. It does not yet add a
-native per-physics-tick recorder or wheel/suspension animation.
+The current renderer interpolates from recorded samples, including recorded
+wheel and suspension state when available. Native skid marks use that wheel
+state and respect the game's skid-mark setting. Older transform-only replays
+remain supported: wheel contacts are estimated on the actual track surface,
+and visual slip is estimated from lateral motion. Those older skid marks are
+an approximation, not recovered historical tyre telemetry. Neither method
+changes replay trajectories or physics. A native per-physics-tick recorder is
+not yet available.
 
 ## Inspecting a swarm selection (Stage 3)
 
@@ -145,9 +175,22 @@ polybot-replay-swarm --run <run> --max-cars 200 `
 
 Each ghost receives its own color from `training_step_start`; step range
 selection, seeded stratified sampling, and the existing color-scale code are
-shared with dry-run inspection. All ghosts start at replay time zero and share
-one playback clock. A short episode may disappear, freeze, or fade at its own
-recorded endpoint while longer episodes continue.
+shared with dry-run inspection. The default scale is red at step 0, orange at
+500,000, yellow at 1,000,000, yellow-green at 1,500,000, and green at 2,000,000.
+Adjust **Green at step** beside the colour legend (CLI:
+`--color-max-step`); the intermediate stops spread evenly across that range.
+Later steps remain green. Choosing another run does not change this setting.
+Attempts from the same training step have the same colour, including the
+100-attempt collection recorded from the frozen champion.
+**Apply colours** recolours the currently loaded cars without restarting them.
+All ghosts start at replay time zero and share one playback clock. A short
+episode may disappear, freeze, or fade at its own recorded endpoint while
+longer episodes continue.
+Cars default to 100% opacity; appearance controls can reduce it. Seeking or
+restarting clears skid trails so marks never bridge a time jump.
+Replay cars share one stock body, wheel, and exhaust style. Their frame and rim
+colors stay charcoal and light gray, while both body paint colors match the
+training-step gradient.
 The loader skips optional observation/action arrays when preparing visual
 playback, even if those were recorded for training analysis.
 
@@ -163,32 +206,40 @@ polybot-replay-swarm --run <run> --action configure --opacity 0.4
 polybot-replay-swarm --run <run> --action clear
 ```
 
-### Replay Swarm GUI
+### Replay GUI
 
-The **Replay Swarm** tab provides the same index filtering, deterministic
-stratified selection, training-age colours, and bridge actions as the CLI.
-Choose a replay run directory (or its parent), set the inclusive episode-start
-step range, and optionally set episode IDs or a finish/failure filter. Custom
-colour stops use `STEP:#RRGGBB` entries separated by commas or newlines.
-**Inspect selection** reads only `index.json` files and prints the selection
-summary without connecting to PolyTrack; **Set full run range** fills in the
-observed training-step bounds.
+The Replay tab gives the usual workflow first: choose a saved run, highlight an
+attempt, and press **Watch selected attempt**. The run list shows when the run
+was recorded, how many attempts it contains, and its best finished lap. Use
+**Refresh runs** after training to find newly saved attempts. Finished times,
+failure status, and progress appear beside each attempt. Click a row to watch
+that attempt; tick its checkbox to include it in a comparison. Hovering shows
+the recorded sample count and training step.
 
-**Load swarm** loads ghosts paused and **Play swarm** loads and starts them.
-Pause, resume, restart, seek, settings, clear, and bridge-status actions work
-without a replay path once a swarm is loaded. These operations run in a
-background thread so index reads, compressed-payload loading, and bridge
-requests do not block the interface. Stop any active trainer/evaluator before
-using the GUI to control its local bridge.
+To compare attempts, tick them in the second list and press **Compare selected
+attempts**. Leaving all attempts unticked compares all matching attempts in the
+selected run. Pause, resume, restart, clear, and jump-to-time controls stay
+visible while advanced filters, external folders, appearance, and bridge
+settings are tucked under **Advanced filters and playback settings**.
+Enable **Play alongside loaded ghosts** to keep the game's loaded ghosts
+visible during either a single replay or a swarm. They follow the replay
+opacity setting, and changing the option or opacity applies to a replay that is
+already loaded.
+
+Loading replay data never resumes training or changes model weights. Stop any
+active trainer/evaluator before using the GUI to control its local bridge.
 
 `status` reports loaded/visible ghosts, shared playback position and duration,
 training-step range, and average replay-render update time (not GPU frame time).
 `--max-cars` supports 1–500, but actual comfortable counts depend on the game
 and hardware. Requests are rejected above 500 ghosts, 250,000 aggregate
-samples, 500,000 samples per episode, or 32 MiB of encoded trajectory data.
-No live GPU/FPS measurement has been made. The renderer currently constructs
-one native renderer car per selected episode; native geometry/material sharing
-and shadow costs have not been established from the public mod API.
+samples, 500,000 samples per episode, or 64 MiB of encoded trajectory/HUD data.
+Live profiling on the T500 identified rendering and GPU memory pressure as the
+main swarm limit; see [swarm performance findings](swarm-performance.md).
+The renderer constructs one native car per episode. Status also provides a
+rolling 60-frame `performance` block: frame interval, replay update CPU time,
+draw calls, triangles, and time inside native renderer calls. Renderer time
+includes driver/GPU waits; it is not a GPU timestamp measurement.
 
 Repeat the synthetic renderer benchmark with
 `node --expose-gc tools/benchmark_replay_swarm.mjs`. It exercises the renderer
@@ -200,7 +251,7 @@ geometry, shadows, and GPU work; they are not PolyTrack FPS estimates.
 
 ### Exact manual live-test checklist
 
-1. Train briefly with visual replay recording enabled, then stop training.
+1. Leave **Save replays** on Automatic (or select Always record), train briefly, then stop training.
 2. Find the output under `<output-root>/<track-slug>/<algorithm>/visual_replays/<run-id>/`.
 3. Launch PolyTrack 0.6.3 and load Summer 1.
 4. Confirm PML has loaded bridge 0.1.38; use bridge 0.1.37 for PolyTrack 0.6.2.

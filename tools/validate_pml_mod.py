@@ -39,7 +39,7 @@ REPLAY_RENDER_TOKENS = {
     "0.6.2": ('update(e) {\n              const t = (0, R.gn)(this, jr, "m", ys).call(this);',),
     "0.6.3": ('update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);',),
 }
-SWARM_RELEASES = {"0.6.2": "0.1.37", "0.6.3": "0.1.39"}
+SWARM_RELEASES = {"0.6.2": "0.1.37", "0.6.3": "0.1.41"}
 SWARM_PROTOCOL_TOKENS = (
     'case "visual_replay_swarm_begin"',
     'case "visual_replay_swarm_episode_begin"',
@@ -135,10 +135,12 @@ def _validate_manifests(repository: Path) -> list[str]:
                         source=worker_source,
                     )
                 )
-                if version == "0.1.39":
+                if version == "0.1.41":
                     failures.extend(
                         _validate_tokens(worker, HUD_PROTOCOL_TOKENS, source=worker_source)
                     )
+                    if 'case "visual_replay_loaded_ghosts"' not in worker_source:
+                        failures.append(f"{worker}: missing loaded-ghost opacity operation")
                 for operation in ("hello", "reset", "step", "close"):
                     if f'case "{operation}"' not in worker_source:
                         failures.append(f"{worker}: missing preserved {operation!r} operation")
@@ -154,9 +156,18 @@ def _validate_manifests(repository: Path) -> list[str]:
                 for token in ("new U.A(" if game_version == "0.6.2" else "new z.A(", "null, state, null, null,"):
                     if token not in template_source:
                         failures.append(f"{template}: missing renderer-only car token {token!r}")
-                if "const replayMaxGhosts = 500;" not in template_source or "replayBeginSwarm" not in template_source:
+                replay_source = template_source
+                if "POLYBOT_REPLAY_RENDERER" in template_source:
+                    replay_path = mod_root / version / "replay_renderer.mjs"
+                    if replay_path.is_file():
+                        replay_source = replay_path.read_text(encoding="utf-8")
+                        if "installPolyBotReplayRenderer" not in main_file.read_text(encoding="utf-8"):
+                            failures.append(f"{main_file}: missing bundled replay renderer")
+                    else:
+                        failures.append(f"{replay_path}: missing replay renderer source")
+                if "const replayMaxGhosts = 500;" not in replay_source or "replayBeginSwarm" not in replay_source:
                     failures.append(f"{template}: missing swarm renderer implementation")
-                if version == "0.1.39":
+                if version == "0.1.41":
                     for token in (
                         "POLYBOT_HUD_RENDERER",
                         "installPolyBotHudOverlay",
@@ -168,6 +179,14 @@ def _validate_manifests(repository: Path) -> list[str]:
                         failures.append(f"{template}: missing AI HUD renderer source")
                     if not main_file.read_text(encoding="utf-8").count("polybot-ai-hud{"):
                         failures.append(f"{main_file}: missing bundled AI HUD renderer")
+                    for token in (
+                        'tokenStart: "t.car.setOpacity(i);"',
+                        'tokenStart: "n.car.setOpacity(r)"',
+                    ):
+                        if token not in template_source:
+                            failures.append(f"{template}: missing loaded-ghost replay token {token!r}")
+                    if "play_alongside_loaded_ghosts" not in replay_source:
+                        failures.append(f"{template}: missing loaded-ghost replay setting")
     return failures
 
 

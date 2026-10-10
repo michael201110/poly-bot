@@ -925,12 +925,15 @@ class GRTQCBackend(TQCBackend):
     def restore_actor_weights(model: GRTQC, verified: GRTQC) -> None:
         """A legacy phase-aware fallback initializes only the new adapter to zero."""
         incoming = verified.actor.state_dict()
-        destination = set(model.actor.state_dict())
+        current = model.actor.state_dict()
+        destination = set(current)
         missing = destination - set(incoming)
         if missing - {"latent_pi.0.controller_weight"}:
             raise ValueError("verified actor has incompatible inherited weights")
         if set(incoming) - destination:
             raise ValueError("verified actor has incompatible controller inputs")
+        if any(incoming[key].shape != current[key].shape for key in incoming):
+            raise ValueError("verified actor has incompatible input dimensions or architecture")
         result = model.actor.load_state_dict(incoming, strict=False)
         if result.unexpected_keys:
             raise ValueError("verified actor has incompatible controller inputs")

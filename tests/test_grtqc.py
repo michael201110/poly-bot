@@ -900,7 +900,7 @@ def test_old_reward_semantics_warns_without_forcing_fresh_replay(
     monkeypatch.setattr(runner.registry, "validate", lambda *args: None)
     monkeypatch.setattr(runner.registry, "read_metadata", lambda *args: SimpleNamespace(
         training_config=config.to_dict(), reward_semantics="executed-controls-v1",
-        critic_adaptation_required=False, architecture="tiny",
+        critic_adaptation_required=False, architecture="tiny", racing_line=None,
     ))
     (tmp_path / "latest").mkdir()
     (tmp_path / "latest" / "replay.pkl").write_bytes(b"existing replay")
@@ -1051,6 +1051,7 @@ def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_p
     )
     runner.device = SimpleNamespace(resolved="cpu")
     monkeypatch.setattr(runner.backend, "load_model", lambda *a, **k: SimpleNamespace(actor=verified))
+    monkeypatch.setattr(runner.registry, "read_metadata", lambda _: SimpleNamespace(racing_line=None))
     events = []
     monkeypatch.setattr(runner, "_emit", events.append)
     result = EvaluationResult(5, 0.0, 0.5, 0.5, None, None, 1.0, 0.0, 0.0)
@@ -1080,6 +1081,7 @@ def test_first_cleaner_candidate_is_saved_and_can_be_recovered_without_champion(
     candidate = runner.registry.slot(config.track_name, "grtqc", "contact-candidate")
     initialization.mkdir(parents=True)
     (initialization / "metadata.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(runner, "_compatible_grtqc_actor_source", lambda _: True)
     monkeypatch.setattr(runner.registry, "read_metadata", lambda path: SimpleNamespace(
         evaluation=(previous if path == initialization else current).to_dict(),
     ))
@@ -1745,6 +1747,7 @@ def test_grtqc_resume_rollback_restores_actor_but_keeps_latest_training_state(tm
     champion_dir = runner.registry.slot(config.track_name, "grtqc", "champion")
     champion_dir.mkdir(parents=True)
     (champion_dir / "metadata.json").touch()
+    monkeypatch.setattr(runner, "_compatible_grtqc_actor_source", lambda _: True)
     monkeypatch.setattr(
         runner.registry, "read_metadata", lambda _: SimpleNamespace(evaluation=champion.to_dict()),
     )
@@ -1880,3 +1883,33 @@ def test_scratch_and_transfer_profiles_use_default_websocket_port():
     assert scratch.rewards.finish_fast_bonus > 2 * scratch.rewards.finish_bonus
     with pytest.raises(ValueError, match="WebSocket port"):
         replace(scratch, websocket_port=0)
+
+
+def test_actor_restore_rejects_different_input_width_before_mutating_weights():
+    backend = GRTQCBackend()
+    current = SimpleNamespace(actor=th.nn.Linear(105, 128))
+    verified = SimpleNamespace(actor=th.nn.Linear(121, 128))
+    before = {key: value.clone() for key, value in current.actor.state_dict().items()}
+    with pytest.raises(ValueError, match="input dimensions"):
+        backend.restore_actor_weights(current, verified)
+    for key, value in before.items():
+        th.testing.assert_close(current.actor.state_dict()[key], value, rtol=0, atol=0)
+
+
+def test_verified_actor_source_skips_other_experiment_origin(tmp_path):
+    config = replace(_config("grtqc"), output_root=tmp_path)
+    runner = TrainingRunner(config)
+    runner.device = SimpleNamespace(resolved="cpu")
+    runner.model, env = _model(config)
+    try:
+        initialization = runner.registry.slot(config.track_name, "grtqc", "initialization")
+        champion = runner.registry.slot(config.track_name, "grtqc", "champion")
+        metadata = runner._metadata()
+        runner.registry.write_metadata(initialization, metadata)
+        metadata.training_config = TrainingConfig.from_dict(config.to_dict()).to_dict()
+        metadata.training_config["grtqc"]["training_origin"] = "scratch"
+        runner.registry.write_metadata(champion, metadata)
+        assert runner._grtqc_verified_actor_source() == initialization
+        assert not runner._restore_grtqc_resume_actor_if_worse(metadata, initialization, force=True)
+    finally:
+        env.close()

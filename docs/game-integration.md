@@ -1,6 +1,6 @@
 # Running PolyBot in PolyTrack
 
-The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. The latest 0.6.3 bridge is 0.1.39. It is for local training and
+The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. The latest 0.6.3 bridge is 0.1.41. It is for local training and
 demonstrations, not leaderboard or multiplayer automation.
 
 ## One-time setup
@@ -30,7 +30,9 @@ game's JavaScript bundle, WASM binary, or assets.
 
 ## Train or play in the game
 
-Load a track and a ghost lap in PolyTrack, then enter the race. The ghost defines the reference route and lookahead; without it, reset reports `missing_reference`. If the mod was enabled after entering a race, restart that race.
+Enter a race on the selected track. A new model captures the selected initialization ghost's reference geometry and exact controls into its metadata. Later training, evaluation and driving reconstruct that reference without requiring a loaded ghost. Saved controls are used to reconstruct environment geometry and curriculum states; the policy still chooses every driving action.
+
+Section curriculum resets retain the initialization run even after a champion supplies a better line. Champion promotion also evaluates five deterministic laps with the candidate's own saved line before accepting it, because changing the line changes policy observations. For an older champion, select its matching initialization ghost and use **Cache initialization ghost**, or `python -m polybot evaluate --algorithm grtqc --track summer-1 --slot champion --episodes 5 --bootstrap-reference`. Only a clean five-lap result saves the reference. Ordinary **Evaluate champion** and **Play champion** use the cached reference. If the mod was enabled after entering a race, restart that race.
 
 Open the v2 GUI and keep **WebSocket** selected, or start an explicit algorithm from the CLI:
 
@@ -50,7 +52,7 @@ The training command defaults to `--track-id current` and frame skip 30 for WebS
 
 ## Troubleshooting
 
-If the mod does not connect, confirm PolyModLoader is enabled in the active race, the loaded track has a ghost reference, and no other PolyBot process owns port 8765. Run `polybot-doctor --smoke tqc` to check the selected compute device independently of the game. Run `python tools/validate_pml_mod.py` for manifest validation; include raw pinned game bundles for the stronger source check described below.
+If the mod does not connect, confirm PolyModLoader is enabled in the active race and no other PolyBot process owns port 8765. Models without a saved racing line need a matching loaded ghost to bootstrap one. Run `polybot-doctor --smoke tqc` to check the selected compute device independently of the game. Run `python tools/validate_pml_mod.py` for manifest validation; include raw pinned game bundles for the stronger source check described below.
 
 ## Integration details
 
@@ -76,10 +78,10 @@ send simulation-worker `CreateCar` messages. Each release has its own pinned
 native renderer update anchor checked by `tools/validate_pml_mod.py`. The
 published 0.1.35/0.1.36 releases are not modified.
 
-Bridge 0.1.39 supersedes 0.1.38 for PolyTrack 0.6.3. It preserves replay-swarm
-rendering and adds the [live AI HUD](ai-overlay.md), relaying Python-built
-telemetry frames to a reusable main-thread DOM overlay. The 0.1.37 and 0.1.38
-release files remain unchanged.
+Bridge 0.1.41 supersedes 0.1.38 for PolyTrack 0.6.3. It accepts champion racing-line
+geometry from model metadata, preserves replay and swarm rendering, and adds the
+[live AI HUD](ai-overlay.md), relaying Python-built telemetry frames to a reusable
+main-thread DOM overlay. The 0.1.37 and 0.1.38 release files remain unchanged.
 
 The 0.1.34 entry point bundles its worker runtime so it works with PML's cached
 blob imports and cannot load the old 0.1.32 runtime. To edit this release, change
@@ -97,8 +99,10 @@ worker's original delete/create/start path rather than the game's checkpoint-res
 The authoritative 0.6.2/0.6.3 state packet supplies transform, speed, checkpoint/finish state, wheel
 contacts, suspension values and velocities, wheel skid, steering, and applied controls. Linear and
 angular velocities and acceleration are derived from consecutive transforms. The route reference
-supplies progress, lateral/heading error, policy lookahead points, position-aligned ghost pose, target
-speed, and the recorded expert controls.
+supplies progress, lateral/heading error, policy lookahead points, position-aligned reference pose,
+and target speed. A saved recording reconstructs the same reference sample cadence, arc length
+and recorded expert controls as a loaded ghost. Expert controls remain environment information;
+they do not replace model actions.
 
 The token-based mixin depends on exact source anchors. Updating to another PolyTrack version requires
 checking the worker tokens, state decoder, one-tick helper, and reset path before changing the
@@ -152,3 +156,29 @@ simple track. Check initial connection, reset, checkpoint progress, local finish
 restart, then perform the deterministic transcript checks described above. Inspect network traffic
 to verify that public writes and multiplayer remain blocked. These interactive checks require a
 running game and are not covered by the Python test suite.
+
+## Replay swarm renderer refactor (2026-10-09)
+
+The 0.6.3 bridge bundles `pml-mod/0.1.41/replay_renderer.mjs` through
+`tools/build_pml_mod.py`. Playback creates a separate native render-only car and
+copies the complete initial state for each episode. The native chase camera stays
+attached to the fastest completed run in the selected group. If none finished, it follows the run with the greatest final
+progress. Overtakes never change the camera car. The HUD follows the same car; the
+stationary player is hidden.
+Clear restores the player's camera and visibility. A new live policy HUD frame
+also clears playback before driving or training. Scene replacement disposes the
+old replay group without restoring a camera from the disposed scene.
+
+Runs from one checkpoint use distinct episode colours. Runs spanning checkpoints
+retain their training-step gradient. The Replay tab shows the checked car count
+and provides Check all episodes / Uncheck all controls. Renderer tests and the
+benchmark now exercise the active 0.1.41 module rather than the archived 0.1.38
+template. Live verification showed five independently positioned cars at 16 s.
+
+Replay endings briefly extrapolate the final measured velocity while fading,
+then hide each car. This visual coast does not change recorded transforms or lap
+results. Freeze remains accepted by the legacy protocol but is absent from the GUI.
+
+Only the fixed camera run streams HUD frames to the renderer; other cars stream
+transforms only. Every run retains its full controls and reward HUD data on disk.
+This keeps high-volume swarms within the existing payload limit.
