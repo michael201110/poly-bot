@@ -160,6 +160,29 @@ def _set(widget: QWidget, value: Any) -> None:
         widget.blockSignals(previous)
 
 
+def _fit_custom_curriculum_budget(
+    curriculum: CurriculumConfig, budget: int,
+) -> CurriculumConfig:
+    """Keep custom phase proportions while making their steps match the run budget."""
+    if curriculum.mode != "custom":
+        return curriculum
+    phases = curriculum.phases
+    if budget < len(phases):
+        raise ValueError("training budget must provide at least one step per custom phase")
+    total = sum(phase.steps for phase in phases)
+    if total == budget:
+        return curriculum
+    available = budget - len(phases)
+    cumulative = previous = 0
+    resized: list[CurriculumPhaseConfig] = []
+    for phase in phases:
+        cumulative += phase.steps
+        allocated = available * cumulative // total
+        resized.append(replace(phase, steps=1 + allocated - previous))
+        previous = allocated
+    return replace(curriculum, phases=tuple(resized))
+
+
 class ParameterForm(QWidget):
     def __init__(
         self, instance: Any, info: dict[str, ParameterInfo],
@@ -182,6 +205,8 @@ class ParameterForm(QWidget):
                     )
                 else:
                     choices = ("tiny", "compact", "standard")
+            elif field.name == "training_origin":
+                choices = ("transfer", "scratch")
             else:
                 choices = ()
             widget = _editor(current, metadata.description, choices)
@@ -2554,9 +2579,10 @@ class PolyBotWindow(QWidget):
         self.preset.addItems(algorithm_presets(algorithm))
         self.preset.addItems(self.presets.list(algorithm))
         self.preset.addItem("Custom")
-        self.preset.setCurrentText("Balanced")
+        default_preset = "Scratch (8-step)" if algorithm == "grtqc" else "Balanced"
+        self.preset.setCurrentText(default_preset)
         self.preset.blockSignals(current)
-        self._preset_changed("Balanced")
+        self._preset_changed(default_preset)
         self._refresh_models()
 
     def _preset_changed(self, name: str) -> None:
@@ -2678,8 +2704,17 @@ class PolyBotWindow(QWidget):
 
         _, preset_layout = page("5. Choose a parameter preset")
         preset = QComboBox()
-        preset.setToolTip("Every preset resolves to exact algorithm values shown on the next page.")
+        preset.setToolTip(
+            "For a new GRTQC model, Scratch (8-step) starts an independent learner. "
+            "A connected simulator reference supplies its initial racing line; it does not transfer a policy."
+        )
         preset_layout.addRow("Preset", preset)
+        preset_help = QLabel(
+            "Scratch (8-step) is for a new GRTQC model. With the live simulator connected, "
+            "the loaded ghost supplies the initial racing line. Training starts from a new policy."
+        )
+        preset_help.setWordWrap(True)
+        preset_layout.addRow(preset_help)
 
         _, review_layout = page("6. Review exact configuration")
         review = QTextEdit()
@@ -2715,6 +2750,16 @@ class PolyBotWindow(QWidget):
                     "rewards": asdict(self.profiles.load(profile)),
                     "ppo": None, "grtqc": None, "tqc": None,
                 })
+                if selected_algorithm == "grtqc" and _value(preset) == "Scratch (8-step)":
+                    total_steps = int(data["timesteps"])
+                    practice_steps = max(1, round(total_steps * 0.4))
+                    data["curriculum"] = asdict(CurriculumConfig(
+                        mode="custom",
+                        phases=(
+                            CurriculumPhaseConfig(mode="quarters-randomised", steps=practice_steps),
+                            CurriculumPhaseConfig(mode="full", steps=max(1, total_steps - practice_steps)),
+                        ),
+                    ))
                 data[selected_algorithm] = asdict(
                     algorithm_presets(selected_algorithm)[_value(preset)]
                 )
@@ -3455,6 +3500,13 @@ class PolyBotWindow(QWidget):
             return
         try:
             cfg = self.configuration()
+            fitted_curriculum = _fit_custom_curriculum_budget(cfg.curriculum, cfg.timesteps)
+            if fitted_curriculum != cfg.curriculum:
+                cfg.curriculum = fitted_curriculum
+                self.load_configuration(cfg)
+                self.log.append(
+                    "Resized custom curriculum phases proportionally to match the training budget."
+                )
             if self._external_speed_search_running(cfg):
                 raise RuntimeError("A live speed search is already using the simulator; watch it in Status")
             registry = ModelRegistry(cfg.output_root)
@@ -3468,10 +3520,45 @@ class PolyBotWindow(QWidget):
                 )
             )
             if cfg.algorithm == "grtqc" and not resume:
-                slot = registry.algorithm_dir(
+                algorithm_dir = registry.algorithm_dir(
                     cfg.track_name, "grtqc", track_slug=cfg.track_slug,
-                ) / "initialization"
-                resume = True
+                )
+                slot = algorithm_dir / "initialization"
+                if (slot / "metadata.json").is_file():
+                    resume = True
+                elif not any(
+                    (algorithm_dir / name / "metadata.json").is_file()
+                    for name in ("latest", "champion")
+                ):
+                    # A newly added track has no transferred actor to resume.
+                    # Start a fresh scratch model; the runner will bootstrap its
+                    # racing line from the live simulator's loaded reference.
+                    if cfg.grtqc.training_origin != "scratch":
+                        cfg.grtqc = algorithm_presets("grtqc")["Scratch (8-step)"]
+                    if cfg.curriculum.mode == "full":
+                        practice_steps = max(1, round(cfg.timesteps * 0.4))
+                        cfg.curriculum = CurriculumConfig(
+                            mode="custom",
+                            phases=(
+                                CurriculumPhaseConfig(
+                                    mode="quarters-randomised", steps=practice_steps,
+                                ),
+                                CurriculumPhaseConfig(
+                                    mode="full", steps=max(1, cfg.timesteps - practice_steps),
+                                ),
+                            ),
+                            lead_in_ratio=cfg.curriculum.lead_in_ratio,
+                        )
+                    self.load_configuration(cfg)
+                    self.log.append(
+                        "New track: starting a fresh GRTQC Scratch (8-step) model with a staged curriculum. "
+                        "Its initial racing line will be captured from the loaded simulator reference."
+                    )
+                else:
+                    raise FileNotFoundError(
+                        f"GRTQC initialization is missing for {cfg.track_name}, but trained checkpoints exist. "
+                        "Use Continue best model to resume a checkpoint."
+                    )
             resume_metadata = None
             saved_replay = slot / "replay.pkl"
             fresh_replay = False

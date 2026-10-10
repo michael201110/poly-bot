@@ -28,7 +28,30 @@ def algorithm_presets(algorithm: str) -> dict[str, PPOConfig | TQCConfig | GRTQC
         }
     if algorithm == "grtqc":
         balanced = GRTQCConfig()
+        scratch = replace(
+            balanced,
+            training_origin="scratch",
+            actor_learning_rate=1e-4,
+            critic_learning_rate=3e-4,
+            learning_starts=3_000,
+            batch_size=128,
+            train_frequency=4,
+            critic_warmup_updates=100,
+            critic_readiness_window=100,
+            critic_readiness_relative_change=0.5,
+            actor_update_interval=2,
+            n_step_return=8,
+            target_entropy=-2.0,
+            critic_controller_state=True,
+            critic_environment_state=True,
+            critic_raw_actions=True,
+            actor_evaluation_interval_steps=10_000,
+            screen_actor_evaluations=True,
+            finish_episode_before_actor_eval=True,
+            learn_from_actor_evaluations=True,
+        )
         return {
+            "Scratch (8-step)": scratch,
             "Summer 1 - Transferred Champion": replace(
                 balanced, learning_rate=3e-5, actor_learning_rate=1e-7,
                 critic_learning_rate=5e-5, train_frequency=2,
