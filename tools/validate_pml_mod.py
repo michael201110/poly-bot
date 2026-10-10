@@ -39,7 +39,7 @@ REPLAY_RENDER_TOKENS = {
     "0.6.2": ('update(e) {\n              const t = (0, R.gn)(this, jr, "m", ys).call(this);',),
     "0.6.3": ('update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);',),
 }
-SWARM_RELEASES = {"0.6.2": "0.1.37", "0.6.3": "0.1.41"}
+SWARM_RELEASES = {"0.6.2": "0.1.37", "0.6.3": "0.1.42"}
 SWARM_PROTOCOL_TOKENS = (
     'case "visual_replay_swarm_begin"',
     'case "visual_replay_swarm_episode_begin"',
@@ -135,7 +135,7 @@ def _validate_manifests(repository: Path) -> list[str]:
                         source=worker_source,
                     )
                 )
-                if version == "0.1.41":
+                if version == "0.1.42":
                     failures.extend(
                         _validate_tokens(worker, HUD_PROTOCOL_TOKENS, source=worker_source)
                     )
@@ -167,7 +167,7 @@ def _validate_manifests(repository: Path) -> list[str]:
                         failures.append(f"{replay_path}: missing replay renderer source")
                 if "const replayMaxGhosts = 500;" not in replay_source or "replayBeginSwarm" not in replay_source:
                     failures.append(f"{template}: missing swarm renderer implementation")
-                if version == "0.1.41":
+                if version == "0.1.42":
                     for token in (
                         "POLYBOT_HUD_RENDERER",
                         "installPolyBotHudOverlay",
@@ -187,6 +187,13 @@ def _validate_manifests(repository: Path) -> list[str]:
                             failures.append(f"{template}: missing loaded-ghost replay token {token!r}")
                     if "play_alongside_loaded_ghosts" not in replay_source:
                         failures.append(f"{template}: missing loaded-ghost replay setting")
+                    if version == "0.1.42":
+                        for token in (
+                            'tokenStart: "return i;\\n              }),\\n              (Ve = function (e) {"',
+                            'register(e, t, i);\\n                return i;',
+                        ):
+                            if token not in template_source:
+                                failures.append(f"{template}: missing in-scope texture cache hook {token!r}")
     return failures
 
 

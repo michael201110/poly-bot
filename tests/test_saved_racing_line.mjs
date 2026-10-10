@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
 
-const source = readFileSync(new URL("../pml-mod/0.1.41/worker_runtime.js", import.meta.url), "utf8");
+const source = readFileSync(new URL("../pml-mod/0.1.42/worker_runtime.js", import.meta.url), "utf8");
 function runtime() {
   const context = vm.createContext({
     BridgeError: Error, maxReferenceTicks: 600000, referenceSampleTicks: 20,

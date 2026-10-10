@@ -59,7 +59,7 @@ Each compressed NPZ contains arrays:
 * `ticks` (`int64`) and `elapsed_s` (`float64`)
 * `position_m` (`float32`, N×3)
 * `quaternion_xyzw` (`float32`, N×4)
-* optional `wheel_state` (`float32`, N×42), captured by bridge 0.1.41: for
+* optional `wheel_state` (`float32`, N×42), captured by bridge 0.1.41 and later: for
   each wheel, contact flag, contact position XYZ, contact normal XYZ,
   suspension length, rotation delta, and skid value; followed by steering and
   the brake-light flag.

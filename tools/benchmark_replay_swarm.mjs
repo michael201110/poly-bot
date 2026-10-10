@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import vm from "node:vm";
 
-const rendererSource = readFileSync(new URL("../pml-mod/0.1.41/replay_renderer.mjs", import.meta.url), "utf8")
+const rendererSource = readFileSync(new URL("../pml-mod/0.1.42/replay_renderer.mjs", import.meta.url), "utf8")
   .replace("export function installPolyBotReplayRenderer", "function installPolyBotReplayRenderer");
 const sampleCount = 120;
 const frameCount = 180;

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { HUD_MODES, importantInputs, installPolyBotHudOverlay } from "../pml-mod/0.1.41/hud_renderer.mjs";
+import { HUD_MODES, importantInputs, installPolyBotHudOverlay } from "../pml-mod/0.1.42/hud_renderer.mjs";
 
 class FakeNode {
   constructor(tagName) {

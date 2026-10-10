@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import vm from "node:vm";
 
-const rendererSource = readFileSync(new URL("../pml-mod/0.1.41/replay_renderer.mjs", import.meta.url), "utf8")
+const rendererSource = readFileSync(new URL("../pml-mod/0.1.42/replay_renderer.mjs", import.meta.url), "utf8")
   .replace("export function installPolyBotReplayRenderer", "function installPolyBotReplayRenderer");
 
 function makeHarness() {
@@ -354,7 +354,7 @@ test("keeps the native chase camera on the best run despite overtakes", () => {
 
 
 test("swarm HUD keeps the loading group; live training HUD releases playback", () => {
-  const template = readFileSync(new URL("../pml-mod/0.1.41/main.template.js", import.meta.url), "utf8");
+  const template = readFileSync(new URL("../pml-mod/0.1.42/main.template.js", import.meta.url), "utf8");
   const start = template.indexOf("    globalThis.__polybotWrapSimulationWorker =");
   const end = template.indexOf("    /* POLYBOT_HUD_RENDERER */", start);
   let stopped = 0;

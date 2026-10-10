@@ -15,7 +15,7 @@ live policy telemetry and does not control whether the panel is shown. The GUI's
 to subsequent policy decisions. Mock runs do not create or transmit HUD frames.
 
 Install the latest PolyBot bridge from the repository's PML URL and select
-`latest`. Bridge **0.1.41** adds HUD support for PolyTrack **0.6.3**. The
+`latest`. Bridge **0.1.42** adds HUD support for PolyTrack **0.6.3**. The
 existing 0.1.37 release for PolyTrack 0.6.2 and 0.1.38 release for 0.6.3 are
 left unchanged; they do not advertise HUD support. See
 [Running PolyBot in PolyTrack](game-integration.md) for bridge setup.

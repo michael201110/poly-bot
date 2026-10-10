@@ -39,7 +39,7 @@ def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
         runtime.replace("export function polybotWorkerInjection()", "function polybotWorkerInjection()", 1)
         in main_source
     )
-    if version == "0.1.41":
+    if version == "0.1.42":
         renderer = (MOD_ROOT / version / "hud_renderer.mjs").read_text(encoding="utf-8")
         assert renderer.replace(
             "export function installPolyBotHudOverlay(",
@@ -61,8 +61,8 @@ def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
 
 def test_latest_063_bridge_adds_hud_without_changing_older_releases() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["latest"]["0.6.3"] == "0.1.41"
-    latest_worker = (MOD_ROOT / "0.1.41" / "worker_runtime.js").read_text(encoding="utf-8")
+    assert manifest["latest"]["0.6.3"] == "0.1.42"
+    latest_worker = (MOD_ROOT / "0.1.42" / "worker_runtime.js").read_text(encoding="utf-8")
     old_worker = (MOD_ROOT / "0.1.38" / "worker_runtime.js").read_text(encoding="utf-8")
     assert '"ai_overlay_hud"' in latest_worker
     assert 'request.op === "hud_frame"' in latest_worker
@@ -210,7 +210,7 @@ def test_stage_four_ghost_uses_native_renderer_car_without_physics_manager(
     ("version", "constructor", "hook"),
     [
         ("0.1.37", "new U.A(", 'update(e) {\n              const t = (0, R.gn)(this, jr, "m", ys).call(this);'),
-        ("0.1.41", "new z.A(", 'update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);'),
+        ("0.1.42", "new z.A(", 'update(e) {\n              const t = (0, R.gn)(this, ta, "m", Ps).call(this);'),
     ],
 )
 def test_current_swarm_releases_use_native_render_only_cars_and_exact_update_hooks(

@@ -1,6 +1,6 @@
 # Running PolyBot in PolyTrack
 
-The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. The latest 0.6.3 bridge is 0.1.41. It is for local training and
+The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. The latest 0.6.3 bridge is 0.1.42. It is for local training and
 demonstrations, not leaderboard or multiplayer automation.
 
 ## One-time setup
@@ -78,7 +78,7 @@ send simulation-worker `CreateCar` messages. Each release has its own pinned
 native renderer update anchor checked by `tools/validate_pml_mod.py`. The
 published 0.1.35/0.1.36 releases are not modified.
 
-Bridge 0.1.41 supersedes 0.1.38 for PolyTrack 0.6.3. It accepts champion racing-line
+Bridge 0.1.42 supersedes 0.1.41 for PolyTrack 0.6.3. It accepts champion racing-line
 geometry from model metadata, preserves replay and swarm rendering, and adds the
 [live AI HUD](ai-overlay.md), relaying Python-built telemetry frames to a reusable
 main-thread DOM overlay. The 0.1.37 and 0.1.38 release files remain unchanged.
@@ -159,7 +159,7 @@ running game and are not covered by the Python test suite.
 
 ## Replay swarm renderer refactor (2026-10-09)
 
-The 0.6.3 bridge bundles `pml-mod/0.1.41/replay_renderer.mjs` through
+The 0.6.3 bridge bundles `pml-mod/0.1.42/replay_renderer.mjs` through
 `tools/build_pml_mod.py`. Playback creates a separate native render-only car and
 copies the complete initial state for each episode. The native chase camera stays
 attached to the fastest completed run in the selected group. If none finished, it follows the run with the greatest final
@@ -172,7 +172,7 @@ old replay group without restoring a camera from the disposed scene.
 Runs from one checkpoint use distinct episode colours. Runs spanning checkpoints
 retain their training-step gradient. The Replay tab shows the checked car count
 and provides Check all episodes / Uncheck all controls. Renderer tests and the
-benchmark now exercise the active 0.1.41 module rather than the archived 0.1.38
+benchmark now exercise the active 0.1.42 module rather than the archived 0.1.38
 template. Live verification showed five independently positioned cars at 16 s.
 
 Replay endings briefly extrapolate the final measured velocity while fading,

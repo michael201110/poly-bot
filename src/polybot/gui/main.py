@@ -2372,7 +2372,7 @@ class PolyBotWindow(QWidget):
             "Show the policy's actual inputs and outputs, applied controls, episode state, "
             "and reward breakdown inside PolyTrack. Updates follow policy decisions; "
             "simulator ticks and frame skip are shown separately. Requires WebSocket training "
-            "and PolyBot bridge 0.1.41 or newer for PolyTrack 0.6.3."
+            "and PolyBot bridge 0.1.42 or newer for PolyTrack 0.6.3."
         )
         description.setWordWrap(True)
         page.addWidget(description)
