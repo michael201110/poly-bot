@@ -80,7 +80,10 @@ class RewardConfig:
     stall_speed_threshold_mps: float = 5.0
     stall_timeout_s: float = 5.0
     reference_corridor_scale: float = 1.0
-    off_track_lateral_ratio: float = 1.05
+    # Match the simulator bridge's off-track event threshold (1.5 x the
+    # reported half-width). A tighter threshold mistakes distance from the
+    # reference line for leaving the actual drivable corridor.
+    off_track_lateral_ratio: float = 1.5
     off_track_heading_ratio: float = 0.80
     off_track_heading_rad: float = 1.10
     off_track_wall_ride_roll_rad: float = 0.261799  # 15 degrees
