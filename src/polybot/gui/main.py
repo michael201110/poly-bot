@@ -2603,6 +2603,8 @@ class PolyBotWindow(QWidget):
         {"ppo": self.ppo_form, "grtqc": self.grtqc_form, "tqc": self.tqc_form}[
             self.algorithm.currentText()
         ].load(preset)
+        if self.algorithm.currentText() == "grtqc" and name == "Scratch (8-step)":
+            self._load_reward_profile("Scratch completion")
 
     def _current_algorithm_settings(self) -> PPOConfig | GRTQCConfig | TQCConfig:
         forms = {"ppo": self.ppo_form, "grtqc": self.grtqc_form, "tqc": self.tqc_form}
@@ -2737,6 +2739,8 @@ class PolyBotWindow(QWidget):
                     "Learn the track": "Learning", "Improve consistency": "Balanced",
                     "Improve lap time": "Pace", "Experiment": "Balanced",
                 }[selected_goal]
+                if selected_algorithm == "grtqc" and _value(preset) == "Scratch (8-step)":
+                    profile = "Scratch completion"
                 data.update({
                     "algorithm": selected_algorithm, "backend": selected_backend,
                     "track_name": track_definition.name,
@@ -3527,6 +3531,9 @@ class PolyBotWindow(QWidget):
                     # racing line from the live simulator's loaded reference.
                     if cfg.grtqc.training_origin != "scratch":
                         cfg.grtqc = algorithm_presets("grtqc")["Scratch (8-step)"]
+                    if cfg.reward_profile in {"Learning", "Balanced"}:
+                        cfg.reward_profile = "Scratch completion"
+                        cfg.rewards = self.profiles.load(cfg.reward_profile)
                     self.load_configuration(cfg)
                     self.log.append(
                         "New track: starting a fresh GRTQC Scratch (8-step) model with full-track training. "

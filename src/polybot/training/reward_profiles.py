@@ -39,6 +39,42 @@ def learning_reward_config() -> RewardConfig:
                    checkpoint_bonus=50, curriculum_section_bonus=100)
 
 
+def scratch_completion_reward_config() -> RewardConfig:
+    """Completion-first rewards from the documented independent GRTQC scratch run."""
+    from dataclasses import replace
+
+    return replace(
+        balanced_reward_config(),
+        progress_per_m=2.0,
+        elapsed_cost_per_s=-10.0,
+        on_track_speed_per_m=0.0,
+        speed_pace_reward_per_m_per_mps=0.01,
+        speed_pace_limit_mps=55.0,
+        ground_brake_penalty_per_s=0.0,
+        imitation_bonus_per_s=0.0,
+        expert_action_bonus_per_s=0.0,
+        ghost_speed_bonus_per_s=0.0,
+        guidance_reward_scale=0.0,
+        low_speed_penalty_per_s=-2.0,
+        unsafe_speed_penalty_per_m=0.0,
+        barrier_contact_penalty=-200.0,
+        barrier_collision_impulse_threshold=250.0,
+        failure_progress_clawback_per_m=-1.0,
+        airborne_roll_timeout_s=1.0,
+        airborne_roll_failure_penalty=-400.0,
+        checkpoint_bonus=50.0,
+        finish_bonus=2_000.0,
+        finish_fast_bonus=15_000.0,
+        finish_target_s=20.0,
+        finish_pace_decay_per_s=0.15,
+        curriculum_section_bonus=0.0,
+        crash_penalty=-400.0,
+        stall_penalty=-400.0,
+        off_track_penalty=-400.0,
+        early_off_track_penalty=-400.0,
+    )
+
+
 def pace_reward_config() -> RewardConfig:
     from dataclasses import replace
 
@@ -49,6 +85,7 @@ def pace_reward_config() -> RewardConfig:
 BUILTIN_REWARD_PROFILES = {
     "Balanced": balanced_reward_config,
     "Learning": learning_reward_config,
+    "Scratch completion": scratch_completion_reward_config,
     "Pace": pace_reward_config,
     "Summer 1 - balanced": summer_1_reward_config,
     "Summer 1 - full bootstrap": summer_1_bootstrap_reward_config,
