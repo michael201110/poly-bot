@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import vm from "node:vm";
 
-const source = readFileSync(new URL("../pml-mod/0.1.42/worker_runtime.js", import.meta.url), "utf8");
+const source = readFileSync(new URL("../pml-mod/0.1.43/worker_runtime.js", import.meta.url), "utf8");
 function runtime() {
   const context = vm.createContext({
     BridgeError: Error, maxReferenceTicks: 600000, referenceSampleTicks: 20,
@@ -12,6 +12,7 @@ function runtime() {
   });
   vm.runInContext(
     source.slice(source.indexOf("function finite("), source.indexOf("function findCar(")) +
+    source.slice(source.indexOf("function buildReferenceLookahead("), source.indexOf("function buildTelemetry(")) +
     source.slice(source.indexOf("function addReferencePoint("), source.indexOf("function buildReference(ghost")) + `
       function internalDispatch(message) { if (message.messageType === 1) car.frames = 0; }
       function findCar() { return car; }
@@ -68,4 +69,37 @@ test("an incomplete recorded run cannot silently become a valid reference", () =
   const context = runtime();
   context.actions = Array.from({ length: 100 }, () => [0, 1, 0]);
   assert.throws(() => vm.runInContext("buildReferenceFromControls(actions, {});", context));
+});
+
+test("finish lookahead stays full and points forward beyond the recorded endpoint", () => {
+  const context = runtime();
+  context.line = {
+    schema: "polybot.racing-line.v1",
+    points: Array.from({ length: 25 }, (_, index) => ({
+      tick: index * 20, position_m: [index * 2, 0, 0],
+      quaternion_xyzw: [0, 0, 0, 1], checkpoint_index: 0,
+    })),
+  };
+  vm.runInContext(`
+    saved = buildReferenceFromSavedLine(line, {});
+    before = JSON.stringify(saved);
+    basis = { forward: [1, 0, 0], right: [0, 0, -1], up: [0, 1, 0] };
+    approaching = buildReferenceLookahead(saved, 20, [40, 0, 0], basis, 12);
+    atFinish = buildReferenceLookahead(saved, 24, [48, 0, 0], basis, 12);
+    after = JSON.stringify(saved);
+  `, context);
+  const approaching = JSON.parse(JSON.stringify(context.approaching));
+  const atFinish = JSON.parse(JSON.stringify(context.atFinish));
+  assert.deepEqual(approaching.lookaheadMask, Array(12).fill(1));
+  assert.deepEqual(atFinish.lookaheadMask, Array(12).fill(1));
+  // Existing samples keep their original geometry; only missing ones extend.
+  assert.equal(approaching.lookahead[0][0], 6);
+  assert.deepEqual(approaching.lookahead.slice(1).map(p => p[0]),
+    Array.from({ length: 11 }, (_, i) => (i + 2) * 5));
+  assert.deepEqual(atFinish.lookahead.map(p => p[0]),
+    Array.from({ length: 12 }, (_, i) => (i + 1) * 5));
+  assert.ok(atFinish.lookahead.flat().every(Number.isFinite));
+  assert.equal(context.before, context.after);
+  assert.equal(context.saved.length, 48);
+  assert.equal(context.saved.points.length, 25);
 });

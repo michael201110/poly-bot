@@ -1,7 +1,9 @@
 # Running PolyBot in PolyTrack
 
-The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. The latest 0.6.3 bridge is 0.1.42. It is for local training and
+The real-game path targets PolyTrack 0.6.3 and retains 0.6.2 compatibility through PolyModLoader. The latest 0.6.3 bridge is 0.1.43. It is for local training and
 demonstrations, not leaderboard or multiplayer automation.
+
+Bridge 0.1.43 keeps the full lookahead horizon near the finish by extending the final recorded tangent beyond the line endpoint. These virtual points only supply observations; native finish detection and the recorded route length are unchanged. Existing checkpoints remain loadable, but their driving behavior must be evaluated with the updated observations.
 
 ## One-time setup
 

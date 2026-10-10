@@ -28,13 +28,16 @@ def test_native_instance_guard_is_scoped_to_each_simulator_port(tmp_path):
 
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text())
     version = manifest["latest"]["0.6.3"]
-    main = (MOD_ROOT / version / "main.mod.js").read_text()
+    # Exercise the mixin registration without booting the bundled HUD DOM.
+    main = (MOD_ROOT / version / "main.template.js").read_text()
     main = "class PolyBotBridgeMod" + main.split("class PolyBotBridgeMod", 1)[1]
     main = main.replace("export const polyMod", "const polyMod")
     checks = """
 class PolyMod {}
 const MixinType = {INSERT:1,REPLACEBETWEEN:2};
 const polybotWorkerInjection = () => {};
+const installPolyBotHudOverlay = () => () => {};
+const installPolyBotReplayRenderer = () => {};
 MAIN
 function instanceChannel(port) {
   globalThis.location = {href:'https://web.polymodloader.com/?polybotPort='+port};
