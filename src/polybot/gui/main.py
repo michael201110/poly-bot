@@ -2751,15 +2751,7 @@ class PolyBotWindow(QWidget):
                     "ppo": None, "grtqc": None, "tqc": None,
                 })
                 if selected_algorithm == "grtqc" and _value(preset) == "Scratch (8-step)":
-                    total_steps = int(data["timesteps"])
-                    practice_steps = max(1, round(total_steps * 0.4))
-                    data["curriculum"] = asdict(CurriculumConfig(
-                        mode="custom",
-                        phases=(
-                            CurriculumPhaseConfig(mode="quarters-randomised", steps=practice_steps),
-                            CurriculumPhaseConfig(mode="full", steps=max(1, total_steps - practice_steps)),
-                        ),
-                    ))
+                    data["curriculum"] = asdict(CurriculumConfig(mode="full"))
                 data[selected_algorithm] = asdict(
                     algorithm_presets(selected_algorithm)[_value(preset)]
                 )
@@ -3535,23 +3527,9 @@ class PolyBotWindow(QWidget):
                     # racing line from the live simulator's loaded reference.
                     if cfg.grtqc.training_origin != "scratch":
                         cfg.grtqc = algorithm_presets("grtqc")["Scratch (8-step)"]
-                    if cfg.curriculum.mode == "full":
-                        practice_steps = max(1, round(cfg.timesteps * 0.4))
-                        cfg.curriculum = CurriculumConfig(
-                            mode="custom",
-                            phases=(
-                                CurriculumPhaseConfig(
-                                    mode="quarters-randomised", steps=practice_steps,
-                                ),
-                                CurriculumPhaseConfig(
-                                    mode="full", steps=max(1, cfg.timesteps - practice_steps),
-                                ),
-                            ),
-                            lead_in_ratio=cfg.curriculum.lead_in_ratio,
-                        )
                     self.load_configuration(cfg)
                     self.log.append(
-                        "New track: starting a fresh GRTQC Scratch (8-step) model with a staged curriculum. "
+                        "New track: starting a fresh GRTQC Scratch (8-step) model with full-track training. "
                         "Its initial racing line will be captured from the loaded simulator reference."
                     )
                 else:
