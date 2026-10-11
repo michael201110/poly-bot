@@ -8,6 +8,7 @@ import math
 import random
 import re
 import sys
+from bisect import bisect_left
 from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -679,6 +680,40 @@ def stratified_sample(
         start = (stratum * len(ordered)) // max_cars
         end = ((stratum + 1) * len(ordered)) // max_cars
         selected.append(ordered[rng.randrange(start, end)])
+    return selected
+
+
+def evenly_sample_replays(
+    entries: Sequence[ReplaySelection], max_cars: int, *, seed: int = 0,
+) -> list[ReplaySelection]:
+    """Choose unique runs nearest evenly spaced training-step targets."""
+    if max_cars < 1:
+        raise ValueError("max_cars must be positive")
+    ordered = sorted(
+        entries,
+        key=lambda item: (item.training_step, str(item.metadata["run_id"]),
+                          str(item.metadata["episode_id"]), str(item.replay_directory)),
+    )
+    if len(ordered) <= max_cars:
+        return ordered
+    steps = [item.training_step for item in ordered]
+    rng = random.Random(seed)
+    selected = []
+    lower = 0
+    for slot in range(max_cars):
+        target = (steps[0] + steps[-1]) / 2 if max_cars == 1 else (
+            steps[0] + (steps[-1] - steps[0]) * slot / (max_cars - 1)
+        )
+        # Reserve enough unique entries for the remaining targets.
+        upper = len(ordered) - (max_cars - slot)
+        insertion = bisect_left(steps, target, lower, upper + 1)
+        candidates = sorted({max(lower, min(upper, insertion)),
+                             max(lower, min(upper, insertion - 1))})
+        distance = min(abs(steps[index] - target) for index in candidates)
+        index = rng.choice([index for index in candidates
+                            if abs(steps[index] - target) == distance])
+        selected.append(ordered[index])
+        lower = index + 1
     return selected
 
 

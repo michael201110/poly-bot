@@ -66,6 +66,7 @@ from polybot.replay_swarm import (
     replay_camera_rank,
     SelectedReplayPayload,
     filter_replays,
+    evenly_sample_replays,
     load_replay_episode,
     load_replay_index,
     parse_color_stops,
@@ -1849,12 +1850,18 @@ class PolyBotWindow(QWidget):
         self.replay_swarm_max_cars = QSpinBox()
         self.replay_swarm_max_cars.setRange(1, MAX_REPLAY_GHOSTS)
         self.replay_swarm_max_cars.setValue(100)
+        self.replay_swarm_max_cars.setToolTip(
+            "Larger selections are reduced to this many runs, evenly across training steps."
+        )
         self.replay_swarm_seed = QSpinBox()
         self.replay_swarm_seed.setRange(0, 2_000_000_000)
         selection_row = QHBoxLayout()
         selection_row.addWidget(QLabel("Maximum cars"))
         selection_row.addWidget(self.replay_swarm_max_cars)
-        selection_row.addWidget(QLabel("Sampling seed"))
+        selection_row.addWidget(QLabel("Tie-break seed"))
+        self.replay_swarm_seed.setToolTip(
+            "Chooses between runs equally close to a sampled training step."
+        )
         selection_row.addWidget(self.replay_swarm_seed)
         swarm_form.addRow("Large groups", selection_row)
         self.replay_swarm_color_min = QSpinBox()
@@ -2187,9 +2194,9 @@ class PolyBotWindow(QWidget):
                 for metadata in load_replay_index(directory)
                 if (metadata["run_id"], metadata["episode_id"]) in selected_keys
             ]
-            if len(selected) > config["max_cars"]:
-                raise ValueError("The checked episode group exceeds Maximum cars.")
-            return len(entries), sorted(selected, key=lambda item: (item.training_step, item.metadata["episode_id"])), len(selected)
+            matching_count = len(selected)
+            selected = evenly_sample_replays(selected, config["max_cars"], seed=config["seed"])
+            return len(entries), selected, matching_count
         matching_count = len(
             filter_replays(
                 entries,
@@ -2205,9 +2212,10 @@ class PolyBotWindow(QWidget):
             episodes=config["episodes"],
             finished_only=config["finished_only"],
             failed_only=config["failed_only"],
-            max_cars=config["max_cars"],
+            max_cars=max(1, matching_count),
             seed=config["seed"],
         )
+        selected = evenly_sample_replays(selected, config["max_cars"], seed=config["seed"])
         return total_indexed, selected, matching_count
 
     def _submit_replay_swarm(self, action: str) -> None:
@@ -2317,6 +2325,7 @@ class PolyBotWindow(QWidget):
                 report["step_filter"] = list(config["steps"])
                 report["episode_filter"] = list(config["episodes"]) if config["episodes"] else None
                 report["sample_seed"] = config["seed"]
+                report["sampling"] = "even_training_steps"
                 return report
             if not selected:
                 raise ValueError(f"{action.capitalize()} requires at least one matching replay episode.")
@@ -2386,6 +2395,13 @@ class PolyBotWindow(QWidget):
                 f"Set training-step window to {minimum}:{maximum} ({result['episode_count']} episodes indexed)."
             )
         else:
+            selection = result.get("selection", {})
+            matched = selection.get("matching_episodes", 0)
+            chosen = selection.get("selected_episode_count", 0)
+            if matched > chosen:
+                self._append_replay_swarm_output(
+                    f"Selected {chosen} of {matched} attempts, evenly across training steps."
+                )
             outcome = result.get("result")
             if isinstance(outcome, dict) and "loaded_ghosts" in outcome:
                 message = (

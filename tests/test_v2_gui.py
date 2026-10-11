@@ -552,6 +552,23 @@ def test_live_log_viewer_follows_appended_events(qt_app, tmp_path) -> None:
         watcher.close()
 
 
+@pytest.mark.parametrize("checked", [False, True])
+def test_oversized_replay_selection_samples_even_training_steps(tmp_path, monkeypatch, checked):
+    entries = [{"run_id": "run", "episode_id": str(i), "training_step_start": step,
+                "status": "finished"}
+               for i, step in enumerate([*range(100), 250, 500, 750, 1000])]
+    monkeypatch.setattr(gui_main, "resolve_replay_directories", lambda path: [tmp_path])
+    monkeypatch.setattr(gui_main, "load_replay_index", lambda path: entries)
+    monkeypatch.setattr("polybot.replay_swarm.load_replay_index", lambda path: entries)
+    config = {"path": str(tmp_path), "max_cars": 5, "seed": 0, "steps": (0, 1000),
+              "episodes": None, "finished_only": False, "failed_only": False}
+    if checked:
+        config["selected_episodes"] = [(item["run_id"], item["episode_id"]) for item in entries]
+    total, selected, matching = PolyBotWindow._replay_swarm_selection(config)
+    assert total == matching == 104
+    assert [item.training_step for item in selected] == [0, 250, 500, 750, 1000]
+
+
 def test_replay_swarm_tab_defaults_and_input_validation(window) -> None:
     labels = {button.text() for button in window.replay_swarm_action_buttons}
     assert {

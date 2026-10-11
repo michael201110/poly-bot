@@ -14,6 +14,7 @@ from polybot.replay_swarm import (
     ReplaySelection,
     SelectedReplayPayload,
     filter_replays,
+    evenly_sample_replays,
     interpolate_position,
     interpolate_quaternion,
     interpolate_replay,
@@ -102,6 +103,27 @@ def test_seeded_stratified_sampling_is_deterministic_and_spans_age_range() -> No
     assert len(set(ages)) == 10
     assert min(ages) < 15_000
     assert max(ages) > 80_000
+
+
+def test_even_step_sampling_handles_dense_early_runs_and_sparse_late_runs() -> None:
+    steps = [*range(100), 250, 500, 750, 1000]
+    runs = [ReplaySelection(Path("run"), entry(i, step)) for i, step in enumerate(steps)]
+    chosen = evenly_sample_replays(list(reversed(runs)), 5)
+    assert [run.training_step for run in chosen] == [0, 250, 500, 750, 1000]
+
+
+@pytest.mark.parametrize("limit", [1, 2, 5, 9, 10, 12])
+def test_even_step_sampling_keeps_unique_runs_with_duplicate_steps(limit) -> None:
+    runs = [ReplaySelection(Path("run"), entry(i, step))
+            for i, step in enumerate([0] * 8 + [500, 1000])]
+    chosen = evenly_sample_replays(runs, limit)
+    assert len(chosen) == min(limit, len(runs))
+    assert len({run.metadata["episode_id"] for run in chosen}) == len(chosen)
+    assert [run.training_step for run in chosen] == sorted(run.training_step for run in chosen)
+    assert chosen == evenly_sample_replays(runs, limit)
+    if limit > 1:
+        assert chosen[0].training_step == 0
+        assert chosen[-1].training_step == 1000
 
 
 def test_color_scale_interpolates_clamps_and_supports_custom_stops() -> None:
