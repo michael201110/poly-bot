@@ -67,26 +67,16 @@ def pace_reward_config() -> RewardConfig:
     """Reward quick progress while retaining functional contact and failure signals."""
     return replace(
         balanced_reward_config(),
-        elapsed_cost_per_s=-0.5,
+        elapsed_cost_per_s=-2.0,
         speed_pace_reward_per_m_per_mps=0.04,
-        finish_fast_bonus=1200,
-        finish_target_s=24,
+        finish_fast_bonus=5_000.0,
+        finish_target_s=30.0,
+        finish_pace_decay_per_s=0.15,
         ground_brake_penalty_per_s=0.0,
         imitation_bonus_per_s=0.0,
         barrier_contact_penalty=-100.0,
         barrier_collision_impulse_threshold=250.0,
         early_off_track_penalty=-100.0,
-    )
-
-
-def pace_30s_target_reward_config() -> RewardConfig:
-    """Reward lap-time improvement around a practical 30-second target."""
-    return replace(
-        pace_reward_config(),
-        elapsed_cost_per_s=-2.0,
-        finish_fast_bonus=5_000.0,
-        finish_target_s=30.0,
-        finish_pace_decay_per_s=0.15,
     )
 
 
@@ -107,7 +97,6 @@ BUILTIN_REWARD_PROFILES = {
     "Learning": learning_reward_config,
     "Scratch completion": scratch_completion_reward_config,
     "Pace": pace_reward_config,
-    "Pace · 30 s target": pace_30s_target_reward_config,
     "Pace + failure x3": pace_failure_x3_reward_config,
 }
 

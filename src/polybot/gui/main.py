@@ -1179,6 +1179,18 @@ class PolyBotWindow(QWidget):
             form.addRow(text, widget)
             self.reward_basic[name] = widget
             widget.valueChanged.connect(self._basic_reward_changed)
+        target_lap = _editor(
+            self._reward_values["finish_target_s"],
+            "Lap time at or below which the full fast-finish bonus applies.",
+        )
+        assert isinstance(target_lap, QDoubleSpinBox)
+        target_lap.setRange(5.0, 300.0)
+        target_lap.setDecimals(1)
+        target_lap.setSingleStep(1.0)
+        target_lap.setSuffix(" s")
+        form.addRow(QLabel("Target lap time"), target_lap)
+        self.reward_basic["finish_target_s"] = target_lap
+        target_lap.valueChanged.connect(self._basic_reward_changed)
         for name, label, description in (
             ("failure_multiplier", "Failure severity",
              "Multiplies crash, stall, off-track and barrier penalties from the selected profile."),
@@ -2749,7 +2761,7 @@ class PolyBotWindow(QWidget):
                 track_definition = self.track_registry.resolve(track.currentData())
                 profile = {
                     "Learn the track": "Learning", "Improve consistency": "Balanced",
-                    "Improve lap time": "Pace · 30 s target", "Experiment": "Balanced",
+                    "Improve lap time": "Pace", "Experiment": "Balanced",
                 }[selected_goal]
                 if selected_algorithm == "grtqc" and _value(preset) == "Scratch (8-step)":
                     profile = "Scratch completion"
@@ -2810,6 +2822,7 @@ class PolyBotWindow(QWidget):
     def _basic_reward_changed(self) -> None:
         for name in ("progress_per_m", "on_track_speed_per_m", "guidance_reward_scale", "action_change_penalty"):
             self._reward_values[name] = _value(self.reward_basic[name])
+        self._reward_values["finish_target_s"] = _value(self.reward_basic["finish_target_s"])
         base = asdict(self._base_rewards)
         failure = _value(self.reward_basic["failure_multiplier"])
         finish = _value(self.reward_basic["finish_multiplier"])
@@ -2823,6 +2836,8 @@ class PolyBotWindow(QWidget):
 
     def _advanced_reward_changed(self, name: str, value: float) -> None:
         self._reward_values[name] = value
+        if name == "finish_target_s":
+            _set(self.reward_basic[name], value)
         self._mark_reward_profile_custom()
         self._refresh_reward_view(update_form=False)
 
