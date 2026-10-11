@@ -79,6 +79,17 @@ def pace_reward_config() -> RewardConfig:
     )
 
 
+def pace_30s_target_reward_config() -> RewardConfig:
+    """Reward lap-time improvement around a practical 30-second target."""
+    return replace(
+        pace_reward_config(),
+        elapsed_cost_per_s=-2.0,
+        finish_fast_bonus=5_000.0,
+        finish_target_s=30.0,
+        finish_pace_decay_per_s=0.15,
+    )
+
+
 def pace_failure_x3_reward_config() -> RewardConfig:
     """Pace rewards with threefold contact and terminal failure costs."""
     pace = pace_reward_config()
@@ -96,6 +107,7 @@ BUILTIN_REWARD_PROFILES = {
     "Learning": learning_reward_config,
     "Scratch completion": scratch_completion_reward_config,
     "Pace": pace_reward_config,
+    "Pace · 30 s target": pace_30s_target_reward_config,
     "Pace + failure x3": pace_failure_x3_reward_config,
 }
 

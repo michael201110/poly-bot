@@ -2749,7 +2749,7 @@ class PolyBotWindow(QWidget):
                 track_definition = self.track_registry.resolve(track.currentData())
                 profile = {
                     "Learn the track": "Learning", "Improve consistency": "Balanced",
-                    "Improve lap time": "Pace", "Experiment": "Balanced",
+                    "Improve lap time": "Pace · 30 s target", "Experiment": "Balanced",
                 }[selected_goal]
                 if selected_algorithm == "grtqc" and _value(preset) == "Scratch (8-step)":
                     profile = "Scratch completion"
