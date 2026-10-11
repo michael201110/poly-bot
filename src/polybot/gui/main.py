@@ -1156,7 +1156,7 @@ class PolyBotWindow(QWidget):
         self.reward_profile.currentTextChanged.connect(self._load_reward_profile)
         row.addWidget(self.reward_profile)
         for label, handler, tip in (
-            ("Save profile", self._save_profile, "Save all 69 resolved reward values to a named profile."),
+            ("Save profile", self._save_profile, "Save all resolved reward values to a named profile."),
             ("Duplicate", self._duplicate_profile, "Copy this profile under a new name."),
             ("Compare", self._compare_profiles, "Show exact differences between two profiles."),
             ("Reset", self._reset_profile, "Restore the selected profile's original values."),
@@ -1173,8 +1173,11 @@ class PolyBotWindow(QWidget):
             ("on_track_speed_per_m", "Speed importance"),
             ("guidance_reward_scale", "Racing line guidance"),
             ("action_change_penalty", "Smooth driving"),
+            ("barrier_speed_loss_penalty_per_mps", "Barrier speed-loss penalty (per m/s)"),
         ):
             widget = _editor(self._reward_values[name], REWARD_INFO[name].description)
+            if name == "barrier_speed_loss_penalty_per_mps":
+                widget.setRange(-10_000.0, 0.0)
             text = QLabel(label)
             text.setToolTip(REWARD_INFO[name].description)
             form.addRow(text, widget)
@@ -2836,7 +2839,10 @@ class PolyBotWindow(QWidget):
         self._refresh_reward_view()
 
     def _basic_reward_changed(self) -> None:
-        for name in ("progress_per_m", "on_track_speed_per_m", "guidance_reward_scale", "action_change_penalty"):
+        for name in (
+            "progress_per_m", "on_track_speed_per_m", "guidance_reward_scale", "action_change_penalty",
+            "barrier_speed_loss_penalty_per_mps",
+        ):
             self._reward_values[name] = _value(self.reward_basic[name])
         self._reward_values["finish_target_s"] = _value(self.reward_basic["finish_target_s"])
         base = asdict(self._base_rewards)
@@ -2852,7 +2858,7 @@ class PolyBotWindow(QWidget):
 
     def _advanced_reward_changed(self, name: str, value: float) -> None:
         self._reward_values[name] = value
-        if name == "finish_target_s":
+        if name in {"finish_target_s", "barrier_speed_loss_penalty_per_mps"}:
             _set(self.reward_basic[name], value)
         self._mark_reward_profile_custom()
         self._refresh_reward_view(update_form=False)
@@ -3615,7 +3621,7 @@ class PolyBotWindow(QWidget):
                     "Loaded the checkpoint's policy, critic, curriculum, and reward settings; kept the selected step budget."
                 )
                 saved_rewards = resume_metadata.training_config.get("rewards")
-                if isinstance(saved_rewards, dict) and saved_rewards != cfg.to_dict()["rewards"]:
+                if isinstance(saved_rewards, dict) and RewardConfig(**saved_rewards) != cfg.rewards:
                     if reward_override:
                         fresh_replay = True
                         self.log.append(

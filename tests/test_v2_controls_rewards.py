@@ -183,7 +183,7 @@ def test_reward_components_have_unique_complete_terms_and_group_totals() -> None
         terms = info["reward_terms"]
         groups = info["reward_groups"]
         assert len(COMPONENTS) == len(groups)
-        assert len(terms) == 29
+        assert len(terms) == 30
         assert sum(terms.values()) == pytest.approx(reward)
         assert sum(groups.values()) == pytest.approx(reward)
         assert info["requested_control_duty"]["brake"] == pytest.approx(0.05)
@@ -375,6 +375,54 @@ def test_landing_grace_suppresses_untyped_impact_penalty() -> None:
         assert info["collision_impulse_steps"] > 0
         assert "barrier_contact" not in info["events"]
         assert info["reward_terms"]["barrier_contact"] == 0.0
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize(
+    ("velocity", "impulse", "landing", "expected"),
+    [
+        ((0.0, 0.0, 35.0), 300.0, False, -700.0),
+        ((0.0, 0.0, 49.5), 300.0, False, 0.0),
+        ((0.0, 0.0, 55.0), 300.0, False, 0.0),
+        ((0.0, 0.0, 35.0), 0.0, False, 0.0),
+        ((0.0, 0.0, 35.0), 249.0, False, 0.0),
+        ((0.0, 0.0, 35.0), 300.0, True, 0.0),
+        ((50.0, 0.0, 0.0), 300.0, False, 0.0),
+        ((0.0, -20.0, 50.0), 300.0, False, 0.0),
+    ],
+)
+def test_barrier_speed_loss_cost_uses_planar_loss_and_excludes_braking_and_landings(
+    monkeypatch, velocity, impulse, landing, expected,
+):
+    env = PolyTrackEnv(
+        MockSimulatorTransport(), track_id="mock/straight",
+        action_adapter=ContinuousActionAdapter(),
+        reward_config=replace(
+            RewardConfig(), barrier_collision_impulse_threshold=250.0,
+            barrier_speed_loss_penalty_per_mps=-50.0, barrier_speed_loss_deadzone_mps=1.0,
+        ),
+    )
+    try:
+        env.reset(seed=1)
+        env.latest_telemetry = replace(env.latest_telemetry, local_velocity_mps=(0.0, 0.0, 50.0))
+        env._was_airborne = landing
+        exchange = env._exchange
+
+        def impact(op, params):
+            result = exchange(op, params)
+            if op == "step":
+                result["state"]["local_velocity_mps"] = list(velocity)
+                result["state"]["wheel_contacts"] = [1.0] * 4
+                result["info"]["collision_impulses"] = [impulse, 0.0, 0.0]
+            return result
+
+        monkeypatch.setattr(env, "_exchange", impact)
+        _, _, _, _, info = env.step(np.array([0.0, -1.0], dtype=np.float32))
+        assert info["reward_terms"]["barrier_speed_loss"] == pytest.approx(expected)
+        # Keeping a scrape in the next decision cannot charge the original loss twice.
+        _, _, _, _, repeated = env.step(np.array([0.0, -1.0], dtype=np.float32))
+        assert repeated["reward_terms"]["barrier_speed_loss"] == 0.0
     finally:
         env.close()
 

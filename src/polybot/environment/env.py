@@ -742,6 +742,17 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         self._barrier_contact_s = dt if barrier_contact else 0.0
         if barrier_contact:
             self._episode_barrier_contact_progress.append(impact_progress)
+        # Use planar speed magnitude so turning alone cannot look like braking.
+        # Untyped touchdown impulses share the barrier contact landing exclusion.
+        barrier_speed_loss_mps = 0.0
+        if barrier_contact and self.latest_telemetry is not None:
+            previous_velocity = self.latest_telemetry.local_velocity_mps
+            velocity = telemetry.local_velocity_mps
+            barrier_speed_loss_mps = max(
+                0.0,
+                float(np.hypot(previous_velocity[0], previous_velocity[2]))
+                - float(np.hypot(velocity[0], velocity[2])),
+            )
 
         fully_airborne = grounded_wheels == 0
         if fully_airborne and abs(telemetry.roll_rad) >= self.reward_config.airborne_roll_limit_rad:
@@ -778,6 +789,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             off_track=off_track,
             early_off_track=early_off_track,
             barrier_contact=barrier_contact,
+            barrier_speed_loss_mps=barrier_speed_loss_mps,
             off_track_landing=off_track_landing,
             clean_takeoff=clean_takeoff,
             airborne_roll_failure=airborne_roll_failure,
@@ -840,6 +852,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         info["collision_impulse_steps"] = self._episode_collision_impulse_steps
         info["landing_impulse_peak"] = self._episode_landing_impulse_peak
         info["nonlanding_impulse_peak"] = self._episode_nonlanding_impulse_peak
+        info["barrier_speed_loss_mps"] = barrier_speed_loss_mps
         info["collision_impulse_progress"] = list(
             self._episode_collision_impulse_progress
         )
@@ -1000,6 +1013,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
         off_track: bool = False,
         early_off_track: bool = False,
         barrier_contact: bool = False,
+        barrier_speed_loss_mps: float = 0.0,
         off_track_landing: bool = False,
         clean_takeoff: bool = False,
         airborne_roll_failure: bool = False,
@@ -1020,6 +1034,7 @@ class PolyTrackEnv(gym.Env[np.ndarray, np.ndarray]):
             off_track=off_track,
             early_off_track=early_off_track,
             barrier_contact=barrier_contact,
+            barrier_speed_loss_mps=barrier_speed_loss_mps,
             off_track_landing=off_track_landing,
             clean_takeoff=clean_takeoff,
             airborne_roll_failure=airborne_roll_failure,

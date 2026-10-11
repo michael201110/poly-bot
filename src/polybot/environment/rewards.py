@@ -41,6 +41,8 @@ class RewardConfig:
     low_speed_grace_s: float = 1.0
     unsafe_speed_penalty_per_m: float = 0.0
     barrier_contact_penalty: float = -50.0
+    barrier_speed_loss_penalty_per_mps: float = 0.0
+    barrier_speed_loss_deadzone_mps: float = 1.0
     barrier_early_penalty: float = 0.0
     barrier_collision_impulse_threshold: float = 0.0
     failure_progress_clawback_per_m: float = 0.0
@@ -478,6 +480,7 @@ class RewardContext:
     off_track: bool = False
     early_off_track: bool = False
     barrier_contact: bool = False
+    barrier_speed_loss_mps: float = 0.0
     off_track_landing: bool = False
     clean_takeoff: bool = False
     airborne_roll_failure: bool = False
@@ -626,6 +629,9 @@ def _failure_terms(c: RewardContext) -> dict[str, float]:
     return {
         "barrier_contact": _barrier_contact_reward(c.telemetry, p)
         if c.barrier_contact else 0.0,
+        "barrier_speed_loss": p.barrier_speed_loss_penalty_per_mps * max(
+            0.0, c.barrier_speed_loss_mps - p.barrier_speed_loss_deadzone_mps,
+        ) if c.barrier_contact else 0.0,
         "failure_progress_clawback": _failure_progress_clawback(
             c.telemetry, p, episode_start_progress_m=c.episode_start_progress_m,
             highest_progress_m=max(c.highest_progress_m, c.telemetry.route_progress_m),

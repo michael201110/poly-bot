@@ -88,6 +88,7 @@ def test_generic_pace_profile_has_effective_contact_feedback_without_ghost_or_br
     assert config.imitation_bonus_per_s == 0.0
     assert config.ground_brake_penalty_per_s == 0.0
     assert config.barrier_contact_penalty == -100.0
+    assert config.barrier_speed_loss_penalty_per_mps == -50.0
     assert config.barrier_collision_impulse_threshold == 250.0
 
 
@@ -98,11 +99,12 @@ def test_pace_failure_x3_profile_only_increases_contact_and_failure_costs() -> N
 
     for field in fields(RewardConfig):
         if field.name not in {
-            "barrier_contact_penalty", "crash_penalty", "stall_penalty",
+            "barrier_contact_penalty", "barrier_speed_loss_penalty_per_mps", "crash_penalty", "stall_penalty",
             "off_track_penalty", "early_off_track_penalty",
         }:
             assert getattr(stronger, field.name) == getattr(pace, field.name)
     assert stronger.barrier_contact_penalty == -300.0
+    assert stronger.barrier_speed_loss_penalty_per_mps == -150.0
     assert stronger.crash_penalty == pace.crash_penalty * 3.0
     assert stronger.stall_penalty == pace.stall_penalty * 3.0
     assert stronger.off_track_penalty == pace.off_track_penalty * 3.0

@@ -46,6 +46,16 @@ def test_rejected_scratch_candidate_formats_with_optional_pace_requirement(targe
     assert ("requires below" in message) == (target is not None)
 
 
+def test_barrier_speed_loss_penalty_is_editable_and_keeps_both_reward_views_in_sync(window):
+    field = "barrier_speed_loss_penalty_per_mps"
+    window.reward_basic[field].setValue(-50.0)
+    assert window.configuration().rewards.barrier_speed_loss_penalty_per_mps == -50.0
+    assert window.reward_advanced.widgets[field].value() == -50.0
+    window.reward_advanced.widgets[field].setValue(-75.0)
+    assert window.reward_basic[field].value() == -75.0
+    assert window.configuration().rewards.barrier_speed_loss_penalty_per_mps == -75.0
+
+
 @pytest.fixture
 def window(qt_app, tmp_path, monkeypatch):
     registry_type = gui_main.TrackRegistry

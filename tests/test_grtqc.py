@@ -877,6 +877,7 @@ def test_fresh_replay_resume_refreezes_actor_and_collects_reliable_initial_laps(
         actor = {name: weight.clone() for name, weight in model.actor.state_dict().items()}
         GRTQCBackend().configure_resume(model, config, "cpu", fresh_replay=True)
         assert not model.actor_unlocked
+        assert model.critic_recovery_updates_remaining == config.grtqc.recovery_critic_cooldown_updates
         assert model.critic_updates_since_transfer == 0
         assert not model._critic_loss_history
         assert not model._disagreement_history

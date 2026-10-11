@@ -43,6 +43,22 @@ This profile is a new experiment, not a verified improvement over Pace.
 
 ## Finding controls
 
+**Rewards → Barrier speed-loss penalty (per m/s)** adds a cost for net planar
+speed lost over a control decision containing a detected barrier impact.
+Pace uses -50 points per m/s beyond a 1 m/s deadzone: a 10 m/s loss costs an
+extra 450 points. Pace + failure x3 uses -150. The deadzone is adjustable in
+advanced Rewards. Braking without contact and impacts during landing grace
+do not incur this cost. This estimates loss during contact from consecutive
+observations; it cannot separate simultaneous braking from the impact or recover
+speed losses hidden by acceleration within the decision.
+
+Existing checkpoints retain their saved rewards. To enable this on a trained
+model, set the coefficient and use **Continue best with selected rewards** or
+**Continue latest with selected rewards**. Changed reward settings require fresh
+replay; GRTQC holds actor updates through the configured recovery cooldown while
+the critics adapt. Ordinary continuation with the coefficient disabled can reuse
+replay from checkpoints saved before this option existed.
+
 GRTQC recovery keeps the saved critics and replay while restoring a verified actor.
 The actor stays frozen for the full configured recovery cooldown, even when the
 initial critic warmup is shorter. Detailed JSONL progress includes

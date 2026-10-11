@@ -680,6 +680,21 @@ def test_old_tqc_reward_semantics_preserves_replay_with_warning(tmp_path) -> Non
     assert "mixed reward versions" in warning["message"]
 
 
+def test_old_checkpoint_can_resume_with_disabled_new_reward_fields(tmp_path):
+    config = replace(configuration(tmp_path, "tqc"), timesteps=8, checkpoint_interval=0)
+    latest = TrainingRunner(config).run()
+    registry = ModelRegistry(config.output_root)
+    metadata = registry.read_metadata(latest)
+    metadata.training_config["rewards"].pop("barrier_speed_loss_penalty_per_mps")
+    metadata.training_config["rewards"].pop("barrier_speed_loss_deadzone_mps")
+    registry.write_metadata(latest, metadata)
+    TrainingRunner(config).run(resume=latest)
+    assert registry.read_metadata(latest).training_timesteps == 16
+    changed = replace(config, rewards=replace(config.rewards, barrier_speed_loss_penalty_per_mps=-50.0))
+    with pytest.raises(ValueError, match="reward settings differ"):
+        TrainingRunner(changed).run(resume=latest)
+
+
 def test_tqc_champion_anchor_caps_actor_action_drift() -> None:
     config = TrainingConfig(algorithm="tqc", tqc=TQCConfig(architecture="tiny"))
     backend = backend_for("tqc")

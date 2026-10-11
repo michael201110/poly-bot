@@ -75,6 +75,7 @@ def pace_reward_config() -> RewardConfig:
         ground_brake_penalty_per_s=0.0,
         imitation_bonus_per_s=0.0,
         barrier_contact_penalty=-100.0,
+        barrier_speed_loss_penalty_per_mps=-50.0,
         barrier_collision_impulse_threshold=250.0,
         early_off_track_penalty=-100.0,
     )
@@ -86,6 +87,7 @@ def pace_failure_x3_reward_config() -> RewardConfig:
     return replace(
         pace,
         barrier_contact_penalty=-300.0,
+        barrier_speed_loss_penalty_per_mps=pace.barrier_speed_loss_penalty_per_mps * 3.0,
         crash_penalty=pace.crash_penalty * 3.0,
         stall_penalty=pace.stall_penalty * 3.0,
         off_track_penalty=pace.off_track_penalty * 3.0,

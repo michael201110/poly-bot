@@ -895,6 +895,11 @@ class GRTQCBackend(TQCBackend):
             if horizon_changed or fresh_replay or targets_changed or adapter_added:
                 model.critic_mc_updates_done = 0
             model.invalidate_critic_reference()
+        if fresh_replay:
+            # Refit changed reward targets before moving the saved actor again.
+            model.critic_recovery_updates_remaining = max(
+                model.critic_recovery_updates_remaining, config.grtqc.recovery_critic_cooldown_updates,
+            )
         model.critic_mc_initialization_updates = config.grtqc.critic_mc_initialization_updates
         model.critic_mc_recovery_updates = config.grtqc.critic_mc_recovery_updates
         model.critic_mc_min_episodes = config.grtqc.critic_mc_min_episodes

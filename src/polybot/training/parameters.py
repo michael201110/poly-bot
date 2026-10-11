@@ -190,6 +190,13 @@ REWARD_DESCRIPTIONS = {
     "barrier_contact_penalty": (
         "Points charged for each verified barrier impact; contact alone does not end an attempt."
     ),
+    "barrier_speed_loss_penalty_per_mps": (
+        "Points per m/s of planar speed lost during a detected barrier impact, beyond the deadzone. "
+        "Negative discourages using walls to slow down; ordinary braking and landing-grace impacts are excluded."
+    ),
+    "barrier_speed_loss_deadzone_mps": (
+        "Speed loss ignored per barrier-contact decision, in m/s; filters small scrapes and speed fluctuations."
+    ),
     "barrier_early_penalty": "Extra points weighted toward an early barrier impact.",
     "barrier_collision_impulse_threshold": (
         "Minimum untyped impact impulse treated as a barrier contact; landing can also cause impulse."

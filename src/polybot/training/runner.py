@@ -27,6 +27,7 @@ from polybot.algorithms.registry import backend_for
 from polybot.environment.curriculum import CurriculumPhase, build_plan
 from polybot.environment.env import AirBrakeActionWrapper, PolyTrackEnv
 from polybot.environment.observations import schema_for
+from polybot.environment.rewards import RewardConfig
 from polybot.mock import MockSimulatorTransport
 from polybot.models.registry import (
     MIXED_REPLAY_REWARD_SEMANTICS,
@@ -1404,7 +1405,7 @@ class TrainingRunner:
                 if metadata.architecture != self.backend.architecture(cfg):
                     raise ValueError("resume architecture differs from saved model")
                 reward_config_changed = (
-                    metadata.training_config["rewards"] != cfg.to_dict()["rewards"]
+                    RewardConfig(**metadata.training_config["rewards"]) != cfg.rewards
                 )
                 reward_semantics_changed = (
                     cfg.algorithm in {"tqc", "grtqc"}
