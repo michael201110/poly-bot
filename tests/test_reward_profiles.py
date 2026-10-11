@@ -1,19 +1,18 @@
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import fields, replace
 from pathlib import Path
 
-from polybot.environment.rewards import RewardConfig, summer_1_pace_reward_config
-from polybot.training.reward_profiles import RewardProfileStore
+from polybot.environment.rewards import RewardConfig
+from polybot.training.reward_profiles import RewardProfileStore, pace_failure_x3_reward_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_custom_reward_profiles_round_trip_every_reward_field(tmp_path) -> None:
     store = RewardProfileStore(tmp_path)
-    expected = replace(summer_1_pace_reward_config(), progress_per_m=12.5)
+    expected = replace(pace_failure_x3_reward_config(), progress_per_m=12.5)
     path = store.save("My Pace Profile", expected)
     assert path.name == "my-pace-profile.json"
     actual = store.load("My Pace Profile")
@@ -75,36 +74,30 @@ def test_winter_4_conservative_pace_changes_only_finish_shaping() -> None:
             assert getattr(conservative, field.name) == getattr(baseline, field.name)
 
 
-def test_summer_1_20s_pace_rewards_faster_finishes_and_claws_back_failures() -> None:
-    config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load(
-        "Summer 1 - 20s pace"
-    )
-    at_29 = config.finish_bonus + config.finish_fast_bonus * math.exp(
-        -config.finish_pace_decay_per_s * (29 - config.finish_target_s)
-    )
-    at_20 = config.finish_bonus + config.finish_fast_bonus
-    assert config.finish_target_s == 20.0
-    assert at_20 > at_29 + 2_900
-    assert config.failure_progress_clawback_per_m == -config.progress_per_m
-    assert config.failure_early_penalty < 0
+def test_generic_pace_profile_has_effective_contact_feedback_without_ghost_or_brake_bias() -> None:
+    config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load("Pace")
+
+    assert config.speed_pace_reward_per_m_per_mps == 0.04
+    assert config.finish_target_s == 24.0
+    assert config.imitation_bonus_per_s == 0.0
+    assert config.ground_brake_penalty_per_s == 0.0
+    assert config.barrier_contact_penalty == -100.0
+    assert config.barrier_collision_impulse_threshold == 250.0
 
 
-def test_summer_1_spin_control_profile_targets_grounded_yaw_spins() -> None:
-    config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load(
-        "Summer 1 - 20s pace spin control"
-    )
+def test_pace_failure_x3_profile_only_increases_contact_and_failure_costs() -> None:
+    store = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards")
+    pace = store.load("Pace")
+    stronger = store.load("Pace + failure x3")
 
-    assert config.finish_target_s == 20.0
-    assert config.ground_spin_deadzone_radps == 5.0
-    assert config.ground_spin_penalty_per_rad_s == -12.0
-    assert config.ground_spin_min_grounded_wheels == 2
-    assert config.barrier_collision_impulse_threshold == 1e9
-
-
-def test_summer_1_impact_pace_profile_keeps_contacts_nonterminal() -> None:
-    config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load(
-        "Summer 1 - 20s pace impact"
-    )
-    assert config.barrier_collision_impulse_threshold == 0.0
-    assert config.barrier_contact_penalty == -1000.0
-    assert config.finish_target_s == 20.0
+    for field in fields(RewardConfig):
+        if field.name not in {
+            "barrier_contact_penalty", "crash_penalty", "stall_penalty",
+            "off_track_penalty", "early_off_track_penalty",
+        }:
+            assert getattr(stronger, field.name) == getattr(pace, field.name)
+    assert stronger.barrier_contact_penalty == -300.0
+    assert stronger.crash_penalty == pace.crash_penalty * 3.0
+    assert stronger.stall_penalty == pace.stall_penalty * 3.0
+    assert stronger.off_track_penalty == pace.off_track_penalty * 3.0
+    assert stronger.early_off_track_penalty == pace.early_off_track_penalty * 3.0

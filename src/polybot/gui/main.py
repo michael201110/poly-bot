@@ -492,6 +492,9 @@ class PolyBotWindow(QWidget):
             ("Continue latest with selected rewards",
              lambda: self._start(True, reward_override=True),
              "Keep the latest policy and critics, use the selected reward settings, and refill replay from scratch."),
+            ("Continue best with selected rewards",
+             lambda: self._start(True, best=True, reward_override=True),
+             "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
             ("Play champion", lambda: self._model_command("drive", "champion"),
              "Watch the champion drive a live lap in PolyTrack."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
@@ -912,7 +915,9 @@ class PolyBotWindow(QWidget):
             "Open PolyTrack with the PolyBot bridge to drive or train. Saved models use their cached "
             "racing line; a ghost is needed when initializing a new model.\n"
             + ("Continue best restores the checkpoint's policy, curriculum, and reward settings. "
-               "The session budget comes from Run setup." if has_champion else
+               "Continue best with selected rewards keeps its best policy and critics while "
+               "refilling replay under the selected reward settings. The session budget comes "
+               "from Run setup." if has_champion else
                "No champion yet? Start with Guided setup, then train and evaluate your first model.")
         )
 
@@ -1080,7 +1085,9 @@ class PolyBotWindow(QWidget):
                                ("Start a new run", lambda: self._start(False)),
                                ("Continue best model", lambda: self._start(True, best=True)),
                                ("Continue latest with selected rewards",
-                                lambda: self._start(True, reward_override=True))):
+                                lambda: self._start(True, reward_override=True)),
+                               ("Continue best with selected rewards",
+                                lambda: self._start(True, best=True, reward_override=True))):
             button = QPushButton(label)
             button.clicked.connect(handler)
             actions.addWidget(button)

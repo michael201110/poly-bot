@@ -4,18 +4,10 @@ from __future__ import annotations
 
 import json
 import re
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from pathlib import Path
 
-from polybot.environment.rewards import (
-    RewardConfig,
-    summer_1_bootstrap_pace_reward_config,
-    summer_1_bootstrap_reward_config,
-    summer_1_ghost_learning_reward_config,
-    summer_1_pace_reward_config,
-    summer_1_recovery_reward_config,
-    summer_1_reward_config,
-)
+from polybot.environment.rewards import RewardConfig
 
 
 def balanced_reward_config() -> RewardConfig:
@@ -33,16 +25,12 @@ def balanced_reward_config() -> RewardConfig:
 
 
 def learning_reward_config() -> RewardConfig:
-    from dataclasses import replace
-
     return replace(balanced_reward_config(), progress_per_m=3.0,
                    checkpoint_bonus=50, curriculum_section_bonus=100)
 
 
 def scratch_completion_reward_config() -> RewardConfig:
     """Completion-first rewards from the documented independent GRTQC scratch run."""
-    from dataclasses import replace
-
     return replace(
         balanced_reward_config(),
         progress_per_m=2.0,
@@ -76,23 +64,39 @@ def scratch_completion_reward_config() -> RewardConfig:
 
 
 def pace_reward_config() -> RewardConfig:
-    from dataclasses import replace
+    """Reward quick progress while retaining functional contact and failure signals."""
+    return replace(
+        balanced_reward_config(),
+        elapsed_cost_per_s=-0.5,
+        speed_pace_reward_per_m_per_mps=0.04,
+        finish_fast_bonus=1200,
+        finish_target_s=24,
+        ground_brake_penalty_per_s=0.0,
+        imitation_bonus_per_s=0.0,
+        barrier_contact_penalty=-100.0,
+        barrier_collision_impulse_threshold=250.0,
+        early_off_track_penalty=-100.0,
+    )
 
-    return replace(balanced_reward_config(), elapsed_cost_per_s=-0.5,
-                   speed_pace_reward_per_m_per_mps=0.04,
-                   finish_fast_bonus=1200, finish_target_s=24)
+
+def pace_failure_x3_reward_config() -> RewardConfig:
+    """Pace rewards with threefold contact and terminal failure costs."""
+    pace = pace_reward_config()
+    return replace(
+        pace,
+        barrier_contact_penalty=-300.0,
+        crash_penalty=pace.crash_penalty * 3.0,
+        stall_penalty=pace.stall_penalty * 3.0,
+        off_track_penalty=pace.off_track_penalty * 3.0,
+        early_off_track_penalty=pace.early_off_track_penalty * 3.0,
+    )
 
 BUILTIN_REWARD_PROFILES = {
     "Balanced": balanced_reward_config,
     "Learning": learning_reward_config,
     "Scratch completion": scratch_completion_reward_config,
     "Pace": pace_reward_config,
-    "Summer 1 - balanced": summer_1_reward_config,
-    "Summer 1 - full bootstrap": summer_1_bootstrap_reward_config,
-    "Summer 1 - bootstrap pace": summer_1_bootstrap_pace_reward_config,
-    "Summer 1 - ghost learning": summer_1_ghost_learning_reward_config,
-    "Summer 1 - recovery": summer_1_recovery_reward_config,
-    "Summer 1 - pace": summer_1_pace_reward_config,
+    "Pace + failure x3": pace_failure_x3_reward_config,
 }
 
 

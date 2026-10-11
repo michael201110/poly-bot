@@ -131,15 +131,18 @@ def test_teacher_student_stop_file_interrupts_active_training(tmp_path: Path) ->
 
 def test_named_reward_profile_overrides_teacher_reward_configuration() -> None:
     config = TrainingConfig(algorithm="ppo", ppo=PPOConfig())
-    selected = _apply_reward_profile(config, "Summer 1 - 20s pace spin control")
+    selected = _apply_reward_profile(config, "Pace + failure x3")
 
     assert selected is config
-    assert config.reward_profile == "Summer 1 - 20s pace spin control"
-    assert config.rewards.finish_target_s == 20.0
-    assert config.rewards.ground_spin_deadzone_radps == 5.0
-    assert config.rewards.ground_spin_penalty_per_rad_s == -12.0
-    assert config.rewards.ground_spin_min_grounded_wheels == 2
-    assert config.rewards.barrier_collision_impulse_threshold == 1e9
+    assert config.reward_profile == "Pace + failure x3"
+    assert config.rewards.finish_target_s == 24.0
+    assert config.rewards.ground_brake_penalty_per_s == 0.0
+    assert config.rewards.imitation_bonus_per_s == 0.0
+    assert config.rewards.barrier_contact_penalty == -300.0
+    assert config.rewards.barrier_collision_impulse_threshold == 250.0
+    assert config.rewards.crash_penalty == -450.0
+    assert config.rewards.stall_penalty == -300.0
+    assert config.rewards.off_track_penalty == -300.0
 
 
 @pytest.mark.parametrize(
