@@ -191,6 +191,8 @@ class GRTQC(SeededWarmupTQC):
         self.actor_step_action_limit = actor_step_action_limit
         self.actor_reference_drift_limit = actor_reference_drift_limit
         self.critic_updates_since_transfer = 0
+        # Recovery may require more updates than the initial critic warmup.
+        self.critic_recovery_updates_remaining = 0
         self.actor_unlocked = False
         self._actor_evaluation_hold = False
         self._critic_loss_history: deque[float] = deque(maxlen=critic_readiness_window)
@@ -451,6 +453,8 @@ class GRTQC(SeededWarmupTQC):
         return changed
 
     def _critic_ready(self) -> bool:
+        if self.critic_recovery_updates_remaining > 0:
+            return False
         if self.critic_mc_initialization_updates:
             if (
                 self.critic_mc_updates_done < self.critic_mc_initialization_updates
@@ -591,6 +595,7 @@ class GRTQC(SeededWarmupTQC):
             self._record("train/critic_layer_update_norms", critic_changes)
             self._record("train/critic_update_norm", float(np.linalg.norm(list(critic_changes.values()))))
             self.critic_updates_since_transfer += 1
+            self.critic_recovery_updates_remaining = max(0, self.critic_recovery_updates_remaining - 1)
             self._critic_loss_history.append(float(quantile_loss.item()))
             self._disagreement_history.append(float(disagreement.item()))
             if not self.actor_unlocked and self._critic_ready():
@@ -609,6 +614,7 @@ class GRTQC(SeededWarmupTQC):
             ).abs().mean()))
             self._record("train/actor_unlocked", int(self.actor_unlocked))
             self._record("train/critic_warmup_updates", self.critic_updates_since_transfer)
+            self._record("train/critic_recovery_updates_remaining", self.critic_recovery_updates_remaining)
             if (
                 self.actor_unlocked and not self._actor_evaluation_hold
                 and (self._n_updates + gradient_step + 1) % self.actor_update_interval == 0
@@ -978,6 +984,7 @@ class GRTQCBackend(TQCBackend):
             "quantile_mean": values.get("train/quantile_mean"),
             "target_mean": values.get("train/target_mean"),
             "critic_warmup_updates": model.critic_updates_since_transfer,
+            "critic_recovery_updates_remaining": model.critic_recovery_updates_remaining,
             "policy_training_std_max": values.get("train/policy_training_std_max"),
             "actor_unlocked": int(model.actor_unlocked),
             "actor_evaluation_pending": int(model._actor_evaluation_hold),

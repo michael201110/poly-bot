@@ -137,10 +137,13 @@ def format_event(event: dict[str, Any]) -> str | None:
             f" · max steering drift {event.get('max_steering_disagreement', 0):.2e}"
         )
     if kind == "candidate_rejected":
+        requirement = (
+            f" · requires below {event['required_below_s']:.3f}s"
+            if event.get("required_below_s") is not None else ""
+        )
         return (
             f"{prefix}Candidate kept for diagnosis{step} · median "
-            f"{_number(event.get('median_lap_s'), 's')} · requires below "
-            f"{event['required_below_s']:.3f}s"
+            f"{_number(event.get('median_lap_s'), 's')}{requirement}"
         )
     if kind == "actor_recovery":
         return (

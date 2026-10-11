@@ -43,6 +43,13 @@ This profile is a new experiment, not a verified improvement over Pace.
 
 ## Finding controls
 
+GRTQC recovery keeps the saved critics and replay while restoring a verified actor.
+The actor stays frozen for the full configured recovery cooldown, even when the
+initial critic warmup is shorter. Detailed JSONL progress includes
+`critic_recovery_updates_remaining`; this counter survives checkpoint continuation.
+Episode reward totals accumulate across training chunks and checkpoint saves, and
+reset when an attempt ends or evaluation resets the simulator.
+
 Press **Ctrl+K** and search for a setting or action, such as `actor learning rate`,
 `frame skip`, or `port`. Press Enter to open the selected result, or use Down and
 the arrow keys to choose another result. Search opens the correct page, reveals

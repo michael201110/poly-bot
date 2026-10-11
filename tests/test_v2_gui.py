@@ -36,6 +36,16 @@ from polybot.training.presets import algorithm_presets, configuration_warnings
 from polybot.training.visual_replays import INDEX_SCHEMA
 
 
+@pytest.mark.parametrize("target", [None, 34.878])
+def test_rejected_scratch_candidate_formats_with_optional_pace_requirement(target):
+    event = {"type": "candidate_rejected", "timesteps": 1000, "median_lap_s": 35.264}
+    if target is not None:
+        event["required_below_s"] = target
+    message = format_event(event)
+    assert "35.3s" in message
+    assert ("requires below" in message) == (target is not None)
+
+
 @pytest.fixture
 def window(qt_app, tmp_path, monkeypatch):
     registry_type = gui_main.TrackRegistry

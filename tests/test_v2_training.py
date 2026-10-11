@@ -489,6 +489,42 @@ def test_short_train_save_resume_and_evaluate(tmp_path, algorithm: str) -> None:
                           backend_for(algorithm).action_adapter(config).schema)
 
 
+def test_episode_reward_totals_survive_training_chunks(tmp_path, monkeypatch):
+    import polybot.training.runner as runner_module
+
+    expected = []
+
+    class RecordingReward(runner_module.ScaledTrainingReward):
+        def __init__(self, env, scale):
+            super().__init__(env, scale)
+            self.total = 0.0
+
+        def reward(self, reward):
+            self.total += reward
+            return super().reward(reward)
+
+        def step(self, action):
+            result = super().step(action)
+            if result[2] or result[3]:
+                expected.append(self.total)
+                self.total = 0.0
+            return result
+
+    monkeypatch.setattr(runner_module, "ScaledTrainingReward", RecordingReward)
+    config = configuration(tmp_path, "ppo")
+    config.timesteps = 48
+    config.max_episode_steps = 13
+    config.ppo.rollout_steps = 8
+    config.ppo.batch_size = 8
+    config.checkpoint_interval = 8
+    config.evaluation = EvaluationConfig(1000, 1)
+    events = []
+    TrainingRunner(config, events.append).run()
+    actual = [event["reward"] for event in events if event["type"] == "episode"]
+    assert len(actual) >= 2
+    assert actual == pytest.approx(expected, rel=1e-6, abs=1e-5)
+
+
 def test_latest_checkpoint_drops_stale_evaluation_after_unvalidated_updates() -> None:
     result = EvaluationResult(
         episodes=5, finish_rate=1.0, median_progress=1.0, mean_progress=1.0,

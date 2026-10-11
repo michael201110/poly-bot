@@ -1026,7 +1026,8 @@ def test_cleaner_candidate_retains_faster_pace_without_adding_contacts(
     assert expected in saved[0]
 
 
-def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_path, monkeypatch) -> None:
+@pytest.mark.parametrize("warmup", [2100, 100])
+def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_path, monkeypatch, warmup) -> None:
     config = replace(_config("grtqc"), output_root=tmp_path / "models")
     config.grtqc.critic_mc_initialization_updates = 6000
     config.grtqc.critic_mc_recovery_updates = 1000
@@ -1042,7 +1043,7 @@ def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_p
     preserved = {key: value.clone() for key, value in critic.state_dict().items()}
     runner.model = SimpleNamespace(
         actor=current, critic=critic, actor_lr=1e-5, actor_unlocked=True,
-        critic_warmup_updates=2100,
+        critic_warmup_updates=warmup,
         critic_updates_since_transfer=2100,
         critic_mc_initialization_updates=6000,
         critic_mc_updates_done=6000,
@@ -1063,11 +1064,41 @@ def test_failed_candidate_restores_only_verified_actor_and_rewarms_critics(tmp_p
     assert not current.optimizer.state
     assert runner.model.actor_lr == pytest.approx(1e-5)
     assert not runner.model.actor_unlocked
-    assert runner.model.critic_updates_since_transfer == 1100
+    assert runner.model.critic_updates_since_transfer == max(0, warmup - 1000)
+    assert runner.model.critic_recovery_updates_remaining == 1000
     assert runner.model.critic_mc_updates_done == 5000
     assert events[0]["critic_replay_preserved"] is True
     assert events[0]["critic_cooldown_updates"] == 1000
     assert events[0]["critic_mc_recovery_updates"] == 1000
+
+
+def test_recovery_keeps_actor_frozen_beyond_initial_warmup_and_survives_reload(tmp_path):
+    config = _config("grtqc")
+    config.grtqc.critic_warmup_updates = 2
+    config.grtqc.critic_readiness_window = 2
+    config.grtqc.critic_readiness_relative_change = 1e6
+    model, env = _model(config)
+    try:
+        model.set_logger(configure(None, []))
+        observation = np.zeros((1, model.observation_space.shape[0]), dtype=np.float32)
+        action = np.zeros((1, model.action_space.shape[0]), dtype=np.float32)
+        for _ in range(16):
+            model.replay_buffer.add(observation, observation, action, np.ones(1), np.zeros(1), [{}])
+        model.critic_recovery_updates_remaining = 8
+        before = {name: value.clone() for name, value in model.actor.state_dict().items()}
+        model.train(7, 8)
+        assert model.critic_recovery_updates_remaining == 1
+        assert not model.actor_unlocked
+        for name, value in model.actor.state_dict().items():
+            th.testing.assert_close(value, before[name], rtol=0, atol=0)
+        model.save(tmp_path / "recovering.zip")
+        loaded = GRTQC.load(tmp_path / "recovering.zip", device="cpu")
+        assert loaded.critic_recovery_updates_remaining == 1
+        model.train(1, 8)
+        assert model.critic_recovery_updates_remaining == 0
+        assert model.actor_unlocked
+    finally:
+        env.close()
 
 
 def test_first_cleaner_candidate_is_saved_and_can_be_recovered_without_champion(tmp_path, monkeypatch) -> None:

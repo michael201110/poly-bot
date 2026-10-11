@@ -907,6 +907,7 @@ class TrainingRunner:
             self.model.log_ent_coef.data.copy_(reference.log_ent_coef.data)
             self.model.ent_coef_optimizer.state.clear()
         self.model.actor_unlocked = False
+        self.model.critic_recovery_updates_remaining = settings.recovery_critic_cooldown_updates
         self.model.critic_updates_since_transfer = max(
             0, self.model.critic_warmup_updates - settings.recovery_critic_cooldown_updates,
         )
@@ -1059,12 +1060,10 @@ class TrainingRunner:
             if self.model.ent_coef_optimizer is not None:
                 self.model.ent_coef_optimizer.state.clear()
         self.model.actor_unlocked = False
-        cooldown = min(
-            self.model.critic_warmup_updates,
-            cfg.grtqc.recovery_critic_cooldown_updates,
-        )
-        self.model.critic_updates_since_transfer = (
-            self.model.critic_warmup_updates - cooldown
+        cooldown = cfg.grtqc.recovery_critic_cooldown_updates
+        self.model.critic_recovery_updates_remaining = cooldown
+        self.model.critic_updates_since_transfer = max(
+            0, self.model.critic_warmup_updates - cooldown,
         )
         self.model._critic_loss_history.clear()
         self.model._disagreement_history.clear()
@@ -1735,6 +1734,7 @@ class TrainingRunner:
                 self._scratch_section_results.clear()
                 phase_event = {"type": "phase", "index": index + 1, **asdict(phase)}
                 self._emit(phase_event)
+                callback = Callback()
                 while self.model.num_timesteps - phase_start < phase.steps:
                     if self.stop_requested.is_set():
                         break
@@ -1752,7 +1752,7 @@ class TrainingRunner:
                         # transition, including a possible terminal reward.
                         chunk = min(chunk, 64)
                     before = self.model.num_timesteps
-                    self.model.learn(chunk, callback=Callback(), reset_num_timesteps=False)
+                    self.model.learn(chunk, callback=callback, reset_num_timesteps=False)
                     if self.model.num_timesteps == before:
                         break
                     consumed = self.model.num_timesteps - start_steps
@@ -1830,6 +1830,8 @@ class TrainingRunner:
                             self._consecutive_rollbacks = 0
                         if not restored:
                             self.model.set_env(training_env)
+                        # The simulator reset after evaluation starts a new attempt.
+                        callback = Callback()
                         self._save("latest", self.last_evaluation)
                         if (
                             cfg.algorithm == "ppo" and cfg.ppo is not None
