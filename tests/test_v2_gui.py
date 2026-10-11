@@ -108,6 +108,20 @@ def test_config_file_actions_use_native_file_picker(window, tmp_path, monkeypatc
     assert window.configuration().to_dict() == expected.to_dict()
 
 
+def test_pure_pace_profile_exposes_editable_target_in_reward_setup(window) -> None:
+    assert window.reward_profile.findText("Pure Pace") >= 0
+    window.reward_profile.setCurrentText("Pure Pace")
+    assert window.configuration().reward_profile == "Pure Pace"
+    assert window.reward_basic["finish_target_s"].value() == 32.0
+    window.reward_basic["finish_target_s"].setValue(30.0)
+    rewards = window.configuration().rewards
+    assert rewards.finish_target_s == 30.0
+    assert window.reward_advanced.widgets["finish_target_s"].value() == 30.0
+    assert rewards.on_track_speed_per_m == 0.0
+    assert rewards.speed_pace_reward_per_m_per_mps == 0.0
+    assert window.reward_profile.currentText() == "Custom"
+
+
 def test_editing_reward_values_marks_profile_custom(window) -> None:
     assert window.reward_profile.currentText() == "Balanced"
     window.reward_basic["failure_multiplier"].setValue(1.5)

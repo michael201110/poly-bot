@@ -92,12 +92,34 @@ def pace_failure_x3_reward_config() -> RewardConfig:
         early_off_track_penalty=pace.early_off_track_penalty * 3.0,
     )
 
+
+def pure_pace_reward_config() -> RewardConfig:
+    """Time-only rewards for an existing finisher, with terminal failure costs."""
+    return RewardConfig(
+        elapsed_cost_per_s=-10.0,
+        imitation_bonus_per_s=0.0,
+        guidance_reward_scale=0.0,
+        low_speed_penalty_per_s=0.0,
+        barrier_contact_penalty=0.0,
+        barrier_collision_impulse_threshold=250.0,
+        finish_bonus=2_000.0,
+        finish_fast_bonus=5_000.0,
+        finish_target_s=32.0,
+        finish_pace_decay_per_s=0.15,
+        crash_penalty=-1_000.0,
+        stall_penalty=-1_000.0,
+        off_track_penalty=-1_000.0,
+        early_off_track_penalty=-1_000.0,
+    )
+
+
 BUILTIN_REWARD_PROFILES = {
     "Balanced": balanced_reward_config,
     "Learning": learning_reward_config,
     "Scratch completion": scratch_completion_reward_config,
     "Pace": pace_reward_config,
     "Pace + failure x3": pace_failure_x3_reward_config,
+    "Pure Pace": pure_pace_reward_config,
 }
 
 

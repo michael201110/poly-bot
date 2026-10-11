@@ -4,7 +4,13 @@ import json
 from dataclasses import fields, replace
 from pathlib import Path
 
-from polybot.environment.rewards import RewardConfig
+import pytest
+
+from polybot.control.actions import ControlDemand
+from polybot.environment.env import PolyTrackEnv
+from polybot.environment.rewards import RewardConfig, RewardContext, calculate_reward
+from polybot.mock import MockSimulatorTransport
+from polybot.protocol import Transition
 from polybot.training.reward_profiles import RewardProfileStore, pace_failure_x3_reward_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -78,7 +84,7 @@ def test_generic_pace_profile_has_effective_contact_feedback_without_ghost_or_br
     config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load("Pace")
 
     assert config.speed_pace_reward_per_m_per_mps == 0.04
-    assert config.finish_target_s == 24.0
+    assert config.finish_target_s == 30.0
     assert config.imitation_bonus_per_s == 0.0
     assert config.ground_brake_penalty_per_s == 0.0
     assert config.barrier_contact_penalty == -100.0
@@ -101,3 +107,60 @@ def test_pace_failure_x3_profile_only_increases_contact_and_failure_costs() -> N
     assert stronger.stall_penalty == pace.stall_penalty * 3.0
     assert stronger.off_track_penalty == pace.off_track_penalty * 3.0
     assert stronger.early_off_track_penalty == pace.early_off_track_penalty * 3.0
+
+
+@pytest.fixture
+def pure_pace_context(tmp_path):
+    store = RewardProfileStore(tmp_path)
+    assert "Pure Pace" in store.names()
+    config = store.load("Pure Pace")
+    env = PolyTrackEnv(MockSimulatorTransport(), track_id="mock/straight")
+    try:
+        env.reset(seed=1)
+        telemetry = env.latest_telemetry
+        assert telemetry is not None
+        yield RewardContext(
+            Transition("test", 1000, 1000, telemetry, (), {}),
+            ControlDemand(0.0, 1.0, 0.0), ControlDemand(0.0, 0.0, 0.0),
+            config, 0.001, 0.0, 0.0, 0.0,
+        )
+    finally:
+        env.close()
+
+
+@pytest.mark.parametrize("target", [30.0, 32.0, 40.0])
+def test_pure_pace_completed_laps_rank_strictly_by_time(pure_pace_context, target):
+    context = replace(pure_pace_context, config=replace(pure_pace_context.config, finish_target_s=target))
+    scores = []
+    for seconds in [25.0, 30.0, 32.0, 35.0, 36.0, 60.0, 90.0]:
+        transition = replace(context.transition, ticks_advanced=round(seconds * 1000),
+                             telemetry=replace(context.telemetry, elapsed_s=seconds), events=("finish",))
+        score, terms, _ = calculate_reward(replace(context, transition=transition))
+        assert all(value == 0 for name, value in terms.items() if name not in {"elapsed", "finish"})
+        scores.append(score)
+    assert all(faster > slower for faster, slower in zip(scores, scores[1:]))
+    assert scores[-1] > 0  # Even a slow valid finish beats abandoning the lap.
+
+
+def test_pure_pace_does_not_reward_line_speed_or_control_style(pure_pace_context):
+    baseline = calculate_reward(pure_pace_context)[0]
+    changed = replace(
+        pure_pace_context,
+        transition=replace(pure_pace_context.transition, events=("checkpoint",), telemetry=replace(
+            pure_pace_context.telemetry, route_progress_m=20.0, local_velocity_mps=(0.0, 0.0, 45.0),
+            lateral_offset_m=2.0, heading_error_rad=0.3,
+        )),
+        action=ControlDemand(0.8, 0.0, 1.0), barrier_contact=True,
+    )
+    assert calculate_reward(changed)[0] == baseline
+
+
+@pytest.mark.parametrize("failure", ["crash", "stalled", "off_track", "early_off_track", "timed_out"])
+def test_pure_pace_failures_have_negative_score_and_no_finish_credit(pure_pace_context, failure):
+    if failure == "crash":
+        context = replace(pure_pace_context, transition=replace(pure_pace_context.transition, events=("crash",)))
+    else:
+        context = replace(pure_pace_context, **{failure: True})
+    score, terms, _ = calculate_reward(context)
+    assert terms["finish"] == 0
+    assert score < 0

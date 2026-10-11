@@ -25,6 +25,22 @@ filter so you can browse recordings from other algorithms on the same track.
 Existing models use their saved racing line. Load an initialization ghost when
 initializing a new model. Starting the GUI does not start training or playback.
 
+## Pure Pace rewards
+
+Choose **Pure Pace** in **Rewards** for a model that already finishes laps.
+Set **Target lap time** to your next milestone (the profile defaults to 32 seconds).
+Use **Continue best with selected rewards** to apply it to a saved champion with
+fresh replay; ordinary continuation restores the checkpoint's saved rewards.
+
+The profile costs 10 points per simulated second. A valid finish earns 2,000
+points plus `5000 * exp(-0.15 * max(lap_seconds - target_seconds, 0))`.
+This makes the raw score of completed laps strictly better for faster times,
+including times below the target. Progress, speed, ghost matching, checkpoints,
+braking, smoothness, and nonterminal contact have no separate reward.
+Crash, stall, and off-track failures cost 1,000 points; unfinished timeouts lose
+all finish credit. Existing termination rules and champion evaluation still apply.
+This profile is a new experiment, not a verified improvement over Pace.
+
 ## Finding controls
 
 Press **Ctrl+K** and search for a setting or action, such as `actor learning rate`,
