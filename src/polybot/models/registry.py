@@ -175,6 +175,7 @@ class ModelRegistry:
         algorithm: str,
         *,
         track_slug: str | None = None,
+        include_checkpoints: bool = True,
     ) -> list[tuple[str, Path, ModelMetadata | None]]:
         base = self.algorithm_dir(track, algorithm, track_slug=track_slug)
         result: list[tuple[str, Path, ModelMetadata | None]] = []
@@ -184,7 +185,7 @@ class ModelRegistry:
                 metadata = self.read_metadata(directory) if (directory / "metadata.json").is_file() else None
                 result.append((name, directory, metadata))
         checkpoints = base / "checkpoints"
-        if checkpoints.is_dir():
+        if include_checkpoints and checkpoints.is_dir():
             for directory in sorted(checkpoints.glob("step-*")):
                 if directory.is_dir():
                     metadata = self.read_metadata(directory) if (directory / "metadata.json").is_file() else None

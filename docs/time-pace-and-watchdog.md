@@ -52,3 +52,8 @@ prevent browser crashes, sleep or tab unloading. No bridge plugin update is need
 
 Validation for this change: Python syntax parsing and diff whitespace review.
 No automated tests or deliberate simulator-disconnect test were run.
+
+Startup diagnosis also found that hidden archived checkpoints were fully decoded
+before being filtered from the Models view. The GUI now excludes those metadata
+reads unless **Show archived checkpoints** is enabled; the registry API retains
+its existing default of including checkpoints for other callers.

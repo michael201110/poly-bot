@@ -860,13 +860,13 @@ class PolyBotWindow(QWidget):
         self.models_table.setRowCount(0)
         for algorithm in ("grtqc", "tqc", "ppo"):
             try:
-                slots = registry.list_model_slots(track, algorithm)
+                slots = registry.list_model_slots(
+                    track, algorithm, include_checkpoints=self.show_archived_checkpoints.isChecked(),
+                )
             except (OSError, ValueError, TypeError) as exc:
                 inventory_errors[algorithm] = str(exc)
                 lines.append(f"{algorithm.upper()}: could not read inventory: {exc}")
                 continue
-            if not self.show_archived_checkpoints.isChecked():
-                slots = [slot for slot in slots if not slot[0].startswith("checkpoints/")]
             if not slots:
                 continue
             lines.append(f"{algorithm.upper()}")
