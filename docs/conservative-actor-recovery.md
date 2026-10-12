@@ -109,3 +109,31 @@ about 11.6% more average progress per second on the same route. The recorded
 lap spent 5.01 seconds in its first 10% of progress, then roughly 2.94–3.36
 seconds per 10% section. This is one training lap, not a verified split or
 proof that any single section accounts for the pace gap.
+
+## Champion line repair and promotion gate
+
+The smooth-rollout recovery stopped at step 1,600,791 after a one-lap
+deterministic screen failed at 90.2% progress. Its first three training laps
+were 35.215, 35.786, and 35.215 seconds; the repeated 35.215 was the actual
+champion actor's deterministic behavior with the line stored in champion
+metadata. A direct five-lap evaluation of that checkpoint and stored line
+finished 5/5 at 35.215 seconds with 50 barrier-contact steps, contradicting
+the stored 33.591-second, five-contact verification.
+
+The checkpoint policy itself was sound. Its line before the step-1,064,134
+promotion was preserved in `checkpoints/step-1056198/metadata.json`. An
+isolated copy of the champion checkpoint using that earlier 34.158-second
+reference line again finished 5/5 at 33.591 seconds with five contact steps.
+The bad champion metadata was backed up under
+`archive/before-champion-line-repair-20261012T164200Z/`; champion metadata
+now uses the five-lap reverified earlier line. Actor weights, critic weights,
+replay, and recorded evaluation remain unchanged.
+
+The bug was in line promotion: candidates with any barrier contact could
+replace the racing line without first re-evaluating the actor on that new
+line. This was possible because the earlier saved-line check required zero
+contacts, while the champion promotion rule allowed a small number. Every
+five-lap candidate that could beat the champion now receives a deterministic
+five-lap check with the proposed line. The new line is kept only if it improves the result without
+excess additional contact; otherwise a faster actor can still be promoted
+with the existing, actually verified line. The 30-second target remains unmet.

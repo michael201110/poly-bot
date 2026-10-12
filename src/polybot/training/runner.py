@@ -514,27 +514,6 @@ class TrainingRunner:
         if transitions:
             self._retain_grtqc_evaluation_transitions(transitions)
         self._candidate_racing_line = self._line_from_evaluation(telemetry_paths)
-        if (
-            self._candidate_racing_line is not None and result.episodes >= 5
-            and result.finish_rate == 1.0 and result.crash_rate == 0.0
-            and result.off_track_rate == 0.0 and result.stall_rate == 0.0
-            and result.barrier_contact_steps == 0
-        ):
-            # Changing geometry changes policy inputs. A candidate is only
-            # verified for the line that will actually be saved with it.
-            previous_line = self.racing_line
-            self.racing_line = self._candidate_racing_line
-            try:
-                result = evaluate_model(
-                    self.model, self._evaluation_environment, episodes=5,
-                    seed=cfg.seed + 1_000_000,
-                )
-            finally:
-                self.racing_line = previous_line
-            self._emit({"type": "saved_line_evaluation",
-                        "timesteps": self.model.num_timesteps, **result.to_dict()})
-        self.last_evaluation = result
-        self._emit({"type": "evaluation", "timesteps": self.model.num_timesteps, **result.to_dict()})
         champion_dir = self.registry.slot(
             cfg.track_name, cfg.algorithm, "champion", track_slug=cfg.track_slug,
         )
@@ -549,6 +528,47 @@ class TrainingRunner:
             )
             if previous is not None:
                 champion = EvaluationResult(**previous)
+        if (
+            self._candidate_racing_line is not None and result.episodes >= 5
+            and result.finish_rate == 1.0 and result.crash_rate == 0.0
+            and result.off_track_rate == 0.0 and result.stall_rate == 0.0
+            and (champion is None or result.rank() > champion.rank())
+        ):
+            # Changing geometry changes policy inputs. Contact-free driving
+            # is not required for promotion, so every finishing candidate
+            # must be verified with the line that would be saved with it.
+            previous_line = self.racing_line
+            self.racing_line = self._candidate_racing_line
+            try:
+                saved_line_result = evaluate_model(
+                    self.model, self._evaluation_environment, episodes=5,
+                    seed=cfg.seed + 1_000_000,
+                )
+            finally:
+                self.racing_line = previous_line
+            self._emit({"type": "saved_line_evaluation",
+                        "timesteps": self.model.num_timesteps,
+                        **saved_line_result.to_dict()})
+            use_saved_line = (
+                saved_line_result.rank() > result.rank()
+                and saved_line_result.barrier_contact_steps
+                <= result.barrier_contact_steps + 2 * result.episodes
+            ) or (
+                saved_line_result.rank() == result.rank()
+                and saved_line_result.barrier_contact_steps < result.barrier_contact_steps
+            )
+            self._emit({
+                "type": "saved_line_selection", "timesteps": self.model.num_timesteps,
+                "use_saved_line": use_saved_line,
+            })
+            if use_saved_line:
+                result = saved_line_result
+            else:
+                # The actor may still be faster on its existing observation
+                # geometry. Promote those verified weights with that line.
+                self._candidate_racing_line = None
+        self.last_evaluation = result
+        self._emit({"type": "evaluation", "timesteps": self.model.num_timesteps, **result.to_dict()})
         if cfg.algorithm == "grtqc":
             assert cfg.grtqc is not None
             if cfg.grtqc.training_origin == "scratch":
