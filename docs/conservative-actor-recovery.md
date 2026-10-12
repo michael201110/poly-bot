@@ -184,3 +184,11 @@ restored again. Since the actor reached the 0.20 cumulative drift bound after
 63 Adam updates, the next recovery experiment increases the cumulative limit
 to 0.40; its 0.005 per-update cap, evaluation cadence, and promotion gates
 stay in place.
+
+The 0.40 experiment began at step 1,652,237 with the protected actor restored.
+Its deterministic five-lap results at steps 1,662,333 and 1,664,589 were
+33.764 and 33.781 seconds with zero barrier contacts. Both were rejected and
+the champion actor was restored, with critic and replay retained. The actor
+reached the 0.40 cumulative limit before the first check. The next recovery
+widens that cumulative limit to 0.60, keeping the same 0.005 per-update action
+cap and deterministic contact and pace gates.
