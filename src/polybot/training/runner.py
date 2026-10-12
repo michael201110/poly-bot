@@ -1039,11 +1039,13 @@ class TrainingRunner:
         })
         return len(observations)
 
-    def _recover_grtqc_actor(self, result: EvaluationResult | None, rejected: Path) -> None:
+    def _recover_grtqc_actor(
+        self, result: EvaluationResult | None, rejected: Path, *, source: Path | None = None,
+    ) -> None:
         """Keep trained critics/replay while restoring a verified GRTQC driver."""
         cfg = self.config
         assert cfg.grtqc is not None
-        source = self._grtqc_verified_actor_source()
+        source = source or self._grtqc_verified_actor_source()
         verified = self.backend.load_model(source / "policy.zip", None, self.device.resolved)
         self.backend.restore_actor_weights(self.model, verified)
         self.racing_line = self.registry.read_metadata(source).racing_line
@@ -1117,7 +1119,7 @@ class TrainingRunner:
         )
         if not force and (candidate is None or candidate.rank() >= champion.rank()):
             return False
-        self._recover_grtqc_actor(candidate, directory)
+        self._recover_grtqc_actor(candidate, directory, source=champion_dir if force else None)
         path = self._save("latest")
         self._emit({
             "type": "grtqc_resume_actor_restored", "timesteps": self.model.num_timesteps,
@@ -1557,7 +1559,9 @@ class TrainingRunner:
                 and cfg.grtqc.actor_reference_drift_limit > 0
             ):
                 training_env.close()
-                reference_directory = self._grtqc_verified_actor_source()
+                reference_directory = self.registry.slot(
+                    cfg.track_name, "grtqc", "champion", track_slug=cfg.track_slug,
+                )
                 self._set_grtqc_actor_reference(reference_directory)
                 training_env = ScaledTrainingReward(self._environment(plan.phases[0]), cfg.reward_scale)
                 self.model.set_env(training_env)

@@ -497,6 +497,9 @@ class PolyBotWindow(QWidget):
             ("Continue best with selected rewards",
              lambda: self._start(True, best=True, reward_override=True),
              "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
+            ("Recover champion actor",
+             lambda: self._start(True, recover_actor=True),
+             "Restore the verified GRTQC champion actor into Latest, keep its critics and replay, and resume with conservative actor updates."),
             ("Play champion", lambda: self._model_command("drive", "champion"),
              "Watch the champion drive a live lap in PolyTrack."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
@@ -1089,7 +1092,9 @@ class PolyBotWindow(QWidget):
                                ("Continue latest with selected rewards",
                                 lambda: self._start(True, reward_override=True)),
                                ("Continue best with selected rewards",
-                                lambda: self._start(True, best=True, reward_override=True))):
+                                lambda: self._start(True, best=True, reward_override=True)),
+                               ("Recover champion actor",
+                                lambda: self._start(True, recover_actor=True))):
             button = QPushButton(label)
             button.clicked.connect(handler)
             actions.addWidget(button)
@@ -3529,6 +3534,7 @@ class PolyBotWindow(QWidget):
     def _start(
         self, resume: bool, *, best: bool = False, pace_polish: bool = False,
         reward_override: bool = False,
+        recover_actor: bool = False,
     ) -> None:
         if not self._require_idle():
             return
@@ -3549,6 +3555,8 @@ class PolyBotWindow(QWidget):
             return
         try:
             cfg = self.configuration()
+            if recover_actor and cfg.algorithm != "grtqc":
+                raise ValueError("champion actor recovery is available for GRTQC")
             selected_reward_profile = cfg.reward_profile
             selected_rewards = cfg.rewards
             if reward_override and cfg.algorithm not in {"grtqc", "tqc"}:
@@ -3608,6 +3616,21 @@ class PolyBotWindow(QWidget):
             if resume and cfg.algorithm in {"grtqc", "tqc"}:
                 resume_metadata = registry.read_metadata(slot)
                 cfg = self._resume_configuration(cfg, resume_metadata)
+                if recover_actor:
+                    cfg.grtqc = replace(
+                        cfg.grtqc,
+                        actor_learning_rate=min(cfg.grtqc.actor_learning_rate or cfg.grtqc.learning_rate, 2e-5),
+                        actor_update_interval=max(cfg.grtqc.actor_update_interval, 4),
+                        actor_step_action_limit=min(cfg.grtqc.actor_step_action_limit or 0.01, 0.01),
+                        actor_reference_drift_limit=min(cfg.grtqc.actor_reference_drift_limit or 0.1, 0.1),
+                        actor_evaluation_interval_steps=min(cfg.grtqc.actor_evaluation_interval_steps, 2000),
+                        recovery_weak_evaluations=min(cfg.grtqc.recovery_weak_evaluations, 2),
+                    )
+                    self.log.append(
+                        "Recovering the champion actor into Latest; critics, replay, and rewards preserved. "
+                        "Actor LR at most 0.00002, updates every 4 critic updates or slower, "
+                        "reference drift capped at 0.1, evaluation every 2,000 decisions or sooner."
+                    )
                 if reward_override:
                     cfg.reward_profile = selected_reward_profile
                     cfg.rewards = selected_rewards
@@ -3658,7 +3681,7 @@ class PolyBotWindow(QWidget):
             self.runner.set_ai_overlay_settings(self.ai_overlay_settings)
             self.worker = threading.Thread(
                 target=self._run_worker,
-                args=(slot if resume else None, fresh_replay, best or pace_polish, pace_polish),
+                args=(slot if resume else None, fresh_replay, best or pace_polish or recover_actor, pace_polish),
                 daemon=True,
             )
             self.worker.start()
