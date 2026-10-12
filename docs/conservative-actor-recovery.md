@@ -176,3 +176,11 @@ Its first four live laps were 33.418, 33.418, 33.823, and 33.393 seconds, all
 without barrier contacts. These are training laps, not a verified improvement;
 the deterministic champion check is still pending. Its visual replay session
 is `models/simple-track/grtqc/visual_replays/24353014d37a43838643c6ad3e5f79ce/`.
+
+The deterministic checks for that search measured 33.668 seconds at step
+1,648,104 and 33.765 seconds at step 1,650,360, each 5/5 with zero barrier
+contacts. Both were slower than the 33.418-second champion, so the actor was
+restored again. Since the actor reached the 0.20 cumulative drift bound after
+63 Adam updates, the next recovery experiment increases the cumulative limit
+to 0.40; its 0.005 per-update cap, evaluation cadence, and promotion gates
+stay in place.
