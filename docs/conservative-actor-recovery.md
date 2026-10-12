@@ -47,3 +47,11 @@ Resume from Latest with the GUI's **Recover champion actor** action and a
 2,321,682-decision budget. This preserves the original three-million-decision
 session total begun at step 886,198. Compare the next deterministic evaluations
 with the 33.591-second champion before claiming improvement.
+
+The fastest saved training lap (`episode-000165.npz` in run
+`5e77f00d8849497b9ed21143405c67e0`) took 33.494 seconds over about
+2,009 metres of credited route progress. A 30.000-second lap would require
+about 11.6% more average progress per second on the same route. The recorded
+lap spent 5.01 seconds in its first 10% of progress, then roughly 2.94–3.36
+seconds per 10% section. This is one training lap, not a verified split or
+proof that any single section accounts for the pace gap.
