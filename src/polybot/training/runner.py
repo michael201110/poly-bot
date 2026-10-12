@@ -1527,6 +1527,9 @@ class TrainingRunner:
                         int(cfg.seed) + int(self.model.num_timesteps)
                     ) % (2**32 - 1)
                     self.model.set_random_seed(resume_rng_seed)
+                    if cfg.algorithm == "grtqc":
+                        self.model._warmup_rng = np.random.default_rng(resume_rng_seed)
+                        self.model._critic_exploration_episodes = None
                 if rollback_to_champion and not preserve_resume_actor and cfg.algorithm == "tqc":
                     assert cfg.tqc is not None
                     self.model.anchor_to_current_policy(cfg.tqc.champion_action_drift_limit)

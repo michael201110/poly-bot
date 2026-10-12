@@ -329,9 +329,12 @@ class GRTQC(SeededWarmupTQC):
     def _sample_action(
         self, learning_starts: int, action_noise: Any = None, n_envs: int = 1,
     ) -> tuple[np.ndarray, np.ndarray]:
-        if self.training_origin == "scratch":
+        if self.training_origin == "scratch" and (
+            getattr(self, "scratch_stage", "completion") != "pace" or self.exploration_std <= 0
+        ):
             # Generic seeded driving warmup, then genuine stochastic SAC exploration.
-            # No inherited policy, overlays, action imitation or deterministic teacher lock.
+            # Preserve that collection for new learners. A verified pace policy
+            # may opt into bounded, correlated exploration below.
             return super()._sample_action(learning_starts, action_noise, n_envs)
         # Keep rollout exploration separate from the stochastic critic target
         # and smooth it over time rather than injecting independent PWM jitter.

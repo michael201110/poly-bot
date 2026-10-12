@@ -83,6 +83,25 @@ The next GUI continuation uses **Recover champion actor** and a 2,302,853-
 decision budget. The newest saved replay run remains local under
 `models/simple-track/grtqc/visual_replays/` and can be selected for swarms.
 
+Reseeding was active at step 1,583,345 (`resume_rng_seed` was recorded in the
+new run log), yet the first attempts still took the same 33.960, 36.014 and
+35.851 seconds. The run stopped safely at step 1,589,550. Reseeding alone did
+not fix the repeated barrier hits; the earlier inference was too strong.
+
+The deeper issue is rollout collection in scratch pace mode. It still called
+SAC's stochastic action sampler, ignoring the configured zero exploration
+standard deviation. On representative saved champion states, repeated
+stochastic predictions had steering standard deviation up to about 0.18 and
+longitudinal-control standard deviation up to about 0.23. This is large enough
+to make live training look much more aggressive than deterministic champion
+evaluation. The next recovery experiment uses deterministic actor output plus
+small, correlated action noise: 0.005 while collecting for a locked critic and
+0.02 after actor unlock, with 0.95 correlation. New scratch models and pace
+models without an explicit positive exploration standard deviation retain their
+previous stochastic behavior. Critic targets and actor gradients remain
+stochastic; only environment collection changes. GRTQC resume also reseeds
+its custom exploration generator. The next budget is 2,296,648 decisions.
+
 The fastest saved training lap (`episode-000165.npz` in run
 `5e77f00d8849497b9ed21143405c67e0`) took 33.494 seconds over about
 2,009 metres of credited route progress. A 30.000-second lap would require

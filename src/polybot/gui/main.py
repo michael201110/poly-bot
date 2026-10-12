@@ -3626,12 +3626,16 @@ class PolyBotWindow(QWidget):
                         actor_evaluation_interval_steps=min(cfg.grtqc.actor_evaluation_interval_steps, 2000),
                         recovery_weak_evaluations=min(cfg.grtqc.recovery_weak_evaluations, 2),
                         actor_verified_state_sampling=True,
+                        exploration_std=0.02,
+                        critic_collection_std=0.005,
+                        exploration_correlation=0.95,
                     )
                     self.log.append(
                         "Recovering the champion actor into Latest; critics, replay, and rewards preserved. "
                         "Actor LR at most 0.000005, updates every 8 critic updates or slower, "
                         "reference drift capped at 0.05, evaluation every 2,000 decisions or sooner; "
-                        "actor states sampled from the verified champion lap."
+                        "actor states sampled from the verified champion lap; "
+                        "smooth 0.02 action exploration after verification."
                     )
                 if reward_override:
                     cfg.reward_profile = selected_reward_profile
