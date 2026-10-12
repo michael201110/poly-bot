@@ -56,13 +56,13 @@ finished in 35.190 seconds. Each evaluation recorded 55 barrier-contact steps
 across five laps, compared with five for the 33.591-second champion. The actor
 was restored automatically after the second weaker result; training then stopped
 safely at step 1,577,700. The experiment did not improve pace and visibly
-increased barrier contact. Its replay directory is the newest training run under
-`visual_replays/`.
+increased barrier contact. Its saved replay run is
+`5c4ede5e367a4cca85714dd0313a8c85` under `visual_replays/`.
 
-The next recovery reduces actor learning rate and action drift again. A slower
-one-lap actor with more than two extra barrier-contact steps per lap now
-immediately restores the verified actor, instead of waiting for a second
-five-lap failure. Promotion of a faster candidate also requires at most two
+The next recovery reduces actor learning rate and action drift again. A
+finishing candidate with more than two extra barrier-contact steps per lap now
+immediately restores the verified actor, even if it is faster. Promotion of a
+faster candidate also requires at most two
 extra barrier-contact steps per lap relative to the champion. These are
 track-independent evaluation gates; they do not prescribe controls or a route.
 The next budget is 2,308,498 decisions, retaining the original session total.

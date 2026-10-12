@@ -853,14 +853,12 @@ class TrainingRunner:
                 self._recover_grtqc_actor(result, path)
                 return result
             if (
-                result.episodes == 1
-                and result.median_lap_s is not None
+                result.median_lap_s is not None
                 and champion is not None
                 and champion.median_lap_s is not None
-                and result.median_lap_s >= champion.median_lap_s
                 and result.barrier_contact_steps > max(
                     3, champion.barrier_contact_steps / max(1, champion.episodes) + 2,
-                )
+                ) * result.episodes
                 and getattr(self.model, "actor_unlocked", False)
             ):
                 self._emit({
@@ -868,7 +866,9 @@ class TrainingRunner:
                     "timesteps": self.model.num_timesteps,
                     "candidate_lap_s": result.median_lap_s,
                     "champion_lap_s": champion.median_lap_s,
-                    "candidate_contacts_per_lap": result.barrier_contact_steps,
+                    "candidate_contacts_per_lap": (
+                        result.barrier_contact_steps / result.episodes
+                    ),
                     "champion_contacts_per_lap": (
                         champion.barrier_contact_steps / max(1, champion.episodes)
                     ),
