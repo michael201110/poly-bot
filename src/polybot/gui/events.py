@@ -72,6 +72,9 @@ def format_event(event: dict[str, Any]) -> str | None:
             f"({event['attempt']}/{event['max_retries']}) · saved training state preserved\n"
             f"    {event['error']}"
         )
+    if kind == "watchdog_exhausted":
+        return (f"{prefix}Bridge recovery stopped after {event['max_retries']} consecutive failures "
+                f"without 256 decisions of progress · latest preserved · {event['error']}")
     if kind == "transport_disconnected":
         return f"{prefix}Bridge disconnected{step} · latest saved · {event['error']}"
     if kind == "started":

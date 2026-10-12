@@ -35,6 +35,12 @@ the accumulated episode return instead of reporting only the terminal step.
 
 Live GUI training automatically retries connection errors, timeouts and
 `stale_episode` failures up to five times, waiting three seconds between attempts.
+The limit applies to consecutive failures without at least 256 decisions of
+saved progress. Successful training clears the failure streak; a long session
+does not have a lifetime allowance of only five interruptions. Exhaustion is
+reported explicitly. Connection errors include the WebSocket close reason, and
+each disconnect queues only one failure notification. Invalid response protocol
+messages retain their protocol-error classification and are not blindly retried.
 After learning begins, recovery requires a successfully saved checkpoint from
 the failed attempt. A failed checkpoint write stops recovery rather than loading
 stale state. Each retry retains the remaining session budget and curriculum,

@@ -106,6 +106,7 @@ class WebSocketServerTransport:
             self._connection = connection
             self._connected.set()
 
+        failure: BaseException | None = None
         try:
             for raw_message in connection:
                 if not isinstance(raw_message, str):
@@ -121,8 +122,7 @@ class WebSocketServerTransport:
                 except (json.JSONDecodeError, ProtocolViolation) as exc:
                     self._incoming.put(exc)
         except ConnectionClosed as exc:
-            if not self._closed.is_set():
-                self._incoming.put(exc)
+            failure = exc
         finally:
             with self._connection_lock:
                 if self._connection is connection:
@@ -131,7 +131,10 @@ class WebSocketServerTransport:
                     if not self._closed.is_set():
                         # Clean closes don't raise ConnectionClosed in the
                         # iterator. Wake a pending physics request immediately.
-                        self._incoming.put(ConnectionError("PolyTrack adapter disconnected"))
+                        self._incoming.put(failure or ConnectionError(
+                            f"PolyTrack adapter disconnected (code {connection.close_code}: "
+                            f"{connection.close_reason or 'no close reason'})",
+                        ))
 
     def request(
         self, message: Mapping[str, Any], *, timeout_s: float | None = None
@@ -163,7 +166,9 @@ class WebSocketServerTransport:
             except Empty as exc:
                 raise TimeoutError("simulator request timed out") from exc
             if isinstance(response, BaseException):
-                raise ConnectionError("PolyTrack adapter connection failed") from response
+                if isinstance(response, ProtocolViolation):
+                    raise response
+                raise ConnectionError(f"PolyTrack adapter connection failed: {response}") from response
             return response
 
     def notify(self, message: Mapping[str, Any]) -> None:

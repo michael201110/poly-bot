@@ -47,8 +47,10 @@ def run_with_watchdog(
     stop = runner.stop_requested
     initial_steps = runner.registry.read_metadata(resume).training_timesteps if resume else 0
     attempt = 0
+    reconnecting = False
     while not stop.is_set():
         attempt_runner = runner
+        attempt_start_step = runner.registry.read_metadata(resume).training_timesteps if resume else 0
         saved: Path | None = None
         status = runner.status
 
@@ -63,7 +65,7 @@ def run_with_watchdog(
         try:
             return runner.run(resume=resume, fresh_replay=fresh_replay,
                               rollback_to_champion=rollback_to_champion, pace_polish=pace_polish,
-                              preserve_resume_actor=attempt > 0)
+                              preserve_resume_actor=reconnecting)
         except (ConnectionError, TimeoutError, ProtocolViolation) as exc:
             if original.backend != "websocket" or pace_polish or (
                 isinstance(exc, ProtocolViolation) and not str(exc).startswith("stale_episode:")
@@ -74,10 +76,13 @@ def run_with_watchdog(
             if runner.model is not None and saved is None:
                 # A failed disk write must not silently restore older learner state.
                 raise
-            attempt += 1
-            if attempt > max_retries:
-                raise
             if saved is not None:
+                saved_steps = runner.registry.read_metadata(saved).training_timesteps
+                # A healthy stretch of learning breaks the failure streak.
+                # Five interruptions spread across a long session must not
+                # consume a lifetime retry allowance and halt good training.
+                if saved_steps - attempt_start_step >= 256:
+                    attempt = 0
                 resume = saved
                 fresh_replay = False
                 # Interrupted transferred-policy fidelity gates must be repeated.
@@ -87,6 +92,12 @@ def run_with_watchdog(
                     )
                     if runner.registry.read_metadata(initialization).evaluation is None:
                         resume, fresh_replay = initialization, True
+            attempt += 1
+            if attempt > max_retries:
+                if status:
+                    status({"type": "watchdog_exhausted", "error": str(exc),
+                            "max_retries": max_retries, "resume": str(resume) if resume else None})
+                raise
             completed = max(0, runner.registry.read_metadata(resume).training_timesteps - initial_steps) if resume else 0
             config = remaining_config(original, completed)
             if config is None:
@@ -102,6 +113,7 @@ def run_with_watchdog(
             retry.stop_requested = stop
             retry.set_ai_overlay_settings(runner.ai_overlay_settings)
             runner = retry
+            reconnecting = True
             if on_runner:
                 on_runner(runner)
         finally:
