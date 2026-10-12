@@ -156,3 +156,15 @@ weak evaluations the actor was restored from champion again; critics and the
 1,615,415 under the remaining original budget. The associated new visual
 replay session is `models/simple-track/grtqc/visual_replays/36ce837fd80a494cb157a6fe0634f3b2/`;
 its index currently contains eight episodes for replay and swarm selection.
+
+The first wider-search continuation started from step 1,623,680 with the
+250,000-transition replay intact. The actor reached the 0.10 reference-drift
+limit. Its first deterministic five-lap check was 33.802 seconds; after another
+search interval it improved to 33.627 seconds, still slower than the champion.
+Both checks had zero contact steps, and the second weak check restored the
+protected actor. A second bounded-search experiment now raises the cumulative
+reference-drift limit to 0.20 while retaining the 0.005 per-update action cap,
+8-update actor interval, five-lap gate, and barrier-contact promotion rule.
+Its purpose is to let the actor test a meaningfully wider policy region; any
+faster verified champion remains protected by the evaluation and rollback
+gates.
