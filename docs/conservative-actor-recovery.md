@@ -168,3 +168,11 @@ reference-drift limit to 0.20 while retaining the 0.005 per-update action cap,
 Its purpose is to let the actor test a meaningfully wider policy region; any
 faster verified champion remains protected by the evaluation and rollback
 gates.
+
+The 0.20-search continuation resumed at step 1,637,992 with 2,248,206
+decisions remaining and the full replay buffer retained. At step 1,642,817 the
+actor had unlocked after critic recovery and reached 0.114 reference drift.
+Its first four live laps were 33.418, 33.418, 33.823, and 33.393 seconds, all
+without barrier contacts. These are training laps, not a verified improvement;
+the deterministic champion check is still pending. Its visual replay session
+is `models/simple-track/grtqc/visual_replays/24353014d37a43838643c6ad3e5f79ce/`.
