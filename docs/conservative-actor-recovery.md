@@ -137,3 +137,13 @@ five-lap candidate that could beat the champion now receives a deterministic
 five-lap check with the proposed line. The new line is kept only if it improves the result without
 excess additional contact; otherwise a faster actor can still be promoted
 with the existing, actually verified line. The 30-second target remains unmet.
+
+The repaired continuation resumed from step 1,600,791 with 2,285,407 decisions
+remaining in the original session budget. Its first three training laps exactly
+matched the restored 33.591-second champion, with one contact step each. At
+step 1,610,903, the candidate passed a one-lap screen at 33.418 seconds and
+then a deterministic five-lap evaluation at **33.418 seconds, 5/5 finishes,
+zero barrier-contact steps**. The proposed new line failed its own five-lap
+check at 35.950 seconds with 30 contact steps. The new gate discarded that
+line and promoted only the faster actor with the still-verified existing line.
+The protected champion is now 33.418 seconds. Training continues toward 30.
