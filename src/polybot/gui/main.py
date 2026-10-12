@@ -499,7 +499,7 @@ class PolyBotWindow(QWidget):
              "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
             ("Recover champion actor",
              lambda: self._start(True, recover_actor=True),
-             "Restore the verified GRTQC champion actor into Latest, keep its critics and replay, and resume with conservative actor updates."),
+             "Restore the verified GRTQC champion actor into Latest, keep its critics and replay, and train the actor on states from its verified lap."),
             ("Play champion", lambda: self._model_command("drive", "champion"),
              "Watch the champion drive a live lap in PolyTrack."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
@@ -3625,11 +3625,13 @@ class PolyBotWindow(QWidget):
                         actor_reference_drift_limit=min(cfg.grtqc.actor_reference_drift_limit or 0.1, 0.1),
                         actor_evaluation_interval_steps=min(cfg.grtqc.actor_evaluation_interval_steps, 2000),
                         recovery_weak_evaluations=min(cfg.grtqc.recovery_weak_evaluations, 2),
+                        actor_verified_state_sampling=True,
                     )
                     self.log.append(
                         "Recovering the champion actor into Latest; critics, replay, and rewards preserved. "
                         "Actor LR at most 0.00002, updates every 4 critic updates or slower, "
-                        "reference drift capped at 0.1, evaluation every 2,000 decisions or sooner."
+                        "reference drift capped at 0.1, evaluation every 2,000 decisions or sooner; "
+                        "actor states sampled from the verified champion lap."
                     )
                 if reward_override:
                     cfg.reward_profile = selected_reward_profile
