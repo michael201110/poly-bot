@@ -6,9 +6,9 @@ critics, replay buffer, reward settings, return horizon, and total training step
 The selected session budget is retained. The champion slot remains protected by
 the existing deterministic five-lap promotion gate.
 
-Recovery limits actor learning rate to 0.00002, delays actor updates to at least
-every four critic updates, caps individual action drift at 0.01 and cumulative
-reference action drift at 0.1. Actor evaluation occurs at least every 2,000
+Recovery now limits actor learning rate to 0.000005, delays actor updates to at
+least every eight critic updates, caps individual action drift at 0.005 and
+cumulative reference action drift at 0.05. Actor evaluation occurs at least every 2,000
 decisions, with recovery after at most two consecutive weaker checks. Existing
 stricter limits are retained. The existing critic recovery cooldown still applies.
 
@@ -29,6 +29,8 @@ checks before recovery. Its critics and 250,000-transition replay were retained.
 ## First recovery outcome and next run
 
 The conservative run started at step 1,544,539, with 250,000 replay transitions.
+Its first recovery settings were actor LR 0.00002, update interval four, step
+action cap 0.01, and cumulative drift cap 0.1.
 Its first two five-lap evaluations, at steps 1,555,179 and 1,557,675, were
 34.823 seconds. The second weak result restored the champion actor automatically.
 Training then stopped safely at step 1,564,516 for the verified-state actor
@@ -47,6 +49,23 @@ Resume from Latest with the GUI's **Recover champion actor** action and a
 2,321,682-decision budget. This preserves the original three-million-decision
 session total begun at step 886,198. Compare the next deterministic evaluations
 with the 33.591-second champion before claiming improvement.
+
+The verified-state sampling run began at step 1,564,516. Its first two
+deterministic five-lap evaluations, at steps 1,575,508 and 1,577,700, both
+finished in 35.190 seconds. Each evaluation recorded 55 barrier-contact steps
+across five laps, compared with five for the 33.591-second champion. The actor
+was restored automatically after the second weaker result; training then stopped
+safely at step 1,577,700. The experiment did not improve pace and visibly
+increased barrier contact. Its replay directory is the newest training run under
+`visual_replays/`.
+
+The next recovery reduces actor learning rate and action drift again. A slower
+one-lap actor with more than two extra barrier-contact steps per lap now
+immediately restores the verified actor, instead of waiting for a second
+five-lap failure. Promotion of a faster candidate also requires at most two
+extra barrier-contact steps per lap relative to the champion. These are
+track-independent evaluation gates; they do not prescribe controls or a route.
+The next budget is 2,308,498 decisions, retaining the original session total.
 
 The fastest saved training lap (`episode-000165.npz` in run
 `5e77f00d8849497b9ed21143405c67e0`) took 33.494 seconds over about

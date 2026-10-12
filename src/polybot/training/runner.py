@@ -775,7 +775,15 @@ class TrainingRunner:
             and result.stall_rate == 0.0
             and result.barrier_contact_steps == 0
         )
-        better = reliable and (champion is None or result.median_lap_s < champion.median_lap_s)
+        better = (
+            reliable
+            and (champion is None or result.median_lap_s < champion.median_lap_s)
+            and (
+                champion is None
+                or result.barrier_contact_steps / result.episodes
+                <= champion.barrier_contact_steps / max(1, champion.episodes) + 2
+            )
+        )
         if reliable and getattr(self.model, "scratch_stage", "completion") != "pace":
             self.model.scratch_stage = "pace"
             self.model.target_entropy = self.config.grtqc.scratch_pace_target_entropy
@@ -841,6 +849,29 @@ class TrainingRunner:
                     "candidate_progress": result.median_progress,
                     "barrier_contact_steps": result.barrier_contact_steps,
                     "training_origin": "scratch",
+                })
+                self._recover_grtqc_actor(result, path)
+                return result
+            if (
+                result.episodes == 1
+                and result.median_lap_s is not None
+                and champion is not None
+                and champion.median_lap_s is not None
+                and result.median_lap_s >= champion.median_lap_s
+                and result.barrier_contact_steps > max(
+                    3, champion.barrier_contact_steps / max(1, champion.episodes) + 2,
+                )
+                and getattr(self.model, "actor_unlocked", False)
+            ):
+                self._emit({
+                    "type": "contact_regression_rollback",
+                    "timesteps": self.model.num_timesteps,
+                    "candidate_lap_s": result.median_lap_s,
+                    "champion_lap_s": champion.median_lap_s,
+                    "candidate_contacts_per_lap": result.barrier_contact_steps,
+                    "champion_contacts_per_lap": (
+                        champion.barrier_contact_steps / max(1, champion.episodes)
+                    ),
                 })
                 self._recover_grtqc_actor(result, path)
                 return result

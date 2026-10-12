@@ -161,6 +161,12 @@ def format_event(event: dict[str, Any]) -> str | None:
             f"{prefix}GRTQC actor restored from verified policy{step} · "
             f"critic and replay kept · actor LR {event['actor_learning_rate']:.1e}"
         )
+    if kind == "contact_regression_rollback":
+        return (
+            f"{prefix}Aggressive actor rejected{step} · "
+            f"{event['candidate_contacts_per_lap']} barrier contacts vs "
+            f"{event['champion_contacts_per_lap']:g} per champion lap"
+        )
     if kind == "episode":
         reasons = ", ".join(EVENT_NAMES.get(name, name.replace("_", " "))
                             for name in event.get("events", ())) or "ended"
