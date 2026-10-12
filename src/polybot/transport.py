@@ -80,6 +80,8 @@ class WebSocketServerTransport:
             self.host,
             self.port,
             max_size=self.max_message_bytes,
+            ping_interval=10.0,
+            ping_timeout=60.0,
         )
         self._thread = Thread(
             target=self._server.serve_forever,
@@ -126,6 +128,10 @@ class WebSocketServerTransport:
                 if self._connection is connection:
                     self._connection = None
                     self._connected.clear()
+                    if not self._closed.is_set():
+                        # Clean closes don't raise ConnectionClosed in the
+                        # iterator. Wake a pending physics request immediately.
+                        self._incoming.put(ConnectionError("PolyTrack adapter disconnected"))
 
     def request(
         self, message: Mapping[str, Any], *, timeout_s: float | None = None

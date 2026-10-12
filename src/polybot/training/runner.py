@@ -1339,6 +1339,7 @@ class TrainingRunner:
         ppo_rollback_progress_tolerance: float = 0.0,
         ppo_rollback_lap_tolerance_s: float = 0.0,
         allow_ppo_reward_change: bool = False,
+        preserve_resume_actor: bool = False,
     ) -> Path:
         cfg = self.config
         if cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch" and resume is None:
@@ -1490,7 +1491,7 @@ class TrainingRunner:
                         int(cfg.seed) + int(self.model.num_timesteps)
                     ) % (2**32 - 1)
                     self.model.set_random_seed(resume_rng_seed)
-                if rollback_to_champion and cfg.algorithm == "tqc":
+                if rollback_to_champion and not preserve_resume_actor and cfg.algorithm == "tqc":
                     assert cfg.tqc is not None
                     self.model.anchor_to_current_policy(cfg.tqc.champion_action_drift_limit)
                 if fresh_replay and cfg.algorithm == "tqc" and resume.name == "champion":
@@ -1502,7 +1503,7 @@ class TrainingRunner:
                 self.best_training_lap_s = metadata.best_training_lap_s
                 self.previous_wall_seconds = metadata.wall_seconds
                 self.started = time.monotonic()
-                if rollback_to_champion and cfg.algorithm == "grtqc":
+                if rollback_to_champion and not preserve_resume_actor and cfg.algorithm == "grtqc":
                     self._restore_grtqc_resume_actor_if_worse(metadata, resume, force=True)
             if cfg.grtqc and cfg.grtqc.training_origin == "scratch" and resume is None:
                 if cfg.backend == "websocket":
@@ -1600,6 +1601,8 @@ class TrainingRunner:
                     self.stop_at = stop_at
                     self.last_status = 0.0
                     self.episode_reward = 0.0
+                    self.episode_reward_terms: dict[str, float] = {}
+                    self.episode_reward_groups: dict[str, float] = {}
                     self.episode_progress = 0.0
                     self.last_info: dict[str, Any] = {}
 
@@ -1607,6 +1610,12 @@ class TrainingRunner:
                     info = self.locals.get("infos", [{}])[-1]
                     self.last_info = info
                     self.episode_reward += float(self.locals.get("rewards", [0])[-1]) / cfg.reward_scale
+                    for key, totals in (
+                        ("reward_terms", self.episode_reward_terms),
+                        ("reward_groups", self.episode_reward_groups),
+                    ):
+                        for name, value in info.get(key, {}).items():
+                            totals[name] = totals.get(name, 0.0) + float(value)
                     self.episode_progress = max(
                         self.episode_progress,
                         float(info.get("route_progress_m", 0))
@@ -1691,7 +1700,8 @@ class TrainingRunner:
                             "progress": self.episode_progress, "events": sorted(events),
                             "section_progress": info.get("section_progress"),
                             "elapsed_s": info.get("elapsed_s"),
-                            "reward_terms": info.get("reward_terms", {}),
+                            "reward_terms": dict(self.episode_reward_terms),
+                            "reward_groups": dict(self.episode_reward_groups),
                             "collision_impulse_peak": info.get("collision_impulse_peak", 0.0),
                             "collision_impulse_steps": info.get("collision_impulse_steps", 0),
                             "landing_impulse_peak": info.get("landing_impulse_peak", 0.0),
@@ -1701,6 +1711,8 @@ class TrainingRunner:
                             "air_brake_summary": info.get("air_brake_summary", {}),
                         })
                         self.episode_reward = 0.0
+                        self.episode_reward_terms.clear()
+                        self.episode_reward_groups.clear()
                         self.episode_progress = 0.0
                     if (
                         cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch"

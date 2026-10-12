@@ -64,11 +64,16 @@ def scratch_completion_reward_config() -> RewardConfig:
 
 
 def pace_reward_config() -> RewardConfig:
-    """Reward quick progress while retaining functional contact and failure signals."""
+    """Reward route completion in less time without paying for line length or raw speed."""
     return replace(
         balanced_reward_config(),
-        elapsed_cost_per_s=-2.0,
-        speed_pace_reward_per_m_per_mps=0.04,
+        elapsed_cost_per_s=-50.0,
+        on_track_speed_per_m=0.0,
+        speed_pace_reward_per_m_per_mps=0.0,
+        low_speed_penalty_per_s=0.0,
+        unsafe_speed_penalty_per_m=0.0,
+        action_change_penalty=0.0,
+        checkpoint_bonus=0.0,
         finish_fast_bonus=5_000.0,
         finish_target_s=30.0,
         finish_pace_decay_per_s=0.15,
@@ -77,7 +82,10 @@ def pace_reward_config() -> RewardConfig:
         barrier_contact_penalty=-100.0,
         barrier_speed_loss_penalty_per_mps=-50.0,
         barrier_collision_impulse_threshold=250.0,
-        early_off_track_penalty=-100.0,
+        crash_penalty=-1_000.0,
+        stall_penalty=-1_000.0,
+        off_track_penalty=-1_000.0,
+        early_off_track_penalty=-1_000.0,
     )
 
 

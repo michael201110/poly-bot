@@ -66,6 +66,14 @@ def format_event(event: dict[str, Any]) -> str | None:
         return f"{prefix}Plan · {event['total_steps']:,} steps across {len(event['phases'])} phase(s)"
     if kind == "warning":
         return f"{prefix}WARNING · {event['message']}"
+    if kind == "watchdog_reconnect":
+        return (
+            f"{prefix}Bridge connection lost · reconnecting "
+            f"({event['attempt']}/{event['max_retries']}) · saved training state preserved\n"
+            f"    {event['error']}"
+        )
+    if kind == "transport_disconnected":
+        return f"{prefix}Bridge disconnected{step} · latest saved · {event['error']}"
     if kind == "started":
         gpu = f" ({event['gpu_name']})" if event.get("gpu_name") else ""
         source = event.get("resume_source")

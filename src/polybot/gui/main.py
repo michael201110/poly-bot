@@ -103,6 +103,7 @@ from polybot.training.parameters import (
 from polybot.training.presets import PresetStore, algorithm_presets, configuration_warnings
 from polybot.training.reward_profiles import RewardProfileStore
 from polybot.training.runner import TrainingRunner
+from polybot.training.watchdog import run_with_watchdog
 from polybot.transport import WebSocketServerTransport
 
 
@@ -3672,10 +3673,12 @@ class PolyBotWindow(QWidget):
     ) -> None:
         try:
             assert self.runner is not None
-            self.runner.run(
+            run_with_watchdog(
+                self.runner,
                 resume=resume, fresh_replay=fresh_replay,
                 rollback_to_champion=rollback_to_champion,
                 pace_polish=pace_polish,
+                on_runner=lambda runner: setattr(self, "runner", runner),
             )
         except Exception as exc:
             self.bridge.failed.emit(f"Training failed: {exc}")
@@ -4307,9 +4310,14 @@ class PolyBotWindow(QWidget):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PolyBot v2 training GUI")
     parser.add_argument("--check", action="store_true", help="start and close for a GUI smoke check")
+    parser.add_argument("--config", type=Path, help="load a saved training configuration on startup")
     args = parser.parse_args(argv)
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = PolyBotWindow()
+    if args.config is not None:
+        window.load_configuration(TrainingConfig.from_dict(
+            json.loads(args.config.read_text(encoding="utf-8-sig")),
+        ))
     window.show()
     if args.check:
         QTimer.singleShot(150, app.quit)

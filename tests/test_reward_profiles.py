@@ -83,7 +83,12 @@ def test_winter_4_conservative_pace_changes_only_finish_shaping() -> None:
 def test_generic_pace_profile_has_effective_contact_feedback_without_ghost_or_brake_bias() -> None:
     config = RewardProfileStore(PROJECT_ROOT / "profiles" / "rewards").load("Pace")
 
-    assert config.speed_pace_reward_per_m_per_mps == 0.04
+    assert config.speed_pace_reward_per_m_per_mps == 0.0
+    assert config.on_track_speed_per_m == 0.0
+    assert config.elapsed_cost_per_s == -50.0
+    assert config.progress_per_m == 2.0
+    assert config.unsafe_speed_penalty_per_m == 0.0
+    assert config.crash_penalty == -1_000.0
     assert config.finish_target_s == 30.0
     assert config.imitation_bonus_per_s == 0.0
     assert config.ground_brake_penalty_per_s == 0.0
