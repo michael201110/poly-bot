@@ -192,3 +192,13 @@ the champion actor was restored, with critic and replay retained. The actor
 reached the 0.40 cumulative limit before the first check. The next recovery
 widens that cumulative limit to 0.60, keeping the same 0.005 per-update action
 cap and deterministic contact and pace gates.
+
+The 0.60 search was stopped at step 1,681,373 after the candidate began
+contacting the barrier repeatedly in the last 1.5% of the lap. Its five-lap
+check at step 1,677,198 was 33.579 seconds with five barrier-contact steps;
+it was slower than the protected 33.418-second champion and was rolled back.
+Three subsequent clean laps on the restored actor were recorded before the
+clean stop. To reduce how forcefully the next recovery moves away from the
+champion, the next attempt caps cumulative reference drift at 0.40 and lowers
+post-verification action exploration from 0.02 to 0.005. The champion,
+critics, and replay buffer remain preserved.
