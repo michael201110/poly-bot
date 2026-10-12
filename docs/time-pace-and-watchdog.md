@@ -63,3 +63,9 @@ Startup diagnosis also found that hidden archived checkpoints were fully decoded
 before being filtered from the Models view. The GUI now excludes those metadata
 reads unless **Show archived checkpoints** is enabled; the registry API retains
 its existing default of including checkpoints for other callers.
+
+The first live recovery observation identified `1000: player left race` at a
+lap boundary. Bridge 0.1.43 scheduled a synthetic Backspace 500 ms after an AI
+finish, racing the trainer's own reset. Bridge 0.1.44 tags updates while manual
+training control owns resets and suppresses that synthetic finish restart.
+Normal player exits and abort-restart handling remain available.
