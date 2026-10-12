@@ -1519,7 +1519,10 @@ class TrainingRunner:
                         "target_reward_profile": cfg.reward_profile,
                         "optimizer_state_reset": True,
                     })
-                if cfg.algorithm == "ppo":
+                if cfg.algorithm in {"ppo", "grtqc"}:
+                    # A restored GRTQC champion otherwise repeats the same
+                    # stochastic training attempts after each GUI resume.
+                    # Evaluation keeps its own fixed seeds and deterministic policy.
                     resume_rng_seed = (
                         int(cfg.seed) + int(self.model.num_timesteps)
                     ) % (2**32 - 1)

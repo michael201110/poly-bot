@@ -67,6 +67,22 @@ extra barrier-contact steps per lap relative to the champion. These are
 track-independent evaluation gates; they do not prescribe controls or a route.
 The next budget is 2,308,498 decisions, retaining the original session total.
 
+## Resume exploration correction
+
+The contact-guard recovery at step 1,577,700 still repeated the first three
+training attempts from the previous recovery exactly: a 33.960-second roll
+failure, then 36.014- and 35.851-second finishes. The fourth attempt was also
+slow. The GUI stopped safely at step 1,583,345 to correct this repeated
+exploration. GRTQC resume now seeds its stochastic learner with the configured
+seed plus the saved training step, as PPO already did. Evaluation remains
+deterministic with its fixed evaluation seeds; replay, actor/critic weights,
+and champion gates are unchanged. This changes the next training attempts but
+does not itself establish a faster policy.
+
+The next GUI continuation uses **Recover champion actor** and a 2,302,853-
+decision budget. The newest saved replay run remains local under
+`models/simple-track/grtqc/visual_replays/` and can be selected for swarms.
+
 The fastest saved training lap (`episode-000165.npz` in run
 `5e77f00d8849497b9ed21143405c67e0`) took 33.494 seconds over about
 2,009 metres of credited route progress. A 30.000-second lap would require
