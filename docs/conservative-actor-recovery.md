@@ -202,3 +202,12 @@ clean stop. To reduce how forcefully the next recovery moves away from the
 champion, the next attempt caps cumulative reference drift at 0.40 and lowers
 post-verification action exploration from 0.02 to 0.005. The champion,
 critics, and replay buffer remain preserved.
+
+The first attempted cap reduction was ineffective: recovery used `max(saved,
+0.40)`, so a Latest checkpoint that already stored 0.60 continued to train at
+0.60 even while the GUI status claimed 0.40. The run was stopped safely at step
+1,690,426. Its eight recorded training laps had four finish-line barrier
+contacts, including the last three consecutive laps; telemetry reached 0.60
+cumulative action drift. The champion remains 33.418 seconds. Recovery now uses
+the smaller of the saved limit and 0.40, so this checkpoint cannot silently
+retain its old, wider limit. The 250,000-transition replay and critics are kept.
