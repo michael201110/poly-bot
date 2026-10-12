@@ -147,3 +147,12 @@ zero barrier-contact steps**. The proposed new line failed its own five-lap
 check at 35.950 seconds with 30 contact steps. The new gate discarded that
 line and promoted only the faster actor with the still-verified existing line.
 The protected champion is now 33.418 seconds. Training continues toward 30.
+
+The next two deterministic five-lap candidates, at steps 1,613,159 and
+1,615,415, measured 33.775 and 33.753 seconds respectively, with zero barrier
+contacts. Both were rejected as slower than the protected champion. After two
+weak evaluations the actor was restored from champion again; critics and the
+250,000-transition replay were retained. Training is continuing from step
+1,615,415 under the remaining original budget. The associated new visual
+replay session is `models/simple-track/grtqc/visual_replays/36ce837fd80a494cb157a6fe0634f3b2/`;
+its index currently contains eight episodes for replay and swarm selection.
