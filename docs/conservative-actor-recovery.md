@@ -842,3 +842,10 @@ five-lap evaluation repeated the contact on all five laps; the gate restored
 Champion and preserved critics/replay again. At the latest check training was
 active at step 2,357,114 in the 1,000-update cooldown (417 remaining, actor
 locked). The current visual replay bundle contains 39 entries.
+
+The next post-recovery evaluation at step 2,359,261 tied Champion at 33.418
+seconds (5/5, zero contacts), weak-pace check 1/5. At step 2,361,517, the
+five-lap median improved to 33.612 seconds (5/5, zero contacts), still slower
+than Champion and weak-pace check 2/5. Training remains active; at step
+2,362,619 the actor is unlocked and again near its 0.02 drift limit. The live
+visual replay bundle has 45 indexed attempts; Champion remains unchanged.
