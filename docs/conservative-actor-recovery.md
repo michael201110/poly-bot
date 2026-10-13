@@ -367,3 +367,22 @@ contact regression restores the Champion actor immediately. This does not
 prescribe a track-specific action or change the reward profile. Latest was
 saved at step 2,119,294 with Champion's actor restored; its critics, replay,
 and -600 contact penalty remain available for continued training.
+
+The guarded restart used the **Recover Champion actor with selected rewards**
+action. The first attempted Continue Latest session had rollback disabled, so it
+was stopped safely after one clean 33.418-second lap at step 2,120,741. Recovery
+then restarted from Latest with rollback enabled, no reward change, and replay
+preserved. Its startup log `20261013T184429Z.jsonl` confirms CUDA/T500, a
+1,000,000-decision budget, Champion actor restoration, 1,114 reference
+observations, and 512 guard states. The first nine training laps were
+33.418–33.937 seconds with no thresholded contacts.
+
+At step 2,130,837, the first post-unlock deterministic screen measured 33.860
+seconds with one contact at 99.37%. The full five-lap evaluation reproduced
+that contact on all five laps. The new gate rejected the candidate and emitted
+`contact_regression_rollback`, restoring the Champion actor while keeping
+critics and replay. Latest remains at this recovered state while training
+continues. Champion is still 33.418 seconds, 5/5, zero contacts. The active
+replay session is
+`models/simple-track/grtqc/visual_replays/b039f710069640bfb71aa64d2bf128d5`;
+it has begun saving complete post-evaluation attempts for later swarm use.
