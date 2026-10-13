@@ -327,7 +327,22 @@ same 1,000,000-step budget, frame skip 30, five-lap evaluations, and conservativ
 actor recovery limits.
 
 The automatic visual replay run
-`7450c46351274490804f6e6d0fc78ecc` contains five complete laps from the
+`7450c46351274490804f6e6d0fc78ecc` contains six complete laps from the
 candidate and restored Champion actors, plus screening and stopped partial
 episodes. The cleanly stopped checkpoint remains available in Latest; Champion
 was not overwritten.
+
+The contact-aware configuration was started from Latest at step 2,106,958 on
+CUDA with a fresh replay buffer, a 1,000,000-decision full-track budget, and
+Champion rollback enabled. The verified Champion actor and Latest critics were
+loaded, and the 512-state reference guard was captured from Champion. The first
+nine training laps remained around 33.4 seconds. One lap recorded a 120.6
+non-landing impulse at 99.0% progress and correctly applied the -600 contact
+term. After the 1,000-update critic cooldown, the actor unlocked; its first
+one-lap screen measured 33.787 seconds. Five-lap confirmation is pending, so
+Champion remains unchanged. The active log is
+`logs/simple-track/grtqc/20261013T182820Z.jsonl`.
+
+The new run has not appeared in the replay catalog yet; refresh and verify its
+index after this training session is stopped. Existing replay runs remain
+available for swarm playback in the meantime.
