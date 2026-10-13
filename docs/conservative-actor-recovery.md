@@ -288,3 +288,16 @@ the two-weak-check gate restored Champion again while preserving critics and
 replay. The 1,000-update critic cooldown has restarted. Replay run
 `350a625c0301432fb4bcca32af84ac57` continues recording the active training
 episodes for later swarm playback.
+
+The saved Pace reward target was still 32 seconds despite the 30-second goal.
+The GUI Target lap time was changed to 30 seconds; progress, speed, finish,
+barrier, failure, and other Pace coefficients were left unchanged, and no new
+reward profile was created. Latest confirms `finish_target_s: 30.0`. Continuing
+Latest with selected rewards correctly refilled replay, but its first startup
+did not restore a champion reference actor. That short attempt was stopped
+after three clean training laps at step 2,089,369. It was restarted through
+Recover champion actor, retaining the newer critics and 30-second reward data
+while restoring the verified actor. The new log `20261013T180925Z.jsonl`
+confirms `rollback_on_regression: true`, the 0.10 reference limit, and 512
+sampled champion guard states. The one-million-decision run is active; the
+champion remains 33.418 seconds.
