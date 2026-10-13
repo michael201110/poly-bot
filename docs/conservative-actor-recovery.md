@@ -972,3 +972,10 @@ impulse 53.16). Contact rollback restored Champion and preserved critics and
 replay, then started the 1,000-update cooldown. At step 2,398,382 training was
 still active with 231 cooldown updates remaining; this early check does not
 establish the result of a full 0.05-drift actor search.
+
+The next 0.05-window candidate at step 2,402,041 completed five clean laps at
+33.488 seconds. This is 0.116 seconds slower than Champion, so it was rejected
+and counted as weak-pace check 2/5; no contact rollback was needed. At step
+2,402,308 the actor was unlocked again, with 0.00999 drift from the new clean
+reference and update norm 1.17e-4. The visual replay bundle contained 10
+indexed attempts and continued recording; Champion remains 33.372 seconds.
