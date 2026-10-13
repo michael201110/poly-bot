@@ -1000,3 +1000,9 @@ The next five-lap check at step 2,411,017 completed at 33.703 seconds with
 resumed updates from its clean reference (0.00250 local action drift, update
 norm 1.04e-4). The replay bundle had 21 indexed attempts and continued
 recording.
+
+The next check at step 2,413,273 completed 5/5 clean laps at 33.696 seconds,
+another slower candidate (weak-pace check 3/5). At step 2,414,186 the actor
+remained unlocked and was updating (0.03475 local action drift; update norm
+1.41e-4). The replay index contained 24 attempts and recording continued;
+Champion remains protected at 33.372 seconds.
