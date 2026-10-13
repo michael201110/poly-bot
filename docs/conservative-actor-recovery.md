@@ -426,9 +426,14 @@ one and two late contacts near 98.9% progress and received the stronger contact
 penalty. The second deterministic five-lap evaluation at step 2,172,741 was
 33.962 seconds with zero contacts (weak check 2/5). The next three training
 episodes completed at 33.857, 33.690, and 33.648 seconds without contacts.
+The third deterministic five-lap evaluation at step 2,174,997 was 33.743
+seconds, again 5/5 with zero contacts (weak check 3/5). The next training lap
+was 33.738 seconds with zero contacts. Champion remains 33.418 seconds and
+unchanged. The new replay session has six entries so far, four complete and
+two short interrupted evaluation captures.
 Visual replays remain in
 `models/simple-track/grtqc/visual_replays/b039f710069640bfb71aa64d2bf128d5`
 for swarm playback. The new recovery session is
 `models/simple-track/grtqc/visual_replays/8983e2d52ba84229bcfc52fc2b5e1a77`;
-it has four replay entries, including clean evaluation telemetry and finished
+it has six replay entries, including clean evaluation telemetry and finished
 training laps.
