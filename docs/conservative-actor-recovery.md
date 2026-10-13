@@ -1006,3 +1006,31 @@ another slower candidate (weak-pace check 3/5). At step 2,414,186 the actor
 remained unlocked and was updating (0.03475 local action drift; update norm
 1.41e-4). The replay index contained 24 attempts and recording continued;
 Champion remains protected at 33.372 seconds.
+
+At step 2,415,529 the next 0.05-window candidate regressed to 33.828 seconds
+and contacted a barrier on all five laps at 98.735% progress (peak impulse
+128.04). Contact rollback restored Champion and began the 1,000-update
+cooldown, retaining critics and replay. The following one-lap actor screen at
+step 2,419,993 tied Champion at 33.372 seconds with no contact; its ordinary
+five-lap confirmation also tied at 33.372 seconds (5/5 finishes, zero
+contacts). The tie was not promoted. Training resumed from the saved Latest
+checkpoint at step 2,419,993; replay capture remains enabled, and session
+`1b81b6f8f0ad455795d83d8e23ade0aa` contains the recent training attempts.
+
+## Requested versus applied controls
+
+Inspection of the saved replay `episode-000031.npz` resolves the apparent
+0.97 action ceiling. The recorded actor outputs are the requested continuous
+controls; the replay HUD also stores the controller demand and the per-window
+applied tick fraction. For example, a steering request of -0.981 and a
+longitudinal request of +0.99998 were applied as -0.9667 and +0.9667 in that
+30-tick frame-skip window: the displayed applied fraction is quantized to
+29/30 or 30/30 binary ticks. The deterministic PWM scheduler carries its
+fractional remainder into the next window, so this one-window rounding is not
+a persistent reduction in input. Across the complete 1,116-decision replay,
+mean absolute requested/applied duty was 0.73793/0.73735 for steering and
+0.74650/0.74401 for signed longitudinal control. The saved controls therefore
+show no 3% action clamp; the average per-lap discrepancy is below 0.25
+percentage points. No action remapping was applied, since forcing every
+near-bound steering value to exactly 1 could increase overshoot without
+evidence of a pace gain.
