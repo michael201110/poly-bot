@@ -909,3 +909,15 @@ of lost engine power. The adapter converts each demand into 30 digital ticks;
 for example, a 0.97 magnitude averages roughly 29 pressed ticks per 30, with
 the exact schedule carried across decisions. Forcing every demand to 1.0 would
 change steering and throttle behavior globally, so no such remapping was made.
+
+The next five-lap evaluation at step 2,383,756 verified 33.372 seconds, 5/5
+finishes, and zero barrier contacts. This is 0.046 seconds faster than the
+previous Champion, so it was promoted and saved in the protected Champion slot.
+The training replay bundle has 15 indexed episodes, including the completed
+33.672-second episode immediately preceding the evaluation; evaluation replay
+data was also recorded. Because this trust-region cycle produced a verified
+improvement, the planned increase to the 0.03 action-drift limit was not made.
+Training remains active from the improved Champion with the existing contact
+and five-lap gates. At step 2,384,406 the training process was responsive, the
+actor was unlocked, and actor updates had resumed (update norm 8.5e-5; local
+action drift 0.02496/0.03). The run's visual replay recorder remained active.
