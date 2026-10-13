@@ -822,3 +822,14 @@ and starts the configured 1,000-update critic cooldown. At the latest check,
 training was active in cooldown at step 2,339,546 with 881 updates remaining
 and the actor locked. Visual replays continue to be recorded. Collect data
 after cooldown before changing another training variable.
+
+The second recovery cycle repeated the pattern. After cooldown, the step
+2,343,533 evaluation tied Champion at 33.418 seconds (5/5, zero contacts), but
+did not promote because it was not faster. The next candidate at step 2,345,789
+measured 33.842 seconds with ten contact steps and triggered another rollback
+to the Champion actor, preserving critics and replay and restarting the
+1,000-update cooldown. After that cooldown, the step-2,350,269 evaluation was
+33.731 seconds (5/5, zero contacts), weak-pace check 1/5. At the latest check
+the trainer was active at step 2,351,210, episode 24, and its current visual
+replay index contained 31 episode records. Latest retains the 30-second target
+and 0.02 drift guard; Champion remains 33.418 seconds.
