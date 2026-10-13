@@ -751,3 +751,19 @@ The first post-restart actor evaluation completed 5/5 at step 2,310,989 in
 33.620 seconds with zero contacts. It was rejected as 0.202 seconds slower
 than Champion; the clean anchor was refreshed and training continued. At
 step 2,311,206 the run was active again.
+
+The next candidate at step 2,313,245 screened at 33.550 seconds with one
+contact; its five-lap confirmation finished 5/5 at the same median and
+recorded five contact steps. The contact gate restored Champion and retained
+replay/critics. At step 2,316,530 the trainer was active in its 1,000-update
+critic recovery cooldown, with 179 updates remaining.
+
+The deterministic evaluation replay from that five-lap check includes a
+33.418-second lap. Its stored actions range from -0.9989 to +0.9998 for
+steering, and -0.8936 to +0.99998 for signed longitudinal demand. About
+30.6% of steering and 38.7% of longitudinal actions have magnitude at least
+0.97; only 5.4% and 2.6%, respectively, lie in 0.965–0.975. Evaluation uses
+deterministic policy predictions, so this confirms the actor can request
+near-full inputs without rollout noise. The data do not show that full
+braking is optimal: negative longitudinal demand did not saturate, and the
+five-lap candidate still failed the contact gate.
