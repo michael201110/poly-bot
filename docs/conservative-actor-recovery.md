@@ -260,3 +260,12 @@ finishes and five barrier-contact steps. The contact gate restored the
 protected champion actor immediately while keeping critics and replay; a
 1,000-update critic cooldown began. Training continued from Latest. The replay
 index has grown to 30 episodes through step 2,060,116.
+
+The same 0.20 recovery cycle was stopped cleanly at step 2,067,759 after the
+actor again reached the 0.20 drift ceiling. The preceding five-lap evaluation
+at step 2,059,002 had barrier contact on all five laps and triggered actor
+rollback, so this repeated search was paused before another candidate check.
+Earlier 0.10-bound checks were slower than champion but had zero contacts;
+recovery is therefore capped at 0.10 for the next continuation. Latest was
+saved at the stop point, retaining critics and replay, and the 33.418-second
+champion remains protected.
