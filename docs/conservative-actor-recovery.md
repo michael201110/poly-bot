@@ -559,3 +559,11 @@ protected. At step 2,209,500 the trainer was active and collecting another
 episode. The replay index for this session had 14 records (ten finished,
 four interrupted); the finished training runs remain available for swarm
 playback.
+
+At step 2,211,383, another deterministic five-lap candidate evaluation
+finished at 33.589 seconds, 5/5 with zero contacts. It was rejected as slower
+than the protected 33.418-second Champion, and the clean learning anchor was
+refreshed. Training continued; at step 2,211,816 it was collecting episode
+19. The visual replay session grew to 20 indexed episodes, with 14 finished
+laps and six interrupted entries, preserving the additional laps for swarm
+playback.
