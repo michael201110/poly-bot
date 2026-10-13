@@ -301,3 +301,9 @@ while restoring the verified actor. The new log `20261013T180925Z.jsonl`
 confirms `rollback_on_regression: true`, the 0.10 reference limit, and 512
 sampled champion guard states. The one-million-decision run is active; the
 champion remains 33.418 seconds.
+
+Under the corrected 30-second finish target, the first deterministic five-lap
+check at step 2,099,481 measured 33.848 seconds, with five finishes and zero
+thresholded barrier-contact steps. It is the first weak check in this cycle;
+the candidate remains subject to the second-check rollback gate. The
+33.418-second Champion is unchanged, and training continues from Latest.
