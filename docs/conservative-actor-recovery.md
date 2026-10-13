@@ -788,3 +788,13 @@ Latest's policy, critics and replay. This is a bounded hypothesis, not an
 expected pace improvement. The GUI can invoke the same action automatically
 at startup with `--continue-latest-with-selected-actor-guard`, which is useful
 for unattended recovery after a GUI restart.
+
+The guarded continuation was started from the GUI on 2026-10-13 using the
+1,000,000-decision Simple Track profile. Run log:
+`logs/simple-track/grtqc/20261013T221624Z.jsonl`. The runner confirmed
+`resume_source=models/simple-track/grtqc/latest`, `fresh_replay=false`, CUDA
+on the NVIDIA T500, and the WebSocket bridge on port 8765. Its first finished
+training episode was 33.754 seconds with zero collision impulse steps; that
+episode was saved under `models/simple-track/grtqc/visual_replays/` for later
+swarm use. This is training telemetry, not a deterministic five-lap promotion
+result. The 33.418-second protected Champion remains unchanged.
