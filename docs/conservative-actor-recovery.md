@@ -398,3 +398,18 @@ Training remains active from this recovered checkpoint; the Champion remains
 exploratory training laps between evaluations and received the -600 term, while
 both deterministic evaluations stayed contact-free. No 30-second lap has been
 verified yet.
+
+## Stronger contact shaping after repeat contacts
+
+The run later reached step 2,160,421. Episodes 27, 28, and 31 incurred the
+-600 contact term, and a five-lap evaluation at step 2,155,525 showed a contact
+on every lap near the finish. The contact gate rejected that actor and
+restored Champion. Additional exploratory contacts after rollback show that
+-600 was not discouraging the risky behavior enough. The next continuation
+raises the contact penalty to -1,500, restores the Champion actor again, and
+keeps Latest critics while rebuilding replay under the changed rewards. Pace
+recovery allows five consecutive clean-but-slower checks before restoring the
+actor; verified contact regressions still roll back immediately. The budget
+remains 1,000,000 decisions, and promotion still requires the deterministic
+five-lap gate. The protected Champion remains 33.418 seconds, 5/5, with zero
+contacts.

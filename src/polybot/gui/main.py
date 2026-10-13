@@ -3629,7 +3629,7 @@ class PolyBotWindow(QWidget):
                         actor_step_action_limit=min(cfg.grtqc.actor_step_action_limit or 0.005, 0.005),
                         actor_reference_drift_limit=min(cfg.grtqc.actor_reference_drift_limit or 0.10, 0.10),
                         actor_evaluation_interval_steps=min(cfg.grtqc.actor_evaluation_interval_steps, 2000),
-                        recovery_weak_evaluations=min(cfg.grtqc.recovery_weak_evaluations, 2),
+                        recovery_weak_evaluations=max(cfg.grtqc.recovery_weak_evaluations, 5),
                         actor_verified_state_sampling=True,
                         exploration_std=0.005,
                         critic_collection_std=0.005,
@@ -3639,6 +3639,8 @@ class PolyBotWindow(QWidget):
                         "Recovering the champion actor into Latest; critics, replay, and rewards preserved. "
                         "Actor LR at most 0.000005, updates every 8 critic updates or slower, "
                         "reference drift capped at 0.10, evaluation every 2,000 decisions or sooner; "
+                        "allowing 5 weak pace checks before pace recovery while contact regressions "
+                        "still roll back immediately; "
                         "actor states sampled from the verified champion lap; "
                         "smooth 0.005 action exploration after verification."
                     )
