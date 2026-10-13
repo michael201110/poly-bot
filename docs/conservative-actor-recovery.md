@@ -854,3 +854,21 @@ check 3/5. Latest saved that evaluation; by step 2,364,286 training had
 resumed, the actor had made 71 Adam updates and was near the drift limit
 (0.0196/0.02). The replay bundle has 48 indexed attempts. The 30-second goal
 remains unmet; no candidate has passed the faster-than-Champion gate.
+
+The next two five-lap checks under the same actor saturated the 0.02 action
+drift limit: step 2,366,029 measured 33.998 seconds (5/5, zero contacts), and
+step 2,368,269 measured 33.789 seconds (5/5, zero contacts). Together with
+33.674 at step 2,363,773, these were weak checks 3/5, 4/5, and 5/5 after the
+previous clean tie. The configured recovery gate restored Champion's actor
+while preserving critics and replay. The GUI was closed cleanly at step
+2,371,404 with Latest saved and its 247 MB replay intact. The 56-record visual
+replay session remains available for swarms.
+
+For the next isolated search, the profile raises only the cumulative actor
+action-drift limit from 0.02 to 0.03. The per-update cap remains 0.0025,
+exploration 0.0025, actor learning rate 0.000002, actor update interval 16,
+1,000,000-decision budget, 30-second target, contact penalty, critics, replay,
+five-lap evaluation, and Champion rollback gates remain unchanged. This gives
+the policy room for a broader measured adjustment after repeated 0.02-limit
+pace plateaus; no improvement is assumed. The next run resumes Latest with
+`fresh_replay=false` via the GUI's selected-actor-guard continuation.
