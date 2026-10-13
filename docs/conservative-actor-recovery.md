@@ -439,3 +439,19 @@ for swarm playback. The new recovery session is
 `models/simple-track/grtqc/visual_replays/8983e2d52ba84229bcfc52fc2b5e1a77`;
 it has nine replay entries, including clean evaluation telemetry and finished
 training laps.
+
+## Tighter actor trust limits after a contact regression
+
+The fifth five-lap check at step 2,179,509 regressed to 33.941 seconds and
+recorded ten barrier-contact steps across five laps, with peak impulse 149.1.
+Each lap had contacts at 93.66% and 99.09% progress. The gate rejected the
+candidate and restored Champion immediately. The next training lap completed
+cleanly at 33.418 seconds. Training was then stopped safely at step 2,181,866;
+Latest retains the critics and replay, while Champion remains 33.418 seconds,
+5/5, zero contacts. The recovery profile now lowers actor LR to 0.000002,
+updates the actor every 16 critic updates, caps each action update at 0.0025,
+caps reference drift at 0.05, and halves the smooth exploration noise to
+0.0025. The -1,500 contact penalty, five-evaluation pace recovery window,
+immediate contact rollback, 1,000,000-decision session budget, and existing
+five-lap promotion gate remain in place. The completed run's visual replay
+session contains 15 entries (10 finished, 5 short interrupted captures).
