@@ -455,3 +455,10 @@ caps reference drift at 0.05, and halves the smooth exploration noise to
 immediate contact rollback, 1,000,000-decision session budget, and existing
 five-lap promotion gate remain in place. The completed run's visual replay
 session contains 15 entries (10 finished, 5 short interrupted captures).
+
+The tightened recovery was relaunched from the GUI at step 2,181,866 on the
+NVIDIA T500. Startup record `logs/simple-track/grtqc/20261013T193818Z.jsonl`
+confirms Champion actor restoration, preserved Latest critics and 55,302 replay
+transitions, fresh replay disabled, and Champion rollback enabled. The first
+episode is collecting with the reduced actor update limits; the profile keeps
+the 1,000,000-decision full-track budget.
