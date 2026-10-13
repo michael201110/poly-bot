@@ -274,3 +274,10 @@ The GUI resumed Latest at step 2,067,759 with a fresh 1,000,000-decision
 budget. Champion actor recovery is now limited to 0.10 cumulative reference
 drift; the run log confirms the actor was restored from Champion and the saved
 critics and replay were retained. Training is active on CUDA.
+
+The first five-lap check under the 0.10 cap, at step 2,077,871, measured
+33.586 seconds with five finishes and zero barrier-contact steps. It is slower
+than Champion, so the actor was kept only for the second weak-evaluation check;
+the protected actor and pace gate remain intact. The active replay run
+`350a625c0301432fb4bcca32af84ac57` has recorded two episodes with observations
+through step 2,078,999.
