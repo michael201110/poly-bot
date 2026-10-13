@@ -798,3 +798,12 @@ training episode was 33.754 seconds with zero collision impulse steps; that
 episode was saved under `models/simple-track/grtqc/visual_replays/` for later
 swarm use. This is training telemetry, not a deterministic five-lap promotion
 result. The 33.418-second protected Champion remains unchanged.
+
+The first deterministic five-lap evaluation of this resumed actor finished all
+five laps at a 33.634-second median, but registered five barrier-contact steps
+(maximum impulse 92.30). The candidate was rejected under the existing contact
+gate, so Champion was not changed. Training continued with the rejected actor;
+its next training lap was 33.418 seconds with zero collision impulse steps.
+That episode result is not a five-lap verification. At the latest check,
+training remained active and the next decision was to collect more evaluations
+under the same 0.02 actor-drift guard before considering another tuning change.
