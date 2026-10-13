@@ -832,4 +832,8 @@ to the Champion actor, preserving critics and replay and restarting the
 33.731 seconds (5/5, zero contacts), weak-pace check 1/5. At the latest check
 the trainer was active at step 2,351,210, episode 24, and its current visual
 replay index contained 31 episode records. Latest retains the 30-second target
-and 0.02 drift guard; Champion remains 33.418 seconds.
+and 0.02 drift guard; Champion remains 33.418 seconds. The following check at
+step 2,352,525 improved the resumed actor to 33.577 seconds (5/5, zero
+contacts), weak-pace check 2/5. It remains 0.159 seconds slower than Champion
+and was not promoted. The actor is unlocked with 0.0048 cumulative action drift
+against the 0.02 limit; training continues.
