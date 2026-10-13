@@ -929,3 +929,11 @@ actor, preserving critic and replay state and starting the configured 1,000-
 update critic cooldown. At step 2,387,101 the GUI was still active, with 728
 cooldown updates remaining and the actor locked. The visual replay index had
 18 records; the interrupted candidate attempt is retained there as well.
+
+After cooldown, the five-lap evaluation at step 2,390,476 tied Champion at
+33.372 seconds (5/5 finishes, zero contacts), so it was not promoted; the
+weaker-actor counter restarted at 1/5 and training continued from the
+candidate. At step 2,390,747 the actor was unlocked with 0.00995 action drift
+within the 0.03 limit. The visual replay bundle had 23 indexed attempts,
+including the new evaluation laps and an interrupted attempt. Champion remains
+33.372 seconds and training continues toward the 30-second target.
