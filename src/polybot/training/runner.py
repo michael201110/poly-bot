@@ -848,7 +848,13 @@ class TrainingRunner:
                         "timesteps": self.model.num_timesteps, "finish_rate": result.finish_rate,
                         "median_lap_s": result.median_lap_s, "best_lap_s": result.best_lap_s,
                         "candidate_continues": True, "training_origin": "scratch"})
-            severe_screen_failure = (
+            screen_contact_regression = (
+                result.episodes == 1
+                and result.barrier_contact_steps > 0
+                and champion is not None
+                and champion.barrier_contact_steps == 0
+            )
+            severe_screen_failure = screen_contact_regression or (
                 result.episodes == 1
                 and result.finish_rate == 0.0
                 and (
@@ -872,6 +878,7 @@ class TrainingRunner:
                     "champion_lap_s": champion.median_lap_s,
                     "candidate_progress": result.median_progress,
                     "barrier_contact_steps": result.barrier_contact_steps,
+                    "contact_regression": screen_contact_regression,
                     "training_origin": "scratch",
                 })
                 self._recover_grtqc_actor(result, path)
@@ -1780,7 +1787,7 @@ class TrainingRunner:
                         self.episode_reward_groups.clear()
                         self.episode_progress = 0.0
                     if (
-                        cfg.algorithm == "grtqc" and cfg.grtqc.training_origin != "scratch"
+                        cfg.algorithm == "grtqc"
                         and runner.model.actor_unlocked
                         and not runner._actor_unlock_seen
                     ):

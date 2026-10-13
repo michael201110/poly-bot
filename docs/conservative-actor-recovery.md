@@ -462,3 +462,34 @@ confirms Champion actor restoration, preserved Latest critics and 55,302 replay
 transitions, fresh replay disabled, and Champion rollback enabled. The first
 episode is collecting with the reduced actor update limits; the profile keeps
 the 1,000,000-decision full-track budget.
+
+That run stopped cleanly at step 2,191,175 with Latest saved and 64,609 replay
+transitions. Episodes 2 and 4 hit the barrier at exactly 99.23% progress, with
+peak impulses 222.9 and 1,863.6. The other six finished, but the last four
+slowed from 33.616 to 33.843 seconds. No evaluation occurred: the actor's
+2,000-decision evaluation interval was only activated after the ordinary
+10,000-decision evaluation, while scratch-origin runs did not schedule an
+immediate check when the actor unlocked. Thus the actor reached its 0.05
+reference-drift limit without a screening evaluation. This was a scheduling
+gap, not a failed five-lap Champion gate.
+
+The runner now schedules the first actor evaluation on unlock for scratch and
+transferred GRTQC alike. If the one-lap screen records any barrier contact
+while the verified Champion has zero contacts, it immediately restores the
+Champion actor while retaining critics and replay. This catches the repeatable
+finish contact before several thousand more actor decisions; all Champion
+promotions still require the existing deterministic five-lap gate.
+
+The action path was checked after a report that controls often read 0.97. The
+policy action space and PWM controller both accept the full [-1, 1] range; no
+0.97 clamp exists. On a saved 1,114-decision Champion lap, predicted steering
+and longitudinal actions reached 0.9998 and 1.0000, and 31%/39% of samples
+were at least 0.97 in absolute value. A 0.97 demand is therefore a real 97%
+PWM duty request, not a hidden scale limit. We did not force controls to 1.0;
+the policy should choose full demand only where the verified pace/contact gate
+supports it.
+
+The stopped run did not create a new visual replay index, despite automatic
+WebSocket replay recording being enabled. This is being checked on the next
+run; older replay sessions remain available, including the 15-entry recovery
+session `8983e2d52ba84229bcfc52fc2b5e1a77`.

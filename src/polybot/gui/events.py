@@ -167,6 +167,16 @@ def format_event(event: dict[str, Any]) -> str | None:
             f"{event['candidate_contacts_per_lap']} barrier contacts vs "
             f"{event['champion_contacts_per_lap']:g} per champion lap"
         )
+    if kind == "severe_actor_screen_rollback":
+        if event.get("contact_regression"):
+            return (
+                f"{prefix}Actor screen hit a barrier{step} · "
+                "restored contact-free Champion; critics and replay kept"
+            )
+        return (
+            f"{prefix}Severe actor screen failure{step} · "
+            "restored verified Champion; critics and replay kept"
+        )
     if kind == "episode":
         reasons = ", ".join(EVENT_NAMES.get(name, name.replace("_", " "))
                             for name in event.get("events", ())) or "ended"
