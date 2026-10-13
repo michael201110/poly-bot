@@ -741,3 +741,10 @@ profile's actor exploration is returned to 0.0025 for the next continuation;
 the next run will resume Latest without replacing its replay. This controlled
 trial does not establish that exploration alone caused the contacts, but it
 does not justify keeping the higher value.
+
+Latest was then resumed from step 2,308,733 on the NVIDIA T500 with the
+profile restored to 0.0025 exploration and `fresh_replay: false`. By step
+2,310,978 it had completed two full-track episodes, the critic recovery
+cooldown had ended, and actor updates were executing again (measured update
+norm 0.000103). The replay buffer and visual replay recording remain enabled.
+This continuation has not yet produced a verified pace evaluation.
