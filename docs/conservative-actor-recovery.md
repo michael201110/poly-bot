@@ -956,6 +956,13 @@ limit is active. No evaluation result is established yet. The visual replay
 index continues recording; it contains 28 indexed attempts at this check, and
 the previous 56-record session remains available.
 
+After the contact rollback and cooldown, the next five-lap evaluation at step
+2,399,785 tied Champion at 33.372 seconds (5/5 finishes, zero contacts). It was
+not promoted; the weak-candidate counter restarted at 1/5. At step 2,400,216
+the actor was unlocked and changing again (0.01748 local action drift, update
+norm 8.5e-5 under the selected 0.05 limit). The protected Champion remains
+33.372 seconds and training/replay recording continue.
+
 The first post-resume policy check was already due at step 2,394,249, only 64
 decisions after restart, and held actor updates until that episode completed.
 Consequently, the step-2,395,305 candidate tested the resumed actor at only
