@@ -249,3 +249,8 @@ so the actor was restored from the protected champion; critics and replay
 remain in place. The active replay index has since grown to 19 episodes. A new
 recovery cycle is active from the restored champion; at step 2,050,923 it had
 reached 0.044 cumulative reference drift, before its next candidate check.
+
+That cycle's five-lap check at step 2,056,746 measured 33.674 seconds with
+five finishes and zero barrier-contact steps. It is the first weak check in
+this cycle, so the two-check rollback gate remains active. The indexed replay
+session has grown to 26 episodes through step 2,056,746.
