@@ -520,3 +520,32 @@ The active visual replay session is
 three completed and one interrupted. The compressed observation and HUD
 payloads arrived asynchronously several minutes after the corresponding laps;
 the indexed session is saved for later swarm playback.
+
+## Contact rollback and action range check
+
+The same live run continued past the checkpoint above. At step 2,202,407 the
+actor's one-lap screen completed in 33.716 seconds but recorded a barrier
+contact at 99.23% progress (peak impulse 886.9). The deterministic five-lap
+confirmation also measured 33.716 seconds and recorded contacts on all five
+laps. The candidate was rejected and `contact_regression_rollback` restored
+the Champion actor while retaining the critics and replay. At that point the
+trainer was active again at step 2,202,728. The protected Champion remained
+33.418 seconds, 5/5, with zero contacts.
+
+To quantify the reported near-maximum control values, the seven finished
+episodes in replay session `89c98caff4bf4e8f86fa49dd938e82e9` were inspected
+(7,857 policy decisions). Steering reached both -1 and +1; 31.2% of decisions
+had absolute steering demand at least 0.97. Signed longitudinal demand reached
+1.0 but only -0.910 on braking; 41.9% of decisions requested throttle at or
+above 0.97. Values within 0.965–0.975 were only 1.4% positive and 2.0% negative
+for steering, and 2.7% positive for longitudinal demand. The action adapter
+has no 0.97 ceiling: it accepts [-1, 1] and converts continuous requests to
+pulse-density controls across the 30-tick frame skip. These observations show
+frequent near-maximum requests, but do not establish that replacing them with
+full demand would improve a lap; the candidate's finish contact is a concrete
+counterexample to accepting pace without the contact gate.
+
+The replay index now contains seven finished training laps, including 33.698,
+33.746-second laps, plus two interrupted episodes. This session remains
+available for swarm playback. Training is still running; no model or control
+code was changed during this diagnosis.
