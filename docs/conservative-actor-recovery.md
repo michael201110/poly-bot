@@ -493,3 +493,27 @@ The stopped run did not create a new visual replay index, despite automatic
 WebSocket replay recording being enabled. This is being checked on the next
 run; older replay sessions remain available, including the 15-entry recovery
 session `8983e2d52ba84229bcfc52fc2b5e1a77`.
+
+## Guarded restart and replay capture
+
+After the runner correction, the GUI resumed Latest at step 2,191,175 on the
+NVIDIA T500. It restored Champion's actor, kept Latest's critics and 64,610
+replay transitions, and kept the one-million-decision full-track budget. The
+first three training laps exactly matched Champion at 33.418 seconds with no
+contacts. The fourth was 33.506 seconds and recorded a thresholded contact at
+98.81% (six impulse steps, peak 80.7); the -1,500 contact penalty applied.
+The next laps were 33.590 and 33.819 seconds without contacts.
+
+The new unlock scheduling worked: the actor was held for a screen after its
+critic cooldown. At step 2,195,639, the full deterministic five-lap evaluation
+finished 5/5 at 33.759 seconds with zero contacts. It remains slower than the
+33.418-second Champion and counted as weak pace check 1/5; no promotion
+occurred. The next one-lap screen, at step 2,197,895, measured 33.603 seconds
+with zero contacts; its five-lap confirmation is pending. The run remains
+active and Champion remains protected.
+
+The active visual replay session is
+`89c98caff4bf4e8f86fa49dd938e82e9`. Its index currently has two completed
+training episodes and one interrupted capture. The compressed observation and
+HUD payloads arrived asynchronously several minutes after the corresponding
+laps; the indexed session is saved for later swarm playback.
