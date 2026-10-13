@@ -648,3 +648,11 @@ full input, which would change the controller's learned action mapping and
 could increase barrier contacts. The current pace limitation remains lap
 quality and safe line execution, not inability to command full throttle or
 steering. No control or reward code was changed.
+
+The next post-recovery candidate at step 2,254,055 screened at 33.728 seconds
+with one contact step, then confirmed at 33.728 seconds, 5/5 with five
+barrier-contact steps. The contact gate rejected it and restored Champion
+again. The live GUI trainer remained active in critic recovery immediately
+after rollback. This is further evidence that the remaining pace gap is not
+caused by a hard action ceiling: bounded actor changes are currently failing
+the contact gate before they improve the 33.418-second protected lap.
