@@ -418,8 +418,13 @@ Recovery was started from the GUI at 19:16 UTC on 2026-10-13. The startup
 record `logs/simple-track/grtqc/20261013T191636Z.jsonl` confirms CUDA on the
 NVIDIA T500, resume from Latest at step 2,160,421, a fresh replay buffer, and
 champion rollback protection enabled. Latest metadata now records the -1,500
-barrier-contact penalty and five weak pace evaluations. The first episode was
-collecting new transitions under those reward settings when this restart was
-recorded. Visual replays remain in
+barrier-contact penalty and five weak pace evaluations. The first deterministic
+five-lap evaluation at step 2,170,485 finished 5/5 at 33.883 seconds with zero
+barrier contacts. It was rejected as slower than Champion and counted as weak
+check 1/5; Champion remains unchanged. Two exploratory training episodes had
+one and two late contacts near 98.9% progress and received the stronger contact
+penalty. Visual replays remain in
 `models/simple-track/grtqc/visual_replays/b039f710069640bfb71aa64d2bf128d5`
-for swarm playback.
+for swarm playback. The new recovery session is
+`models/simple-track/grtqc/visual_replays/8983e2d52ba84229bcfc52fc2b5e1a77`;
+its first replay is a complete clean evaluation lap with telemetry.
