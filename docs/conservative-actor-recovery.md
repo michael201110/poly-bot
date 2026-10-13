@@ -281,3 +281,10 @@ than Champion, so the actor was kept only for the second weak-evaluation check;
 the protected actor and pace gate remain intact. The active replay run
 `350a625c0301432fb4bcca32af84ac57` has recorded two episodes with observations
 through step 2,078,999.
+
+The next five-lap check at step 2,080,127 measured 33.728 seconds with zero
+barrier contacts. Both checks in this 0.10 cycle were slower than Champion, so
+the two-weak-check gate restored Champion again while preserving critics and
+replay. The 1,000-update critic cooldown has restarted. Replay run
+`350a625c0301432fb4bcca32af84ac57` continues recording the active training
+episodes for later swarm playback.
