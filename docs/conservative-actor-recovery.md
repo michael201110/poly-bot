@@ -211,3 +211,14 @@ contacts, including the last three consecutive laps; telemetry reached 0.60
 cumulative action drift. The champion remains 33.418 seconds. Recovery now uses
 the smaller of the saved limit and 0.40, so this checkpoint cannot silently
 retain its old, wider limit. The 250,000-transition replay and critics are kept.
+
+The corrected 0.40 run repeatedly produced slower deterministic checks and
+occasionally reintroduced barrier contacts; its last recorded five-lap check
+at step 2,021,914 was 33.657 seconds with five barrier-contact steps. The
+protected 33.418-second champion was not replaced. The worker later failed to
+save at step 2,030,419 because the drive ran out of space. To keep recovery
+conservative, subsequent champion recovery is capped at 0.20 cumulative
+reference drift; the five-lap contact and pace gates remain unchanged. Older
+checkpoint replay buffers can be pruned while preserving each checkpoint's
+policy and metadata. The last complete checkpoint's replay buffer is retained
+for resume; the newest incomplete checkpoint is kept for diagnosis.
