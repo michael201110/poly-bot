@@ -494,6 +494,9 @@ class PolyBotWindow(QWidget):
             ("Continue latest with selected rewards",
              lambda: self._start(True, reward_override=True),
              "Keep the latest policy and critics, use the selected reward settings, and refill replay from scratch."),
+            ("Continue latest with selected exploration",
+             lambda: self._start(True, exploration_override=True),
+             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor exploration setting."),
             ("Continue best with selected rewards",
              lambda: self._start(True, best=True, reward_override=True),
              "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
@@ -1094,6 +1097,8 @@ class PolyBotWindow(QWidget):
                                ("Continue best model", lambda: self._start(True, best=True)),
                                ("Continue latest with selected rewards",
                                 lambda: self._start(True, reward_override=True)),
+                               ("Continue latest with selected exploration",
+                                lambda: self._start(True, exploration_override=True)),
                                ("Continue best with selected rewards",
                                 lambda: self._start(True, best=True, reward_override=True)),
                                ("Recover champion actor",
@@ -3540,6 +3545,7 @@ class PolyBotWindow(QWidget):
         self, resume: bool, *, best: bool = False, pace_polish: bool = False,
         reward_override: bool = False,
         recover_actor: bool = False,
+        exploration_override: bool = False,
     ) -> None:
         if not self._require_idle():
             return
@@ -3562,8 +3568,11 @@ class PolyBotWindow(QWidget):
             cfg = self.configuration()
             if recover_actor and cfg.algorithm != "grtqc":
                 raise ValueError("champion actor recovery is available for GRTQC")
+            if exploration_override and cfg.algorithm != "grtqc":
+                raise ValueError("selected exploration continuation is available for GRTQC")
             selected_reward_profile = cfg.reward_profile
             selected_rewards = cfg.rewards
+            selected_exploration_std = cfg.grtqc.exploration_std if cfg.grtqc else None
             if reward_override and cfg.algorithm not in {"grtqc", "tqc"}:
                 raise ValueError("selected reward continuation is available for GRTQC and TQC")
             fitted_curriculum = _fit_custom_curriculum_budget(cfg.curriculum, cfg.timesteps)
@@ -3621,6 +3630,9 @@ class PolyBotWindow(QWidget):
             if resume and cfg.algorithm in {"grtqc", "tqc"}:
                 resume_metadata = registry.read_metadata(slot)
                 cfg = self._resume_configuration(cfg, resume_metadata)
+                if exploration_override:
+                    assert cfg.grtqc is not None and selected_exploration_std is not None
+                    cfg.grtqc = replace(cfg.grtqc, exploration_std=selected_exploration_std)
                 if recover_actor:
                     cfg.grtqc = replace(
                         cfg.grtqc,
@@ -3653,11 +3665,17 @@ class PolyBotWindow(QWidget):
                     backend_for(cfg.algorithm).action_adapter(cfg).schema,
                 )
                 self.load_configuration(cfg)
-                self.log.append(
-                    "Loaded the checkpoint's policy, critic, and curriculum; kept the selected step budget."
-                    if reward_override else
-                    "Loaded the checkpoint's policy, critic, curriculum, and reward settings; kept the selected step budget."
-                )
+                if exploration_override:
+                    self.log.append(
+                        "Loaded Latest's policy, critics, replay, rewards, and curriculum; "
+                        f"kept actor exploration at the selected {cfg.grtqc.exploration_std:g}."
+                    )
+                else:
+                    self.log.append(
+                        "Loaded the checkpoint's policy, critic, and curriculum; kept the selected step budget."
+                        if reward_override else
+                        "Loaded the checkpoint's policy, critic, curriculum, and reward settings; kept the selected step budget."
+                    )
                 saved_rewards = resume_metadata.training_config.get("rewards")
                 if isinstance(saved_rewards, dict) and RewardConfig(**saved_rewards) != cfg.rewards:
                     if reward_override:

@@ -689,3 +689,44 @@ was refreshed and training continued. The newest result narrows the gap to
 2,263,556 the GUI trainer was active again. The replay index held 84 records:
 60 finished laps and 24 interrupted episodes, preserving the new runs for
 swarm playback.
+
+The repeated bounded actor cycles still failed to beat the 33.418-second
+Champion, so the next controlled experiment increases only post-verification
+actor rollout exploration from 0.0025 to 0.01. Reward settings, actor update
+limits, cumulative drift guard, critic collection noise, replay, and all
+evaluation and rollback gates remain unchanged. This tests whether the prior
+noise was too small to sample actions near saturation; it does not force
+controls to full input. The GUI's ordinary Resume latest restores saved
+training settings, so a dedicated “Continue latest with selected
+exploration” action was added to override only this value while preserving
+Latest's critics and replay.
+
+The old run was stopped cleanly at step 2,298,544 after saving a finished
+33.5-second episode, and Latest was verified at that step. The new GUI loaded
+the updated Simple Track profile and resumed Latest on CUDA (NVIDIA T500)
+with `fresh_replay: false`, selected exploration 0.01, and a 1,000,000-decision
+session budget. Its first deterministic check at step 2,299,680 measured
+33.423 seconds, 5/5 with zero contacts. It was not promoted because it is
+0.005 seconds slower than Champion; actor updates have now resumed under the
+new exploration setting. This first check is a clean baseline, not evidence
+that the new setting improved pace. Champion remains 33.418 seconds, 5/5,
+zero contacts.
+
+The next screen at step 2,301,936 was 33.652 seconds and recorded two contact
+steps. Its deterministic five-lap confirmation was also 33.652 seconds and
+recorded ten contact steps; the contact gate rejected it and restored the
+verified Champion actor. Critic recovery then began with a 1,000-update
+cooldown. At step 2,304,369, the run was still active with 392 cooldown
+updates remaining; actor learning was locked during recovery. The current
+Champion remains 33.418 seconds, 5/5 with zero contacts.
+
+The latest captured post-change training lap (step 2,300,801; 33.708 seconds)
+was also checked against the report that the policy stops at 0.97. Its saved
+raw actions span -1 to +1 for steering and -0.8404 to +1 for longitudinal
+demand. About 24.0% of steering actions and 44.8% of longitudinal actions
+have magnitude at least 0.97; only 6.0% and 2.3%, respectively, fall in the
+narrow 0.965–0.975 band. The policy does request full-scale actions, so these
+data do not support a hard 0.97 action cap. The latest check is descriptive,
+not a counterfactual proof that full steering or braking would improve pace.
+At frame skip 30, a 0.97 demand is approximately 29 active digital ticks per
+30, while 1.0 fills all 30.
