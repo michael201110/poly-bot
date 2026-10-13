@@ -423,8 +423,12 @@ five-lap evaluation at step 2,170,485 finished 5/5 at 33.883 seconds with zero
 barrier contacts. It was rejected as slower than Champion and counted as weak
 check 1/5; Champion remains unchanged. Two exploratory training episodes had
 one and two late contacts near 98.9% progress and received the stronger contact
-penalty. Visual replays remain in
+penalty. The second deterministic five-lap evaluation at step 2,172,741 was
+33.962 seconds with zero contacts (weak check 2/5). The next three training
+episodes completed at 33.857, 33.690, and 33.648 seconds without contacts.
+Visual replays remain in
 `models/simple-track/grtqc/visual_replays/b039f710069640bfb71aa64d2bf128d5`
 for swarm playback. The new recovery session is
 `models/simple-track/grtqc/visual_replays/8983e2d52ba84229bcfc52fc2b5e1a77`;
-its first replay is a complete clean evaluation lap with telemetry.
+it has four replay entries, including clean evaluation telemetry and finished
+training laps.
