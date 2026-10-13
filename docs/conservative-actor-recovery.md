@@ -937,3 +937,21 @@ candidate. At step 2,390,747 the actor was unlocked with 0.00995 action drift
 within the 0.03 limit. The visual replay bundle had 23 indexed attempts,
 including the new evaluation laps and an interrupted attempt. Champion remains
 33.372 seconds and training continues toward the 30-second target.
+
+At step 2,392,732 the 0.03-guard candidate measured 33.825 seconds (5/5,
+zero contacts) and was weak-pace check 2/5. After another saturated actor
+window, training was stopped cleanly at step 2,394,185; Latest saved there and
+Champion remained 33.372 seconds, 5/5 with zero contacts. The selected profile
+now raises only `actor_reference_drift_limit` from 0.03 to 0.05. The 0.0025
+per-update action cap, actor/critic rates, replay, rewards, exploration,
+evaluation frequency, five-lap promotion rule, and contact rollback remain
+unchanged.
+
+The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
+one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
+Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
+2,394,222 cumulative actor drift had moved from its saved 0.03 boundary to
+0.03250, with an actor update norm of 9.2e-5, confirming the selected 0.05
+limit is active. No evaluation result is established yet. The visual replay
+index continues recording; it contains 28 indexed attempts at this check, and
+the previous 56-record session remains available.
