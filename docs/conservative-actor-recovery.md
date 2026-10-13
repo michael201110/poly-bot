@@ -888,3 +888,24 @@ gate restored Champion's actor, preserved critics/replay, and started the
 1,000-update cooldown. At the latest check, training was active at step
 2,376,369 with 603 cooldown updates remaining and the actor locked. This trial
 is already showing the larger trust region needs the unchanged contact gate.
+
+After recovery, the clean five-lap checks at steps 2,379,260 and 2,381,516
+measured 33.586 and 33.656 seconds respectively, both slower than the protected
+33.418-second Champion. Neither was promoted. The second check raised the
+weaker-actor count to 2/5. Clean checks reset the local action reference for the
+next trust-region window; they do not replace Champion. At step 2,382,413 the
+actor was unlocked and had rebuilt nearly all of its 0.03 local action-drift
+allowance, but its measured parameter update norm was only 1.7e-7. Latest was
+still training and the live replay bundle had 14 indexed episodes, including
+the current episode. This small update near the guard is worth monitoring; the
+pace target remains unmet and Champion is unchanged.
+
+Action telemetry from the saved training laps confirms the controller does
+not have a 0.97 output ceiling: deterministic policy outputs reach both
+steering extremes and throttle 1.0. Depending on the episode, about 30–35% of
+decisions request steering magnitude above 0.97, and about 39–43% request
+longitudinal magnitude above 0.97. These are normalized demands, not a measure
+of lost engine power. The adapter converts each demand into 30 digital ticks;
+for example, a 0.97 magnitude averages roughly 29 pressed ticks per 30, with
+the exact schedule carried across decisions. Forcing every demand to 1.0 would
+change steering and throttle behavior globally, so no such remapping was made.
