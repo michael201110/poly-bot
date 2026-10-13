@@ -804,6 +804,13 @@ five laps at a 33.634-second median, but registered five barrier-contact steps
 (maximum impulse 92.30). The candidate was rejected under the existing contact
 gate, so Champion was not changed. Training continued with the rejected actor;
 its next training lap was 33.418 seconds with zero collision impulse steps.
-That episode result is not a five-lap verification. At the latest check,
-training remained active and the next decision was to collect more evaluations
-under the same 0.02 actor-drift guard before considering another tuning change.
+That episode result is not a five-lap verification. The next deterministic
+check at step 2,330,045 was 33.418 seconds (5/5, zero contacts), tying Champion
+and registering weak-pace check 1/5. The following check at step 2,332,301 was
+33.733 seconds (5/5, zero contacts), check 2/5. The actor reached the selected
+0.02 cumulative drift boundary by step 2,332,163 with 31 Adam updates; at step
+2,334,534 it had made 62 updates and remained just under the boundary. The
+30-second target is present in both the selected profile and Latest metadata.
+Training remains active with visual replay recording; no Champion promotion
+has occurred. Collect more evaluations under this same guard before changing
+another training variable.
