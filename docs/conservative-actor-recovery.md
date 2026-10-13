@@ -601,6 +601,14 @@ unlocked. At step 2,277,373, the live process was active. Replay storage had
 reached 100 indexed episodes (72 finished and 28 interrupted), retaining
 over 70 completed laps for swarm playback.
 
+Further confirmations stayed clean but did not surpass Champion. At step
+2,278,759 the candidate was 33.610s (5/5, zero contacts). A later check at
+2,283,239 tied Champion at 33.418s (also 5/5, zero contacts) and therefore
+was not promoted. Subsequent clean checks were 33.655s at step 2,285,495,
+33.704s at 2,287,751 and 33.763s at 2,290,007. The actor remains bounded by
+the 0.05 action-drift guard; training was active at step 2,291,080. Replay
+storage had 117 records at that point (84 finished, 33 interrupted).
+
 The next post-recovery candidate checks were 33.562, 33.704, 33.673 and
 33.634 seconds; all four completed five laps without contacts and remained
 slower than the 33.418-second Champion. The fifth weak check (33.634 seconds
