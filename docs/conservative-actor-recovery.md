@@ -385,4 +385,16 @@ critics and replay. Latest remains at this recovered state while training
 continues. Champion is still 33.418 seconds, 5/5, zero contacts. The active
 replay session is
 `models/simple-track/grtqc/visual_replays/b039f710069640bfb71aa64d2bf128d5`;
-it has begun saving complete post-evaluation attempts for later swarm use.
+it currently contains 14 attempts, including 12 complete laps, for later swarm
+use.
+
+The next five-lap evaluation at step 2,140,917 was 33.825 seconds with zero
+contacts. The candidate was rejected as slower than Champion and recorded as
+the first weak pace check. At step 2,143,173, a second five-lap evaluation was
+33.765 seconds, also with zero contacts. After the second weak check, the
+Champion actor was restored again while the critics and replay were retained.
+Training remains active from this recovered checkpoint; the Champion remains
+33.418 seconds, 5/5, with zero contacts. Late contacts appeared in two
+exploratory training laps between evaluations and received the -600 term, while
+both deterministic evaluations stayed contact-free. No 30-second lap has been
+verified yet.
