@@ -921,3 +921,11 @@ Training remains active from the improved Champion with the existing contact
 and five-lap gates. At step 2,384,406 the training process was responsive, the
 actor was unlocked, and actor updates had resumed (update norm 8.5e-5; local
 action drift 0.02496/0.03). The run's visual replay recorder remained active.
+
+The next candidate at step 2,386,012 measured 33.867 seconds, 5/5 finishes,
+and one repeated barrier-contact step per lap at 99.37% progress (peak impulse
+840.28). The contact gate rejected it and restored the 33.372-second Champion
+actor, preserving critic and replay state and starting the configured 1,000-
+update critic cooldown. At step 2,387,101 the GUI was still active, with 728
+cooldown updates remaining and the actor locked. The visual replay index had
+18 records; the interrupted candidate attempt is retained there as well.
