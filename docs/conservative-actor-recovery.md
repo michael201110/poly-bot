@@ -872,3 +872,11 @@ five-lap evaluation, and Champion rollback gates remain unchanged. This gives
 the policy room for a broader measured adjustment after repeated 0.02-limit
 pace plateaus; no improvement is assumed. The next run resumes Latest with
 `fresh_replay=false` via the GUI's selected-actor-guard continuation.
+
+The new 0.03 run started from the GUI on 2026-10-14 at saved step 2,371,404.
+Startup log `logs/simple-track/grtqc/20261013T230203Z.jsonl` confirms Latest
+was restored, the existing replay was kept (`fresh_replay=false`), the full
+1,000,000-decision budget was selected, and CUDA initialized on the NVIDIA
+T500. At step 2,372,205 the run was actively collecting its first episode;
+the prior critic cooldown had 17 updates remaining. The existing 56-record
+visual replay session remains intact while the new session begins recording.
