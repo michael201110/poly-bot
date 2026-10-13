@@ -222,3 +222,13 @@ reference drift; the five-lap contact and pace gates remain unchanged. Older
 checkpoint replay buffers can be pruned while preserving each checkpoint's
 policy and metadata. The last complete checkpoint's replay buffer is retained
 for resume; the newest incomplete checkpoint is kept for diagnosis.
+
+The 0.20 recovery resumed from Latest at step 2,021,914 with its 250,000-item
+replay and critics intact. Its first deterministic five-lap evaluation, at step
+2,032,010, was 33.770 seconds with five finishes and zero barrier-contact
+steps. It is slower than the protected 33.418-second champion and did not
+replace it. Recovery updates have since reached the 0.20 cumulative drift cap;
+the run remains active for further evaluation. The previous session's
+345 visual replays (steps 1,700,506–2,030,426, with recorded observations) are
+available for swarm use. A new replay index has not yet appeared for this
+continuation, so new-session replay persistence still needs verification.
