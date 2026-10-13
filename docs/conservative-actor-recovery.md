@@ -730,3 +730,14 @@ data do not support a hard 0.97 action cap. The latest check is descriptive,
 not a counterfactual proof that full steering or braking would improve pace.
 At frame skip 30, a 0.97 demand is approximately 29 active digital ticks per
 30, while 1.0 fills all 30.
+
+The 0.01 exploration trial was stopped cleanly at step 2,308,733 after its
+second contact-regression rollback. The step-2,306,400 candidate measured
+33.677 seconds over five finished laps and accumulated five contact steps;
+the preceding candidate at step 2,301,936 measured 33.652 seconds and
+accumulated ten contact steps. Both were slower than Champion and failed its
+zero-contact gate. Latest preserved the trained critics and replay. The GUI
+profile's actor exploration is returned to 0.0025 for the next continuation;
+the next run will resume Latest without replacing its replay. This controlled
+trial does not establish that exploration alone caused the contacts, but it
+does not justify keeping the higher value.
