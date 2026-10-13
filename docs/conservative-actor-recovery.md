@@ -577,3 +577,11 @@ resumed from the recovered policy; at step 2,217,092 the actor was locked for
 critic recovery with 701 updates remaining. The visual replay session now
 contains 27 indexed records (19 finished and eight interrupted) for later
 swarm use.
+
+After critic recovery, the first five-lap evaluation at step 2,220,359 matched
+Champion exactly at 33.418 seconds, 5/5 with zero contacts. Since it did not
+beat Champion, it was not promoted and counted as the first weak pace check
+after recovery. The protected checkpoint remains unchanged. Training
+continued past step 2,221,364, and the replay index grew to 32 records (23
+finished and nine interrupted), retaining the additional clean laps for
+swarm playback.
