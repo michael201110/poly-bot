@@ -509,11 +509,14 @@ critic cooldown. At step 2,195,639, the full deterministic five-lap evaluation
 finished 5/5 at 33.759 seconds with zero contacts. It remains slower than the
 33.418-second Champion and counted as weak pace check 1/5; no promotion
 occurred. The next one-lap screen, at step 2,197,895, measured 33.603 seconds
-with zero contacts; its five-lap confirmation is pending. The run remains
-active and Champion remains protected.
+with zero contacts. Its deterministic five-lap confirmation also measured
+33.603 seconds, 5/5 finished with zero contacts (weak pace check 2/5). The
+following training lap was 33.763 seconds without a contact; training continues
+with actor reference drift at 0.0495 of the 0.05 limit. Champion remains
+protected.
 
 The active visual replay session is
-`89c98caff4bf4e8f86fa49dd938e82e9`. Its index currently has two completed
-training episodes and one interrupted capture. The compressed observation and
-HUD payloads arrived asynchronously several minutes after the corresponding
-laps; the indexed session is saved for later swarm playback.
+`89c98caff4bf4e8f86fa49dd938e82e9`. Its index currently has four entries,
+three completed and one interrupted. The compressed observation and HUD
+payloads arrived asynchronously several minutes after the corresponding laps;
+the indexed session is saved for later swarm playback.
