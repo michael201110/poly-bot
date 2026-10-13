@@ -614,3 +614,15 @@ Training continued to step 2,234,452. At the last replay-index inspection,
 the session contained 48 records (34 finished, 14 interrupted). The profile
 edit is committed, but the active GUI run still uses its loaded 0.05 drift
 limit until it is safely stopped and restarted from Latest.
+
+The next five-lap screen/evaluation at step 2,242,855 measured 33.854 seconds
+and 15 barrier-contact steps across five laps (the one-lap screen had three
+contacts and a peak impulse of 513.8). The candidate was rejected and the
+contact-regression rollback restored Champion. Since this occurred with the
+existing 0.05 limit, it does not prove what a looser limit would do, but it
+leaves no evidence to justify widening the actor's exploration now. The 0.08
+follow-up was never applied to the live process and has been reverted in the
+profile to 0.05. At step 2,244,532, the active run remained in
+critic recovery with 581 updates left. Champion is still 33.418 seconds,
+5/5, zero contacts; the replay index contains 61 records (43 finished, 18
+interrupted).
