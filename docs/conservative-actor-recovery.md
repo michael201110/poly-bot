@@ -413,3 +413,13 @@ actor; verified contact regressions still roll back immediately. The budget
 remains 1,000,000 decisions, and promotion still requires the deterministic
 five-lap gate. The protected Champion remains 33.418 seconds, 5/5, with zero
 contacts.
+
+Recovery was started from the GUI at 19:16 UTC on 2026-10-13. The startup
+record `logs/simple-track/grtqc/20261013T191636Z.jsonl` confirms CUDA on the
+NVIDIA T500, resume from Latest at step 2,160,421, a fresh replay buffer, and
+champion rollback protection enabled. Latest metadata now records the -1,500
+barrier-contact penalty and five weak pace evaluations. The first episode was
+collecting new transitions under those reward settings when this restart was
+recorded. Visual replays remain in
+`models/simple-track/grtqc/visual_replays/b039f710069640bfb71aa64d2bf128d5`
+for swarm playback.
