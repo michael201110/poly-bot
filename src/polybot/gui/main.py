@@ -4393,6 +4393,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="PolyBot v2 training GUI")
     parser.add_argument("--check", action="store_true", help="start and close for a GUI smoke check")
     parser.add_argument("--config", type=Path, help="load a saved training configuration on startup")
+    parser.add_argument(
+        "--continue-latest-with-selected-actor-guard",
+        action="store_true",
+        help="open the GUI and continue Latest with the profile's GRTQC actor guard",
+    )
     args = parser.parse_args(argv)
     app = QApplication.instance() or QApplication(sys.argv[:1])
     window = PolyBotWindow()
@@ -4401,6 +4406,8 @@ def main(argv: list[str] | None = None) -> int:
             json.loads(args.config.read_text(encoding="utf-8-sig")),
         ))
     window.show()
+    if args.continue_latest_with_selected_actor_guard:
+        QTimer.singleShot(250, lambda: window._start(True, actor_guard_override=True))
     if args.check:
         QTimer.singleShot(150, app.quit)
     return app.exec()

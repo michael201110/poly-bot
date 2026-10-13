@@ -785,4 +785,6 @@ stays at 0.0025, the per-update cap at 0.0025, and reward, replay, critics,
 evaluation cadence and Champion rollback gates remain unchanged. A new GUI
 continuation action applies the profile's selected drift limit while keeping
 Latest's policy, critics and replay. This is a bounded hypothesis, not an
-expected pace improvement.
+expected pace improvement. The GUI can invoke the same action automatically
+at startup with `--continue-latest-with-selected-actor-guard`, which is useful
+for unattended recovery after a GUI restart.
