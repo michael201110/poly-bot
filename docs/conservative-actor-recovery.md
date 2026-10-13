@@ -254,3 +254,9 @@ That cycle's five-lap check at step 2,056,746 measured 33.674 seconds with
 five finishes and zero barrier-contact steps. It is the first weak check in
 this cycle, so the two-check rollback gate remains active. The indexed replay
 session has grown to 26 episodes through step 2,056,746.
+
+At step 2,059,002 the next five-lap check measured 33.750 seconds with five
+finishes and five barrier-contact steps. The contact gate restored the
+protected champion actor immediately while keeping critics and replay; a
+1,000-update critic cooldown began. Training continued from Latest. The replay
+index has grown to 30 episodes through step 2,060,116.
