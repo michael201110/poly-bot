@@ -545,7 +545,17 @@ frequent near-maximum requests, but do not establish that replacing them with
 full demand would improve a lap; the candidate's finish contact is a concrete
 counterexample to accepting pace without the contact gate.
 
-The replay index now contains seven finished training laps, including 33.698,
-33.746-second laps, plus two interrupted episodes. This session remains
-available for swarm playback. Training is still running; no model or control
-code was changed during this diagnosis.
+At the time of this check, the replay index contained seven finished training
+laps, including 33.698- and 33.746-second laps, plus two interrupted episodes.
+This session remains available for swarm playback. Training was still running;
+no model or control code was changed during this diagnosis.
+
+Subsequent guarded actor checks remained clean but did not improve on
+Champion. At step 2,206,871, the five-lap result was 33.479 seconds, 5/5, with
+zero contacts; at step 2,209,127, it was 33.547 seconds with the same clean
+completion rate. Both candidates were rejected for Champion promotion, and
+the clean learning anchor was refreshed. The 33.418-second Champion remains
+protected. At step 2,209,500 the trainer was active and collecting another
+episode. The replay index for this session had 14 records (ten finished,
+four interrupted); the finished training runs remain available for swarm
+playback.
