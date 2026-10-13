@@ -626,3 +626,25 @@ profile to 0.05. At step 2,244,532, the active run remained in
 critic recovery with 581 updates left. Champion is still 33.418 seconds,
 5/5, zero contacts; the replay index contains 61 records (43 finished, 18
 interrupted).
+
+At step 2,247,335, the five-lap candidate check measured 33.599 seconds,
+5/5 with zero barrier-contact steps. It was clean but slower than the
+protected 33.418-second Champion, so it was not promoted. The next candidate
+at step 2,249,591 measured 33.712 seconds, 5/5, with two contacts on the
+screen lap and ten barrier-contact steps across confirmation. The contact
+gate rejected it and restored the Champion actor. Training continued in
+critic recovery; at step 2,250,252 the GUI trainer was active with 835
+recovery updates remaining. The visual replay index had 68 episodes (48
+finished, 20 interrupted), including the recent laps.
+
+Action-range diagnosis on the saved 33.414-second Champion replay
+(episode-000064) found no action-scale cap: steering reached +1.0 and
+-0.9989, and signed longitudinal demand reached +1.0. About 31% of steering
+decisions had magnitude at least 0.97 and 39% of longitudinal decisions were
+at least +0.97. The continuous PWM adapter converts a 0.97 duty request into
+almost all active ticks in its 30-tick frame; a 1.0 request fills every tick.
+This small remaining gap does not justify forcing near-maximum values to
+full input, which would change the controller's learned action mapping and
+could increase barrier contacts. The current pace limitation remains lap
+quality and safe line execution, not inability to command full throttle or
+steering. No control or reward code was changed.
