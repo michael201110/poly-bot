@@ -848,4 +848,9 @@ seconds (5/5, zero contacts), weak-pace check 1/5. At step 2,361,517, the
 five-lap median improved to 33.612 seconds (5/5, zero contacts), still slower
 than Champion and weak-pace check 2/5. Training remains active; at step
 2,362,619 the actor is unlocked and again near its 0.02 drift limit. The live
-visual replay bundle has 45 indexed attempts; Champion remains unchanged.
+visual replay bundle had 45 indexed attempts; Champion remains unchanged. The
+next check at step 2,363,773 was 33.674 seconds (5/5, zero contacts), weak-pace
+check 3/5. Latest saved that evaluation; by step 2,364,286 training had
+resumed, the actor had made 71 Adam updates and was near the drift limit
+(0.0196/0.02). The replay bundle has 48 indexed attempts. The 30-second goal
+remains unmet; no candidate has passed the faster-than-Champion gate.
