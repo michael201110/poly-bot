@@ -767,3 +767,9 @@ deterministic policy predictions, so this confirms the actor can request
 near-full inputs without rollout noise. The data do not show that full
 braking is optimal: negative longitudinal demand did not saturate, and the
 five-lap candidate still failed the contact gate.
+
+After that contact rollback and critic cooldown, the step-2,317,709 five-lap
+check reproduced Champion exactly at 33.418 seconds, 5/5 with zero contacts.
+It was retained as the clean reference rather than promoted; actor updates
+resumed afterward. At step 2,318,438 the trainer was active on the next
+full-track episode.
