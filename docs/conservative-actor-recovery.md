@@ -987,3 +987,9 @@ The contact gate restored the protected 33.372-second Champion actor while
 preserving critic and replay state and started the 1,000-update cooldown. At
 step 2,406,422 training remained active with 469 cooldown updates remaining;
 the failed candidate was not promoted.
+
+After that rollback cooldown, the step-2,408,761 five-lap check was clean at
+33.539 seconds (5/5, zero contacts), so it remained below the 33.372-second
+Champion and counted as weak check 1/5. At step 2,409,348 the actor was
+unlocked and updating from the clean reference (0.02214 action drift, update
+norm 1.73e-4). The replay bundle had 18 indexed attempts and remained active.
