@@ -236,3 +236,9 @@ written six indexed replay episodes with observations, actions, transforms,
 and HUD frames; the indexed payloads load and validate. Full finished laps in
 this new session include 33.592, 33.757, 33.730, 33.746, and 33.418 seconds.
 These are training replays, not deterministic champion verifications.
+
+The next five-lap candidate check at step 2,044,378 measured 33.712 seconds
+with five finishes and zero barrier-contact steps. It remains slower than the
+champion and is the first weak check in the current recovery cycle; the
+two-check rollback gate is still active. The live continuation has since
+recorded 13 indexed replay episodes.
