@@ -880,3 +880,11 @@ was restored, the existing replay was kept (`fresh_replay=false`), the full
 T500. At step 2,372,205 the run was actively collecting its first episode;
 the prior critic cooldown had 17 updates remaining. The existing 56-record
 visual replay session remains intact while the new session begins recording.
+
+The first actor candidate under the 0.03 limit screened at step 2,374,780 at
+33.790 seconds with a contact at 99.37% progress (peak impulse 1,880.61). Its
+five-lap evaluation repeated that contact on all five attempts, so the existing
+gate restored Champion's actor, preserved critics/replay, and started the
+1,000-update cooldown. At the latest check, training was active at step
+2,376,369 with 603 cooldown updates remaining and the actor locked. This trial
+is already showing the larger trust region needs the unchanged contact gate.
