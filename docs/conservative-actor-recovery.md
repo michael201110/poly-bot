@@ -269,3 +269,8 @@ Earlier 0.10-bound checks were slower than champion but had zero contacts;
 recovery is therefore capped at 0.10 for the next continuation. Latest was
 saved at the stop point, retaining critics and replay, and the 33.418-second
 champion remains protected.
+
+The GUI resumed Latest at step 2,067,759 with a fresh 1,000,000-decision
+budget. Champion actor recovery is now limited to 0.10 cumulative reference
+drift; the run log confirms the actor was restored from Champion and the saved
+critics and replay were retained. Training is active on CUDA.
