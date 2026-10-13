@@ -795,14 +795,18 @@ class TrainingRunner:
             and result.stall_rate == 0.0
             and result.barrier_contact_steps == 0
         )
+        candidate_contact_rate = result.barrier_contact_steps / max(
+            1, result.episodes,
+        )
+        champion_contact_rate = (
+            champion.barrier_contact_steps / max(1, champion.episodes)
+            if champion is not None else 0.0
+        )
+        contact_regressed = reliable and candidate_contact_rate > champion_contact_rate
         better = (
             reliable
             and (champion is None or result.median_lap_s < champion.median_lap_s)
-            and (
-                champion is None
-                or result.barrier_contact_steps / result.episodes
-                <= champion.barrier_contact_steps / max(1, champion.episodes) + 2
-            )
+            and not contact_regressed
         )
         if reliable and getattr(self.model, "scratch_stage", "completion") != "pace":
             self.model.scratch_stage = "pace"
@@ -876,9 +880,8 @@ class TrainingRunner:
                 result.median_lap_s is not None
                 and champion is not None
                 and champion.median_lap_s is not None
-                and result.barrier_contact_steps > max(
-                    3, champion.barrier_contact_steps / max(1, champion.episodes) + 2,
-                ) * result.episodes
+                and reliable
+                and contact_regressed
                 and getattr(self.model, "actor_unlocked", False)
             ):
                 self._emit({
@@ -897,6 +900,7 @@ class TrainingRunner:
                 return result
             pace_is_weaker = (
                 not reliable
+                or contact_regressed
                 or (
                     champion is not None
                     and champion.median_lap_s is not None

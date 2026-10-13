@@ -343,6 +343,27 @@ one-lap screen measured 33.787 seconds. Five-lap confirmation is pending, so
 Champion remains unchanged. The active log is
 `logs/simple-track/grtqc/20261013T182820Z.jsonl`.
 
-The new run has not appeared in the replay catalog yet; refresh and verify its
-index after this training session is stopped. Existing replay runs remain
-available for swarm playback in the meantime.
+The run's visual replay directory is
+`models/simple-track/grtqc/visual_replays/3ee7a78fcc5b4fa4b19d102bc75ab509`.
+It contains two completed attempts and one short interrupted attempt, with full
+telemetry for swarm playback.
+
+## Finish-line contact rollback correction
+
+The five-lap check at step 2,119,294 measured 33.801 seconds and recorded one
+barrier contact on each lap, all at 98.81% progress (peak impulse 56.9). This
+confirmed a repeatable finish-line collision; the preceding evaluation at step
+2,117,022 was 33.787 seconds with zero contacts. The slower candidate was
+rejected, and after the second weak check the actor was restored from Champion
+while retaining the trained critics and replay. The protected Champion remains
+33.418 seconds, five laps, zero contacts.
+
+The scratch promotion gate had allowed up to two extra contacts per lap, and
+its contact rollback waited for more than three contacts per lap. That left a
+repeatable one-contact-per-lap regression below the rollback threshold. The
+gate now compares contact rate directly with Champion: a candidate can only
+promote if its verified five-lap contact rate is no worse, and a reliable
+contact regression restores the Champion actor immediately. This does not
+prescribe a track-specific action or change the reward profile. Latest was
+saved at step 2,119,294 with Champion's actor restored; its critics, replay,
+and -600 contact penalty remain available for continued training.
