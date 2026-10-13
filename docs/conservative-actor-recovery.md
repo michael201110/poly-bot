@@ -656,3 +656,13 @@ again. The live GUI trainer remained active in critic recovery immediately
 after rollback. This is further evidence that the remaining pace gap is not
 caused by a hard action ceiling: bounded actor changes are currently failing
 the contact gate before they improve the 33.418-second protected lap.
+
+After that rollback and critic recovery, three successive actor screens
+confirmed clean full five-lap results at steps 2,258,519 (33.776s), 2,260,775
+(33.514s), and 2,263,031 (33.464s), all with 5/5 finishes and zero barrier
+contacts. Each was rejected as slower than Champion, while the clean anchor
+was refreshed and training continued. The newest result narrows the gap to
+0.046 seconds but does not replace the protected 33.418s checkpoint. At step
+2,263,556 the GUI trainer was active again. The replay index held 84 records:
+60 finished laps and 24 interrupted episodes, preserving the new runs for
+swarm playback.
