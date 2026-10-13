@@ -242,3 +242,8 @@ with five finishes and zero barrier-contact steps. It remains slower than the
 champion and is the first weak check in the current recovery cycle; the
 two-check rollback gate is still active. The live continuation has since
 recorded 13 indexed replay episodes.
+
+The second five-lap check after that recovery, at step 2,046,634, measured
+33.943 seconds with zero barrier-contact steps. It was the second weak check,
+so the actor was restored from the protected champion; critics and replay
+remain in place. The active replay index has since grown to 17 episodes.
