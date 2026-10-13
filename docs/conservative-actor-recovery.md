@@ -606,3 +606,11 @@ cadence, and contact rollback remain unchanged. This setting is not live in
 the already-running GUI process; it requires a safe stop and restart from
 Latest. The champion remains protected, and no runtime model state has been
 changed by this profile edit.
+
+The subsequent five-lap check at step 2,233,863 again matched Champion at
+33.418 seconds, 5/5 with zero contacts. It was not promoted because it did not
+beat the protected time; the post-recovery weak-check count reset to one.
+Training continued to step 2,234,452. At the last replay-index inspection,
+the session contained 48 records (34 finished, 14 interrupted). The profile
+edit is committed, but the active GUI run still uses its loaded 0.05 drift
+limit until it is safely stopped and restarted from Latest.
