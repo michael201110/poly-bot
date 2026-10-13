@@ -585,3 +585,24 @@ after recovery. The protected checkpoint remains unchanged. Training
 continued past step 2,221,364, and the replay index grew to 32 records (23
 finished and nine interrupted), retaining the additional clean laps for
 swarm playback.
+
+The next post-recovery candidate checks were 33.562, 33.704, 33.673 and
+33.634 seconds; all four completed five laps without contacts and remained
+slower than the 33.418-second Champion. The fifth weak check (33.634 seconds
+at step 2,229,383) restored Champion again while preserving critics and
+replay. At step 2,231,984, training was active in critic recovery with 350
+updates remaining. The replay index had grown to 45 records (32 finished, 13
+interrupted).
+
+The actor diagnostics also exposed an effective-update bottleneck. Before the
+next evaluation was pending, several progress records (steps 2,226,647–
+2,226,856) showed cumulative action drift at 0.0499999 against the 0.05 limit,
+proposed action changes around 0.01, but zero executed actor update and zero
+parameter update. The saturation metric remained false. This indicates the
+actor could not use its proposed gradient step while the cumulative guard was
+exhausted. As a single-parameter follow-up, the training profile now sets the
+cumulative drift limit to 0.08; the 0.0025 per-update action limit, evaluation
+cadence, and contact rollback remain unchanged. This setting is not live in
+the already-running GUI process; it requires a safe stop and restart from
+Latest. The champion remains protected, and no runtime model state has been
+changed by this profile edit.
