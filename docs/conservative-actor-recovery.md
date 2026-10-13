@@ -993,3 +993,10 @@ After that rollback cooldown, the step-2,408,761 five-lap check was clean at
 Champion and counted as weak check 1/5. At step 2,409,348 the actor was
 unlocked and updating from the clean reference (0.02214 action drift, update
 norm 1.73e-4). The replay bundle had 18 indexed attempts and remained active.
+
+The next five-lap check at step 2,411,017 completed at 33.703 seconds with
+5/5 finishes and zero contacts. This was weak-pace check 2/5 against the
+33.372-second Champion. At step 2,411,054 the actor was unlocked and had
+resumed updates from its clean reference (0.00250 local action drift, update
+norm 1.04e-4). The replay bundle had 21 indexed attempts and continued
+recording.
