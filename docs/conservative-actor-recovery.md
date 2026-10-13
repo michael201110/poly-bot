@@ -979,3 +979,11 @@ and counted as weak-pace check 2/5; no contact rollback was needed. At step
 2,402,308 the actor was unlocked again, with 0.00999 drift from the new clean
 reference and update norm 1.17e-4. The visual replay bundle contained 10
 indexed attempts and continued recording; Champion remains 33.372 seconds.
+
+The subsequent candidate reached the full 0.05 local drift boundary and was
+screened at step 2,404,297. Its five-lap median was 33.801 seconds with one
+barrier-contact step on every lap at 98.949% progress (peak impulse 64.70).
+The contact gate restored the protected 33.372-second Champion actor while
+preserving critic and replay state and started the 1,000-update cooldown. At
+step 2,406,422 training remained active with 469 cooldown updates remaining;
+the failed candidate was not promoted.
