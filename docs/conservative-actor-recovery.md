@@ -594,6 +594,13 @@ respectively (each 5/5, zero contacts). Both remain slower than Champion and
 were not promoted. At step 2,273,800 the GUI trainer was still active; the
 visual replay index held 96 records (69 finished, 27 interrupted).
 
+Two subsequent candidates remained clean but slower: step 2,274,263 at
+33.747 seconds and step 2,276,503 at 33.604 seconds, each 5/5 with zero
+contacts. Neither replaced the Champion; training continued with the actor
+unlocked. At step 2,277,373, the live process was active. Replay storage had
+reached 100 indexed episodes (72 finished and 28 interrupted), retaining
+over 70 completed laps for swarm playback.
+
 The next post-recovery candidate checks were 33.562, 33.704, 33.673 and
 33.634 seconds; all four completed five laps without contacts and remained
 slower than the 33.418-second Champion. The fifth weak check (33.634 seconds
