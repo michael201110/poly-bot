@@ -586,6 +586,14 @@ continued past step 2,221,364, and the replay index grew to 32 records (23
 finished and nine interrupted), retaining the additional clean laps for
 swarm playback.
 
+The following candidate at step 2,265,287 screened at 33.964 seconds and
+confirmed with ten barrier-contact steps across five laps; it was rejected
+and the Champion actor was restored. After critic recovery, full clean checks
+at steps 2,269,751 and 2,272,007 measured 33.662 and 33.610 seconds,
+respectively (each 5/5, zero contacts). Both remain slower than Champion and
+were not promoted. At step 2,273,800 the GUI trainer was still active; the
+visual replay index held 96 records (69 finished, 27 interrupted).
+
 The next post-recovery candidate checks were 33.562, 33.704, 33.673 and
 33.634 seconds; all four completed five laps without contacts and remained
 slower than the 33.418-second Champion. The fifth weak check (33.634 seconds
