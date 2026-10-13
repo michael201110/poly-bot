@@ -500,6 +500,9 @@ class PolyBotWindow(QWidget):
             ("Recover champion actor",
              lambda: self._start(True, recover_actor=True),
              "Restore the verified GRTQC champion actor into Latest, keep its critics and replay, and train the actor on states from its verified lap."),
+            ("Recover champion actor with selected rewards",
+             lambda: self._start(True, reward_override=True, recover_actor=True),
+             "Restore the verified champion actor into Latest, keep its critics, apply the selected rewards, refill replay, and retain champion rollback protection."),
             ("Play champion", lambda: self._model_command("drive", "champion"),
              "Watch the champion drive a live lap in PolyTrack."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
@@ -1094,7 +1097,9 @@ class PolyBotWindow(QWidget):
                                ("Continue best with selected rewards",
                                 lambda: self._start(True, best=True, reward_override=True)),
                                ("Recover champion actor",
-                                lambda: self._start(True, recover_actor=True))):
+                                lambda: self._start(True, recover_actor=True)),
+                               ("Recover champion actor with selected rewards",
+                                lambda: self._start(True, reward_override=True, recover_actor=True))):
             button = QPushButton(label)
             button.clicked.connect(handler)
             actions.addWidget(button)

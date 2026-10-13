@@ -307,3 +307,27 @@ check at step 2,099,481 measured 33.848 seconds, with five finishes and zero
 thresholded barrier-contact steps. It is the first weak check in this cycle;
 the candidate remains subject to the second-check rollback gate. The
 33.418-second Champion is unchanged, and training continues from Latest.
+
+The second five-lap check at step 2,101,737 measured 33.632 seconds, again
+with five finishes and zero thresholded barrier contacts. This is 0.216 seconds
+faster than the first candidate check but remains slower than Champion; the
+two-weak-check guard therefore restored Champion and retained critics and
+replay. The following run was stopped cleanly at step 2,106,958 with Latest
+saved. The verified Champion remains 33.418 seconds, 5/5.
+
+Inspection of the run's episode telemetry found non-landing collision impulses
+peaking between 73 and 152 near the finish. The selected reward threshold was
+250, so those impacts were logged as collisions but did not activate the
+barrier-contact or speed-loss penalties. The two-second landing grace already
+filters touchdown impulses. For the next run, the saved training configuration
+`profiles/training/simple-track-grtqc-contact-aware-30.json` lowers the barrier
+threshold to 50 and raises the raw contact penalty from -100 to -600, while
+keeping the 30-second target and other reward terms unchanged. It keeps the
+same 1,000,000-step budget, frame skip 30, five-lap evaluations, and conservative
+actor recovery limits.
+
+The automatic visual replay run
+`7450c46351274490804f6e6d0fc78ecc` contains five complete laps from the
+candidate and restored Champion actors, plus screening and stopped partial
+episodes. The cleanly stopped checkpoint remains available in Latest; Champion
+was not overwritten.
