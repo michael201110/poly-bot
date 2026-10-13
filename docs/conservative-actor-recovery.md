@@ -955,3 +955,13 @@ Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
 limit is active. No evaluation result is established yet. The visual replay
 index continues recording; it contains 28 indexed attempts at this check, and
 the previous 56-record session remains available.
+
+The first post-resume policy check was already due at step 2,394,249, only 64
+decisions after restart, and held actor updates until that episode completed.
+Consequently, the step-2,395,305 candidate tested the resumed actor at only
+0.03250 cumulative drift, not at the selected 0.05 limit. Its five-lap median
+was 33.745 seconds with one repeated contact per lap at 99.445% progress (peak
+impulse 53.16). Contact rollback restored Champion and preserved critics and
+replay, then started the 1,000-update cooldown. At step 2,398,382 training was
+still active with 231 cooldown updates remaining; this early check does not
+establish the result of a full 0.05-drift actor search.
