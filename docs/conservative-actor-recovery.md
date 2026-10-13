@@ -773,3 +773,16 @@ check reproduced Champion exactly at 33.418 seconds, 5/5 with zero contacts.
 It was retained as the clean reference rather than promoted; actor updates
 resumed afterward. At step 2,318,438 the trainer was active on the next
 full-track episode.
+
+The following actor candidate at step 2,319,965 measured 33.642 seconds over
+five finished laps and recorded five contact steps; the contact guard restored
+Champion again. After cooldown, the 2,324,445 evaluation was clean (33.847
+seconds, 5/5, zero contacts) but slower than Champion. The run was stopped
+cleanly there with Latest saved. Repeatedly allowing up to 0.05 cumulative
+action drift has produced no pace gain and multiple contact regressions, so
+the next isolated experiment tightens only that limit to 0.02. Exploration
+stays at 0.0025, the per-update cap at 0.0025, and reward, replay, critics,
+evaluation cadence and Champion rollback gates remain unchanged. A new GUI
+continuation action applies the profile's selected drift limit while keeping
+Latest's policy, critics and replay. This is a bounded hypothesis, not an
+expected pace improvement.

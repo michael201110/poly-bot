@@ -497,6 +497,9 @@ class PolyBotWindow(QWidget):
             ("Continue latest with selected exploration",
              lambda: self._start(True, exploration_override=True),
              "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor exploration setting."),
+            ("Continue latest with selected actor guard",
+             lambda: self._start(True, actor_guard_override=True),
+             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC cumulative actor drift limit."),
             ("Continue best with selected rewards",
              lambda: self._start(True, best=True, reward_override=True),
              "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
@@ -1099,6 +1102,8 @@ class PolyBotWindow(QWidget):
                                 lambda: self._start(True, reward_override=True)),
                                ("Continue latest with selected exploration",
                                 lambda: self._start(True, exploration_override=True)),
+                               ("Continue latest with selected actor guard",
+                                lambda: self._start(True, actor_guard_override=True)),
                                ("Continue best with selected rewards",
                                 lambda: self._start(True, best=True, reward_override=True)),
                                ("Recover champion actor",
@@ -3546,6 +3551,7 @@ class PolyBotWindow(QWidget):
         reward_override: bool = False,
         recover_actor: bool = False,
         exploration_override: bool = False,
+        actor_guard_override: bool = False,
     ) -> None:
         if not self._require_idle():
             return
@@ -3570,9 +3576,17 @@ class PolyBotWindow(QWidget):
                 raise ValueError("champion actor recovery is available for GRTQC")
             if exploration_override and cfg.algorithm != "grtqc":
                 raise ValueError("selected exploration continuation is available for GRTQC")
+            if actor_guard_override and cfg.algorithm != "grtqc":
+                raise ValueError("selected actor guard continuation is available for GRTQC")
             selected_reward_profile = cfg.reward_profile
             selected_rewards = cfg.rewards
             selected_exploration_std = cfg.grtqc.exploration_std if cfg.grtqc else None
+            selected_actor_reference_drift_limit = (
+                cfg.grtqc.actor_reference_drift_limit if cfg.grtqc else None
+            )
+            selected_actor_step_action_limit = (
+                cfg.grtqc.actor_step_action_limit if cfg.grtqc else None
+            )
             if reward_override and cfg.algorithm not in {"grtqc", "tqc"}:
                 raise ValueError("selected reward continuation is available for GRTQC and TQC")
             fitted_curriculum = _fit_custom_curriculum_budget(cfg.curriculum, cfg.timesteps)
@@ -3633,6 +3647,13 @@ class PolyBotWindow(QWidget):
                 if exploration_override:
                     assert cfg.grtqc is not None and selected_exploration_std is not None
                     cfg.grtqc = replace(cfg.grtqc, exploration_std=selected_exploration_std)
+                if actor_guard_override:
+                    assert cfg.grtqc is not None and selected_actor_reference_drift_limit is not None
+                    cfg.grtqc = replace(
+                        cfg.grtqc,
+                        actor_step_action_limit=selected_actor_step_action_limit,
+                        actor_reference_drift_limit=selected_actor_reference_drift_limit,
+                    )
                 if recover_actor:
                     cfg.grtqc = replace(
                         cfg.grtqc,
@@ -3669,6 +3690,12 @@ class PolyBotWindow(QWidget):
                     self.log.append(
                         "Loaded Latest's policy, critics, replay, rewards, and curriculum; "
                         f"kept actor exploration at the selected {cfg.grtqc.exploration_std:g}."
+                    )
+                elif actor_guard_override:
+                    self.log.append(
+                        "Loaded Latest's policy, critics, replay, rewards, and curriculum; "
+                        "kept the selected cumulative actor drift limit at "
+                        f"{cfg.grtqc.actor_reference_drift_limit:g}."
                     )
                 else:
                     self.log.append(
