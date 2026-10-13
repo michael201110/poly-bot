@@ -224,11 +224,15 @@ policy and metadata. The last complete checkpoint's replay buffer is retained
 for resume; the newest incomplete checkpoint is kept for diagnosis.
 
 The 0.20 recovery resumed from Latest at step 2,021,914 with its 250,000-item
-replay and critics intact. Its first deterministic five-lap evaluation, at step
-2,032,010, was 33.770 seconds with five finishes and zero barrier-contact
-steps. It is slower than the protected 33.418-second champion and did not
-replace it. Recovery updates have since reached the 0.20 cumulative drift cap;
-the run remains active for further evaluation. The previous session's
-345 visual replays (steps 1,700,506–2,030,426, with recorded observations) are
-available for swarm use. A new replay index has not yet appeared for this
-continuation, so new-session replay persistence still needs verification.
+replay and critics intact. Its deterministic five-lap checks at steps 2,032,010
+and 2,034,266 were 33.770 and 33.669 seconds, each with five finishes and zero
+barrier-contact steps. Both were slower than the protected 33.418-second
+champion; the second check restored the champion actor while retaining critics
+and replay. The run is continuing under the 0.20 cumulative drift cap.
+
+The previous session's 345 visual replays (steps 1,700,506–2,030,426, with
+recorded observations) remain available. The current continuation has also
+written six indexed replay episodes with observations, actions, transforms,
+and HUD frames; the indexed payloads load and validate. Full finished laps in
+this new session include 33.592, 33.757, 33.730, 33.746, and 33.418 seconds.
+These are training replays, not deterministic champion verifications.
