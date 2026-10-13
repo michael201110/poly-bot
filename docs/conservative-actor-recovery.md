@@ -747,4 +747,7 @@ profile restored to 0.0025 exploration and `fresh_replay: false`. By step
 2,310,978 it had completed two full-track episodes, the critic recovery
 cooldown had ended, and actor updates were executing again (measured update
 norm 0.000103). The replay buffer and visual replay recording remain enabled.
-This continuation has not yet produced a verified pace evaluation.
+The first post-restart actor evaluation completed 5/5 at step 2,310,989 in
+33.620 seconds with zero contacts. It was rejected as 0.202 seconds slower
+than Champion; the clean anchor was refreshed and training continued. At
+step 2,311,206 the run was active again.
