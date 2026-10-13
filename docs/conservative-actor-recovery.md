@@ -567,3 +567,13 @@ refreshed. Training continued; at step 2,211,816 it was collecting episode
 19. The visual replay session grew to 20 indexed episodes, with 14 finished
 laps and six interrupted entries, preserving the additional laps for swarm
 playback.
+
+At step 2,215,895, the next five-lap evaluation was 33.699 seconds, 5/5 with
+zero contacts. This was the fifth consecutive clean pace check slower than
+Champion, so the configured weak-evaluation recovery restored the 33.418s
+Champion actor while preserving the critics and replay. The protected
+Champion metadata remains at 33.418 seconds, 5/5, zero contacts. Training
+resumed from the recovered policy; at step 2,217,092 the actor was locked for
+critic recovery with 701 updates remaining. The visual replay session now
+contains 27 indexed records (19 finished and eight interrupted) for later
+swarm use.
