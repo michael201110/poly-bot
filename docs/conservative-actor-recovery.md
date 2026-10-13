@@ -811,6 +811,9 @@ and registering weak-pace check 1/5. The following check at step 2,332,301 was
 0.02 cumulative drift boundary by step 2,332,163 with 31 Adam updates; at step
 2,334,534 it had made 62 updates and remained just under the boundary. The
 30-second target is present in both the selected profile and Latest metadata.
-Training remains active with visual replay recording; no Champion promotion
-has occurred. Collect more evaluations under this same guard before changing
-another training variable.
+At step 2,334,557 the next five-lap check was 33.703 seconds (5/5, zero
+contacts), weak-pace check 3/5. The candidate remained below the protected
+Champion in pace, so it was not promoted. The run then resumed automatically;
+at the next check it was active at step 2,336,082, with replays still recording.
+Collect more evaluations under this same guard before changing another
+training variable.
