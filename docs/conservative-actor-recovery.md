@@ -814,6 +814,11 @@ and registering weak-pace check 1/5. The following check at step 2,332,301 was
 At step 2,334,557 the next five-lap check was 33.703 seconds (5/5, zero
 contacts), weak-pace check 3/5. The candidate remained below the protected
 Champion in pace, so it was not promoted. The run then resumed automatically;
-at the next check it was active at step 2,336,082, with replays still recording.
-Collect more evaluations under this same guard before changing another
-training variable.
+at step 2,336,813 its five-lap check was 33.697 seconds (5/5, zero contacts),
+weak-pace check 4/5. The next check at step 2,339,069 measured 33.773 seconds
+and recorded five contact steps, so contact regression restored the verified
+Champion actor. The recovery event confirms critics and replay were preserved
+and starts the configured 1,000-update critic cooldown. At the latest check,
+training was active in cooldown at step 2,339,546 with 881 updates remaining
+and the actor locked. Visual replays continue to be recorded. Collect data
+after cooldown before changing another training variable.
