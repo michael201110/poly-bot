@@ -2226,3 +2226,26 @@ weaker-candidate streak, but remains 0.322 seconds slower than Champion and
 was not promoted. Training continues with actor unlocked and replay full; at
 step 3,073,317 throughput was 27.3 steps/s. The visual replay session remains
 at 226 runs (163 finished, 63 interrupted).
+
+At step 3,075,119 the next candidate passed five clean laps at 33.572 seconds,
+improving on the prior clean candidate (33.694s) and resetting the
+weaker-candidate streak. It remains 0.200 seconds slower than Champion and
+was not promoted. At step 3,076,513 actor updates remained unlocked, replay
+was full, and throughput was 27.4 steps/s. Visual replay capture contained
+230 runs (166 finished, 64 interrupted) at that inspection.
+
+At step 3,077,375 a five-lap verification finished every lap at a median of
+33.834 seconds, but repeated two late barrier contacts per lap (10 contact
+steps total at 99.37% and 99.44% progress; peak impulse 107.6). The candidate
+was rejected and its actor was restored from Champion; critics and replay were
+preserved while a 1,000-update critic cooldown began. At step 3,077,824
+training remained active with the actor locked, 888 recovery updates left, a
+full 250,000-transition replay, and 27.2 steps/s. Visual replay capture had
+233 runs (168 finished, 65 interrupted). Champion remains 33.372 seconds.
+
+Action-use review: the raw policy reaches steering -1 and +1, full throttle
++1, and near-full braking (-0.972 in inspected traces). The apparent 0.97
+plateau in the control display is consistent with the applied average of 29
+active PWM ticks out of 30 (0.9667), rather than an action clamp. No global
+action remapping or reward change was made: maximum input is not optimal at
+every state, and contact-free verified pace remains the promotion criterion.
