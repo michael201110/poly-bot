@@ -1085,3 +1085,26 @@ After recovery, the next clean five-lap check at step 2,445,126 was 33.499
 seconds, 0.127 seconds slower than Champion, and was not promoted. At step
 2,445,907 the actor was unlocked and updating (0.02816 cumulative drift).
 Replay capture remained active with 24 indexed attempts.
+
+## Action-range concern and current guarded continuation
+
+The report that controls often show `0.97` does not indicate an actuator cap.
+Earlier saved training and deterministic evaluation replays contain steering
+and longitudinal requests at or very near both action limits. At frame skip
+30, the controller realizes fractional requests with digital PWM ticks, so a
+single window may show 29/30 (`0.9667`) even when the requested duty is 0.97;
+the fractional scheduler carries the remainder forward. No snap-to-1 action
+mapping was added: maximum steering or throttle is not always the fastest
+choice, and full steering can increase contact risk.
+
+The current continuation remained live on the T500. At step 2,449,638 its
+deterministic five-lap evaluation was clean (5/5, 33.823 seconds, zero barrier
+contacts), but weaker than the protected 33.372-second Champion, so it was
+rejected without promotion. This is the third weaker actor evaluation toward
+the five-result rollback threshold; the candidate was allowed to continue.
+At step 2,450,359 the actor was unlocked and updating again (update norm
+0.000154, cumulative reference drift 0.02683); the replay archive had 30
+indexed attempts. The 0.04 drift guard can temporarily hold actor changes at
+its limit while an evaluation is pending, then actor updates resume after the
+evaluation refreshes the clean reference. Training remains active, with
+Champion and replay data preserved. The 30-second target remains unmet.
