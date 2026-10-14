@@ -961,6 +961,17 @@ critics and replay intact; at step 3,037,179 throughput was 27.2 steps/s.
 Visual replay capture now contains 181 runs (131 finished, 50 interrupted).
 Champion remains 33.372 seconds, and no training settings changed.
 
+The step-3,039,151 screen was clean at 33.542 seconds across five laps. It
+improved on the previous clean candidate at 33.677 seconds, resetting the
+weaker-candidate streak, but remained slower than Champion. Source inspection
+confirmed that a clean verified lap refreshes the actor-reference observations
+and reference actions and clears the reference-saturation flag; the configured
+0.08 action-drift limit is therefore a local trust region after each such
+refresh, not a permanent global cap. No settings were changed. At step
+3,041,386 the actor remained unlocked, drift from the latest anchor was
+0.0757, replay was full, and throughput was 27.3 steps/s. Visual replay
+capture contains 187 runs (135 finished, 52 interrupted).
+
 The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
 one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
 Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
