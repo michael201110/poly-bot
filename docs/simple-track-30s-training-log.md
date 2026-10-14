@@ -490,3 +490,12 @@ local, PID 17144 remained live on port 8765 and had resumed training at step
 33.662 s episode saved as `episode-000095.npz`. C: had 29.6 GB free and D:
 144.3 GB. The actor recovery gate remains armed for two further weak full
 evaluations; Champion is still protected at 33.324 s.
+
+The next actor screen at step 3,716,048 was 33.785 s, and the five-lap check
+confirmed 33.785 s (5/5 finishes, zero barrier contacts). It improved 0.172 s
+over the preceding 33.957 s candidate and reset the weak-evaluation counter,
+but remains 0.461 s slower than Champion. The checkpoint is preserved at
+`models/simple-track/grtqc/checkpoints/step-3716048-rejected/`. At 20:28 local,
+PID 17144 was still live on port 8765 and continued training beyond step
+3,716,213. The active visual replay index held 96 entries. C: had 29.6 GB
+free and D: 144.3 GB. Champion was not changed.
