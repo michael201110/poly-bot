@@ -2655,3 +2655,10 @@ The following clean five-lap check at step 3,267,568 was 33.608 s with zero barr
 
 
 At step 3,269,824 the next five-lap check was 33.669 s with zero barrier contacts. It was rejected as slower than Champion; the learner kept training. At step 3,270,850 actor updates were active again from the refreshed clean reference (0.03966 cumulative drift, full 250,000-transition replay). The resumed run had recorded 15 visual replay captures. Champion remains 33.345 s, five clean laps; the 30 s objective is still in progress.
+
+
+## Disk-space interruption and resume (2026-10-14)
+
+The 1,000,000-step run hit `[Errno 28] No space left on device` after the clean 33.691 s five-lap check at step 3,272,064. The GUI stopped the task; the latest durable checkpoint remained at step 3,269,824, Champion remained 33.345 s, and its five clean laps were untouched. C: had 0 bytes free. Under the existing authorization to remove older checkpoint replay buffers, removed only `replay.pkl` files from checkpoint directories while retaining the newest three buffers per checkpoint root; all checkpoint policies and metadata, model `Latest` and `Champion`, and visual replay captures were kept. This freed 10.58 GB.
+
+The GUI then resumed **Latest with selected actor settings** on CUDA/T500 with a new 1,000,000-step budget. The new log is `logs/simple-track/grtqc/20261014T101930Z.jsonl`; it records `resume_source=latest`, seed/step 3,269,824, `fresh_replay=false`, and replay size 250,000. The first post-resume actor update executed at cumulative drift 0.00249 under the 0.05 cap; by step 3,270,259 the process was progressing at about 41 decisions/s. C: had about 10.7 GB free at that check. The session is active again; no post-resume pace result has been verified yet.
