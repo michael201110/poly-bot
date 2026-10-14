@@ -2448,3 +2448,10 @@ at 33.528 seconds, 0.139 seconds faster than the previous candidate. It is
 than Champion, so Champion remains protected. At step 3,160,612 actor updates
 were unlocked, replay full, and throughput was 27.57 steps/s. Visual replay
 capture contained 335 episodes (241 finished, 94 interrupted).
+
+At step 3,162,655 the next five-lap evaluation finished cleanly at 33.735
+seconds. It was slower than the preceding 33.528-second screen and the
+protected Champion, so it was rejected without rollback. Training continued
+actor-unlocked with replay full; at step 3,163,529 throughput was 27.58
+steps/s. The visual replay index contained 338 episodes (243 finished, 95
+interrupted).
