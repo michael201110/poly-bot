@@ -52,3 +52,5 @@ After the step-3,319,344 finish-area contact rollback, the recovered actor produ
 The following clean five-lap checks were 33.722 s at step 3,328,320 and 33.654 s at step 3,330,576, both with zero barrier contacts. Each was slower than the Champion and rejected; Latest continued training. At this check the session had advanced beyond step 3,330,845 and the active replay bundle contained 69 episodes (49 finished, 20 interrupted).
 
 The next clean five-lap check at step 3,332,832 improved to 33.448 s with zero contacts, but remained 0.103 s slower than Champion and was rejected. This is the closest candidate since the actor recovery sequence; training continued. The active replay bundle had 72 episodes (51 finished, 21 interrupted).
+
+Two further deterministic five-lap checks completed at steps 3,335,088 (33.582 s) and 3,337,344 (33.680 s), both with zero barrier contacts. Both were rejected against the protected Champion. The weak-actor counter is 2/5 and training continues. The current run replay bundle contains 79 episodes (56 finished, 23 interrupted).
