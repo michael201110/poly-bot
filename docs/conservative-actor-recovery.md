@@ -2606,3 +2606,11 @@ critic replay was preserved and another 1,000-update cooldown began at actor
 LR 2e-6. At step 3,215,808 training continued with replay full at 27.23
 decisions/s. Visual capture contains 404 episodes (290 finished, 114
 interrupted), including this near-finish contact candidate.
+
+## Finish-contact recovery resumed on 2026-10-14
+
+Training was stopped cleanly after the step 3,227,743 five-lap evaluation (33.691 s, zero barrier contacts). Champion remains protected at 33.372 s, five of five clean. Latest retained its policy, critics, full 250,000-transition replay, and rewards. The active contact-aware profile had allowed 0.08 cumulative actor-reference drift, while Champion metadata recorded 0.03. The profile now uses the stricter 0.03 limit. No checkpoint, replay, or champion files were removed or overwritten.
+
+The GUI resumed **Latest with selected actor settings** with a 1,000,000-decision session budget, actor LR 5e-6, per-update action cap 0.0025, and cumulative drift cap 0.03. The new session log is `logs/simple-track/grtqc/20261014T094135Z.jsonl`. It recorded `fresh_replay=false`, `replay_size=250000`, and continued from step 3,227,743; the first completed episode reached full track at step 3,228,866. Its first actor update proposed 0.0414 action drift, but execution was capped at 0.00249, below the 0.03 reference limit. This early episode is not a pace evaluation and does not establish improvement.
+
+The replayed clean laps also show that actions frequently already approach saturation: recent candidates had 90th-percentile steering magnitude near 0.98 and median signed-longitudinal output around +0.92, with strong negative values during braking. The continuous action adapter converts normalized magnitude to pulse density over the 30-tick frame skip. A magnitude of 0.97 therefore produces about one fewer active tick per block than 1.0; it does not mean the action is only 3% of full control. Exact saturation is not automatically faster, especially for steering or braking. Keep the control mapping unchanged and judge any action change through clean five-lap evaluations and contact counts.
