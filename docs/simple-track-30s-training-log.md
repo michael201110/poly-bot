@@ -1106,3 +1106,14 @@ continuing at step 3,885,456 after recovery began. The visual replay archive for
 this resumed run had five entries at 00:09:37 local, preserving the episodes
 and evaluation traces for later swarm inspection. Port 8765 remained active,
 and C: had 26 GB free (D: 144.3 GB).
+
+### Post-recovery pace check, 23:15 UTC
+
+After the 1,000-update critic recovery completed, the actor unlocked and resumed
+full-track training. Free-driving episodes at steps 3,888,522, 3,888,969, and
+3,890,824 were 33.492 s, 33.536 s, and 33.745 s. The deterministic five-lap
+screen at step 3,889,699 was 33.759 s (5/5 finishes, zero barrier contacts),
+so it remained slower than Champion and was not promoted. Training continued
+through step 3,890,959 with actor unlocked. The resumed replay archive had 10
+entries at 00:13:05 local. Port 8765 remained bound to GUI process 19940; disk
+headroom was C: 25.9 GB and D: 144.3 GB. The 33.324 s Champion remains intact.
