@@ -1313,3 +1313,9 @@ The next five-lap check at step 2,543,958 completed cleanly at 33.789 seconds,
 slower than Champion, and was rejected without rollback. The clean reference
 refreshed; actor updates resumed (update norm 0.000112, drift 0.01984 at step
 2,544,467). Replay capture reached 143 attempts.
+
+At step 2,546,214 the five-lap candidate was 33.785 seconds and recorded one
+barrier contact on each lap at 98.95% progress (peak impulse 87.96). The contact
+gate restored Champion; at step 2,546,885 the trainer remained active in critic
+recovery with 833 updates remaining. The visual replay archive contained 146
+attempts.
