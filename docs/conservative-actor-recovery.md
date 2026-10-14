@@ -1635,8 +1635,14 @@ limit disk use. The full-track, frame-skip-30, one-million-decision budget and
 the existing actor safeguards remain. No action remapping was made: the recent
 14-episode replay sample contained exact -1 and +1 policy outputs. About 3.77%
 of steering and 2.58% of longitudinal samples fell in the 0.965-0.975 band.
-At frame skip 30, a 0.97 PWM request corresponds to about 29 of 30 ticks, not a
-bridge clamp. Mapping near-full actions to full would increase barrier risk.
+An individual HUD frame can show 0.9667 applied for a 0.9995 request on the
+first block after a PWM direction/phase reset (29 of 30 ticks). The accumulator
+carries pulse phase across blocks. On saved episode 52 (1,130 decisions), mean
+steering request/applied was -0.03232/-0.03242 and mean longitudinal
+request/applied was 0.64592/0.64594. Among requests above 0.98 magnitude, mean
+applied magnitudes were 0.99194 for steering and 0.99552 for longitudinal,
+matching requested means 0.99182 and 0.99550. This is pulse-density
+quantization, not a sustained 0.967 cap. No action mapping change was made.
 
 Training was continued from Latest with the selected contact penalty and its
 existing actor settings. The GUI reported that the saved policy and critics
@@ -1658,8 +1664,9 @@ is not an action limit: steering reached both -1 and +1, longitudinal throttle
 reached +1, and no bridge clamp appeared. The absolute 0.965-0.975 band covered
 3.53% of steering and 2.84% of longitudinal actions; the most negative
 longitudinal action was -0.919. The protected Champion and five-lap gate were
-not changed. The stronger penalty has kept deterministic evaluations clean so
-far but has not yet yielded a verified pace improvement.
+not changed. Those first five post-change deterministic evaluations were
+clean, but subsequent candidate contact regressions showed that the larger
+penalty does not prevent every bad actor update.
 
 Three additional deterministic five-lap evaluations at steps 2,769,782,
 2,772,022, and 2,774,278 recorded 33.764 s, 33.441 s, and 33.583 s,
@@ -1687,3 +1694,17 @@ was clean at 33.649 s. Training remained active at step 2,786,891; the replay
 buffer and visual session continued growing, with 44 saved visual episode files
 in session `b6c8fcf0739f410a90cdd22d0b252336`. C: had 16.72 GB free. No
 candidate has beaten the protected Champion yet.
+
+Two further actor evaluations exposed the same finish-area failure mode. At
+step 2,790,022 the 33.783 s candidate made ten contacts over five laps, at
+93.59% and 99.23% progress on each lap (peak impulse 733.82). At step 2,796,758
+the 33.832 s candidate made ten contacts at 99.23% and 99.37% on each lap (peak
+impulse 294.58). Both candidates were rejected; the actor was restored from
+Champion and the critic/replay were preserved through 1,000 critic recovery
+updates. The clean checks after those rollbacks were 33.372 s at step 2,794,502
+(a tie with Champion) and 33.689 s at step 2,801,222. Checkpoints 2,790,678 and
+2,800,678 were saved. Training is still active: the GUI showed step 2,803,466,
+replay size 167,135, and actor updates unlocked. The current visual replay
+session had 64 episode files; C: had 16.07 GB free. The contact regression has
+now repeated after the penalty was tripled, so stronger contact punishment by
+itself has not solved it. Champion remains protected at 33.372 s.
