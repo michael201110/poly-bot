@@ -947,57 +947,6 @@ per-update action cap, actor/critic rates, replay, rewards, exploration,
 evaluation frequency, five-lap promotion rule, and contact rollback remain
 unchanged.
 
-The next five-lap evaluation, at step 3,034,655, was clean at 33.597 seconds
-and was rejected as slower than Champion; the weaker-actor counter advanced
-to 2 of 5. Training continued with actor unlocked and replay full. By step
-3,036,684, cumulative action drift since the latest clean anchor was 0.0796
-against the configured 0.08 trust limit, with no saturation flag. Replay
-capture contains 179 runs (130 finished, 49 interrupted). No settings changed.
-
-The next deterministic five-lap check, at step 3,036,911, was clean at
-33.677 seconds. It was rejected as slower than Champion and advanced the
-weaker-candidate count to 3 of 5. Training resumed with actor unlocked,
-critics and replay intact; at step 3,037,179 throughput was 27.2 steps/s.
-Visual replay capture now contains 181 runs (131 finished, 50 interrupted).
-Champion remains 33.372 seconds, and no training settings changed.
-
-The step-3,039,151 screen was clean at 33.542 seconds across five laps. It
-improved on the previous clean candidate at 33.677 seconds, resetting the
-weaker-candidate streak, but remained slower than Champion. Source inspection
-confirmed that a clean verified lap refreshes the actor-reference observations
-and reference actions and clears the reference-saturation flag; the configured
-0.08 action-drift limit is therefore a local trust region after each such
-refresh, not a permanent global cap. No settings were changed. At step
-3,041,386 the actor remained unlocked, drift from the latest anchor was
-0.0757, replay was full, and throughput was 27.3 steps/s. Visual replay
-capture contains 187 runs (135 finished, 52 interrupted).
-
-At step 3,041,391 the candidate completed another clean five-lap evaluation
-at 33.528 seconds, improving on the previous clean candidate (33.542s) and
-resetting the weaker-candidate streak. It remains 0.156 seconds slower than
-Champion and was not promoted. Training continued with actor unlocked, full
-replay, no rollback, and 27.1 steps/s at step 3,041,967; the visual replay
-inventory remains 187 runs (135 finished, 52 interrupted).
-
-At step 3,043,647 the candidate regressed to 33.787 seconds with two barrier
-contacts at 93.34% and 93.46% progress. Deterministic 5-lap verification
-repeated both contacts on every lap (10 contact steps total; peak impulse
-199.11), so the contact gate restored Champion and started a 1,000-update
-critic cooldown while preserving replay. At step 3,044,836 recovery had 703
-updates remaining, the actor was locked, and throughput was 27.1 steps/s.
-The visual replay inventory contains 191 runs (138 finished, 53 interrupted).
-Champion remains protected at 33.372 seconds.
-
-After that cooldown, the step-3,048,127 candidate ran at 33.658 seconds and
-again contacted the barrier twice, now at 99.09% and 99.23% progress. All five
-deterministic evaluations repeated both contacts (10 total), triggering a
-second contact rollback and another 1,000-update critic cooldown with replay
-preserved. After recovery, step 3,052,607 passed five clean laps at 33.629s;
-it was rejected as slower than Champion, restarting the weaker-candidate
-count at 1 of 5. At step 3,054,189 the actor was unlocked, replay full, and
-throughput 27.6 steps/s. Visual replay capture contains 201 runs (146
-finished, 55 interrupted). Champion remains unchanged at 33.372s.
-
 The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
 one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
 Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
@@ -2165,3 +2114,67 @@ so the weaker-candidate streak restarted at 1 of 5; neither result beat the
 and about 27.4 steps/s by step 3,033,398. The visual replay session contains
 176 runs (128 finished, 48 interrupted). Champion and training settings remain
 unchanged.
+
+The next five-lap evaluation, at step 3,034,655, was clean at 33.597 seconds
+and was rejected as slower than Champion; the weaker-actor counter advanced
+to 2 of 5. Training continued with actor unlocked and replay full. By step
+3,036,684, cumulative action drift since the latest clean anchor was 0.0796
+against the configured 0.08 trust limit, with no saturation flag. Replay
+capture contains 179 runs (130 finished, 49 interrupted). No settings changed.
+
+The next deterministic five-lap check, at step 3,036,911, was clean at
+33.677 seconds. It was rejected as slower than Champion and advanced the
+weaker-candidate count to 3 of 5. Training resumed with actor unlocked,
+critics and replay intact; at step 3,037,179 throughput was 27.2 steps/s.
+Visual replay capture now contains 181 runs (131 finished, 50 interrupted).
+Champion remains 33.372 seconds, and no training settings changed.
+
+The step-3,039,151 screen was clean at 33.542 seconds across five laps. It
+improved on the previous clean candidate at 33.677 seconds, resetting the
+weaker-candidate streak, but remained slower than Champion. Source inspection
+confirmed that a clean verified lap refreshes the actor-reference observations
+and reference actions and clears the reference-saturation flag; the configured
+0.08 action-drift limit is therefore a local trust region after each such
+refresh, not a permanent global cap. No settings were changed. At step
+3,041,386 the actor remained unlocked, drift from the latest anchor was
+0.0757, replay was full, and throughput was 27.3 steps/s. Visual replay
+capture contains 187 runs (135 finished, 52 interrupted).
+
+At step 3,041,391 the candidate completed another clean five-lap evaluation
+at 33.528 seconds, improving on the previous clean candidate (33.542s) and
+resetting the weaker-candidate streak. It remains 0.156 seconds slower than
+Champion and was not promoted. Training continued with actor unlocked, full
+replay, no rollback, and 27.1 steps/s at step 3,041,967; the visual replay
+inventory remains 187 runs (135 finished, 52 interrupted).
+
+At step 3,043,647 the candidate regressed to 33.787 seconds with two barrier
+contacts at 93.34% and 93.46% progress. Deterministic 5-lap verification
+repeated both contacts on every lap (10 contact steps total; peak impulse
+199.11), so the contact gate restored Champion and started a 1,000-update
+critic cooldown while preserving replay. At step 3,044,836 recovery had 703
+updates remaining, the actor was locked, and throughput was 27.1 steps/s.
+The visual replay inventory contains 191 runs (138 finished, 53 interrupted).
+Champion remains protected at 33.372 seconds.
+
+After that cooldown, the step-3,048,127 candidate ran at 33.658 seconds and
+again contacted the barrier twice, now at 99.09% and 99.23% progress. All five
+deterministic evaluations repeated both contacts (10 total), triggering a
+second contact rollback and another 1,000-update critic cooldown with replay
+preserved. After recovery, step 3,052,607 passed five clean laps at 33.629s;
+it was rejected as slower than Champion, restarting the weaker-candidate
+count at 1 of 5. At step 3,054,189 the actor was unlocked, replay full, and
+throughput 27.6 steps/s. Visual replay capture contains 201 runs (146
+finished, 55 interrupted). Champion remains unchanged at 33.372s.
+
+After recovery, the step-3,054,863 candidate passed five clean laps at 33.725s.
+It was rejected as slower than Champion and restarted the weaker-candidate
+count at 1 of 5. Training continued with actor unlocked and replay full; at
+step 3,055,104 it was running at 27.4 steps/s. Replay capture contained 203
+runs (147 finished, 56 interrupted).
+
+At step 3,057,119 the next candidate passed five clean laps at 33.564s,
+improving on the previous clean candidate by 0.161s and resetting the
+weaker-candidate streak. It remains 0.192s slower than Champion and was not
+promoted. At step 3,058,192 the actor was unlocked, replay remained full, and
+throughput was 27.4 steps/s. Visual replay capture contains 207 runs (150
+finished, 57 interrupted). No training settings changed.
