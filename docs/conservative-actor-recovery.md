@@ -1720,3 +1720,9 @@ also contact-free at 33.532 s and 33.755 s. The run remained active at step
 2,811,001 with 201,628 replay transitions and actor updates unlocked. Replay
 session `b6c8fcf0739f410a90cdd22d0b252336` had 73 visual episode files; C: had
 15.74 GB free. Champion remains 33.372 s; neither result promoted a model.
+
+At step 2,812,502 the next five-lap evaluation was clean at 33.578 s. The
+actor pace check improved 0.177 s over the prior 33.755 s check, but remained
+0.206 s slower than Champion. Training continued at step 2,813,099 with
+210,446 replay transitions and actor updates active. Visual replay capture
+reached 76 episodes in the current session; C: had 15.72 GB free.
