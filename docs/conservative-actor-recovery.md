@@ -1565,6 +1565,8 @@ The cooldown completed and the actor unlocked. Its next clean deterministic
 five-lap evaluation, saved to Latest at step 2,723,670, was 33.777 s with zero
 barrier contacts. This is weak check 1/5 relative to the previous clean
 33.726 s candidate and remains slower than Champion; no promotion occurred.
-Training continued in the GUI near step 2,725,670 with another actor evaluation
-pending. The replay session had 19 entries, 13 finished. Champion metadata
-still verifies 33.372 s. No action remapping was made.
+The following clean five-lap evaluation at step 2,725,926 improved to 33.578 s
+with zero contacts, resetting the weak-check streak. It is still 0.206 s slower
+than Champion. Latest now records 33.578 s, Champion metadata remains 33.372 s,
+and training continued near step 2,726,974 with actor updates unlocked. The
+replay session had 19 entries, 14 finished. No action remapping was made.
