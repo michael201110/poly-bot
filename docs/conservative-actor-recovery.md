@@ -1641,11 +1641,22 @@ bridge clamp. Mapping near-full actions to full would increase barrier risk.
 Training was continued from Latest with the selected contact penalty and its
 existing actor settings. The GUI reported that the saved policy and critics
 were loaded, while the old training replay was discarded and is being refilled
-under the changed reward settings. The first post-change deterministic
-five-lap evaluation, at step 2,758,502, was clean (zero barrier contacts) at
-33.372 s. It ties Champion and did not promote a new checkpoint. One exploratory
-training episode did receive a -9,000 failure component. Training continued
-on CUDA on the NVIDIA T500 and was active at step 2,760,755 when recorded. The
-new visual replay session `b6c8fcf0739f410a90cdd22d0b252336` had 11 episode
-files at that point. The protected Champion and five-lap gate were not changed.
-The stronger penalty has so far produced a clean tie, not a verified pace gain.
+under the changed reward settings. The first post-change deterministic five-lap
+evaluation, at step 2,758,502, was clean (zero barrier contacts) at 33.372 s. It
+tied Champion and did not promote a new checkpoint. The next four five-lap
+evaluations were also clean, at steps 2,760,758 (33.562 s), 2,763,014
+(33.482 s), 2,765,270 (33.798 s), and 2,767,526 (33.577 s). None beat
+Champion; actor pace checks improved relative to their immediately preceding
+checks at steps 2,763,014 and 2,767,526, but the 30-second target is still
+unmet. One exploratory training episode received a -9,000 failure component.
+
+Training continued on CUDA on the NVIDIA T500 and was active at step 2,769,774
+with 52,671 transitions in the replay buffer when recorded. Checkpoint 2,760,678
+was saved. Visual replay session `b6c8fcf0739f410a90cdd22d0b252336` held 23
+episode files. These 23 saved episodes (19,104 decisions) again show that 0.97
+is not an action limit: steering reached both -1 and +1, longitudinal throttle
+reached +1, and no bridge clamp appeared. The absolute 0.965-0.975 band covered
+3.53% of steering and 2.84% of longitudinal actions; the most negative
+longitudinal action was -0.919. The protected Champion and five-lap gate were
+not changed. The stronger penalty has kept deterministic evaluations clean so
+far but has not yet yielded a verified pace improvement.
