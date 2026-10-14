@@ -180,3 +180,5 @@ The next five-lap evaluation at step 3,517,200 was 33.641 s with zero contacts. 
 At step 3,519,456 the actor passed five clean laps at 33.597 s, improving 0.044 s over the previous check. This is still 0.273 s slower than Champion, so it was not promoted. Training continued to step 3,520,016 at about 25.4 decisions/s; replay capture remains at 302 episodes (217 finished, 85 interrupted).
 
 At step 3,521,712, the actor passed five clean laps at 33.553 s, another 0.044 s improvement and the best clean result since the last contact rollback. It remains 0.229 s slower than the 33.324 s Champion and was not promoted. Training continued to step 3,523,724 at about 25.5 decisions/s; the active replay bundle has 306 episodes (220 finished, 86 interrupted).
+
+The clean five-lap checks at steps 3,523,968 and 3,526,224 were 33.689 s and 33.809 s. Both were rejected against the protected Champion; the weak-actor counter advanced to 2/5. The best verified result in this continuation remains 33.553 s. Training continued to step 3,526,425 at about 25.3 decisions/s; replay capture has 311 episodes (223 finished, 88 interrupted).
