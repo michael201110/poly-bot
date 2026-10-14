@@ -233,3 +233,22 @@ and did not replace it. `latest` saved the evaluation at 18:29:02 UTC. At step
 3,672,333 the actor was unlocked with 51 Adam steps, accepted action drift
 0.004998 under the 0.005 cap, and cumulative drift 0.0943 of 0.5. The active
 visual replay run had 42 indexed entries and continued recording.
+
+## 2026-10-14 live pace and replay checkpoint
+
+At 19:34 local, the trainer remained active as PID 17144 on WebSocket port
+8765. Its latest saved `latest` checkpoint is step 3,673,392 with a clean
+five-lap evaluation of 33.525 s (5/5 finishes, zero barrier contacts). This
+improves 0.090 s over the preceding 33.615 s evaluation, but remains 0.201 s
+slower than the protected Champion at 33.324 s (step 3,371,072); no promotion
+was made. The checkpoint metadata still records the historical best training
+lap of 33.105 s, which is not a verified evaluation. Training advanced beyond
+the checkpoint: a subsequent episode finished in 33.517 s at step 3,674,510,
+and the active process continued afterward.
+
+Visual replay capture is active in
+`models/simple-track/grtqc/visual_replays/b65f8d3033ef43d9a20fb1ebeeedf6d3`.
+Its index contains 47 episodes through episode ID 48; the newest entry is a
+partial/interrupted capture at step 3,675,648 while training itself remains
+live. C: had 30.1 GB free and D: had 144.3 GB free, so no space cleanup was
+needed at this checkpoint.
