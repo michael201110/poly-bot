@@ -1892,6 +1892,17 @@ positive longitudinal output was at least 0.97 for 33.7–42.3%. Exact +1.0
 throttle was much less common (0.5–3.8%), as expected from the bounded policy
 output; this does not indicate an actuator cap.
 
+The HUD distinguishes the actor's raw output from the average applied control
+over the frame. `applied_control_fraction` is calculated from the executed
+digital controls across the 30 ticks. Therefore 29 active steering or pedal
+ticks out of 30 are recorded as 0.9667, which displays as 0.97 despite being
+one simulator tick short of full input. In the latest inspected finished
+replay (episode 82, 33.575 seconds), raw actor outputs reached exactly 1.0 and
+were within 0.03 of full magnitude on 21.5% of steering decisions and 30.5% of
+longitudinal decisions. The applied average was exactly 29/30 on 14.6% of
+steering frames and 15.4% of longitudinal frames. This accounts for many
+applied values displayed near 0.97; it is not a hidden controller ceiling.
+
 An initial curvature comparison used the saved observation vector, which is
 normalized and includes appended critic state. That made its provisional
 straight classification invalid; those earlier percentages should not be used.
@@ -1911,10 +1922,11 @@ happened at about 73 m/s while near-full throttle actions averaged roughly
 There is still no evidence of a controller clamp. No action or reward settings
 were changed.
 
-The latest five-lap evaluation screen, at step 2,953,791, reports 33.669
-seconds median, 100% finish rate, and zero crash rate. It remains 0.297 seconds
-behind the protected 33.372-second Champion and well above the 30-second goal.
-Training remained active just after step 2,953,791 when checked; the actor was
-unlocked, with cumulative reference drift 0.0772 under its 0.08 limit. The
-current visual replay session contains 79 indexed runs: 57 finished and 22
-interrupted; all prior swarm replay sessions remain preserved.
+The latest five-lap evaluation screen, at step 2,956,047, reports 33.534
+seconds median, 100% finish rate, and zero crash rate, but three barrier
+contact steps near the finish (98.0%, 99.3%, and 99.4% progress). It remains
+0.162 seconds behind the protected 33.372-second Champion and does not qualify
+as a clean improvement. Training remained active at step 2,959,232 when checked;
+the latest progress event recorded cumulative reference drift 0.0758 under its
+0.08 limit. The current visual replay session contains 84 indexed runs: 61
+finished and 23 interrupted; all prior swarm replay sessions remain preserved.
