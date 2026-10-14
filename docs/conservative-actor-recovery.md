@@ -1223,3 +1223,11 @@ At step 2,499,030 another deterministic five-lap check finished clean at
 rejected; the clean reference was refreshed. At step 2,500,405 the trainer was
 still active with actor learning unlocked. The visual replay archive contained
 91 attempts. The protected five-lap Champion remains 33.372 seconds.
+
+At step 2,501,286 the candidate passed five clean laps at 33.691 seconds and
+zero contacts, but remained slower than the protected 33.372-second Champion.
+It was rejected and did not replace the Champion. The latest trainer progress
+at step 2,503,532 showed actor training unlocked but zero executed update norm
+and cumulative reference drift near 0.04; the run remains active. This merits
+continued monitoring of the trust-boundary updates. The replay archive had 96
+attempts.
