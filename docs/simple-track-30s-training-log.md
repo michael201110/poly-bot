@@ -746,3 +746,13 @@ training remained live on PID 17144 with port 8765 owned by the trainer; it had
 resumed at step 3,771,219 in episode 119 after recovery, with 716 critic
 cooldown updates remaining. The active visual replay index held 164 entries.
 C: had 28.9 GB free and D: had 144.3 GB.
+
+### First post-recovery clean screen, 21:49 local
+
+The actor's first deterministic five-lap check after the 3,770,080 contact
+rollback matched Champion at 33.324 s (5/5 finishes, zero contacts). It was
+not promoted because it did not beat Champion. The checkpoint is preserved at
+`models/simple-track/grtqc/checkpoints/step-3774544-rejected/`. At 21:50,
+training was active on PID 17144 and port 8765 at step 3,775,477 in episode
+122 (82.0% progress). The active visual replay index held 168 entries. C: had
+28.8 GB free and D: had 144.3 GB.
