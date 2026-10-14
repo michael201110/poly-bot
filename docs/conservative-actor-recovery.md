@@ -2270,3 +2270,12 @@ already-running GUI has loaded its configuration in memory and is unaffected
 by this file edit; its current 1M-step session continues unchanged. Its
 latest five-lap screen at step 3,084,095 was 33.732 seconds, clean but slower
 than the protected Champion.
+
+At step 3,088,607 a five-lap candidate measured 33.523 seconds but repeated
+one barrier contact at 93.66% progress on every lap (peak impulse 194.3). The
+contact gate rejected it, restored the Champion actor, and started a
+1,000-update critic cooldown with replay preserved. At step 3,089,637 the
+actor was locked with 743 cooldown updates remaining; replay capture contained
+247 episodes (178 finished, 69 interrupted). The target-stop profile fix is
+on disk and pushed, but this already-running session still has its original
+22-second stop threshold loaded in memory.
