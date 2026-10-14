@@ -828,3 +828,12 @@ Champion. No recovery was needed. At 22:18, training was live on PID 17144 and
 port 8765 at step 3,797,973 in episode 142 (88.4% progress), with cooldown
 complete. The active visual replay index held 195 entries. C: had 28.6 GB free
 and D: had 144.3 GB.
+
+### Another clean but slower candidate, 22:20 local
+
+The deterministic five-lap check at step 3,799,232 evaluated at 33.721 s
+(5/5 finishes, zero contacts). It was rejected as slower than Champion and
+preserved at `models/simple-track/grtqc/checkpoints/step-3799232-rejected/`.
+At 22:21, PID 17144 still owned port 8765 and had resumed training at step
+3,800,100 in episode 144 (76.0% progress). The active visual replay index held
+198 entries. C: had 28.6 GB free and D: had 144.3 GB.
