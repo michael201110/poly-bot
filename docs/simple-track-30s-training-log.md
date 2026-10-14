@@ -1025,3 +1025,13 @@ rejected. At step 3,856,392, diagnostics showed proposed action drift
 0.3071 of 0.5. At 23:37:31, GUI PID 19940 was still training on port 8765 at
 step 3,856,589. The visual replay index held 262 episodes. C: had 28.0 GB
 free and D: had 144.3 GB.
+
+### Faster candidate with repeated barrier contact, 23:40 local
+
+At step 3,858,656 the actor screen was 33.375 s. Five-lap verification
+finished 5/5 at that pace, but contacted the barrier at 98.52% on every lap
+(five contacts; peak impulse 153.97), so the candidate was rejected and
+automatic actor recovery restored the verified policy with a 1,000-update
+critic cooldown. At 22:40:56 UTC, GUI PID 19940 was still training at step
+3,860,167 on port 8765. Replay index: 262 episodes. C: had 28.0 GB free; D:
+had 144.3 GB. Critics and replay were preserved through recovery.
