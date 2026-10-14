@@ -972,6 +972,13 @@ refresh, not a permanent global cap. No settings were changed. At step
 0.0757, replay was full, and throughput was 27.3 steps/s. Visual replay
 capture contains 187 runs (135 finished, 52 interrupted).
 
+At step 3,041,391 the candidate completed another clean five-lap evaluation
+at 33.528 seconds, improving on the previous clean candidate (33.542s) and
+resetting the weaker-candidate streak. It remains 0.156 seconds slower than
+Champion and was not promoted. Training continued with actor unlocked, full
+replay, no rollback, and 27.1 steps/s at step 3,041,967; the visual replay
+inventory remains 187 runs (135 finished, 52 interrupted).
+
 The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
 one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
 Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
