@@ -2649,3 +2649,6 @@ The next completed five-lap evaluation under the 0.05 cap was at step 3,260,864:
 
 
 After the 1,000-update critic cooldown, the recovered actor unlocked again and a clean five-lap check at step 3,265,312 recorded 33.567 s with zero contacts. It was slower than Champion and was not promoted. At step 3,266,305 the actor was unlocked and updating again (per-update action drift 0.00250, cumulative reference drift 0.03980 of 0.05); replay remained full. The actor is therefore no longer frozen after rollback, and its trust reference was refreshed to the restored verified policy. Visual replay capture had 9 entries at this check. Champion remains 33.345 s, five clean laps.
+
+
+The following clean five-lap check at step 3,267,568 was 33.608 s with zero barrier contacts and was rejected as slower than Champion. At step 3,269,385 the actor was still unlocked, but its cumulative drift had again reached 0.05 and the applied update norm returned to zero pending the next clean actor evaluation; replay capture had 13 entries. This confirms the wider trust region delays but does not remove saturation between evaluations. Continue to monitor pace and contact rate before widening it further.
