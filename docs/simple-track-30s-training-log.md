@@ -1014,3 +1014,14 @@ using actor LR 5e-6, per-update action limit 0.01, and cumulative drift limit
 track phase. At 23:32:19, the run had reached step 3,853,314 at about 25.4 TPS;
 a policy check was in progress. The visual replay index held 259 episodes. C:
 had 28.1 GB free and D: had 144.3 GB.
+
+### Early evaluations after actor-cap increase, 23:37 local
+
+The GUI-run policy check at step 3,854,144 completed five clean finishes at
+33.429 s and was rejected against Champion. The next actor candidate at step
+3,856,400 evaluated at 33.656 s (5/5, zero barrier contacts) and was also
+rejected. At step 3,856,392, diagnostics showed proposed action drift
+0.03352 versus executed 0.00999 at the new 0.01 cap; cumulative drift was
+0.3071 of 0.5. At 23:37:31, GUI PID 19940 was still training on port 8765 at
+step 3,856,589. The visual replay index held 262 episodes. C: had 28.0 GB
+free and D: had 144.3 GB.
