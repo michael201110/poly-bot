@@ -425,3 +425,26 @@ candidate and the weak-evaluation counter is 1/5; the faster 33.484 s rejected
 candidate at step 3,698,096 remains preserved. The replay index had 80 entries
 and episode 000081 was saved as a finished 33.508 s run. C: had 29.7 GB free,
 D: 144.3 GB. Champion remains 33.324 s.
+
+## 2026-10-14 pace returned close to Champion
+
+At step 3,702,608 the actor screening lap was 33.354 s and the subsequent
+five-lap evaluation matched it: 5/5 finishes, zero barrier contacts. The
+candidate was rejected by the Champion gate because 33.354 s is 0.030 s
+slower than the protected 33.324 s Champion. Its checkpoint and evaluation
+are preserved at `models/simple-track/grtqc/checkpoints/step-3702608-rejected/`.
+The previous weaker-evaluation count was cleared after this clean pace gain.
+
+The next training lap, episode 58 at step 3,703,724, finished in 33.454 s and
+was saved as visual replay `episode-000083.npz`. Relative to the earlier
+33.508 s episode 57, this gained 0.054 s, mainly in the 50-60% section
+(0.083 s) and final 10% (0.040 s). Relative to the historical 33.105 s lap,
+the new lap still loses most time in 40-50% (+0.090 s), 70-80% (+0.059 s),
+and the final 10% (+0.139 s). The trace shows continuing pace improvement in
+some of the previously slow sections, but those comparisons are observational
+and do not isolate a control change as the cause.
+
+At 20:10 local, PID 17144 was still training on port 8765 and had reached step
+3,704,709. The replay index had 81 entries, and visual replay recording
+continued. C: had 29.7 GB free and D: 144.3 GB. The latest verified actor is
+0.030 s off Champion; no promotion or rollback occurred.
