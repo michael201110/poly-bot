@@ -190,3 +190,15 @@ this cap finished 5/5 with zero contacts at 33.609 s (step 3,639,664), 0.019 s
 faster than its resume checkpoint but 0.064 s slower than the previous
 33.545 s clean candidate and 0.285 s slower than Champion. No promotion was
 made; replay recording and training remain active.
+
+
+The wider per-update search produced a 33.599 s five-lap evaluation at step
+3,646,432, but with 10 barrier-contact steps (two per lap) at progress ratios
+0.99162 and 0.99233 and a maximum impulse of 449.2. The contact gate rejected
+the candidate and restored the actor from protected Champion; critic replay
+was preserved and a 1,000-update critic cooldown began. The following two
+training episodes were each 33.324 s, consistent with the restored Champion
+policy rather than a faster candidate. At step 3,649,657 the actor remained
+locked with 136 recovery updates remaining. The current visual replay run
+contains the driving episodes and evaluation boundary. Training remains live;
+no Champion files were overwritten.
