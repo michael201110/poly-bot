@@ -2317,3 +2317,23 @@ training replays at steps 3,107,640 and 3,108,756 measured 33.478 and 33.372
 seconds, respectively. By step 3,110,960 the critic cooldown had completed,
 actor updates were unlocked, and replay remained full at 27.97 steps/s. Visual
 capture contained 270 episodes (196 finished, 74 interrupted).
+
+The clean candidate at step 3,113,247 was 33.537 seconds (5/5, zero
+contacts). At step 3,115,503, a faster 33.513-second candidate repeated two
+late contacts per lap at 99.09% and 99.23% progress (10 contact steps total;
+peak impulse 481.1) and was rolled back. The next clean candidate at step
+3,119,967 was 33.525 seconds and remained slower than Champion. At step
+3,122,156 the actor was unlocked, replay full, and running at 27.98 steps/s;
+its cumulative action drift was 0.07963 of the configured 0.08 reference cap,
+with each update using about 0.00250 action drift. Visual capture contained
+284 episodes (206 finished, 78 interrupted).
+
+Offline action comparison used the rejected step-3,106,527 policy and saved
+post-rollback Champion replay episode 000270. On the same Champion states at
+93.4-94.5% progress, both policies requested near-full throttle; steering
+differed by at most about 0.005 at the sampled points. Near 99.0-99.9%, the
+rejected policy predicted nearly the same steering but about 0.03-0.06 less
+throttle than Champion. This is a one-step comparison on Champion states, not
+the rejected policy's divergent collision trajectory, so it cannot establish
+the cause of contact. It does show that globally forcing throttle or steering
+to 1 would not follow from these traces. No action mapping was changed.
