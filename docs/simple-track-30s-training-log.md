@@ -1144,3 +1144,14 @@ still locked. This separates the stable baseline behavior from the late-track
 contacting proposal. The current run's replay index contains the corresponding
 training and evaluation traces for swarm/replay analysis. Training stayed live
 on port 8765; C: had 25.9 GB free and D: 144.3 GB.
+
+### Clean evaluation after the second recovery, 23:24 UTC
+
+After the contact-triggered recovery at step 3,896,403, the actor unlocked and
+continued training. Its next deterministic five-lap screen, at step 3,900,851,
+finished 5/5 at 33.324 s median and best with zero barrier contacts. The clean
+anchor was refreshed, but the candidate was not promoted because it only
+matched the protected 33.324 s Champion. Training continued to step 3,902,160
+with actor updates unlocked and port 8765 still active. The resumed visual
+replay archive had 24 entries at 00:24:33 local. C: had 25.8 GB free and D:
+144.3 GB. The 30-second target remains unverified.
