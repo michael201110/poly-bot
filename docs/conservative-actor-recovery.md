@@ -1892,16 +1892,29 @@ positive longitudinal output was at least 0.97 for 33.7–42.3%. Exact +1.0
 throttle was much less common (0.5–3.8%), as expected from the bounded policy
 output; this does not indicate an actuator cap.
 
-I also compared throttle with the first six valid lookahead curvature values
-in the most recent finished laps. Under a provisional low-curvature filter,
-throttle was at least 0.97 on 28–36% of the selected decisions, while 10–13%
-were braking. This filter is only a coarse diagnostic and does not prove those
-braking decisions are mistakes; no action or reward settings were changed.
+An initial curvature comparison used the saved observation vector, which is
+normalized and includes appended critic state. That made its provisional
+straight classification invalid; those earlier percentages should not be used.
+I corrected the analysis below using the raw telemetry embedded in the replay
+HUD frames.
 
-The latest five-lap evaluation screen, at step 2,949,295, reports 33.483
-seconds median, 100% finish rate, and zero crash rate. It remains 0.111 seconds
+Raw HUD telemetry from the latest finished replay laps was used to compare
+actions with speed and upcoming curvature. Across eight recent replays, for
+decisions with all first six lookahead points at absolute curvature below
+0.015 m^-1 and speed at least 70 m/s, 19–26% of throttle demands were at or
+above 0.97, 12–17% were braking, and mean signed longitudinal demand was
+around 0.57–0.59. This is a narrow, manually chosen filter, so it signals a
+behavior worth investigating rather than proving those brake decisions are
+wrong. In the five most recent finished replays, brake actions in this subset
+happened at about 73 m/s while near-full throttle actions averaged roughly
+72–73 m/s, consistent with the policy modulating around its speed range.
+There is still no evidence of a controller clamp. No action or reward settings
+were changed.
+
+The latest five-lap evaluation screen, at step 2,953,791, reports 33.669
+seconds median, 100% finish rate, and zero crash rate. It remains 0.297 seconds
 behind the protected 33.372-second Champion and well above the 30-second goal.
-The active run log last recorded step 2,949,295, and its process remained live
-at the time of this check. The current visual replay session contains 73
-indexed runs: 53 finished and 20 interrupted; all prior swarm replay sessions
-remain preserved.
+Training remained active just after step 2,953,791 when checked; the actor was
+unlocked, with cumulative reference drift 0.0772 under its 0.08 limit. The
+current visual replay session contains 79 indexed runs: 57 finished and 22
+interrupted; all prior swarm replay sessions remain preserved.
