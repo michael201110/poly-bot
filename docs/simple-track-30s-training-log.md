@@ -40,15 +40,18 @@ five-lap evaluation was also 33.635 s and was rejected against the 33.324 s
 Champion. At step 3,600,272, another clean five-lap evaluation improved to
 33.601 s with zero barrier contacts. This is a 0.034 s improvement over the
 previous clean evaluation, but still slower than Champion, so it was rejected
-for promotion. The training process then continued. At the latest check it
-was active on port 8765 at step 3,602,037, reporting 12.4 steps/s and retaining
-its best training lap of 33.105 s. No new Champion has been promoted.
+for promotion. At step 3,602,528, a further clean five-lap evaluation improved
+to 33.495 s with zero contacts, 0.106 s faster than the preceding clean
+candidate. It remains slower than Champion and was not promoted. Training then
+continued; at the latest check it was active on port 8765 at step 3,602,652,
+reporting 10.3 steps/s and retaining its best training lap of 33.105 s. No
+new Champion has been promoted.
 
 The new visual replay run `3df0a4c5db0c4f5ca9e2d91062360b75` remains a normal
-directory on C: and contains six captured episodes so far. The background
-archive has moved 26 completed run directories to D: and installed junctions
-at their original paths. C: had about 16.7 GB free at the latest storage
-check; D: had about 155.7 GB free.
+directory on C: and contains eight captured episodes so far. The background
+archive has moved 53 completed run directories to D: and installed junctions
+at their original paths. C: had about 21.8 GB free at the latest storage
+check; D: had about 151.0 GB free.
 
 ## Racing-line update behavior
 
