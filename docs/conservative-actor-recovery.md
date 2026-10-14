@@ -2434,3 +2434,10 @@ seconds, zero contacts. It was slower than Champion and the recent best, so
 it was rejected without rollback. Training continued with actor updates
 unlocked, full replay, and 27.67 steps/s at step 3,156,594. Visual replay
 capture contained 329 episodes (237 finished, 92 interrupted).
+
+At step 3,158,159 the next deterministic five-lap screen was clean at 33.667
+seconds, 0.127 seconds faster than the preceding clean candidate. It remains
+0.195 seconds slower than the recent 33.472-second best, so it was not
+promoted; the trainer recorded an actor pace improvement. At step 3,158,928
+training remained actor-unlocked with full replay at 27.64 steps/s. Visual
+replay capture contained 332 episodes (239 finished, 93 interrupted).
