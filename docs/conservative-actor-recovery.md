@@ -1280,3 +1280,9 @@ but slower than Champion, so it was rejected without rollback. Actor updates
 resumed after the clean reference refresh (norm 0.000098, drift 0.00747 at step
 2,528,395). Training remained active; the replay archive contained 124
 attempts.
+
+The candidate at step 2,530,454 passed five deterministic laps cleanly at
+33.487 seconds. It improved on the previous 33.752-second check, but remains
+0.115 seconds slower than the protected 33.372-second Champion, so it was not
+promoted. Actor updates resumed; at step 2,531,439 the trust-window drift was
+0.03987 with update norm 0.000095. The replay archive contained 128 attempts.
