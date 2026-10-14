@@ -2441,3 +2441,10 @@ seconds, 0.127 seconds faster than the preceding clean candidate. It remains
 promoted; the trainer recorded an actor pace improvement. At step 3,158,928
 training remained actor-unlocked with full replay at 27.64 steps/s. Visual
 replay capture contained 332 episodes (239 finished, 93 interrupted).
+
+At step 3,160,415 the actor achieved another clean five-lap pace improvement
+at 33.528 seconds, 0.139 seconds faster than the previous candidate. It is
+0.056 seconds slower than the best recent candidate and 0.156 seconds slower
+than Champion, so Champion remains protected. At step 3,160,612 actor updates
+were unlocked, replay full, and throughput was 27.57 steps/s. Visual replay
+capture contained 335 episodes (241 finished, 94 interrupted).
