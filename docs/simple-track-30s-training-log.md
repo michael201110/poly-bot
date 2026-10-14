@@ -1252,3 +1252,13 @@ made. Free-driving episode 37 immediately before the screen was 33.850 s. The
 trainer continued through step 3,924,595 in episode 39 with actor updates
 unlocked. The replay index reached 49 entries at 00:46:46 local. Port 8765
 remained active; C: had 25.6 GB free and D: 144.3 GB.
+
+### Closest clean screen in this continuation, 23:48 UTC
+
+The deterministic five-lap screen at step 3,925,571 improved to 33.401 s median
+and best, with 5/5 finishes and zero contacts. It is now 0.077 s slower than
+the protected 33.324 s Champion and is the closest clean candidate in this
+continuation so far; it was not promoted. Free-driving episode 39 immediately
+before the screen was 33.550 s. Training advanced through step 3,926,996 in
+episode 41 with actor updates unlocked. Replay capture reached 51 entries at
+00:49:25 local. Port 8765 remained active; C: had 25.5 GB free and D: 144.3 GB.
