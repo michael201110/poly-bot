@@ -1151,3 +1151,11 @@ remaining and actor changes were locked. The visual replay archive contained
 49 attempts. The repeating late-lap contact is now the main observed failure
 mode; no steering/throttle remapping or reward change was made while the run's
 critic and replay remain trained on the current reward definition.
+
+The actor resumed after recovery but its next five-lap evaluation at step
+2,469,814 was slower (33.683 seconds) and again contacted the barrier once on
+every lap, this time at 98.81% progress (peak impulse 69.73). The contact gate
+restored Champion; at step 2,471,669 the actor was locked with 537 critic
+recovery updates remaining. The visual replay archive had 56 attempts. This
+repeats the same late-lap failure after a fresh actor trial, so no candidate was
+promoted and no reward or action remapping was made.
