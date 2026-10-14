@@ -1117,3 +1117,17 @@ so it remained slower than Champion and was not promoted. Training continued
 through step 3,890,959 with actor unlocked. The resumed replay archive had 10
 entries at 00:13:05 local. Port 8765 remained bound to GUI process 19940; disk
 headroom was C: 25.9 GB and D: 144.3 GB. The 33.324 s Champion remains intact.
+
+### Second contact regression under the moderated cap
+
+At step 3,891,955, the resumed actor's deterministic screen was 33.864 s
+(5/5 finishes) with five barrier-contact steps, so the gate rejected it and
+started another automatic recovery. At step 3,892,492 it was still advancing
+with 866 critic-recovery updates remaining and actor updates locked. This
+confirms that the 0.0075 cap has not yet produced a better reproducible actor.
+Historical evidence also cautions against treating a smaller cap as a complete
+fix: the earlier 0.005-cap search had a clean 33.609 s screen at step 3,639,664,
+but later regressed to 10 repeated contact steps at step 3,664,384. No cap
+change was made during this live run; its recovery and Champion guard remain in
+control. Replay capture is active, port 8765 is listening, and C: still has
+25.9 GB free.
