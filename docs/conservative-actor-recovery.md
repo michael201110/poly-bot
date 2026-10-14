@@ -1966,3 +1966,10 @@ unlocked, reference drift 0.0217, no reference-cap saturation, full replay, and
 about 27.0 steps/s. The session now contains 106 indexed replays (77 finished,
 29 interrupted). This is another verified tie, not a pace improvement; the
 30-second goal remains unmet.
+
+The next clean screen, at step 2,978,479, was 33.474 seconds with no barrier
+contacts, 0.102 seconds behind Champion. The candidate was rejected for
+promotion and the weaker-actor counter is 2 of 5. At step 2,978,840, training
+was active at 26.9 steps/s with actor updates unlocked, reference drift 0.0112,
+and the replay buffer full. The replay session has 109 indexed runs (79
+finished, 30 interrupted). No settings changed; Champion remains protected.
