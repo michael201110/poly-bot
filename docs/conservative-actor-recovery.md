@@ -1922,11 +1922,12 @@ happened at about 73 m/s while near-full throttle actions averaged roughly
 There is still no evidence of a controller clamp. No action or reward settings
 were changed.
 
-The latest five-lap evaluation screen, at step 2,956,047, reports 33.534
-seconds median, 100% finish rate, and zero crash rate, but three barrier
-contact steps near the finish (98.0%, 99.3%, and 99.4% progress). It remains
-0.162 seconds behind the protected 33.372-second Champion and does not qualify
-as a clean improvement. Training remained active at step 2,959,232 when checked;
-the latest progress event recorded cumulative reference drift 0.0758 under its
-0.08 limit. The current visual replay session contains 84 indexed runs: 61
-finished and 23 interrupted; all prior swarm replay sessions remain preserved.
+The five-lap screen at step 2,956,047 was 33.534 seconds, with 100% finish
+rate, zero crashes, and three barrier-contact steps near the finish. The next
+screen, at step 2,960,527, was 33.537 seconds with one contact at 99.02%
+progress. The candidate-rejected event confirms it was not promoted; training
+continued. Champion remains 33.372 seconds, and neither result is a clean
+improvement. Training remained active at step 2,963,575 when checked, with
+26.9 steps/s and 241,268 replay transitions. The current visual replay session
+contains 88 indexed runs: 64 finished and 24 interrupted; all prior swarm
+replay sessions remain preserved.
