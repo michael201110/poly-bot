@@ -837,3 +837,15 @@ preserved at `models/simple-track/grtqc/checkpoints/step-3799232-rejected/`.
 At 22:21, PID 17144 still owned port 8765 and had resumed training at step
 3,800,100 in episode 144 (76.0% progress). The active visual replay index held
 198 entries. C: had 28.6 GB free and D: had 144.3 GB.
+
+### Repeated finish-approach contact, 22:24 local
+
+The actor screen at step 3,801,488 was 33.808 s with three finish-approach
+contact steps. Five-lap verification repeated those contacts on every lap
+(15 total, at 99.02%-99.37% progress; peak impulse 283.91). The candidate was
+rejected and preserved at `models/simple-track/grtqc/checkpoints/step-3801488-rejected/`;
+automatic recovery restored Champion while retaining critic replay. At 22:24,
+PID 17144 remained active at step 3,801,521 in episode 146 (0.5% progress),
+with 992 critic cooldown updates remaining and port 8765 owned by the trainer.
+The active visual replay index held 201 entries. C: had 28.6 GB free and D:
+had 144.3 GB.
