@@ -518,3 +518,12 @@ pace gain reset the weak-actor counter. Episode 73 before evaluation finished
 in 33.700 s. At 20:35 local, training was still active as PID 17144 on port
 8765 at step 3,721,013. The replay index had 102 entries. C: had 29.4 GB free
 and D: had 144.3 GB; Champion remains unchanged.
+
+The next actor candidate screened at 33.631 s at step 3,722,816 and passed a
+five-lap clean evaluation (5/5 finishes, zero barrier contacts). It was
+preserved at `models/simple-track/grtqc/checkpoints/step-3722816-rejected/`;
+it is 0.043 s slower than the preceding 33.588 s result and 0.307 s slower
+than Champion, raising the weak-evaluation counter to 1/5. The next training
+lap, episode 76 at step 3,723,950, was 34.006 s and saved to the visual replay
+index. At 20:39 local, PID 17144 remained live on port 8765 at step 3,724,501,
+with 106 indexed replay entries. C: had 29.3 GB free and D: 144.3 GB.
