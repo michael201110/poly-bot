@@ -50,3 +50,5 @@ At step 3,319,344 the candidate evaluated at 33.890 s with one barrier-contact s
 After the step-3,319,344 finish-area contact rollback, the recovered actor produced clean five-lap results of 33.637 s at step 3,323,824 and 33.575 s at step 3,326,064. Both had zero contacts and were rejected against Champion; training continued with the recovery safeguards intact. The active run remains in progress at step 3,326,565, and its replay bundle has 63 episode files (45 finished, 18 interrupted).
 
 The following clean five-lap checks were 33.722 s at step 3,328,320 and 33.654 s at step 3,330,576, both with zero barrier contacts. Each was slower than the Champion and rejected; Latest continued training. At this check the session had advanced beyond step 3,330,845 and the active replay bundle contained 69 episodes (49 finished, 20 interrupted).
+
+The next clean five-lap check at step 3,332,832 improved to 33.448 s with zero contacts, but remained 0.103 s slower than Champion and was rejected. This is the closest candidate since the actor recovery sequence; training continued. The active replay bundle had 72 episodes (51 finished, 21 interrupted).
