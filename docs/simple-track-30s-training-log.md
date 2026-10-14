@@ -950,3 +950,13 @@ restored Champion while preserving critic replay. At 23:03, PID 17144 still
 owned port 8765 and was collecting episode 173 at step 3,831,912 (10.7%
 progress), with 679 critic cooldown updates remaining. The visual replay index
 held 237 entries. C: had 28.3 GB free and D: had 144.3 GB.
+
+### Post-recovery Champion match, 23:07 local
+
+The five-lap candidate at step 3,835,088 matched Champion at 33.324 s (5/5
+finishes, zero contacts). It was not promoted because it did not improve the
+protected Champion, and was saved at
+`models/simple-track/grtqc/checkpoints/step-3835088-rejected/`. At 23:08,
+training remained live on PID 17144 and port 8765 at step 3,836,213 in episode
+176 (99.9% progress), with cooldown complete. The active replay index held 241
+entries. C: had 28.2 GB free and D: had 144.3 GB.
