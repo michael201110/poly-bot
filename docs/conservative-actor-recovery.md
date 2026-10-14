@@ -1116,3 +1116,11 @@ contact gate restored Champion and began critic recovery; at step 2,452,999,
 archive had grown to 33 indexed attempts. This contact regression is further
 evidence against forcing near-maximum controls to exactly 1.0; the policy can
 already request full scale, and the failed candidate needs better line quality.
+
+After the contact rollback, critic recovery completed by step 2,456,361 and
+actor updates resumed (update norm 0.000095). The next deterministic check at
+step 2,456,374 was clean across five laps (33.658 seconds, zero contacts), but
+slower than Champion; it was rejected without rollback. At step 2,456,515 the
+actor remained unlocked and updating (cumulative reference drift 0.0050), and
+replay capture continued. Champion remains 33.372 seconds, 5/5 and contact
+free; the 30-second target is still unmet.
