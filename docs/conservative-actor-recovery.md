@@ -1186,3 +1186,9 @@ seconds with zero contacts. It was not promoted because it did not beat the
 protected model; the clean anchor was refreshed and training continued. At
 step 2,483,271 the trainer remained active, and the replay archive contained
 70 attempts. The target remains 30 seconds.
+
+At step 2,485,526 the five-lap candidate was clean at 33.848 seconds but slower
+than Champion and its prior clean tie; it was rejected without rollback and the
+reference was refreshed. Training remained active with actor learning unlocked
+at step 2,485,527. The replay archive contained 73 attempts; Champion is still
+33.372 seconds, 5/5 and contact free.
