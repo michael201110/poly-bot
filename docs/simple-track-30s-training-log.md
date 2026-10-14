@@ -499,3 +499,12 @@ but remains 0.461 s slower than Champion. The checkpoint is preserved at
 PID 17144 was still live on port 8765 and continued training beyond step
 3,716,213. The active visual replay index held 96 entries. C: had 29.6 GB
 free and D: 144.3 GB. Champion was not changed.
+
+The following actor screen, at step 3,718,304, was 33.709 s. Its five-lap
+evaluation confirmed 33.709 s (5/5 finishes, zero barrier contacts). This
+improves 0.076 s over the previous 33.785 s result and is preserved at
+`models/simple-track/grtqc/checkpoints/step-3718304-rejected/`; it remains
+0.385 s slower than Champion. The clean pace improvement reset the weak-actor
+counter. Episode 71 immediately before the evaluation finished in 33.521 s.
+At 20:31 local, PID 17144 was live again on port 8765 at step 3,718,357. The
+replay index held 99 entries, C: had 29.6 GB free, and D: had 144.3 GB.
