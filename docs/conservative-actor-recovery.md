@@ -1488,3 +1488,10 @@ a Champion change. A later training lap finished in 33.712 s at step 2,698,874,
 again not a verified promotion result. Training remained live near step
 2,699,991, and the replay index had 25 entries with automatic capture enabled.
 Champion metadata still records a clean five-lap 33.372 s verification.
+
+At step 2,700,006, the next deterministic five-lap evaluation was clean at
+33.821 s and was rejected as slower than Champion. Its clean local reference
+was refreshed and the weak-actor count reached 3/5; no rollback or promotion
+occurred. The GUI continued training with the actor unlocked and no critic
+recovery cooldown. At step 2,700,990 the replay index contained 27 entries,
+including finished run replays; Champion remained unchanged.
