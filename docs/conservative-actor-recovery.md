@@ -2350,3 +2350,10 @@ trainer recorded it as actor pace improvement and continued from the cleaner
 candidate. At step 3,125,902 actor updates were unlocked, replay was full, and
 throughput was 27.84 steps/s. Visual replay capture contained 290 episodes
 (210 finished, 80 interrupted).
+
+At step 3,126,735 the candidate completed five clean laps at 33.722 seconds.
+It was 0.153 seconds slower than the preceding clean candidate and 0.350
+seconds slower than Champion, so it was rejected without a contact rollback.
+At step 3,126,844 training continued with actor updates unlocked, replay full,
+and throughput at 27.71 steps/s. The visual replay index contains 292
+episodes (211 finished, 81 interrupted).
