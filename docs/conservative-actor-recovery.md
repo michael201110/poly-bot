@@ -2106,3 +2106,11 @@ weaker-candidate streak; training continued without rollback. At step
 3,031,972 the actor was unlocked, replay was full, and throughput was 27.5
 steps/s. The visual replay index contains 173 runs (126 finished, 47
 interrupted). No training settings changed.
+
+Two further five-lap checks at steps 3,030,159 and 3,032,399 were clean at
+33.438s and 33.482s. The latter was slower than the prior clean candidate,
+so the weaker-candidate streak restarted at 1 of 5; neither result beat the
+33.372-second Champion. Training continued with actor unlocked, full replay,
+and about 27.4 steps/s by step 3,033,398. The visual replay session contains
+176 runs (128 finished, 48 interrupted). Champion and training settings remain
+unchanged.
