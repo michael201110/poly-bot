@@ -2212,3 +2212,10 @@ at 1 of 5; no contact rollback was needed. Training continued with actor
 unlocked, replay full, and about 27.5 steps/s at step 3,069,784. The visual
 replay index contains 221 runs (160 finished, 61 interrupted). Champion
 remains unchanged at 33.372 seconds.
+
+At step 3,070,607 the candidate passed five laps at 33.801 seconds with zero
+contacts (peak impulse 42.15, below the contact gate). It was slower than
+Champion and advanced the weaker-candidate count to 2 of 5. Training continued
+with actor unlocked and replay full; by step 3,071,716 throughput was 27.4
+steps/s. The visual replay index contains 224 runs (162 finished, 62
+interrupted). Champion remains 33.372 seconds.
