@@ -2379,3 +2379,9 @@ seconds. It was 0.019 seconds slower than the 33.472-second candidate and
 Training continued with actor updates unlocked and replay full. At step
 3,135,729 throughput was 27.75 steps/s; the visual replay index contained
 304 episodes (219 finished, 85 interrupted).
+
+At step 3,135,743 the candidate completed five clean laps at 33.755 seconds.
+It was 0.283 seconds slower than the best recent clean candidate (33.472s)
+and was rejected without contact rollback. Training continued actor-unlocked
+with replay full; at step 3,137,974 throughput was 27.71 steps/s. Visual
+replay capture contained 307 episodes (221 finished, 86 interrupted).
