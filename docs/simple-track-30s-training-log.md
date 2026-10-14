@@ -734,3 +734,15 @@ did not recur in the deterministic candidate check. Training stayed active on
 PID 17144, port 8765; at 21:42 it was at step 3,768,652 in episode 116 (73.4%
 progress). The active visual replay index held 160 entries. C: had 28.9 GB free
 and D: had 144.3 GB.
+
+### Repeated mid-route contact rollback, 21:45 local
+
+The next actor screen at step 3,770,080 was 34.057 s with three contacts. Its
+deterministic five-lap evaluation confirmed 5/5 finishes but 15 contact steps:
+the same three contacts repeated on every lap around 62.96%-63.14% progress.
+Peak collision impulse was 1,427.94. The contact gate rejected the candidate
+and automatically restored Champion, preserving critic replay. At 21:45,
+training remained live on PID 17144 with port 8765 owned by the trainer; it had
+resumed at step 3,771,219 in episode 119 after recovery, with 716 critic
+cooldown updates remaining. The active visual replay index held 164 entries.
+C: had 28.9 GB free and D: had 144.3 GB.
