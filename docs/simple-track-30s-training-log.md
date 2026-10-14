@@ -364,3 +364,12 @@ is the only cause of the plateau. The saved 33.105 s replay is still not a
 verified reproducible policy lap. I left the loaded profile and live process
 unchanged; these settings can only affect a future trainer launch, and changing
 them during this run would require a restart. Champion remains 33.324 s.
+
+The saved `latest` metadata was subsequently written at step 3,698,096 and
+records a five-episode clean evaluation at 33.484 s (5/5 finishes, zero
+barrier contacts). This confirms the pace beyond the preliminary one-lap
+screen, although it remains 0.160 s slower than the protected Champion. At
+20:01 local, PID 17144 was still training on port 8765 and had advanced to
+step 3,698,501, episode 54. The active replay index still held 74 entries
+while that next episode was being recorded; C: had 29.8 GB free and D: had
+144.3 GB. No checkpoint was promoted.
