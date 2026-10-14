@@ -2260,3 +2260,13 @@ At step 3,081,839 the next five-lap evaluation finished all laps cleanly at a
 unlocked again, replay remained full, and throughput was 27.5 steps/s. The
 visual replay index contained 240 episodes (173 finished, 67 interrupted).
 No training or action settings were changed.
+
+Configuration audit: the selected `simple-track-grtqc-contact-aware-30.json`
+profile correctly shaped finish reward around 30 seconds but retained the
+default GRTQC stop threshold of 22 seconds. Since the stop threshold only
+controls verified early termination, not the reward or actor update, I changed
+it to 30 seconds so future starts/resumes recognize the requested target. The
+already-running GUI has loaded its configuration in memory and is unaffected
+by this file edit; its current 1M-step session continues unchanged. Its
+latest five-lap screen at step 3,084,095 was 33.732 seconds, clean but slower
+than the protected Champion.
