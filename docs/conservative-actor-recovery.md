@@ -2372,3 +2372,10 @@ retained as a better actor candidate but not promoted over Champion. At step
 3,133,483 actor updates remained unlocked, replay was full, and throughput was
 27.78 steps/s. Visual replay capture contained 301 episodes (217 finished,
 84 interrupted).
+
+At step 3,133,487 the next candidate completed five clean laps at 33.491
+seconds. It was 0.019 seconds slower than the 33.472-second candidate and
+0.119 seconds slower than Champion, so it was rejected without rollback.
+Training continued with actor updates unlocked and replay full. At step
+3,135,729 throughput was 27.75 steps/s; the visual replay index contained
+304 episodes (219 finished, 85 interrupted).
