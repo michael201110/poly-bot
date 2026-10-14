@@ -27,6 +27,7 @@ from polybot.environment.observations import extra_size
 from polybot.environment.observations import size as observation_size
 from polybot.training.config import ARCHITECTURES, GRTQCConfig
 from polybot.training.critic_reference import on_policy_returns
+from polybot.training.replay_storage import load_replay_buffer
 
 if TYPE_CHECKING:
     from polybot.training.config import TrainingConfig
@@ -843,7 +844,7 @@ class GRTQCBackend(TQCBackend):
             replay = path.with_name("replay.pkl")
             if not replay.is_file():
                 raise FileNotFoundError(f"GRTQC resume requires replay state: {replay}")
-            model.load_replay_buffer(str(replay))
+            load_replay_buffer(model, replay)
         return model
 
     def configure_resume(

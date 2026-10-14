@@ -16,6 +16,7 @@ from stable_baselines3.common.utils import ConstantSchedule, polyak_update
 from polybot.algorithms.base import AlgorithmBackend
 from polybot.control.actions import ContinuousActionAdapter
 from polybot.training.config import ARCHITECTURES, TQCConfig
+from polybot.training.replay_storage import load_replay_buffer, save_replay_buffer
 
 if TYPE_CHECKING:
     from polybot.training.config import TrainingConfig
@@ -482,13 +483,13 @@ class TQCBackend(AlgorithmBackend):
             replay = path.with_name("replay.pkl")
             if not replay.is_file():
                 raise FileNotFoundError(f"TQC resume requires replay state: {replay}")
-            model.load_replay_buffer(str(replay))
+            load_replay_buffer(model, replay)
         return model
 
     def save_model(self, model: Any, directory: Path, *, resume: bool = False) -> None:
         super().save_model(model, directory, resume=resume)
         if resume:
-            model.save_replay_buffer(str(directory / "replay.pkl"))
+            save_replay_buffer(model, directory / "replay.pkl")
 
     def configure_resume(
         self, model: Any, config: TrainingConfig, device: str, *, fresh_replay: bool = False

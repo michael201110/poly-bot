@@ -45,6 +45,11 @@ from polybot.training.evaluation import EvaluationResult, PrefixObservationRefer
 from polybot.training.metrics import EventSink
 from polybot.training.pace_history import append_pace_history
 from polybot.training.promotion import promote_directory
+from polybot.training.replay_storage import (
+    DEFAULT_CHECKPOINT_REPLAY_RETENTION,
+    prune_stale_checkpoint_replays,
+    save_replay_buffer,
+)
 from polybot.training.visual_replays import (
     AsyncReplayWriter,
     VisualReplayCaptureWrapper,
@@ -362,6 +367,25 @@ class TrainingRunner:
                 shutil.copy2(search_metadata, staging / search_metadata.name)
             promote_directory(staging, directory, require_replay=cfg.algorithm in {"tqc", "grtqc"})
         return directory
+
+    def _prune_stale_replay_buffers(self) -> None:
+        if self.config.algorithm not in {"tqc", "grtqc"}:
+            return
+        algorithm_dir = self.registry.algorithm_dir(
+            self.config.track_name,
+            self.config.algorithm,
+            track_slug=self.config.track_slug,
+        )
+        removed = prune_stale_checkpoint_replays(
+            algorithm_dir / "checkpoints",
+            keep=DEFAULT_CHECKPOINT_REPLAY_RETENTION,
+        )
+        if removed:
+            self._emit({
+                "type": "stale_replay_buffers_pruned",
+                "count": len(removed),
+                "paths": [str(path) for path in removed],
+            })
 
     def _checkpoint_after_transport_failure(self, error: BaseException) -> None:
         """Preserve replay and learner state if the simulator leaves mid-run."""
@@ -690,7 +714,7 @@ class TrainingRunner:
             if champion_reward_mismatch:
                 self._save("champion", champion)
             else:
-                self.model.save_replay_buffer(str(champion_dir / "replay.pkl"))
+                save_replay_buffer(self.model, champion_dir / "replay.pkl")
             self._emit({"type": "champion_replay", "timesteps": self.model.num_timesteps})
         refill_in_progress = (
             cfg.algorithm == "tqc"
@@ -1461,6 +1485,7 @@ class TrainingRunner:
         workspace = TrackWorkspace(track, cfg.output_root, cfg.log_root)
         log_path = workspace.log_file(cfg.algorithm, f"{stamp}.jsonl")
         self.sink = EventSink(log_path, self.status)
+        self._prune_stale_replay_buffers()
         plan = build_plan(cfg.curriculum, cfg.timesteps)
         self._emit({"type": "plan", "total_steps": plan.total_steps,
                     "phases": [asdict(phase) for phase in plan.phases]})
@@ -1903,6 +1928,7 @@ class TrainingRunner:
                         self._actor_unlock_event_pending = False
                     if consumed >= next_checkpoint:
                         path = self._save(f"checkpoints/step-{self.model.num_timesteps}")
+                        self._prune_stale_replay_buffers()
                         self._emit({"type": "checkpoint", "path": str(path),
                                     "timesteps": self.model.num_timesteps})
                         next_checkpoint = consumed + cfg.checkpoint_interval
