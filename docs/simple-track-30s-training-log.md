@@ -310,3 +310,27 @@ The fast historical checkpoint is preserved at
 the live trainer because that process currently owns the simulator bridge on
 port 8765. A separate verified evaluation remains necessary before changing
 which actor is trained or promoted.
+
+## 2026-10-14 separate evaluation of the 33.105 s actor
+
+To verify the historical fast lap without interrupting the live trainer, a
+separate copy of checkpoint `step-2616006` was evaluated on WebSocket port
+8766 while the trainer retained port 8765. The candidate completed all five
+deterministic laps cleanly, with zero barrier contacts, but its best and median
+were both 33.755 s. That is 0.431 s slower than the protected 33.324 s
+Champion, so the checkpoint was not promoted. The five evaluation replays are
+preserved under
+`models/fast-checkpoint-evaluation-20261014/simple-track/grtqc/visual_replays/`.
+
+At 19:55 local, the active trainer was still PID 17144 on port 8765. Its latest
+logged screen was at step 3,695,840: one clean finish at 33.617 s, with zero
+barrier contacts. The latest training episode finished in 33.663 s at step
+3,695,830. The 33.105 s replay remains a genuine recorded training lap, but
+its actor did not reproduce that time in a controlled five-lap run. Together
+with the close open-loop action match, this points to state-distribution
+sensitivity: small divergences from the demonstrated trajectory can change
+the closed-loop lap outcome. It does not establish which section or dynamics
+caused the divergence. The active visual replay index had 56 entries through
+episode ID 57; 96 replay directories were present overall. C: had 29.8 GB free
+and D: 144.3 GB. Training and replay capture remain active; Champion is
+unchanged.
