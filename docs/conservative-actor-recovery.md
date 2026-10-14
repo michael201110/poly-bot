@@ -2463,3 +2463,21 @@ seconds slower than Champion. It was retained as an actor pace improvement,
 not promoted. At step 3,166,012 training continued actor-unlocked with full
 replay at 27.58 steps/s; visual capture contained 341 episodes (245 finished,
 96 interrupted).
+
+At step 3,173,903 the deterministic five-lap evaluation finished at 33.599
+seconds with all five laps clean and zero barrier contacts. It was rejected as
+slower than the protected 33.372-second Champion and the 33.472-second recent
+best; the weaker-actor streak is now 1 of 5. Training resumed and reached step
+3,176,141 at 27.51 steps/s. Visual replay capture contains 356 episodes (255
+finished, 101 interrupted). The latest capture includes every tick/decision
+and the two policy action channels for later swarm review.
+
+Action-range diagnosis: the latest complete captured episode (episode 351,
+step 3,170,537–3,171,656) has 1,119 recorded policy actions. Steering reaches
+both exact -1 and +1 (six exact endpoint actions total); longitudinal control
+reaches +1 (16 exact endpoint actions). Many other decisions are near the
+limits (367 steering actions and 491 longitudinal actions have magnitude at
+least 0.95). This rules out a hard global cap below 1, but does not prove that
+full duty is faster in any given section. With 30 PWM ticks per decision, the
+applied overlay can also show 29/30 = 0.967 when 29 ticks carry a button pulse.
+No control mapping or reward changes were made from this observation.
