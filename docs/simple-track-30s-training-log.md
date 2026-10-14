@@ -586,3 +586,23 @@ proposal rather than promoted over Champion. The runner recorded
 on the same PID and port; at 20:54 it had reached step 3,734,405, episode 86
 (26.3% progress). The visual replay index had 118 entries and C: had 29.2 GB
 free.
+
+### Contact rollback and replay telemetry, 20:58-20:59 local
+
+The next candidate at step 3,736,320 screened at 33.969 s with four contact
+steps, then completed five laps at the same median with 20 contact steps
+(four per lap). All occurred between 63.21% and 63.64% of the route; peak
+impulse was 1,088.83. The candidate was rejected and preserved at
+`models/simple-track/grtqc/checkpoints/step-3736320-rejected/`. The recovery
+restored Champion, kept critic replay, and started the 1,000-update critic
+cooldown. Training remained live on PID 17144.
+
+Visual replay comparison around this section shows the candidate did try a
+different path: the normalized lateral-offset observation averaged +0.495 in
+three post-recovery Champion laps and about -0.10 in the two preceding
+candidate laps. Candidate steering reached at least 0.98 absolute magnitude
+on 26-31% of the sampled decisions there, with mean throttle 0.966-0.974.
+This is evidence of a line shift associated with the contacts, not proof that
+the line shift alone caused them. At 20:59:53 local, the same trainer had
+resumed at step 3,739,181 in episode 90 (55.2% progress); port 8765 was owned
+by PID 17144. The visual replay index had 123 entries and C: had 29.2 GB free.
