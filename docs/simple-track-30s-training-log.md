@@ -896,3 +896,15 @@ zero contacts), slower than Champion, so it was rejected and preserved at
 training remained active on PID 17144 and port 8765 at step 3,816,053 in
 episode 158 (96.9% progress), with cooldown complete. The active replay index
 held 218 entries. C: had 28.4 GB free and D: had 144.3 GB.
+
+### Two repeated finish-approach contacts, 22:46 local
+
+The actor screen at step 3,817,200 was 33.720 s with two contact steps at
+98.38%-98.52% of the route. Five-lap verification confirmed 5/5 finishes but
+repeated both contacts every lap (10 total; peak impulse 397.53). The candidate
+was rejected and preserved at
+`models/simple-track/grtqc/checkpoints/step-3817200-rejected/`; automatic
+recovery restored Champion while keeping critic replay. At 22:46, PID 17144
+still owned port 8765 and was collecting at step 3,817,505 in episode 160
+(23.5% progress), with 924 critic cooldown updates remaining. The active replay
+index held 221 entries. C: had 28.4 GB free and D: had 144.3 GB.
