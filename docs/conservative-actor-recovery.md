@@ -1245,3 +1245,9 @@ progress; peak impulse 341.54). The contact gate restored Champion. At step
 2,505,575, 492 critic recovery updates remained; training and replay capture
 continued with the archive at 102 attempts. This candidate did not improve the
 33.372-second clean Champion.
+
+The post-recovery check at step 2,512,486 tied Champion at 33.372 seconds
+(5/5 finishes, zero contacts). It did not replace the protected model; the clean
+reference was refreshed and the trainer continued. At step 2,514,734 the actor
+was unlocked, with its current window at the 0.04 cumulative drift boundary
+and zero executed actor-update norm. The replay archive contained 108 attempts.
