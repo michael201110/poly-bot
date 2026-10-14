@@ -787,3 +787,14 @@ Champion; no rollback was needed. The preceding free-driving laps were 33.324,
 port 8765 at step 3,783,683 in episode 130 (9.7% progress), with the critic
 recovery cooldown complete. The active visual replay index held 179 entries.
 C: had 28.7 GB free and D: had 144.3 GB.
+
+### Finish-line contact rollback, 22:04 local
+
+The actor screen at step 3,785,776 was 33.787 s with one contact at 99.30%.
+Five-lap verification confirmed 5/5 finishes but repeated that finish-approach
+contact on every lap (five contacts; peak impulse 1,062.84). The candidate was
+rejected and saved at `models/simple-track/grtqc/checkpoints/step-3785776-rejected/`;
+automatic recovery restored Champion and preserved critic replay. At 22:05,
+PID 17144 still owned port 8765 and had resumed at step 3,787,041 in episode
+133 (8.9% progress), with 684 critic cooldown updates remaining. The active
+visual replay index held 183 entries. C: had 28.7 GB free and D: had 144.3 GB.
