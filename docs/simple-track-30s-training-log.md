@@ -403,3 +403,25 @@ counter is 1 of 5. At 20:05 local, PID 17144 remained live and had resumed
 training through step 3,700,741. Replay capture had 77 indexed entries, with
 the next training episode in progress; C: remained at 29.8 GB free and D: at
 144.3 GB. No cleanup or trainer restart was needed.
+
+## 2026-10-14 episode trace comparison
+
+I compared the archived 33.105 s lap (run
+`14d4064ea20449b8928e5bd65d27239c`, episode 000234) with current training
+episode 000081 (33.508 s, step 3,702,599). Both contain per-decision HUD
+telemetry and 1,100+ observations. Interpolating elapsed time at each 10% of
+track progress gives a 0.403 s total gap: the new lap was 0.105 s slower from
+40-50%, 0.098 s slower from 50-60%, and 0.179 s slower over the final 10%; it
+was slightly quicker in a few earlier sections. Median speed in those three
+larger-loss sections was 2.81, 3.34, and 4.83 m/s lower, respectively. The
+recorded lateral offsets also differed by section, but this comparison cannot
+establish that line choice alone caused the pace loss. It identifies the
+middle and final sections as useful places to examine in future replay/actor
+comparisons, without encoding a fixed racing line or track-specific actions.
+
+At 20:06 local, PID 17144 remained live on port 8765 at step 3,702,599. The
+33.692 s five-lap proposal at step 3,700,352 remains the latest rejected
+candidate and the weak-evaluation counter is 1/5; the faster 33.484 s rejected
+candidate at step 3,698,096 remains preserved. The replay index had 80 entries
+and episode 000081 was saved as a finished 33.508 s run. C: had 29.7 GB free,
+D: 144.3 GB. Champion remains 33.324 s.
