@@ -1056,3 +1056,27 @@ GUI PID 19940 was still training at step 3,879,119. Its active visual replay
 archive `models/simple-track/grtqc/visual_replays/d1ff01715b3646d6b11b97baa7a19d9c/`
 held 31 episodes; prior archives remain intact. C: had 27.8 GB free and D: had
 144.3 GB. The GUI clean-stop/resume will apply the adjusted cap from Latest.
+
+## 2026-10-15 00:06 local — resumed with moderated actor updates
+
+The historical 33.105 s lap is a genuine episode-234 replay (step 2,616,954),
+but not a reproducible result from its nearby checkpoint: the saved actor's
+five-lap deterministic rollout completed cleanly at 33.755 s on all five laps.
+Its near-exact open-loop action match only shows that it copied the actions on
+the replay's saved states. In closed loop, tiny state deviations can move it off
+that trajectory; the evidence does not isolate one specific cause. The current
+latest actor is also farther from those replay actions. The protected Champion
+remains 33.324 s.
+
+The GUI had been cleanly stopped at step 3,881,843. I loaded
+`profiles/training/simple-track-grtqc-contact-aware-30.json` and verified the
+Learning settings page showed actor step action limit 0.0075, actor LR 5e-6,
+and cumulative reference drift limit 0.5. I resumed **Latest**, not Champion,
+with the GUI's “Continue latest with selected actor settings” action. The new
+run log `logs/simple-track/grtqc/20261014T230607Z.jsonl` records resume source
+`models/simple-track/grtqc/latest`, replay preserved (`fresh_replay=false`),
+CUDA/NVIDIA T500, and a 1,000,000-step full-track session. Its first progress
+record is step 3,881,844; visual replay capture remains enabled by the WebSocket
+training setup for later swarm use. The GUI reports Active · Training and the
+simulator bridge is listening on port 8765. Champion and all existing replay
+archives were left intact.
