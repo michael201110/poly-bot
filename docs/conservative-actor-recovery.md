@@ -1067,3 +1067,9 @@ The following five-lap check at step 2,436,118 was clean at 33.694 seconds,
 reference was refreshed. At step 2,436,744 the actor remained unlocked and was
 updating (0.02499 cumulative action drift); the replay session contained 13
 indexed attempts and recording continued.
+
+The next clean five-lap evaluation at step 2,438,390 was 33.844 seconds
+(5/5, zero contacts), another weaker candidate that was not promoted. At step
+2,438,839 the actor remained unlocked at 0.01720 cumulative drift under the
+0.04 limit. The visual replay session contained 16 attempts and continued
+recording.
