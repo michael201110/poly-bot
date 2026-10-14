@@ -2665,3 +2665,36 @@ The GUI then resumed **Latest with selected actor settings** on CUDA/T500 with a
 
 
 The first post-recovery deterministic five-lap evaluation completed at step 3,270,960 with a 33.483 s median and zero barrier contacts. It improved on the preceding local clean reference (33.691 s), so the actor pace counter recognized a gain, but it remained slower than the protected 33.345 s Champion and was not promoted. Training continued at step 3,271,539 with the full replay, actor unlocked, and cumulative drift 0.02236 of 0.05. The restarted visual replay run `a0c70eda7283451b98a77c7aa318fb72` had 2 captures at the check.
+
+## Latest action-range audit and disk-space stop (2026-10-14)
+
+The latest saved training capture, `episode-000407.npz` in visual-replay run
+`5810cd679aa14ab78bbd0bf6fe6e7b06`, spans steps 3,594,644-3,595,472 and
+contains 828 policy decisions. Its raw steering requests cover the full
+[-1, +1] range; the 90th percentile of absolute steering is 0.991, 27.1% of
+requests have magnitude at least 0.97, and 30 requests are at least 0.999.
+Signed longitudinal requests (positive throttle, negative brake) reach +1.0
+and -0.806; the 90th percentile of absolute magnitude is 0.996, 44.3% are at
+least 0.97 in magnitude, and 15 are at least 0.999. Only 2.4% fall in the
+0.965-0.975 band. This capture confirms the actor often chooses near-maximum
+values and can request exact full input; it does not show that forcing all
+near-maximum steering, throttle, or braking to 1.0 would improve lap time.
+Control mapping and reward settings were left unchanged.
+
+The protected Champion metadata currently records a 33.324 s five-lap result,
+5/5 finishes, and zero barrier contacts. The latest candidate checks at steps
+3,589,056 (33.621 s, one contact per lap) and 3,593,520 (33.641 s, zero
+contacts) did not beat it. The last durable training checkpoint is
+`checkpoints/step-3595472`; the latest visual replay index contains 407
+captures, including the interrupted episode above.
+
+The GUI reports `Training failed: [Errno 28] No space left on device`. The
+trainer process remains present but its log has not advanced past step
+3,595,469, and the WebSocket bridge on port 8765 is absent. C: had about 33 MB
+free at inspection. The checkpoint store contains 35 historical full replay
+buffers; keeping the five newest and removing only older `replay.pkl` files
+would free about 7.59 GB while preserving all visual replays, policies,
+metadata, Latest, and Champion. The cleanup was rejected by the automatic
+file-operation approval review, so no files were deleted. Training cannot
+resume until disk space is freed; the captured visual replays remain in place
+for swarm use.
