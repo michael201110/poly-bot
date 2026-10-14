@@ -1204,3 +1204,10 @@ with zero contacts. It improved on the immediately preceding 33.790-second
 check but remained 0.229 seconds slower than Champion, so it was not promoted;
 the clean reference was refreshed. The trainer continued after evaluation,
 and the replay archive contained 79 attempts.
+
+The five-lap evaluation at step 2,492,294 was clean at 33.610 seconds but
+slower than Champion. It was the fifth weaker actor check in the recovery
+window, so the verified actor was restored; the event confirms critics and
+replay were preserved. At step 2,494,907, 347 critic recovery updates remained
+and actor learning was locked. The visual replay archive contained 84 attempts.
+Champion remains 33.372 seconds, five laps, zero contacts.
