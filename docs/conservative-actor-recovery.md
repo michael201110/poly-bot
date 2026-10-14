@@ -1480,3 +1480,11 @@ At the next live check, training had resumed after rollback and was at step
 2,692,983 with 512 of the 1,000 critic recovery updates remaining. The replay
 index had grown to 17 entries; episode 17 was a 33.372-second finished lap.
 This is still not a new Champion result.
+
+At the next actor evaluation (step 2,697,750), all five laps were clean but the
+33.848 s median remained slower than Champion. The candidate continued from its
+clean local reference; this was weak evaluation 2/5 toward actor recovery, not
+a Champion change. A later training lap finished in 33.712 s at step 2,698,874,
+again not a verified promotion result. Training remained live near step
+2,699,991, and the replay index had 25 entries with automatic capture enabled.
+Champion metadata still records a clean five-lap 33.372 s verification.
