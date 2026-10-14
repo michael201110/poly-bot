@@ -2303,3 +2303,9 @@ The contact gate restored Champion and started a 1,000-update critic cooldown
 with replay retained. At step 3,100,643 the actor was locked with 792 cooldown
 updates remaining; throughput was 27.6 steps/s. Replay capture contained 259
 episodes (187 finished, 72 interrupted).
+
+After that cooldown, the five-lap evaluation at step 3,104,271 again tied the
+protected Champion at 33.372 seconds, with zero barrier contacts on all five
+laps. It was rejected as equal and not promoted. At step 3,106,520 training
+continued with actor updates unlocked, full replay, and 27.8 steps/s. Replay
+capture contained 264 episodes (191 finished, 73 interrupted).
