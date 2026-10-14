@@ -2514,3 +2514,11 @@ protected 33.372-second Champion; the weaker-actor streak increased to 2 of 5.
 Training remained live at step 3,185,756 with the replay buffer full and
 throughput at 27.42 decisions/s. Visual replay capture held 367 episodes (263
 finished, 104 interrupted), and capture continues for the active run.
+
+At step 3,187,359 the next deterministic five-lap evaluation completed cleanly
+at 33.803 seconds with zero barrier contacts. It was rejected as slower than
+Champion and raised the consecutive weaker-actor count to 3 of 5. Training
+continued actor-unlocked at step 3,188,364 with the replay buffer full and
+27.40 decisions/s. Visual capture contains 370 episodes (265 finished, 105
+interrupted); the latest capture at this inspection point is the evaluation
+run, with subsequent capture continuing during training.
