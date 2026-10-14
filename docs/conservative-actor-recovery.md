@@ -1268,3 +1268,9 @@ After the finish-area rollback, the next five-lap evaluation at step 2,521,478
 was clean at 33.847 seconds. It was slower than Champion and was rejected; the
 clean anchor refreshed and actor updates resumed (norm 0.000107, drift 0.00984
 at step 2,521,745). The active replay archive contained 116 attempts.
+
+The next five-lap evaluation at step 2,523,734 measured 33.622 seconds and
+repeated one barrier contact on every lap at 98.95% progress (peak impulse
+134.96). The gate restored Champion. At step 2,524,751 critic recovery had 746
+updates remaining; actor changes were locked and the replay archive contained
+120 attempts. No candidate has improved the verified 33.372-second pace.
