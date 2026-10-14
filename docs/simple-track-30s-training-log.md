@@ -1272,3 +1272,15 @@ not promoted. Free-driving episodes 41 and 42 were 33.864 s and 33.804 s. The
 learner continued to step 3,929,024 in episode 43 with actor updates unlocked;
 replay capture reached 55 entries at 00:51:52 local. Port 8765 remained active;
 C: had 25.5 GB free and D: 144.3 GB.
+
+### Contact regression after close clean screens, 23:53 UTC
+
+At step 3,930,083, the next five-lap screen regressed to 33.894 s median
+(5/5 finishes) and had ten contact steps: two repeated contact locations on
+each lap at 92.8367% and 99.3035% progress. Peak impulse was 959.93. The
+candidate was rejected and automatic actor recovery began. Training was still
+advancing through step 3,931,396 with 672 critic-recovery updates remaining and
+the actor locked. This candidate did not beat Champion and illustrates why the
+close 33.401 s clean screen remains only a candidate until the clean pace is
+reproduced. Replay capture reached 57 entries at 00:52:24 local. Port 8765
+remained active; C: had 25.5 GB free and D: 144.3 GB.
