@@ -1681,3 +1681,9 @@ cooldown. Visual replay session `b6c8fcf0739f410a90cdd22d0b252336` had 41
 episodes, and C: had 16.74 GB free. The stronger contact penalty has not
 prevented every exploratory contact regression; the verified actor rollback
 remains effective and Champion is unchanged.
+
+The next deterministic five-lap evaluation after recovery, at step 2,785,510,
+was clean at 33.649 s. Training remained active at step 2,786,891; the replay
+buffer and visual session continued growing, with 44 saved visual episode files
+in session `b6c8fcf0739f410a90cdd22d0b252336`. C: had 16.72 GB free. No
+candidate has beaten the protected Champion yet.
