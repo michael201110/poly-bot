@@ -556,3 +556,13 @@ verification for this candidate had not yet appeared in the log at this
 snapshot. No candidate has replaced Champion. At 20:47 local, training PID
 17144 remained live and owned the WebSocket listener on port 8765. The replay
 index held 112 entries. C: had 29.3 GB free and D: had 144.3 GB.
+
+### Verification follow-up, 20:48 local
+
+The five-lap evaluation for step 3,729,552 completed at 33.657 s (5/5
+finishes, zero barrier contacts). The candidate was rejected as slower than
+Champion and preserved at
+`models/simple-track/grtqc/checkpoints/step-3729552-rejected/`. This confirms
+that the stored 33.105 s training best is not reproduced by this candidate.
+Episode 82 finished at 33.612 s and is included in the visual replay index,
+which now has 113 entries. PID 17144 remains live on port 8765.
