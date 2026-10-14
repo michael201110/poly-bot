@@ -508,3 +508,13 @@ improves 0.076 s over the previous 33.785 s result and is preserved at
 counter. Episode 71 immediately before the evaluation finished in 33.521 s.
 At 20:31 local, PID 17144 was live again on port 8765 at step 3,718,357. The
 replay index held 99 entries, C: had 29.6 GB free, and D: had 144.3 GB.
+
+The next evaluation at step 3,720,560 was 33.588 s and verified identically
+over five clean finishes (zero barrier contacts). This improved 0.121 s over
+the previous 33.709 s candidate; it remains 0.264 s slower than the protected
+33.324 s Champion. The checkpoint is saved at
+`models/simple-track/grtqc/checkpoints/step-3720560-rejected/`, and the clean
+pace gain reset the weak-actor counter. Episode 73 before evaluation finished
+in 33.700 s. At 20:35 local, training was still active as PID 17144 on port
+8765 at step 3,721,013. The replay index had 102 entries. C: had 29.4 GB free
+and D: had 144.3 GB; Champion remains unchanged.
