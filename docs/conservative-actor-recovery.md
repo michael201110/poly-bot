@@ -1173,3 +1173,10 @@ rejected without rollback and refreshed the clean reference. The actor resumed
 updates by step 2,476,640 (update norm 0.000138, cumulative drift 0.00248),
 with the trainer active and 62 replay attempts archived. The protected
 33.372-second Champion remains unchanged.
+
+At step 2,478,806 the five-lap candidate screened faster at 33.504 seconds but
+had one barrier contact per lap at 99.02% progress (peak impulse 178.86). The
+contact gate rejected it and restored Champion despite the 0.132-second pace
+gain; critic recovery restarted, with 977 updates remaining at step 2,478,899.
+The replay archive had 65 attempts. This is a concrete speed/contact tradeoff
+at the finish: the faster candidate is not clean enough for promotion.
