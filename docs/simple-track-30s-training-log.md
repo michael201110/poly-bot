@@ -144,3 +144,14 @@ not a Champion promotion. The saved checkpoint records the active limits as
 proposed actor drift was 0.02284 and accepted drift 0.002496, showing the
 larger per-update bound is active and still binding. Training and new visual
 replay capture remain active on port 8765.
+
+
+The resumed actor then approached the 0.075 cumulative reference-drift cap:
+at step 3,635,143 it proposed 0.02270 action drift but accepted only
+0.0000648, with cumulative drift 0.0749969 of 0.075. To let the actor continue
+exploring alternate actions and lines, the contact-aware profile now raises
+only the cumulative allowance to 0.5. The per-update limit stays at 0.0025,
+and five-lap clean-evaluation and protected-Champion promotion gates remain
+unchanged. Training will resume from the saved 33.545 s clean checkpoint, which
+includes the existing full replay buffer; the intervening visual replay files
+remain saved in the prior run's replay folder.
