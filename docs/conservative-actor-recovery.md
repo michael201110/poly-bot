@@ -1419,3 +1419,9 @@ and restored Champion's actor while retaining critics and replay. Training
 continued from the saved workspace with Champion unchanged. The visual replay
 session had 14 entries (ten finished) at the next check; automatic recording is
 still enabled.
+
+The next deterministic five-lap check at step 2,672,127 was clean at 33.784
+seconds and was rejected as slower than Champion (weak pace check 1/5). The
+preceding exploratory lap was 33.488 seconds but had two contact impulses; it
+was not used for promotion. Training remained active at step 2,672,200, and the
+replay run had 18 indexed entries, with finished and interrupted laps retained.
