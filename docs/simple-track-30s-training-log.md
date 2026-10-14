@@ -1232,3 +1232,13 @@ screen but still 0.315 s slower than the protected 33.324 s Champion. It was not
 promoted. Training remained active through step 3,920,596 in episode 35 with
 the actor unlocked. Replay capture advanced to 43 indexed entries at 00:41:41
 local. Port 8765 remained active; C: had 25.6 GB free and D: 144.3 GB.
+
+### Further clean pace gain, 23:43 UTC
+
+The deterministic screen at step 3,921,059 improved to 33.502 s median and best,
+with 5/5 finishes and zero barrier contacts. This is 0.137 s faster than the
+prior 33.639 s clean screen and 0.178 s slower than Champion, so it was not
+promoted. Free-driving episode 35 immediately before it was slower at 33.847 s.
+The run continued through step 3,922,608 in episode 37 with actor updates
+unlocked. Replay capture reached 46 entries at 00:44:13 local. Port 8765 stayed
+active; C: had 25.6 GB free and D: 144.3 GB.
