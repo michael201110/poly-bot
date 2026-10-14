@@ -692,3 +692,32 @@ the contact gate restored Champion and preserved critic replay with another
 1,000-update cooldown. At 21:28, PID 17144 had resumed on port 8765 at step
 3,758,945, episode 108. The visual replay index held 149 entries and C: had
 29.0 GB free.
+
+### Later clean but slower candidates, 21:33-21:38 local
+
+The five-lap candidate at step 3,763,296 evaluated at 33.664 s (5/5 finishes,
+zero contacts); it was rejected because it did not beat the 33.324 s Champion.
+The next candidate at step 3,765,552 evaluated at 33.863 s, also 5/5 clean,
+and was retained at `models/simple-track/grtqc/checkpoints/step-3765552-rejected/`.
+Neither candidate replaced Champion. By 21:38, PID 17144 was still training
+episode 115 at step 3,766,965 (21.2% progress). The active replay index had
+158 entries, and C: had 29.0 GB free (D: 144.3 GB).
+
+### Clarification: historical 33.105 s lap provenance
+
+The 33.105 s lap is a genuine saved training replay, not a fabricated or
+timer-only statistic: it is run `14d4064ea20449b8928e5bd65d27239c`, episode
+000234 at step 2,616,954. The associated step-2,616,006 actor closely matches
+the recorded actions when evaluated against the lap's saved observations.
+However, a separate deterministic five-lap rollout of that checkpoint
+finished at 33.755 s (5/5 clean), slower than the protected 33.324 s Champion.
+This shows the lap is not reproducible as a closed-loop policy result from
+that checkpoint under the controlled evaluation; a close action match on the
+recorded state sequence does not guarantee the car will remain on that same
+state sequence when driven again. The active run resumed from a later
+`latest` checkpoint at step 3,638,528, whose inherited `best_training_lap_s`
+field still says 33.105 s. The one-tick timer offset accounts for only about
+0.001 s, so it cannot explain the larger rollout difference. An earlier
+status reply incorrectly said no replay was tied to the historical lap; the
+archived replay and separate checkpoint evaluation above are the correct
+evidence.
