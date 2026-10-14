@@ -1124,3 +1124,12 @@ slower than Champion; it was rejected without rollback. At step 2,456,515 the
 actor remained unlocked and updating (cumulative reference drift 0.0050), and
 replay capture continued. Champion remains 33.372 seconds, 5/5 and contact
 free; the 30-second target is still unmet.
+
+After the clean but slower 33.658-second evaluation, the next five-lap
+candidate at step 2,458,630 measured 33.861 seconds and repeated two barrier
+contacts near the finish (99.16% and 99.23% progress) on every lap, for ten
+contact steps total. The contact gate restored Champion and restarted critic
+recovery; at step 2,458,715, 979 recovery updates remained and actor updates were
+locked. The visual replay archive contained 41 attempts. Champion's five-lap
+metadata remains 33.372 seconds with zero contacts; the 30-second goal remains
+open.
