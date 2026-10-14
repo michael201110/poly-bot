@@ -2249,3 +2249,7 @@ plateau in the control display is consistent with the applied average of 29
 active PWM ticks out of 30 (0.9667), rather than an action clamp. No global
 action remapping or reward change was made: maximum input is not optimal at
 every state, and contact-free verified pace remains the promotion criterion.
+The contact-triggered critic cooldown completed by step 3,081,835; the actor
+unlocked again with replay still full and throughput at 27.6 steps/s. The
+30-second target remains unmet, so training continues against the protected
+33.372-second Champion.
