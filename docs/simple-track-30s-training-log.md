@@ -519,6 +519,16 @@ in 33.700 s. At 20:35 local, training was still active as PID 17144 on port
 8765 at step 3,721,013. The replay index had 102 entries. C: had 29.4 GB free
 and D: had 144.3 GB; Champion remains unchanged.
 
+The next proposal at step 3,725,104 screened at 33.797 s with a barrier
+contact. Its full evaluation repeated one contact on each of five laps (5/5
+finishes, five total contact steps); every contact occurred at 35.76% track
+progress, with peak impulse 126.58. The contact-regression gate rejected it
+and restored the Champion actor, preserving the critic replay and starting the
+configured 1,000-update cooldown. The rejected checkpoint is preserved at
+`models/simple-track/grtqc/checkpoints/step-3725104-rejected/`. At 20:42 local,
+PID 17144 resumed training on port 8765 and had advanced to step 3,725,957.
+The replay index held 107 entries. C: had 29.3 GB free and D: 144.3 GB.
+
 The next actor candidate screened at 33.631 s at step 3,722,816 and passed a
 five-lap clean evaluation (5/5 finishes, zero barrier contacts). It was
 preserved at `models/simple-track/grtqc/checkpoints/step-3722816-rejected/`;
