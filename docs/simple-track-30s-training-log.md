@@ -105,3 +105,30 @@ current process. The checkpoint metadata still carries the historical
 33.105 s best training lap; it is not a new verified evaluation. No training
 code, reward settings, champion files, or replay-retention settings were
 changed for this checkpoint update.
+
+
+## 2026-10-14 apply the actor exploration limits
+
+Replay analysis of the live training run found three consecutive 33.324 s
+training episodes whose saved actions, observations, positions, and wheel
+telemetry were byte-for-byte identical. The latest actor diagnostic showed
+proposed action drift of 0.02265 but accepted drift of 0.001248, effectively
+at the active 0.00125 per-update limit. This supports the earlier observation
+that the actor's line changes were being strongly constrained; it does not by
+itself establish the cause of the pace plateau.
+
+After a fresh `latest` checkpoint was saved at training step 3,631,760
+(33.577 s, five of five clean, zero contact steps), training was relaunched
+from that checkpoint with the already committed contact-aware profile. The
+165,018,603-byte replay buffer was restored at its full 250,000-transition
+capacity (`fresh_replay=false`); the protected Champion and evaluation gates
+were left untouched. The resumed process acquired port 8765 and created a new
+visual replay run `3b613adbff564f53ac9d95e8ab6bd9b1`.
+
+The first resumed actor diagnostics confirm that the profile's larger limit is
+active: for a proposed action drift of 0.02247, accepted drift is now 0.002495,
+versus 0.001248 before continuation. Cumulative reference drift restarted at
+0.002495 from the restored checkpoint. At the latest check, training had
+advanced to step 3,632,881 at about 35.2 steps/s. This is an implementation
+check of the new actor update bound, not yet evidence of a faster evaluated
+lap. The previous 33.324 s Champion remains protected.
