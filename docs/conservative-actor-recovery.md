@@ -1660,3 +1660,11 @@ reached +1, and no bridge clamp appeared. The absolute 0.965-0.975 band covered
 longitudinal action was -0.919. The protected Champion and five-lap gate were
 not changed. The stronger penalty has kept deterministic evaluations clean so
 far but has not yet yielded a verified pace improvement.
+
+Three additional deterministic five-lap evaluations at steps 2,769,782,
+2,772,022, and 2,774,278 recorded 33.764 s, 33.441 s, and 33.583 s,
+respectively, all with zero barrier contacts. The actor remains behind the
+33.372 s Champion. Training was active at step 2,776,520 with 79,583 replay
+transitions and 32 visual episode files in session
+`b6c8fcf0739f410a90cdd22d0b252336`; C: had 17.07 GB free. Checkpointing and
+replay capture are continuing.
