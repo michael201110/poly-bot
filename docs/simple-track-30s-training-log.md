@@ -1166,3 +1166,13 @@ still advancing with 662 recovery updates remaining and the actor locked. This
 matches the recurring near-finish contact pattern seen in earlier proposals;
 the candidate was not promoted. The replay archive had 26 entries at 00:27:05
 local. Port 8765 remained live; C: had 25.8 GB free and D: 144.3 GB.
+
+### Clean but slower post-recovery candidate, 23:29 UTC
+
+After the next recovery cycle, the deterministic screen at step 3,907,587 was
+33.774 s median (5/5 finishes, zero contacts). The screen was clean but slower
+than Champion, so the candidate was rejected and Champion remains protected.
+Free-driving episode 23 had finished in 33.366 s immediately before it. The
+visual replay index had grown to 30 entries, including the recent training and
+evaluation records. Port 8765 remained bound to the active GUI trainer; C: had
+25.7 GB free and D: 144.3 GB.
