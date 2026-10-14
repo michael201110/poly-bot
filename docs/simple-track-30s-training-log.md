@@ -252,3 +252,33 @@ Its index contains 47 episodes through episode ID 48; the newest entry is a
 partial/interrupted capture at step 3,675,648 while training itself remains
 live. C: had 30.1 GB free and D: had 144.3 GB free, so no space cleanup was
 needed at this checkpoint.
+
+## 2026-10-14 recovered 33.105 s action trace
+
+A search of the D: replay archive located the exact historical 33.105 s training
+lap: run `14d4064ea20449b8928e5bd65d27239c`, episode 000234, at training step
+2,616,954. Its NPZ contains 1,104 decision-level observations (121 features)
+and two-component actions, in addition to the lower-rate visual telemetry.
+This confirms the fast training lap has a usable recorded action trace. The
+active GRTQC learner does not automatically train from visual replay NPZ files;
+it uses its separate 250,000-transition RL replay buffer. The archived lap is
+therefore available for a future offline imitation experiment but has not been
+fed into the running learner.
+
+Comparing that trace with the current run's episode 000050 (33.510 s, step
+3,677,885) shows a 0.405 s total gap. At ten-percent progress splits, the
+current lap loses about 0.12 s in the 40-50% section and 0.105 s in the final
+10%, with smaller losses across several other sections. The recorded
+normalized mean longitudinal action is 0.674 on the fast trace versus 0.643 on
+the current trace; median local speed is 62.24 versus 60.75 m/s. These are
+trace comparisons, not proof that any single control difference caused the
+time gap. The demonstration supplies a concrete, data-derived reference for
+future pace work without encoding a track-specific action script.
+
+The live actor screen at step 3,675,648 was 33.553 s (5/5, zero contacts),
+slower than the 33.525 s latest checkpoint, so it was rejected. Subsequent
+training episodes finished in 33.587 s at step 3,676,768 and 33.510 s at step
+3,677,885. At that step, the actor was unlocked, the critic recovery cooldown
+was zero, and the RL replay buffer remained full. Champion remains 33.324 s.
+The active visual replay index continued recording through episode ID 50.
+C: had about 30.1 GB free and D: about 144.3 GB; no disk cleanup was needed.
