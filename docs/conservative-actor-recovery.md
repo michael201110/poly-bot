@@ -1337,3 +1337,7 @@ the protected 33.372-second Champion with zero contacts. It was not promoted;
 training continued from the clean reference. At step 2,558,319 the actor was
 unlocked and updating (norm 0.000112, drift 0.03482). The replay archive
 contained 159 attempts.
+
+The candidate at step 2,559,702 evaluated at 33.877 seconds and made one barrier contact on every lap (five total). The contact gate restored Champion. After critic recovery, the next check at step 2,564,182 tied Champion at 33.372 seconds, clean across all five laps; it was correctly not promoted. The subsequent clean checks at steps 2,566,438 and 2,568,694 were 33.642 and 33.700 seconds and were rejected as slower.
+
+At step 2,570,966 the candidate measured 33.721 seconds and accumulated ten contact steps across five laps. The contact gate again restored Champion. The next full evaluation at step 2,575,430 tied Champion at 33.372 seconds with zero contact steps and was rejected without replacing it. A clean 33.420-second training episode followed at step 2,575,430; it is a training lap, not a verified promotion. Training remained active near step 2,576,000 with the actor unlocked. The visual replay archive held 180 indexed episodes at the latest check. No change to the protected Champion or active training configuration was made.
