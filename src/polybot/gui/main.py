@@ -497,9 +497,9 @@ class PolyBotWindow(QWidget):
             ("Continue latest with selected exploration",
              lambda: self._start(True, exploration_override=True),
              "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor exploration setting."),
-            ("Continue latest with selected actor guard",
+            ("Continue latest with selected actor settings",
              lambda: self._start(True, actor_guard_override=True),
-             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC cumulative actor drift limit."),
+             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor learning rate and action drift limits."),
             ("Continue best with selected rewards",
              lambda: self._start(True, best=True, reward_override=True),
              "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
@@ -1102,7 +1102,7 @@ class PolyBotWindow(QWidget):
                                 lambda: self._start(True, reward_override=True)),
                                ("Continue latest with selected exploration",
                                 lambda: self._start(True, exploration_override=True)),
-                               ("Continue latest with selected actor guard",
+                               ("Continue latest with selected actor settings",
                                 lambda: self._start(True, actor_guard_override=True)),
                                ("Continue best with selected rewards",
                                 lambda: self._start(True, best=True, reward_override=True)),
@@ -3587,6 +3587,9 @@ class PolyBotWindow(QWidget):
             selected_actor_step_action_limit = (
                 cfg.grtqc.actor_step_action_limit if cfg.grtqc else None
             )
+            selected_actor_learning_rate = (
+                cfg.grtqc.actor_learning_rate if cfg.grtqc else None
+            )
             if reward_override and cfg.algorithm not in {"grtqc", "tqc"}:
                 raise ValueError("selected reward continuation is available for GRTQC and TQC")
             fitted_curriculum = _fit_custom_curriculum_budget(cfg.curriculum, cfg.timesteps)
@@ -3651,6 +3654,7 @@ class PolyBotWindow(QWidget):
                     assert cfg.grtqc is not None and selected_actor_reference_drift_limit is not None
                     cfg.grtqc = replace(
                         cfg.grtqc,
+                        actor_learning_rate=selected_actor_learning_rate,
                         actor_step_action_limit=selected_actor_step_action_limit,
                         actor_reference_drift_limit=selected_actor_reference_drift_limit,
                     )
@@ -3694,7 +3698,9 @@ class PolyBotWindow(QWidget):
                 elif actor_guard_override:
                     self.log.append(
                         "Loaded Latest's policy, critics, replay, rewards, and curriculum; "
-                        "kept the selected cumulative actor drift limit at "
+                        f"kept the selected actor learning rate at {cfg.grtqc.actor_learning_rate:g}, "
+                        "per-update action limit at "
+                        f"{cfg.grtqc.actor_step_action_limit:g}, and cumulative drift limit at "
                         f"{cfg.grtqc.actor_reference_drift_limit:g}."
                     )
                 else:
