@@ -721,3 +721,16 @@ field still says 33.105 s. The one-tick timer offset accounts for only about
 status reply incorrectly said no replay was tied to the historical lap; the
 archived replay and separate checkpoint evaluation above are the correct
 evidence.
+
+### Cleaner pace gain, 21:41 local
+
+The candidate at step 3,767,808 completed five deterministic laps at 33.450 s,
+with 5/5 finishes and zero barrier contacts. This is 0.413 s faster than the
+prior 33.863 s candidate, but 0.126 s slower than Champion, so it was rejected
+and preserved at `models/simple-track/grtqc/checkpoints/step-3767808-rejected/`.
+The preceding free-driving episodes finished at 33.774 s with a finish-line
+contact and 33.853 s with a contact around 63.4% of the route; those contacts
+did not recur in the deterministic candidate check. Training stayed active on
+PID 17144, port 8765; at 21:42 it was at step 3,768,652 in episode 116 (73.4%
+progress). The active visual replay index held 160 entries. C: had 28.9 GB free
+and D: had 144.3 GB.
