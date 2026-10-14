@@ -1251,3 +1251,9 @@ The post-recovery check at step 2,512,486 tied Champion at 33.372 seconds
 reference was refreshed and the trainer continued. At step 2,514,734 the actor
 was unlocked, with its current window at the 0.04 cumulative drift boundary
 and zero executed actor-update norm. The replay archive contained 108 attempts.
+
+The next five-lap check at step 2,514,742 was clean at 33.757 seconds, slower
+than Champion, and was rejected without rollback. After the clean reference was
+refreshed, actor updates resumed; at step 2,514,887 the update norm was
+0.000087 with cumulative drift 0.00492. Training remained active, with 108
+visual replay attempts preserved.
