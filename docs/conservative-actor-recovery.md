@@ -1927,7 +1927,10 @@ rate, zero crashes, and three barrier-contact steps near the finish. The next
 screen, at step 2,960,527, was 33.537 seconds with one contact at 99.02%
 progress. The candidate-rejected event confirms it was not promoted; training
 continued. Champion remains 33.372 seconds, and neither result is a clean
-improvement. Training remained active at step 2,963,575 when checked, with
-26.9 steps/s and 241,268 replay transitions. The current visual replay session
-contains 88 indexed runs: 64 finished and 24 interrupted; all prior swarm
-replay sessions remain preserved.
+improvement. The following screen, at step 2,964,991, matched Champion at
+33.372 seconds with zero barrier contacts, but the candidate-rejected event
+shows an equal-time result was not promoted. This is a clean return to
+Champion-level pace, not a new best. Training remained active at step 2,967,230
+with actor updates unlocked and rollback count zero. The current visual replay
+session contains 93 indexed runs: 68 finished and 25 interrupted; all prior
+swarm replay sessions remain preserved.
