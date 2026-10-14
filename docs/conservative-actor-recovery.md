@@ -2020,6 +2020,14 @@ saturation, full replay, and 27.4 steps/s. The current replay session has 135
 indexed runs (98 finished, 37 interrupted). No settings changed; Champion is
 still 33.372 seconds.
 
+The next screen, at step 3,000,975, regressed to 33.788 seconds with one
+low-impulse contact at 98.95% progress (peak impulse 54.23). The contact gate
+restored the actor from Champion and retained replay, starting another
+1,000-update critic recovery. At step 3,001,740 the actor was locked with 809
+recovery updates remaining; replay stayed full and throughput was 27.1
+steps/s. The visual replay inventory has 137 runs (99 finished, 38
+interrupted). Champion remains 33.372 seconds; the target remains unmet.
+
 The critic cooldown completed by step 2,987,052. The actor is unlocked again,
 the replay buffer remains full, and throughput is about 27.4 steps/s. The live
 training process continues from the restored Champion actor with critics and
