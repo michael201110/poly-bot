@@ -1211,3 +1211,9 @@ window, so the verified actor was restored; the event confirms critics and
 replay were preserved. At step 2,494,907, 347 critic recovery updates remained
 and actor learning was locked. The visual replay archive contained 84 attempts.
 Champion remains 33.372 seconds, five laps, zero contacts.
+
+After the weak-check recovery, actor updates resumed. The next five-lap check at
+step 2,496,774 was clean (33.716 seconds, zero contacts) but slower than
+Champion, so it was rejected and the clean reference refreshed. At step
+2,498,071 training remained active with actor learning unlocked; the replay
+archive contained 88 attempts. Champion remains verified at 33.372 seconds.
