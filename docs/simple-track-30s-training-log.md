@@ -918,3 +918,12 @@ At 22:51, the trainer remained live on PID 17144 and port 8765 at step
 3,822,761 in episode 164 (98.8% progress), with recovery cooldown complete.
 The active visual replay index held 225 entries. C: had 28.4 GB free and D:
 had 144.3 GB.
+
+### Clean but slower candidate, 22:54 local
+
+The five-lap evaluation at step 3,823,904 was 33.697 s (5/5 finishes, zero
+contacts). It was rejected as slower than the 33.324 s Champion and saved at
+`models/simple-track/grtqc/checkpoints/step-3823904-rejected/`. At 22:54,
+training remained active on PID 17144 and port 8765 at step 3,823,944 in
+episode 166 (0.7% progress), with recovery cooldown complete. The active replay
+index held 228 entries. C: had 28.3 GB free and D: had 144.3 GB.
