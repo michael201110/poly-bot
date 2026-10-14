@@ -1981,3 +1981,11 @@ drift 0.0448, the replay buffer full, and about 27.0 steps/s. The current
 visual replay inventory is 112 runs (81 finished, 31 interrupted). The
 additional one-million-step run has used about 92,000 steps; no settings were
 changed, and Champion remains 33.372 seconds.
+
+The next five-lap screen, at step 2,982,991, was 33.571 seconds with one
+barrier contact at 99.02% progress. The contact-regression gate restored the
+actor from Champion, retained replay, and started the configured 1,000-update
+critic recovery. Training was still advancing at step 2,985,414 with 395
+recovery updates remaining, actor locked, and replay full at 250,000. The
+visual replay session contains 116 indexed runs (84 finished, 32 interrupted).
+The 30-second target remains unmet.
