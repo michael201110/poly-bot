@@ -2546,3 +2546,10 @@ the weaker-actor streak is 1 of 5 after the previous pace improvement reset it.
 Training remained active at step 3,194,916, with the replay buffer full and
 27.29 decisions/s. Visual replay capture currently contains 379 episodes
 (271 finished, 108 interrupted).
+
+At step 3,196,351 the deterministic five-lap evaluation completed cleanly at
+33.899 seconds with zero barrier contacts. It was rejected as slower than the
+33.575-second actor best and the protected 33.372-second Champion; the weaker
+streak is 2 of 5. Training remained live at step 3,196,628 with full replay
+and 27.23 decisions/s. Visual capture contains 382 episodes (273 finished,
+109 interrupted).
