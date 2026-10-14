@@ -766,3 +766,14 @@ recovery cooldown had completed, and at 21:53 training remained live on
 PID 17144, port 8765, at step 3,777,077 in episode 124 (20.0% progress). The
 active visual replay index held 171 entries. C: had 28.8 GB free and D: had
 144.3 GB.
+
+### Repeat contact at 63.5%, 21:56 local
+
+The actor screen at step 3,779,056 was 33.990 s with one contact. Five-lap
+verification confirmed 5/5 finishes but one barrier contact at 63.52% on every
+lap (five total; peak impulse 188.52). The candidate was rejected and preserved
+at `models/simple-track/grtqc/checkpoints/step-3779056-rejected/`; automatic
+recovery restored Champion and preserved critic replay. At 21:56, PID 17144
+still owned port 8765 and had resumed collection at step 3,779,153 in episode
+126 (3.8% progress), with 976 critic cooldown updates remaining. The active
+replay index held 174 entries. C: had 28.8 GB free and D: had 144.3 GB.
