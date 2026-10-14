@@ -1297,3 +1297,9 @@ This is the closest clean result in the current actor search, but remains 0.081
 seconds slower than the protected 33.372-second Champion and was not promoted.
 The clean reference refreshed and training continued. The replay archive held
 135 attempts.
+
+At step 2,537,238 the candidate was 33.591 seconds but made three barrier
+contacts on every lap near the finish (99.16%, 99.23%, and 99.37% progress;
+peak impulse 150.34). The gate restored Champion. At step 2,539,811 critic
+recovery had 357 updates remaining and actor learning was locked. The replay
+archive contained 137 attempts; Champion remains 33.372 seconds.
