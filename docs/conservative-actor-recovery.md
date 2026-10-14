@@ -1879,3 +1879,29 @@ not promoted. Training is active at step 2,940,640 with 165,190 replay
 transitions, actor updates unlocked, and drift 0.0125 since the latest clean
 anchor. The new visual session has 61 files (45 finished, 16 interrupted),
 with no missing indexed files. Champion remains protected at 33.372 seconds.
+
+## Action utilization check
+
+I checked the stored action arrays from the latest finished replays after the
+question about steering and throttle often stopping near 0.97. The continuous
+action adapter has no 0.97 clamp: it translates normalized demand into
+pulse-density inputs, so 0.97 requests 97% of the control ticks and 1.0
+requests all ticks. Across finished laps 63, 64, 66, 67, 69, and 70, the
+absolute steering output exceeded 0.97 for 22.0–33.7% of decisions, and
+positive longitudinal output was at least 0.97 for 33.7–42.3%. Exact +1.0
+throttle was much less common (0.5–3.8%), as expected from the bounded policy
+output; this does not indicate an actuator cap.
+
+I also compared throttle with the first six valid lookahead curvature values
+in the most recent finished laps. Under a provisional low-curvature filter,
+throttle was at least 0.97 on 28–36% of the selected decisions, while 10–13%
+were braking. This filter is only a coarse diagnostic and does not prove those
+braking decisions are mistakes; no action or reward settings were changed.
+
+The latest five-lap evaluation screen, at step 2,949,295, reports 33.483
+seconds median, 100% finish rate, and zero crash rate. It remains 0.111 seconds
+behind the protected 33.372-second Champion and well above the 30-second goal.
+The active run log last recorded step 2,949,295, and its process remained live
+at the time of this check. The current visual replay session contains 73
+indexed runs: 53 finished and 20 interrupted; all prior swarm replay sessions
+remain preserved.
