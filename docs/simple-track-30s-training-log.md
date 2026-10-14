@@ -466,3 +466,15 @@ finish, and the visual replay is saved as `episode-000086.npz`. This is a
 single training lap, not a new five-lap verification. At 20:13 local, the
 trainer had advanced to step 3,706,443 and the replay index contained 84
 entries. C: had 29.7 GB free and D: had 144.3 GB. Champion remains 33.324 s.
+
+The next post-recovery actor screen at step 3,709,296 matched Champion at
+33.324 s with zero contacts. Its full five-lap evaluation also matched
+33.324 s (5/5 finishes, zero contacts); it was retained as a rejected
+checkpoint because it did not strictly beat Champion. After further actor
+updates, the next candidate screened at 33.482 s and passed another full
+5/5 clean evaluation at step 3,711,552. This candidate is preserved at
+`models/simple-track/grtqc/checkpoints/step-3711552-rejected/`, 0.158 s slower
+than Champion; it raised the weak-evaluation count to 2/5. Training continued
+past step 3,712,161, and the replay index reached 91 entries. C: remained at
+29.7 GB free and D: at 144.3 GB. The recovery restored clean Champion pace,
+but the post-recovery actor has not yet found a faster verified lap.
