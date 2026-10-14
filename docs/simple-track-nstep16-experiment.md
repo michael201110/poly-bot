@@ -100,3 +100,5 @@ At step 3,386,880, the five-lap evaluation was 33.597 s with zero contacts. It w
 At step 3,389,136, the deterministic five-lap evaluation was 33.681 s with zero contacts. It was rejected against the protected 33.324-second Champion; the weak-actor counter advanced to 2/5. Training continued to step 3,389,741 at about 24.3 decisions/s. The visual-replay bundle holds 144 episodes (101 finished, 43 interrupted).
 
 At step 3,391,392, the five-lap evaluation was 33.654 s with zero contacts. This improved 0.027 s over the prior clean check and reset the weak-actor counter; it remains 0.330 s slower than the protected 33.324-second Champion, so it was not promoted. Training continued to step 3,392,185 at about 24.3 decisions/s. The active replay bundle contains 147 episodes (103 finished, 44 interrupted).
+
+At step 3,393,632, the five-lap evaluation returned 33.828 s with zero contacts. It was rejected against the protected 33.324-second Champion; the weak-actor counter is 1/5 after the prior local gain reset. Training continued to step 3,394,647 at about 24.4 decisions/s. Replay capture has grown to 151 episodes (106 finished, 45 interrupted).
