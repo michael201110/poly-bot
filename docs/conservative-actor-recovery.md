@@ -2385,3 +2385,9 @@ It was 0.283 seconds slower than the best recent clean candidate (33.472s)
 and was rejected without contact rollback. Training continued actor-unlocked
 with replay full; at step 3,137,974 throughput was 27.71 steps/s. Visual
 replay capture contained 307 episodes (221 finished, 86 interrupted).
+
+At step 3,137,983 the actor recorded another clean pace improvement at 33.554
+seconds, 0.201 seconds faster than the previous clean screen. It remains
+0.082 seconds slower than the recent 33.472-second best and 0.182 seconds
+slower than Champion, so it was not promoted. At step 3,139,048 training
+remained actor-unlocked with full replay at 27.60 steps/s.
