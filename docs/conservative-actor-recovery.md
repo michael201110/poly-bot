@@ -1198,3 +1198,9 @@ slower than Champion and the previous clean results. It was rejected without
 rollback and the reference was refreshed. Actor updates resumed immediately
 afterward (update norm 0.000138, drift 0.00250 by step 2,487,795). The replay
 archive contained 76 attempts; no model was promoted.
+
+At step 2,490,038 the deterministic five-lap check was clean at 33.601 seconds
+with zero contacts. It improved on the immediately preceding 33.790-second
+check but remained 0.229 seconds slower than Champion, so it was not promoted;
+the clean reference was refreshed. The trainer continued after evaluation,
+and the replay archive contained 79 attempts.
