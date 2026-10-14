@@ -1444,3 +1444,39 @@ Champion; it was rejected and counted as weak pace check 1/5. Training remained
 active near step 2,681,771. Replay capture started a new session,
 `ea773856ace643b78cff20dff7a49736`, which had five indexed entries (three
 finished) at the latest check.
+
+### 2026-10-14 near-maximum action audit and recovery cycle
+
+The latest two completed training replays (`episode-000009.npz` and
+`episode-000010.npz`) confirm that the continuous policy and PWM adapter do not
+cap steering or signed longitudinal demand at 0.97. Steering reached both
+`-1.0` and `+1.0`; longitudinal demand reached `+1.0`. Only 3.5% and 3.6% of
+steering requests, and 2.7% and 2.2% of longitudinal requests, fell in the
+narrow absolute-value band 0.965–0.975. About 30–35% of steering and 42–44% of
+longitudinal requests were at least 0.97 in magnitude. At frame skip 30, a 0.97
+request is approximately 29 active digital ticks per decision window; 1.0
+commands all 30. That difference does not show that full demand is faster in
+every state, especially for steering or braking. No global action remapping
+was justified, so the policy and controller were left unchanged.
+
+The live GUI run was still active. A training episode finished in 33.369 s at
+step 2,691,018, but this was not a promotion evaluation. The following
+deterministic five-lap candidate at step 2,691,030 measured a 33.708 s median
+and contacted a barrier once on each lap (five contact steps, peak impulse
+179.96). The gate rejected it and restored the protected Champion actor while
+preserving critics and replay. Champion remains 33.372 s. The recovery cooldown
+then locked actor updates for 1,000 critic updates; after the preceding
+recovery, the actor had unlocked and resumed updates, so the earlier 0.04
+cumulative reference-drift saturation was temporary across rollback rather
+than a permanent training stall. Recovery is running again after the latest
+contact rollback.
+
+Automatic visual replay capture remained enabled in session
+`ea773856ace643b78cff20dff7a49736`; its index had 16 training and interrupted
+episode entries at that check. No controller, reward, profile, or Champion
+changes were made during this audit.
+
+At the next live check, training had resumed after rollback and was at step
+2,692,983 with 512 of the 1,000 critic recovery updates remaining. The replay
+index had grown to 17 entries; episode 17 was a 33.372-second finished lap.
+This is still not a new Champion result.
