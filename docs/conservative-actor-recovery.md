@@ -2337,3 +2337,8 @@ throttle than Champion. This is a one-step comparison on Champion states, not
 the rejected policy's divergent collision trajectory, so it cannot establish
 the cause of contact. It does show that globally forcing throttle or steering
 to 1 would not follow from these traces. No action mapping was changed.
+
+The next deterministic screen at step 3,122,223 finished five clean laps at
+33.732 seconds, slower than Champion and not promoted. Training continued with
+actor updates unlocked, replay full, and 27.92 steps/s at step 3,124,148. The
+visual replay index contains 287 episodes (208 finished, 79 interrupted).
