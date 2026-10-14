@@ -2192,3 +2192,16 @@ weaker-candidate streak. It remains 0.206 seconds slower than Champion and
 was not promoted. At step 3,062,732 the actor was unlocked, replay was full,
 and throughput was 27.3 steps/s. The visual replay index contains 213 runs
 (154 finished, 59 interrupted); Champion remains unchanged.
+
+The next candidate, at step 3,063,871, screened at 33.628 seconds with a
+barrier contact at 93.59% progress (impulse 192.23). Five-lap verification
+repeated the contact on all five laps; the contact gate restored Champion and
+started another 1,000-update critic cooldown with replay preserved. Comparing
+the adjacent saved training replay with the post-rollback Champion replay near
+that section showed the rejected candidate carrying roughly 2-3 m/s more speed
+at about 0.996-1.0 longitudinal request. This is a diagnostic lead, not proof
+that speed alone caused the contact. Recovery completed by step 3,067,891;
+actor updates resumed, replay remained full, and throughput was 27.5 steps/s.
+The visual replay index contains 218 runs (158 finished, 60 interrupted).
+Champion remains protected at 33.372 seconds; no training settings were
+changed.
