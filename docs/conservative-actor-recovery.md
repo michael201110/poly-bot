@@ -1217,3 +1217,9 @@ step 2,496,774 was clean (33.716 seconds, zero contacts) but slower than
 Champion, so it was rejected and the clean reference refreshed. At step
 2,498,071 training remained active with actor learning unlocked; the replay
 archive contained 88 attempts. Champion remains verified at 33.372 seconds.
+
+At step 2,499,030 another deterministic five-lap check finished clean at
+33.901 seconds with zero barrier contacts. It was slower than Champion and was
+rejected; the clean reference was refreshed. At step 2,500,405 the trainer was
+still active with actor learning unlocked. The visual replay archive contained
+91 attempts. The protected five-lap Champion remains 33.372 seconds.
