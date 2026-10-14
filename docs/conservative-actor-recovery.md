@@ -1570,3 +1570,11 @@ with zero contacts, resetting the weak-check streak. It is still 0.206 s slower
 than Champion. Latest now records 33.578 s, Champion metadata remains 33.372 s,
 and training continued near step 2,726,974 with actor updates unlocked. The
 replay session had 19 entries, 14 finished. No action remapping was made.
+
+Across those 14 finished replays (16,850 decisions), steering ranged from
+exactly -1.0 to +1.0, and signed longitudinal demand ranged from -0.898 to
+exactly +1.0. Only 3.77% of steering and 2.58% of longitudinal actions were in
+the absolute 0.965-0.975 band. This confirms that 0.97 is not an action-space
+ceiling; exact endpoints are already used where the actor selects them. The
+sample did not use full negative longitudinal braking, but the action path has
+no clamp at that end either. No action mapping was changed.
