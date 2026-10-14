@@ -1806,5 +1806,6 @@ with replay full; the 30-second goal remains unmet. The wider trust region
 removes the zero-update stall, but so far it has exposed a repeatable contact
 regression rather than a pace gain. I left the lap and contact gates unchanged.
 
-The new training replay session `2ff6eb24e8ee4416b76656720dd067fc` contains 19`nfiles: 15 finished and 4 interrupted, with no missing indexed files. Together
+The new training replay session `2ff6eb24e8ee4416b76656720dd067fc` contains 19
+files: 15 finished and 4 interrupted, with no missing indexed files. Together
 with the earlier session, more than 100 complete swarm replays are available.
