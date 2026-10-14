@@ -627,3 +627,15 @@ candidate is preserved at
 continued on PID 17144; at 21:06 it had reached step 3,743,365 in episode 94
 (24.7% progress), with the simulator listener reacquired on port 8765. The
 visual replay index had 129 entries and C: had 29.2 GB free.
+
+### Second contact recovery cycle, 21:11 local
+
+The next candidate at step 3,745,312 screened at 33.838 s with one contact at
+99.23% progress. Its five-lap evaluation confirmed 5/5 finishes but one
+contact per lap (five total), all at the same progress, with peak impulse
+243.02. The checkpoint was rejected and kept at
+`models/simple-track/grtqc/checkpoints/step-3745312-rejected/`. Contact
+regression recovery again restored Champion, preserved critic replay, and
+started a 1,000-update cooldown. At 21:11, PID 17144 still owned port 8765 and
+had advanced to step 3,747,677, episode 98 (6.9% progress). The visual replay
+index held 134 entries and C: had 29.1 GB free.
