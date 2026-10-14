@@ -2481,3 +2481,9 @@ least 0.95). This rules out a hard global cap below 1, but does not prove that
 full duty is faster in any given section. With 30 PWM ticks per decision, the
 applied overlay can also show 29/30 = 0.967 when 29 ticks carry a button pulse.
 No control mapping or reward changes were made from this observation.
+
+The HUD and saved visual replays expose `model_output` and `applied` separately.
+When diagnosing a displayed near-full input, read the `model_output` field to see
+the actor's requested continuous value; `applied` is the PWM tick average. The
+latter can differ because the websocket profile advances 30 physics ticks per
+decision.
