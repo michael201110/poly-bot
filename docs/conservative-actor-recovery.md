@@ -1750,3 +1750,28 @@ replay full. The replay index now lists 105 episode files: 75 finished and 30
 interrupted, with all indexed files present. This gives 75 complete runs for
 swarm selection; capture is continuing toward 100 complete runs. C: had 15.00
 GB free. Champion remains 33.372 s.
+
+## Continued training on 2026-10-14
+
+The resumed run is active at 2,861,968 steps with the replay buffer full at
+250,000 transitions. Checkpoint 2,860,678 is saved. The selected settings in
+that checkpoint retain actor LR 0.000002, actor update interval 16, per-update
+action drift cap 0.0025, cumulative reference drift cap 0.04, n-step return 16,
+and the contact-aware 30-second reward settings. The latest deterministic
+five-lap evaluation, at step 2,859,718, was clean at 33.708 seconds; it did not
+beat the 33.372-second protected Champion.
+
+Contact regressions continue to appear during actor learning. At step 2,846,246
+the five-lap candidate was 33.537 seconds with one barrier contact per lap at
+98.806% progress. At step 2,855,238 it was 33.800 seconds with one contact per
+lap at the same location. Both candidates were rejected and the verified actor
+restored; critics and replay remained intact, followed by the configured
+1,000-update critic cooldown. A subsequent clean candidate tied Champion at
+33.372 seconds, then another clean evaluation reached 33.779 seconds. The
+latest clean evaluation is 33.708 seconds. The contact penalty is not yet
+preventing the repeated late-track deviation, so no faster Champion is claimed.
+
+The current visual replay session `b6c8fcf0739f410a90cdd22d0b252336` has 137
+indexed replay files: 99 finished and 38 interrupted. Every indexed replay
+file is present. Capture continues toward 100 finished runs. C: has 13.72 GB
+free. Training remains active; the 30-second objective remains unmet.
