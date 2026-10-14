@@ -537,3 +537,22 @@ than Champion, raising the weak-evaluation counter to 1/5. The next training
 lap, episode 76 at step 3,723,950, was 34.006 s and saved to the visual replay
 index. At 20:39 local, PID 17144 remained live on port 8765 at step 3,724,501,
 with 106 indexed replay entries. C: had 29.3 GB free and D: 144.3 GB.
+
+## 2026-10-14 20:47 local — provenance of the 33.105 s training best
+
+The resumed run's first progress record already reported
+`best_training_lap_s=33.105` at step 3,638,529. Its startup record shows it
+resumed `models/simple-track/grtqc/latest` from step 3,638,528, so that number
+was inherited from an earlier run; this log contains no episode event at
+33.105 s. The active visual replay index has 112 entries and no replay with
+that lap time. The number therefore does not identify a currently loadable,
+deterministically verified policy. Champion remains 33.324 s from a clean
+five-lap evaluation.
+
+After the step-3,725,104 contact rollback, episodes 78, 79, and 80 each
+finished in 33.324 s, and episode 81 finished in 33.270 s. The actor screen at
+step 3,729,552 was 33.657 s with no barrier contact; a full five-lap
+verification for this candidate had not yet appeared in the log at this
+snapshot. No candidate has replaced Champion. At 20:47 local, training PID
+17144 remained live and owned the WebSocket listener on port 8765. The replay
+index held 112 entries. C: had 29.3 GB free and D: had 144.3 GB.
