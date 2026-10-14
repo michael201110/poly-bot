@@ -1365,3 +1365,24 @@ The verified Champion remains 33.372 seconds. The best recent clean actor candid
 ### Applying the selected actor rate through the GUI
 
 The first GUI continuation after setting the profile to 5e-6 did not apply that rate: “Continue latest with selected actor guard” restored the checkpoint's 2e-6 rate and only overrode the selected drift caps. Its two clean five-lap checks measured 33.743s at step 2,653,990 and 33.667s at step 2,655,126; neither beat the 33.372s Champion. The run stopped safely at step 2,657,535. The GUI option now preserves the selected actor learning rate and both action drift limits while continuing to load Latest's policy, critics, replay, rewards, and curriculum. Resume from that saved Latest state with the 5e-6 profile and verify the selected rate in the GUI activity log before treating the new trial as active.
+
+## Restart at step 2,657,535
+
+On 2026-10-14 the GUI loaded `profiles/training/simple-track-grtqc-contact-aware-30.json` and resumed Latest at step 2,657,535 with the selected 5e-6 actor learning rate, 0.0025 per-update action limit, and 0.04 cumulative reference-drift cap. The GUI activity log confirmed it retained Latest's policy, critics, replay, rewards, and curriculum; the run uses the one-million-step full-track budget, frame skip 30, n-step 16, CUDA on the NVIDIA T500, and five-lap evaluation gate. Champion remains 33.372 seconds and was not modified. The first live episode reached 74.9% of the track at step 2,658,385; this is startup evidence only, not a pace result. Automatic WebSocket replay recording remains enabled. Confirm the episode in the replay index after it finishes.
+
+### Near-maximum controls
+
+The report that actions often read 0.97 is consistent with a genuine near-maximum request, not an adapter ceiling. At frame skip 30, the pulse-density controller translates 0.97 to approximately 29 commanded ticks per 30; exactly 1.0 commands all 30. It accepts the full `[-1, 1]` range, including both signs. The existing deterministic replay audit found both steering extrema and +1 longitudinal output, so full output is available to this actor. Steering at an extreme is not automatically faster or safer, and the existing five-lap clean promotion gate remains necessary. No snapping, clipping, or reward change has been applied based on the display value alone. Evaluate the resumed actor on saved action traces and the next clean lap/evaluation before changing action semantics; retain the current controller, critics, replay, and protected Champion during that comparison.
+
+The first saved replay in the resumed session is
+`models/simple-track/grtqc/visual_replays/db3c90bf2c5848a0a14fa2a54741da5a/episode-000001.npz`
+(step 2,657,535; 1,118 decisions). It records a clean 33.529-second finish with
+no barrier contacts, which is 0.157 seconds slower than Champion; it is a
+training episode and not a five-lap promotion evaluation. The recorded policy
+requests reached +1.0 longitudinal and +1.0 steering. In this lap, 42.7% of
+longitudinal requests were at least 0.97 in magnitude, 27.5% of steering
+requests were at least 0.97, and exact +1 occurred for 3.5% of longitudinal
+and 0.4% of steering samples. Thus the near-maximum display corresponds to
+actual near-maximum demands and the policy sometimes selects the endpoint. This
+single lap does not show that changing its requests to full demand would improve
+pace; do not apply a blanket endpoint snap from these counts.
