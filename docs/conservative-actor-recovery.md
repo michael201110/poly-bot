@@ -1862,3 +1862,11 @@ is 102,079 and training remains active.
 The new visual session now has 41 files (32 finished, 9 interrupted), all
 present. Earlier complete swarm replay sessions are retained. Champion remains
 33.372 seconds, and the 30-second goal remains unmet.
+
+The next clean five-lap check, at step 2,931,311, was 33.596 seconds with
+zero barrier contacts. That improved 0.192 seconds over the prior clean check
+(33.788 seconds), but remained 0.224 seconds behind Champion, so it was not
+promoted. The actor continues updating under the 0.08 reference-drift cap. The
+run is active at step 2,933,557 with 131,191 replay transitions and no recovery
+cooldown. The new visual session has 52 files (39 finished, 13 interrupted),
+with no missing indexed files. The 30-second target remains unmet.
