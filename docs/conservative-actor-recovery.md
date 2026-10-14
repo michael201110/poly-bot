@@ -1108,3 +1108,11 @@ indexed attempts. The 0.04 drift guard can temporarily hold actor changes at
 its limit while an evaluation is pending, then actor updates resume after the
 evaluation refreshes the clean reference. Training remains active, with
 Champion and replay data preserved. The 30-second target remains unmet.
+
+The next five-lap actor evaluation at step 2,451,894 measured 33.759 seconds
+and one barrier contact per lap, versus the clean 33.372-second Champion. The
+contact gate restored Champion and began critic recovery; at step 2,452,999,
+724 recovery updates remained and actor learning was locked. The visual replay
+archive had grown to 33 indexed attempts. This contact regression is further
+evidence against forcing near-maximum controls to exactly 1.0; the policy can
+already request full scale, and the failed candidate needs better line quality.
