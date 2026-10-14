@@ -1601,3 +1601,11 @@ After that recovery, the next deterministic five-lap evaluation at step
 the preceding clean 33.674 s candidate, so it was rejected as weak check 1/5
 and saved to Latest; the actor remains unlocked and continues training. The
 replay session had 30 entries, 22 finished. Champion remains 33.372 s.
+
+The next five-lap candidate at step 2,737,174 was faster at 33.651 s but again
+contacted a barrier on all five laps, this time at 98.664% progress (peak
+impulse 168.87). The gate restored Champion's actor and started another
+1,000-update critic cooldown, preserving replay and critics. At step 2,739,145
+the run remained active with 508 cooldown updates left; the replay session had
+33 entries, 24 finished. Champion remains unchanged. No action mapping was
+altered.
