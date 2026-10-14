@@ -1835,3 +1835,15 @@ Champion unchanged.
 New visual replay session `2d58d332b8524b4e866c58c50b5195ee` had 10 files when
 recorded (9 finished, 1 interrupted); the prior 100-plus complete swarm runs
 remain intact. The 30-second target remains unmet.
+
+Follow-up on the fresh-reward run: the next clean five-lap evaluations were
+33.672 seconds at step 2,904,303 and 33.572 seconds at step 2,911,039. A
+33.435-second candidate at step 2,906,559 was rejected for one low-impulse
+contact on each lap (maximum impulse 50.16); it was followed by the clean
+33.572-second result. The latest clean evaluation, at step 2,915,551, improved
+to 33.473 seconds with zero contacts, 0.141 seconds faster than the preceding
+clean check and 0.101 seconds slower than Champion. The gate did not promote it.
+Training is active at step 2,917,752 with 75,030 replay transitions, actor
+updates unlocked, and cumulative reference drift 0.0792 under the 0.08 limit.
+The refilled visual session now has 30 files (24 finished, 6 interrupted), all
+indexed files present. The existing finished swarm inventory remains intact.
