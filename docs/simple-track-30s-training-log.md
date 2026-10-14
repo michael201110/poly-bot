@@ -566,3 +566,12 @@ Champion and preserved at
 that the stored 33.105 s training best is not reproduced by this candidate.
 Episode 82 finished at 33.612 s and is included in the visual replay index,
 which now has 113 entries. PID 17144 remains live on port 8765.
+
+### Continued training, 20:51 local
+
+The next candidate, screened at step 3,731,808, completed five clean laps at
+33.660 s and was rejected as 0.336 s slower than Champion. Its checkpoint is
+preserved at `models/simple-track/grtqc/checkpoints/step-3731808-rejected/`.
+Training continued without restarting: at 20:51, PID 17144 was on port 8765
+at step 3,732,641, episode 84 (73.0% progress). The visual replay index held
+115 entries, and C: had 29.3 GB free.
