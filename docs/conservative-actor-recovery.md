@@ -2522,3 +2522,12 @@ continued actor-unlocked at step 3,188,364 with the replay buffer full and
 27.40 decisions/s. Visual capture contains 370 episodes (265 finished, 105
 interrupted); the latest capture at this inspection point is the evaluation
 run, with subsequent capture continuing during training.
+
+At step 3,189,615 the deterministic five-lap evaluation improved to 33.595
+seconds with zero barrier contacts. This is 0.208 seconds faster than the
+preceding 33.803-second candidate and was recorded as an actor pace
+improvement, resetting the weaker-actor streak. It remains 0.223 seconds
+slower than the protected 33.372-second Champion, so it was not promoted.
+Training remained active at step 3,189,788 with a full replay buffer and
+27.33 decisions/s. Visual capture contains 373 episodes (267 finished, 106
+interrupted).
