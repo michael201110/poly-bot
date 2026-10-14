@@ -1990,6 +1990,15 @@ recovery updates remaining, actor locked, and replay full at 250,000. The
 visual replay session contains 116 indexed runs (84 finished, 32 interrupted).
 The 30-second target remains unmet.
 
+The next five-lap screen, at step 2,991,983, was 33.718 seconds with two
+contacts at 98.88% and 99.87% progress (peak impulse 164.22). The contact gate
+again restored Champion and retained replay. The following live training lap
+finished cleanly in 33.372 seconds, matching Champion. At step 2,993,868, the
+second 1,000-update critic recovery had 529 updates remaining; the actor was
+locked, replay was full, and throughput was 27.2 steps/s. The visual replay
+session contains 127 runs (92 finished, 35 interrupted). Champion remains
+protected at 33.372 seconds.
+
 The critic cooldown completed by step 2,987,052. The actor is unlocked again,
 the replay buffer remains full, and throughput is about 27.4 steps/s. The live
 training process continues from the restored Champion actor with critics and
