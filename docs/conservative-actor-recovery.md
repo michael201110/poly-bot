@@ -1331,3 +1331,9 @@ barrier once on each lap at 99.445% progress (peak impulse 106.42). The contact
 gate restored Champion. At step 2,554,745 critic recovery had 552 updates
 remaining, with the trainer still active and the actor locked. The replay
 archive contained 155 attempts.
+
+Following the contact rollback, the five-lap evaluation at step 2,557,446 tied
+the protected 33.372-second Champion with zero contacts. It was not promoted;
+training continued from the clean reference. At step 2,558,319 the actor was
+unlocked and updating (norm 0.000112, drift 0.03482). The replay archive
+contained 159 attempts.
