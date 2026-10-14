@@ -1714,3 +1714,9 @@ Two further five-lap checks, at steps 2,803,478 and 2,805,734, were clean at
 replay transitions and actor updates unlocked. Visual replay session
 `b6c8fcf0739f410a90cdd22d0b252336` had 70 episode files; C: had 16.01 GB free.
 Neither candidate improved on Champion.
+
+The next two five-lap evaluations, at steps 2,807,990 and 2,810,246, were
+also contact-free at 33.532 s and 33.755 s. The run remained active at step
+2,811,001 with 201,628 replay transitions and actor updates unlocked. Replay
+session `b6c8fcf0739f410a90cdd22d0b252336` had 73 visual episode files; C: had
+15.74 GB free. Champion remains 33.372 s; neither result promoted a model.
