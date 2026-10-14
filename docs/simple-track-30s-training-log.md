@@ -86,3 +86,22 @@ per-update action change and `0.075` cumulative reference drift. Actor learning
 rate remains `5e-6`; five-lap evaluation and protected Champion gates are
 unchanged. This profile edit does not alter the active process and takes effect
 when a later process loads the profile.
+
+## 2026-10-14 continued training checkpoint
+
+The existing training process (PID 10892) remained connected on port 8765 and
+continued from the 2026-10-14 `latest` checkpoint. At training step 3,629,503,
+a captured training episode finished in 33.396 s. The subsequent deterministic
+five-lap evaluation at step 3,629,504 completed 5/5 laps in 33.324 s with zero
+barrier-contact steps. This matches the protected 33.324 s Champion but does
+not beat it, so the Champion remains unchanged. The `latest` checkpoint was
+saved at 17:35:59 UTC with that evaluation. The active visual replay index had
+42 episodes at the check; replay recording continued.
+
+The active process still has the actor limits loaded at startup (0.00125 per
+update and 0.05 cumulative reference drift). The profile on disk now specifies
+0.0025 and 0.075, respectively, but those values are not hot-reloaded into the
+current process. The checkpoint metadata still carries the historical
+33.105 s best training lap; it is not a new verified evaluation. No training
+code, reward settings, champion files, or replay-retention settings were
+changed for this checkpoint update.
