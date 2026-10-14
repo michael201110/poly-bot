@@ -1073,3 +1073,10 @@ The next clean five-lap evaluation at step 2,438,390 was 33.844 seconds
 2,438,839 the actor remained unlocked at 0.01720 cumulative drift under the
 0.04 limit. The visual replay session contained 16 attempts and continued
 recording.
+
+At step 2,440,646 the next candidate evaluated at 33.877 seconds (5/5) but
+repeated a barrier contact on all five laps at 99.233% progress (peak impulse
+1,870.02). The contact gate rejected it, restored Champion, and started the
+1,000-update cooldown with critics and replay preserved. At step 2,441,599 the
+actor was locked with 762 updates remaining; the new replay session had 19
+indexed attempts.
