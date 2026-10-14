@@ -478,3 +478,15 @@ than Champion; it raised the weak-evaluation count to 2/5. Training continued
 past step 3,712,161, and the replay index reached 91 entries. C: remained at
 29.7 GB free and D: at 144.3 GB. The recovery restored clean Champion pace,
 but the post-recovery actor has not yet found a faster verified lap.
+
+After more updates, the actor's next screen was 33.957 s at step 3,713,792.
+Its five-lap check confirmed 33.957 s (5/5 finishes, zero barrier contacts),
+and the proposal was saved at
+`models/simple-track/grtqc/checkpoints/step-3713792-rejected/`. This is
+0.633 s slower than Champion and raised the weak-evaluation counter to 3/5.
+The preceding post-recovery training lap (episode 67) was 33.662 s. At 20:24
+local, PID 17144 remained live on port 8765 and had resumed training at step
+3,713,941. The active visual replay index contained 93 entries, with the
+33.662 s episode saved as `episode-000095.npz`. C: had 29.6 GB free and D:
+144.3 GB. The actor recovery gate remains armed for two further weak full
+evaluations; Champion is still protected at 33.324 s.
