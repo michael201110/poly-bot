@@ -116,3 +116,5 @@ Following the contact rollback and cooldown, the recovered Champion actor passed
 At step 3,411,616, the five-lap evaluation returned 33.752 s with zero contacts. It was rejected against the 33.324-second Champion and advanced the weak-actor counter to 2/5. Training continued to step 3,412,098 at about 24.4 decisions/s. The visual-replay bundle contains 171 episodes (121 finished, 50 interrupted).
 
 At step 3,413,872, the five-lap evaluation was 33.568 s with zero contacts. This is a 0.184-second local clean improvement that reset the weak-actor counter, but it remains 0.244 s slower than the protected 33.324-second Champion, so it was not promoted. Training continued to step 3,416,082 at about 24.6 decisions/s. Replay capture now contains 177 episodes (125 finished, 52 interrupted).
+
+At step 3,416,128, the five-lap evaluation was 33.564 s with zero contacts. It was rejected against the protected 33.324-second Champion, and the weak-actor counter is 1/5. Training continued to step 3,417,421 at about 24.5 decisions/s. The replay bundle contains 178 episodes (126 finished, 52 interrupted).
