@@ -132,3 +132,15 @@ versus 0.001248 before continuation. Cumulative reference drift restarted at
 advanced to step 3,632,881 at about 35.2 steps/s. This is an implementation
 check of the new actor update bound, not yet evidence of a faster evaluated
 lap. The previous 33.324 s Champion remains protected.
+
+
+The first deterministic five-lap evaluation after applying the larger actor
+update limit finished 5/5 with zero barrier contacts at 33.545 s (step
+3,632,896; saved at 17:41:34 UTC). This is 0.032 s faster than the resumed
+checkpoint's 33.577 s evaluation, but 0.221 s slower than the protected
+33.324 s Champion. It is an early clean improvement over the resume point,
+not a Champion promotion. The saved checkpoint records the active limits as
+0.0025 per update and 0.075 cumulative reference drift. At step 3,633,204,
+proposed actor drift was 0.02284 and accepted drift 0.002496, showing the
+larger per-update bound is active and still binding. Training and new visual
+replay capture remain active on port 8765.
