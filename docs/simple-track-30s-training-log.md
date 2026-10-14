@@ -1223,3 +1223,12 @@ showing why deterministic screening remains necessary. Training continued in
 episode 33 through step 3,918,124 with actor updates unlocked. The replay index
 had 39 entries at 00:37:07 local. Port 8765 remained active; C: had 25.6 GB free
 and D: 144.3 GB. The 30-second target remains open.
+
+### Clean candidate pace movement, 23:41 UTC
+
+The next deterministic screen at step 3,918,803 improved to 33.639 s median
+(5/5 finishes, zero barrier contacts), 0.110 s faster than the previous clean
+screen but still 0.315 s slower than the protected 33.324 s Champion. It was not
+promoted. Training remained active through step 3,920,596 in episode 35 with
+the actor unlocked. Replay capture advanced to 43 indexed entries at 00:41:41
+local. Port 8765 remained active; C: had 25.6 GB free and D: 144.3 GB.
