@@ -1080,3 +1080,8 @@ repeated a barrier contact on all five laps at 99.233% progress (peak impulse
 1,000-update cooldown with critics and replay preserved. At step 2,441,599 the
 actor was locked with 762 updates remaining; the new replay session had 19
 indexed attempts.
+
+After recovery, the next clean five-lap check at step 2,445,126 was 33.499
+seconds, 0.127 seconds slower than Champion, and was not promoted. At step
+2,445,907 the actor was unlocked and updating (0.02816 cumulative drift).
+Replay capture remained active with 24 indexed attempts.
