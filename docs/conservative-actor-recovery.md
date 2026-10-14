@@ -2279,3 +2279,6 @@ actor was locked with 743 cooldown updates remaining; replay capture contained
 247 episodes (178 finished, 69 interrupted). The target-stop profile fix is
 on disk and pushed, but this already-running session still has its original
 22-second stop threshold loaded in memory.
+The cooldown finished by step 3,093,081; actor updates resumed with replay
+still full, throughput at 27.6 steps/s, and visual capture at 251 episodes
+(181 finished, 70 interrupted).
