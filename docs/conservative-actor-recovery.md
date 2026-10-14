@@ -2253,3 +2253,10 @@ The contact-triggered critic cooldown completed by step 3,081,835; the actor
 unlocked again with replay still full and throughput at 27.6 steps/s. The
 30-second target remains unmet, so training continues against the protected
 33.372-second Champion.
+
+At step 3,081,839 the next five-lap evaluation finished all laps cleanly at a
+33.683-second median and recorded no barrier contacts. It was slower than the
+33.372-second Champion and was not promoted. By step 3,084,092 the actor was
+unlocked again, replay remained full, and throughput was 27.5 steps/s. The
+visual replay index contained 240 episodes (173 finished, 67 interrupted).
+No training or action settings were changed.
