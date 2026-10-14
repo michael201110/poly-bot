@@ -756,3 +756,13 @@ not promoted because it did not beat Champion. The checkpoint is preserved at
 training was active on PID 17144 and port 8765 at step 3,775,477 in episode
 122 (82.0% progress). The active visual replay index held 168 entries. C: had
 28.8 GB free and D: had 144.3 GB.
+
+### Clean slower check after recovery, 21:52 local
+
+The next deterministic five-lap evaluation, at step 3,776,800, was 33.676 s
+(5/5 finishes, zero contacts). It was rejected as slower than the 33.324 s
+Champion; the saved `latest` metadata now records this evaluation. The actor
+recovery cooldown had completed, and at 21:53 training remained live on
+PID 17144, port 8765, at step 3,777,077 in episode 124 (20.0% progress). The
+active visual replay index held 171 entries. C: had 28.8 GB free and D: had
+144.3 GB.
