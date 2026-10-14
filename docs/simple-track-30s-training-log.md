@@ -659,3 +659,11 @@ evaluation since the latest recovery (2/5 toward automatic actor recovery).
 Training continued on PID 17144 at step 3,752,349, episode 102 (24.6%
 progress), with port 8765 live. The visual replay index had 140 entries and
 C: had 29.1 GB free.
+
+### Third clean slower check since recovery, 21:21 local
+
+The five-lap actor evaluation at step 3,754,288 completed at 33.747 s with
+5/5 finishes and zero contacts. It was rejected as slower than Champion, and
+the weaker-check count reached 3/5. The trainer remains active on PID 17144;
+at 21:21 it had resumed collection on port 8765 at step 3,754,321, episode
+104. The visual replay index held 143 entries and C: had 29.1 GB free.
