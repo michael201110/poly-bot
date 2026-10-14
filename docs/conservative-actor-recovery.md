@@ -1274,3 +1274,9 @@ repeated one barrier contact on every lap at 98.95% progress (peak impulse
 134.96). The gate restored Champion. At step 2,524,751 critic recovery had 746
 updates remaining; actor changes were locked and the replay archive contained
 120 attempts. No candidate has improved the verified 33.372-second pace.
+
+The next five-lap evaluation at step 2,528,198 was clean at 33.752 seconds,
+but slower than Champion, so it was rejected without rollback. Actor updates
+resumed after the clean reference refresh (norm 0.000098, drift 0.00747 at step
+2,528,395). Training remained active; the replay archive contained 124
+attempts.
