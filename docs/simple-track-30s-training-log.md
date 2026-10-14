@@ -809,3 +809,13 @@ automatic recovery restored Champion and retained critic replay. At 22:10,
 PID 17144 was still live and collecting episode 137 at step 3,791,541 (11.1%
 progress), with 675 critic cooldown updates remaining. The visual replay index
 held 188 entries. C: had 28.7 GB free and D: had 144.3 GB.
+
+### Post-recovery clean Champion match, 22:13 local
+
+The five-lap candidate at step 3,794,720 matched the protected Champion at
+33.324 s (5/5 finishes, zero contacts). It was rejected because it did not
+improve Champion; the checkpoint is preserved at
+`models/simple-track/grtqc/checkpoints/step-3794720-rejected/`. At 22:14,
+training remained active on PID 17144 and port 8765, at step 3,794,773 in
+episode 140 (1.2% progress); the recovery cooldown had completed. The active
+visual replay index held 192 entries. C: had 28.7 GB free and D: had 144.3 GB.
