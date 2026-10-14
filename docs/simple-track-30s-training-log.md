@@ -1094,3 +1094,15 @@ It was rejected as slower than Champion. The protected 33.324 s actor was not
 overwritten. Training continued past step 3,883,297, the T500 remained connected
 on port 8765, and this run's WebSocket visual replay index continues to hold the
 new episode recordings for future swarm playback.
+
+### Contact-guard recovery after resumed exploration
+
+After the first 33.725 s clean screen, ordinary training laps were 33.739 s
+and 33.492 s. The next deterministic five-lap evaluation at step 3,885,235 had
+a 33.733 s median, 5/5 finishes, but five barrier-contact steps (maximum
+impulse 70.90). The contact gate rejected the candidate and triggered automatic
+actor recovery; this is not a clean pace improvement. Training was observed
+continuing at step 3,885,456 after recovery began. The visual replay archive for
+this resumed run had five entries at 00:09:37 local, preserving the episodes
+and evaluation traces for later swarm inspection. Port 8765 remained active,
+and C: had 26 GB free (D: 144.3 GB).
