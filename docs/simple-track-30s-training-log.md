@@ -212,3 +212,13 @@ in the current continuation, 0.077 s slower than the protected 33.324 s
 Champion, so it was saved as `latest` and the Champion was not replaced. The
 weak-evaluation counter reset from two; the active replay run had 23 indexed
 episodes at the latest check. Training remains active on port 8765.
+
+
+A second contact regression occurred during the 0.005 per-update search. At
+step 3,664,384 the five-lap candidate finished in 33.691 s but had 10
+barrier-contact steps, repeated at progress ratios 0.93210 and 0.93273, with
+maximum impulse 567.5. The candidate was rejected, Champion's actor was
+restored, and a second 1,000-update critic recovery began with replay
+preserved. This contact location differs from the earlier rollback's
+0.99162-0.99233 progress region. The best clean candidate remains 33.401 s;
+Champion remains 33.324 s. Training and visual replay capture continue.
