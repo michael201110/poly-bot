@@ -1199,3 +1199,16 @@ slow line adaptation, not proof that relaxing it will improve lap time: the
 higher 0.01 setting previously coincided with contact regressions. I left the
 live run and its safeguards unchanged. Latest deterministic pace remains
 33.749 s clean, with Champion protected at 33.324 s.
+
+### Actor rollback after a faster but contacting screen, 23:35 UTC
+
+At step 3,912,083, the five-lap screen improved to 33.658 s median (5/5
+finishes), but each lap contacted the barrier at 98.5208% progress (five contact
+steps, peak impulse 272.39). The result was still slower than Champion and was
+rejected by the contact gate; automatic actor recovery began immediately. The
+trainer continued through step 3,912,692 with 848 critic-recovery updates left
+and actor updates locked. This reinforces that the late-track contact is tied
+to the more exploratory actor and that a faster one-off candidate is not yet a
+safe verified pace improvement. Replay capture remains on; the archive held 35
+entries at the previous index refresh. Port 8765 remained active and C: had
+25.7 GB free.
