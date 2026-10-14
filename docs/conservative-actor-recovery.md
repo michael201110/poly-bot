@@ -2422,3 +2422,9 @@ critic cooldown with replay retained. At step 3,151,936 the actor was locked
 with 308 cooldown updates remaining, replay full, and throughput at 27.73
 steps/s. Visual replay capture contained 323 episodes (233 finished, 90
 interrupted).
+
+The next five-lap evaluation at step 3,153,647 tied Champion at 33.372 seconds
+with all laps clean and zero contacts. It was rejected as equal; Champion
+remained protected. The critic cooldown completed and training resumed with
+actor updates unlocked, full replay, and 27.66 steps/s at step 3,153,726.
+Replay capture contained 326 episodes (235 finished, 91 interrupted).
