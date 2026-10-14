@@ -1325,3 +1325,9 @@ with zero contacts. It was not promoted; the protected Champion remains intact.
 At step 2,552,379 training remained active, but the actor had reached its 0.04
 reference-drift boundary with zero executed update norm. The replay archive
 contained 152 attempts.
+
+The candidate at step 2,552,950 evaluated at 33.683 seconds but contacted the
+barrier once on each lap at 99.445% progress (peak impulse 106.42). The contact
+gate restored Champion. At step 2,554,745 critic recovery had 552 updates
+remaining, with the trainer still active and the actor locked. The replay
+archive contained 155 attempts.
