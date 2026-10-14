@@ -2028,6 +2028,10 @@ recovery updates remaining; replay stayed full and throughput was 27.1
 steps/s. The visual replay inventory has 137 runs (99 finished, 38
 interrupted). Champion remains 33.372 seconds; the target remains unmet.
 
+This critic recovery completed by step 3,005,423. Actor updates were unlocked
+again, replay remained full, and throughput was 27.7 steps/s. The active run
+continues from Champion with critics and replay preserved.
+
 The critic cooldown completed by step 2,987,052. The actor is unlocked again,
 the replay buffer remains full, and throughput is about 27.4 steps/s. The live
 training process continues from the restored Champion actor with critics and
