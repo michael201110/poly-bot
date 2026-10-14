@@ -985,3 +985,21 @@ At step 3,844,048, the deterministic five-lap evaluation completed 5/5 at
 33.760 s with zero barrier contacts. It was rejected against Champion at
 33.324 s. At 23:19:37, PID 17144 was training at step 3,844,457. The visual
 replay index held 251 episodes. C: had 28.2 GB free and D: had 144.3 GB.
+
+### Actor action-limit diagnosis and Champion re-match, 23:28 local
+
+At step 3,845,763, learner diagnostics showed proposed action drift 0.01514
+but executed drift 0.00500, exactly at the active per-update limit; cumulative
+reference drift was 0.09744 against its 0.5 cap. This indicates the per-update
+limit, rather than the cumulative reference cap, is clipping actor changes.
+The next continuation profile now raises only that per-update limit from
+0.005 to 0.01. Actor learning rate (5e-6), cumulative drift cap, critics,
+replay, five-lap evaluation, and Champion rollback gates remain unchanged.
+
+At step 3,850,752 the five-lap candidate matched Champion at 33.324 s (5/5,
+zero barrier contacts) and was rejected because it was not faster. The latest
+checkpoint was saved at this step at 22:27:50 UTC. At 22:28:37 UTC PID 17144
+had resumed at step 3,851,881 in episode 190. The visual replay index held 259
+episodes. C: had 28.1 GB free and D: had 144.3 GB. The active process still
+has the old 0.005 action limit until it is continued from latest with the
+updated profile.
