@@ -202,3 +202,13 @@ policy rather than a faster candidate. At step 3,649,657 the actor remained
 locked with 136 recovery updates remaining. The current visual replay run
 contains the driving episodes and evaluation boundary. Training remains live;
 no Champion files were overwritten.
+
+
+After the contact rollback and critic recovery, the actor unlocked from the
+protected Champion and resumed updates. Its clean five-lap evaluation at step
+3,655,392 improved from 33.630 s to 33.401 s (0.229 s faster), with five of
+five finishes and zero barrier contacts. This is now the best clean candidate
+in the current continuation, 0.077 s slower than the protected 33.324 s
+Champion, so it was saved as `latest` and the Champion was not replaced. The
+weak-evaluation counter reset from two; the active replay run had 23 indexed
+episodes at the latest check. Training remains active on port 8765.
