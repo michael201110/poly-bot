@@ -1080,3 +1080,8 @@ record is step 3,881,844; visual replay capture remains enabled by the WebSocket
 training setup for later swarm use. The GUI reports Active · Training and the
 simulator bridge is listening on port 8765. Champion and all existing replay
 archives were left intact.
+
+The first post-resume episode finished at step 3,882,964 in 33.603 s (full-track
+finish). Its visual replay index was created and had two entries by 00:06:48
+local, confirming capture has resumed. This is an ordinary training episode,
+not a five-lap candidate verification; Champion remains unchanged.
