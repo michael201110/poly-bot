@@ -124,7 +124,7 @@
   "grtqc": {
     "architecture": "compact",
     "learning_rate": 0.0003,
-    "actor_learning_rate": 2e-06,
+    "actor_learning_rate": 5e-06,
     "critic_learning_rate": 0.0003,
     "replay_capacity": 250000,
     "learning_starts": 3000,
