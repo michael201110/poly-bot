@@ -777,3 +777,13 @@ recovery restored Champion and preserved critic replay. At 21:56, PID 17144
 still owned port 8765 and had resumed collection at step 3,779,153 in episode
 126 (3.8% progress), with 976 critic cooldown updates remaining. The active
 replay index held 174 entries. C: had 28.8 GB free and D: had 144.3 GB.
+
+### Clean but slower post-recovery candidate, 22:01 local
+
+The next five-lap candidate at step 3,783,520 evaluated at 33.762 s, with
+5/5 finishes and zero contacts. It was rejected as slower than the 33.324 s
+Champion; no rollback was needed. The preceding free-driving laps were 33.324,
+33.192, and 33.762 s. At 22:01, training remained active on PID 17144 and
+port 8765 at step 3,783,683 in episode 130 (9.7% progress), with the critic
+recovery cooldown complete. The active visual replay index held 179 entries.
+C: had 28.7 GB free and D: had 144.3 GB.
