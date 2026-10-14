@@ -2079,3 +2079,10 @@ late contact (progress 99.02%, impulse 68.43); it was rejected and started a
 1,000-update critic cooldown. Training remains active; at step 3,010,393 the
 actor was locked with 886 recovery updates remaining. Champion remains
 protected at 33.372 seconds.
+
+That recovery completed by step 3,014,100. The next clean screen, at step
+3,014,399, tied Champion at 33.372 seconds and was rejected as equal; the
+weaker-actor screen count is 1 of 5. Training resumed with actor unlocked,
+replay full, and throughput about 27.5 steps/s by step 3,015,500. The visual
+replay inventory has 153 runs (112 finished, 41 interrupted). No action or
+reward settings were changed after the utilization review.
