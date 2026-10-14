@@ -575,3 +575,14 @@ preserved at `models/simple-track/grtqc/checkpoints/step-3731808-rejected/`.
 Training continued without restarting: at 20:51, PID 17144 was on port 8765
 at step 3,732,641, episode 84 (73.0% progress). The visual replay index held
 115 entries, and C: had 29.3 GB free.
+
+### Clean pace gain, 20:54 local
+
+The next actor evaluation at step 3,734,064 verified 33.499 s over five laps,
+all finished with zero barrier contacts. This is 0.161 s faster than the
+33.660 s candidate and 0.175 s slower than Champion; it was kept as a pace
+proposal rather than promoted over Champion. The runner recorded
+`actor_pace_improved`, clearing the weaker-candidate streak. Training resumed
+on the same PID and port; at 20:54 it had reached step 3,734,405, episode 86
+(26.3% progress). The visual replay index had 118 entries and C: had 29.2 GB
+free.
