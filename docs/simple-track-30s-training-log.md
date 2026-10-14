@@ -587,6 +587,7 @@ on the same PID and port; at 20:54 it had reached step 3,734,405, episode 86
 (26.3% progress). The visual replay index had 118 entries and C: had 29.2 GB
 free.
 
+
 ### Contact rollback and replay telemetry, 20:58-20:59 local
 
 The next candidate at step 3,736,320 screened at 33.969 s with four contact
@@ -680,3 +681,14 @@ immediately before screening had contacted at 63.08-63.33% and finished in
 21:25, PID 17144 had resumed on port 8765 at step 3,756,869, episode 106
 (23.3% progress). The visual replay index had 146 entries and C: had 29.0 GB
 free.
+
+### Repeated finish-approach contact rollback, 21:28 local
+
+The actor screen at step 3,758,832 was 33.751 s with one contact at 98.95% of
+the route. Five-lap verification repeated that same contact once per lap
+(5/5 finishes, five contact steps; peak impulse 77.19). The candidate was
+preserved at `models/simple-track/grtqc/checkpoints/step-3758832-rejected/`;
+the contact gate restored Champion and preserved critic replay with another
+1,000-update cooldown. At 21:28, PID 17144 had resumed on port 8765 at step
+3,758,945, episode 108. The visual replay index held 149 entries and C: had
+29.0 GB free.
