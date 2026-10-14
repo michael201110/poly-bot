@@ -2205,3 +2205,10 @@ actor updates resumed, replay remained full, and throughput was 27.5 steps/s.
 The visual replay index contains 218 runs (158 finished, 60 interrupted).
 Champion remains protected at 33.372 seconds; no training settings were
 changed.
+
+After recovery, the step-3,068,351 candidate passed five clean laps at 33.605
+seconds. It was slower than Champion, so the weaker-candidate count restarted
+at 1 of 5; no contact rollback was needed. Training continued with actor
+unlocked, replay full, and about 27.5 steps/s at step 3,069,784. The visual
+replay index contains 221 runs (160 finished, 61 interrupted). Champion
+remains unchanged at 33.372 seconds.
