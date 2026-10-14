@@ -1595,3 +1595,9 @@ step 2,731,112 the GUI was still training with 832 cooldown updates remaining.
 The replay session had 26 entries, 19 finished. This repeats the near-finish
 contact regression and further argues against increasing near-max control
 demand. Champion remains clean at 33.372 s; no action mapping was changed.
+
+After that recovery, the next deterministic five-lap evaluation at step
+2,734,918 was clean at 33.720 s with zero barrier contacts. It was slower than
+the preceding clean 33.674 s candidate, so it was rejected as weak check 1/5
+and saved to Latest; the actor remains unlocked and continues training. The
+replay session had 30 entries, 22 finished. Champion remains 33.372 s.
