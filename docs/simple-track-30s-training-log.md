@@ -167,3 +167,14 @@ drift was 0.01486 after the evaluation, below the 0.5 allowance. The new replay
 run `7fd2814c78e049589f4d65f1debe9818` had five indexed entries, including
 the training episodes and evaluation boundary. Training remained connected on
 port 8765; no Champion promotion occurred.
+
+
+At step 3,638,750, the actor proposed 0.03965 action drift while the 0.0025
+per-update cap admitted 0.002494; the latest five-lap evaluation at step
+3,638,528 was clean at 33.628 s, slower than the preceding 33.616 s result.
+Since the per-update cap is still strongly binding, the profile now doubles
+that cap to 0.005 for the next continuation. The cumulative allowance remains
+0.5. This is a bounded search increase; clean five-lap evaluation, contact
+screening, and Champion rollback/preservation gates are unchanged. The next
+continuation will resume from the saved 33.628 s checkpoint and its replay
+buffer; the active process is not changed by this profile edit alone.
