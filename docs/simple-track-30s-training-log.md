@@ -616,3 +616,14 @@ with 5/5 finishes and zero barrier contacts. It was preserved at
 the first weaker evaluation since recovery. At 21:03, PID 17144 still owned
 port 8765 and had reached step 3,741,633, episode 92 (74.4% progress). The
 visual replay index had 126 entries and C: had 29.2 GB free.
+
+### Second clean candidate after contact recovery, 21:06 local
+
+The next five-lap evaluation at step 3,743,040 completed in 33.785 s, 5/5
+finishes with zero barrier contacts. It was rejected as 0.461 s slower than
+Champion and counted as the second weaker evaluation since recovery. The
+candidate is preserved at
+`models/simple-track/grtqc/checkpoints/step-3743040-rejected/`. Training
+continued on PID 17144; at 21:06 it had reached step 3,743,365 in episode 94
+(24.7% progress), with the simulator listener reacquired on port 8765. The
+visual replay index had 129 entries and C: had 29.2 GB free.
