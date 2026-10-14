@@ -2005,6 +2005,14 @@ again, reference drift was 0.0025, replay remained full, and throughput was
 finished, 36 interrupted); the training run continues from the protected
 Champion reference.
 
+The first five-lap screen after that recovery, at step 2,996,463, was 33.762
+seconds with no contacts. It was rejected as slower than Champion and started
+a new weaker-actor count of 1 of 5. Training continued at step 2,998,008 with
+actor updates unlocked, reference drift 0.0599, no reference-cap saturation,
+full replay, and 27.4 steps/s. The visual replay session now contains 132 runs
+(96 finished, 36 interrupted). No settings changed; the 30-second goal remains
+unmet.
+
 The critic cooldown completed by step 2,987,052. The actor is unlocked again,
 the replay buffer remains full, and throughput is about 27.4 steps/s. The live
 training process continues from the restored Champion actor with critics and
