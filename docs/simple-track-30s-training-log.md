@@ -1262,3 +1262,13 @@ continuation so far; it was not promoted. Free-driving episode 39 immediately
 before the screen was 33.550 s. Training advanced through step 3,926,996 in
 episode 41 with actor updates unlocked. Replay capture reached 51 entries at
 00:49:25 local. Port 8765 remained active; C: had 25.5 GB free and D: 144.3 GB.
+
+### Close clean follow-up screen, 23:51 UTC
+
+At step 3,927,827, the deterministic five-lap screen was 33.454 s median and
+best (5/5 finishes, zero contacts). It was 0.053 s slower than this
+continuation's 33.401 s best and 0.130 s slower than Champion. The candidate was
+not promoted. Free-driving episodes 41 and 42 were 33.864 s and 33.804 s. The
+learner continued to step 3,929,024 in episode 43 with actor updates unlocked;
+replay capture reached 55 entries at 00:51:52 local. Port 8765 remained active;
+C: had 25.5 GB free and D: 144.3 GB.
