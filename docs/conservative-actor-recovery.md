@@ -1609,3 +1609,10 @@ impulse 168.87). The gate restored Champion's actor and started another
 the run remained active with 508 cooldown updates left; the replay session had
 33 entries, 24 finished. Champion remains unchanged. No action mapping was
 altered.
+
+Following the latest cooldown, the actor recorded a clean five-lap 33.372 s at
+step 2,741,670 with zero contacts. This equals Champion but did not beat it, so
+the strict promotion gate kept Champion unchanged and counted weak check 1/5.
+Latest records the candidate at 33.372 s. Training continued near step
+2,743,906 with another evaluation pending; replay capture had grown to 40
+entries, 29 finished. No action mapping or reward settings changed.
