@@ -2391,3 +2391,11 @@ seconds, 0.201 seconds faster than the previous clean screen. It remains
 0.082 seconds slower than the recent 33.472-second best and 0.182 seconds
 slower than Champion, so it was not promoted. At step 3,139,048 training
 remained actor-unlocked with full replay at 27.60 steps/s.
+
+At step 3,140,223 the next clean five-lap candidate improved to 33.543
+seconds, 0.212 seconds faster than the previous clean screen. It is 0.071
+seconds slower than the best recent candidate and 0.171 seconds slower than
+Champion, so it was not promoted. It was retained as a better actor candidate.
+Training continued at step 3,140,666 with actor unlocked, full replay, and
+27.52 steps/s. Replay capture contained 310 episodes (223 finished, 87
+interrupted).
