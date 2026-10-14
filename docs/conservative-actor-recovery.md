@@ -1708,3 +1708,9 @@ replay size 167,135, and actor updates unlocked. The current visual replay
 session had 64 episode files; C: had 16.07 GB free. The contact regression has
 now repeated after the penalty was tripled, so stronger contact punishment by
 itself has not solved it. Champion remains protected at 33.372 s.
+
+Two further five-lap checks, at steps 2,803,478 and 2,805,734, were clean at
+33.640 s and 33.805 s. The live run continued at step 2,807,987 with 185,150
+replay transitions and actor updates unlocked. Visual replay session
+`b6c8fcf0739f410a90cdd22d0b252336` had 70 episode files; C: had 16.01 GB free.
+Neither candidate improved on Champion.
