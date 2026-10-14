@@ -2097,3 +2097,12 @@ promoted, and the clean scratch anchor was refreshed. At step 3,022,500 the
 actor remained unlocked, replay was full, throughput was 27.7 steps/s, and
 the visual replay inventory held 161 runs (118 finished, 43 interrupted).
 The 30-second target remains unmet; Champion is unchanged.
+
+Subsequent five-lap checks were clean at steps 3,023,391 (33.604s), 3,025,647
+(33.709s), 3,027,903 (33.522s), and 3,030,159 (33.438s). Each was slower
+than the 33.372-second Champion and was not promoted. The last candidate
+improved from the previous clean candidate (33.522 to 33.438), resetting the
+weaker-candidate streak; training continued without rollback. At step
+3,031,972 the actor was unlocked, replay was full, and throughput was 27.5
+steps/s. The visual replay index contains 173 runs (126 finished, 47
+interrupted). No training settings changed.
