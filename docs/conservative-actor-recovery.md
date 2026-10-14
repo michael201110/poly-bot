@@ -2219,3 +2219,10 @@ Champion and advanced the weaker-candidate count to 2 of 5. Training continued
 with actor unlocked and replay full; by step 3,071,716 throughput was 27.4
 steps/s. The visual replay index contains 224 runs (162 finished, 62
 interrupted). Champion remains 33.372 seconds.
+
+The next candidate, at step 3,072,863, passed five clean laps at 33.694
+seconds. It improved on the preceding clean candidate (33.801s), resetting the
+weaker-candidate streak, but remains 0.322 seconds slower than Champion and
+was not promoted. Training continues with actor unlocked and replay full; at
+step 3,073,317 throughput was 27.3 steps/s. The visual replay session remains
+at 226 runs (163 finished, 63 interrupted).
