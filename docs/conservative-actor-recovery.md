@@ -2507,3 +2507,10 @@ step 3,183,524 the trainer remained active with the 250,000-transition replay
 buffer full and throughput at 27.45 decisions/s. Visual capture contains 364
 episodes (261 finished, 103 interrupted), retaining the clean tie and the
 preceding rejected contact run.
+
+At step 3,185,103 the deterministic five-lap evaluation completed cleanly at
+33.786 seconds with zero barrier contacts. It was rejected as slower than the
+protected 33.372-second Champion; the weaker-actor streak increased to 2 of 5.
+Training remained live at step 3,185,756 with the replay buffer full and
+throughput at 27.42 decisions/s. Visual replay capture held 367 episodes (263
+finished, 104 interrupted), and capture continues for the active run.
