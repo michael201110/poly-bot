@@ -2342,3 +2342,11 @@ The next deterministic screen at step 3,122,223 finished five clean laps at
 33.732 seconds, slower than Champion and not promoted. Training continued with
 actor updates unlocked, replay full, and 27.92 steps/s at step 3,124,148. The
 visual replay index contains 287 episodes (208 finished, 79 interrupted).
+
+At step 3,124,479 the next five-lap evaluation improved to 33.569 seconds
+with zero contacts, a 0.163-second gain over the prior clean candidate. It
+remains 0.197 seconds slower than Champion, so it was not promoted; the
+trainer recorded it as actor pace improvement and continued from the cleaner
+candidate. At step 3,125,902 actor updates were unlocked, replay was full, and
+throughput was 27.84 steps/s. Visual replay capture contained 290 episodes
+(210 finished, 80 interrupted).
