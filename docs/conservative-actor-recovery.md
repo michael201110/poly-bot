@@ -1775,3 +1775,10 @@ The current visual replay session `b6c8fcf0739f410a90cdd22d0b252336` has 137
 indexed replay files: 99 finished and 38 interrupted. Every indexed replay
 file is present. Capture continues toward 100 finished runs. C: has 13.72 GB
 free. Training remains active; the 30-second objective remains unmet.
+
+Replay milestone update: capture has reached 100 finished runs in session
+`b6c8fcf0739f410a90cdd22d0b252336` (138 indexed files total: 100 finished,
+38 interrupted). The index has no missing files. Training remains active at
+step 2,863,699 with the 250,000-transition replay full; the latest clean
+five-lap evaluation at step 2,861,974 was 33.667 seconds. That is still behind
+the protected 33.372-second Champion. No checkpoint promotion occurred.
