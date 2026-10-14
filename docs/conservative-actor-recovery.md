@@ -2086,3 +2086,14 @@ weaker-actor screen count is 1 of 5. Training resumed with actor unlocked,
 replay full, and throughput about 27.5 steps/s by step 3,015,500. The visual
 replay inventory has 153 runs (112 finished, 41 interrupted). No action or
 reward settings were changed after the utilization review.
+
+The actor candidate later produced a 33.838-second screen at step 3,016,655
+with one contact at 99.23% progress (impulse 265.33). The deterministic
+five-lap evaluation repeated that contact on all five laps, so the contact
+gate restored Champion and started another 1,000-update critic cooldown;
+replay and critics were retained. After recovery, step 3,021,119 tied Champion
+at 33.372 seconds with five clean finishes and zero contacts. The tie was not
+promoted, and the clean scratch anchor was refreshed. At step 3,022,500 the
+actor remained unlocked, replay was full, throughput was 27.7 steps/s, and
+the visual replay inventory held 161 runs (118 finished, 43 interrupted).
+The 30-second target remains unmet; Champion is unchanged.
