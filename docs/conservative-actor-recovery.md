@@ -1578,3 +1578,11 @@ the absolute 0.965-0.975 band. This confirms that 0.97 is not an action-space
 ceiling; exact endpoints are already used where the actor selects them. The
 sample did not use full negative longitudinal braking, but the action path has
 no clamp at that end either. No action mapping was changed.
+
+The next clean deterministic five-lap evaluation, at step 2,728,182, was
+33.674 s with zero contacts. It was slower than the preceding 33.578 s clean
+candidate, so the weak-evaluation streak is 1/5; the actor remains unlocked and
+continues training. Latest records 33.674 s, Champion remains 33.372 s, and the
+active replay session had 24 entries, 17 finished. The GUI run was still active
+near step 2,730,411 with another evaluation pending. No action changes were
+made.
