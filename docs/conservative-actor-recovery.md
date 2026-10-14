@@ -1782,3 +1782,30 @@ Replay milestone update: capture has reached 100 finished runs in session
 step 2,863,699 with the 250,000-transition replay full; the latest clean
 five-lap evaluation at step 2,861,974 was 33.667 seconds. That is still behind
 the protected 33.372-second Champion. No checkpoint promotion occurred.
+
+## Actor drift expansion experiment on 2026-10-14
+
+The previous run reached the 0.04 cumulative actor reference drift ceiling with
+zero executed actor movement. I stopped cleanly at step 2,866,486 after its
+33.930-second, one-contact-per-lap evaluation was rejected. I resumed Latest
+with the selected actor settings, changing only the cumulative drift limit to
+0.08. Actor LR stayed 0.000002, per-update drift stayed 0.0025, and the
+continuation log confirms `fresh_replay: false` with the 250,000-transition
+replay retained. The saved checkpoint at step 2,876,486 records the 0.08 limit.
+
+The larger allowance let the actor move beyond the prior ceiling (observed
+cumulative drift 0.071). The first five-lap candidate, at step 2,870,950, was
+33.505 seconds but made one low-impulse barrier contact per lap at 98.806%
+progress (maximum impulse 54.35). The gate rejected it and restored Champion,
+keeping critics and replay. A clean check at step 2,875,446 tied Champion at
+33.372 seconds. The next candidate, at step 2,877,702, was 33.636 seconds with
+the same one-contact-per-lap finish-area deviation; it was also rejected and
+rolled back. After recovery, a clean candidate at step 2,882,166 ran 33.709
+seconds, still slower than Champion. Training remains active at step 2,882,768
+with replay full; the 30-second goal remains unmet. The wider trust region
+removes the zero-update stall, but so far it has exposed a repeatable contact
+regression rather than a pace gain. I left the lap and contact gates unchanged.
+
+The new training replay session `2ff6eb24e8ee4416b76656720dd067fc` contains 18
+files: 14 finished and 4 interrupted, with no missing indexed files. Together
+with the earlier session, more than 100 complete swarm replays are available.
