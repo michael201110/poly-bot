@@ -988,6 +988,16 @@ updates remaining, the actor was locked, and throughput was 27.1 steps/s.
 The visual replay inventory contains 191 runs (138 finished, 53 interrupted).
 Champion remains protected at 33.372 seconds.
 
+After that cooldown, the step-3,048,127 candidate ran at 33.658 seconds and
+again contacted the barrier twice, now at 99.09% and 99.23% progress. All five
+deterministic evaluations repeated both contacts (10 total), triggering a
+second contact rollback and another 1,000-update critic cooldown with replay
+preserved. After recovery, step 3,052,607 passed five clean laps at 33.629s;
+it was rejected as slower than Champion, restarting the weaker-candidate
+count at 1 of 5. At step 3,054,189 the actor was unlocked, replay full, and
+throughput 27.6 steps/s. Visual replay capture contains 201 runs (146
+finished, 55 interrupted). Champion remains unchanged at 33.372s.
+
 The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
 one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
 Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
