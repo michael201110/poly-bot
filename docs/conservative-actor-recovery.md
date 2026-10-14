@@ -1286,3 +1286,8 @@ The candidate at step 2,530,454 passed five deterministic laps cleanly at
 0.115 seconds slower than the protected 33.372-second Champion, so it was not
 promoted. Actor updates resumed; at step 2,531,439 the trust-window drift was
 0.03987 with update norm 0.000095. The replay archive contained 128 attempts.
+
+The next deterministic five-lap check at step 2,532,710 was clean at
+33.537 seconds, but 0.165 seconds slower than Champion; it was rejected and
+the clean anchor refreshed. At step 2,534,035 training was still active. The
+replay archive contained 131 attempts; no Champion replacement occurred.
