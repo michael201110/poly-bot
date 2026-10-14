@@ -887,3 +887,12 @@ and 33.324 s Champion; it was preserved at
 training continued on PID 17144 and port 8765 at step 3,813,749 in episode 156
 (90.9% progress), with cooldown complete. The active visual replay index held
 215 entries. C: had 28.5 GB free and D: had 144.3 GB.
+
+### Clean slower candidate, 22:42 local
+
+The five-lap check at step 3,814,960 evaluated at 33.756 s (5/5 finishes,
+zero contacts), slower than Champion, so it was rejected and preserved at
+`models/simple-track/grtqc/checkpoints/step-3814960-rejected/`. At 22:43,
+training remained active on PID 17144 and port 8765 at step 3,816,053 in
+episode 158 (96.9% progress), with cooldown complete. The active replay index
+held 218 entries. C: had 28.4 GB free and D: had 144.3 GB.
