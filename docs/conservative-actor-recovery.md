@@ -1524,3 +1524,39 @@ learning rates, drift limits, critics, replay contents, or Champion weights
 were changed. The updated runner was syntax-compiled; the GUI is being
 restarted from saved Latest with the same training profile and one-million-step
 budget.
+
+### Continued live run and action-duty question
+
+The restarted GUI run began from Latest at step 2,711,286 with the saved
+250,000-transition replay, CUDA/T500, frame skip 30, full-track training, and a
+one-million-step budget. Its clean five-lap candidate screens were 33.574 s at
+step 2,712,422, 33.869 s at 2,714,678, and 33.726 s at 2,716,934. The 33.726 s
+result was clean (5/5 finishes, zero barrier contacts), improved on the prior
+clean candidate by 0.143 s, and reset the weak-check streak. All remain slower
+than protected Champion at 33.372 s, so none was promoted. A training episode
+at step 2,714,675 had one barrier contact at 99.3% progress; the clean
+deterministic evaluation independently had zero contacts.
+
+The action review used the newest captured training replay, not a display-only
+guess: its raw policy output reached exact ±1.0 and its applied control reached
+full duty. A sampled 0.9698 steering request became 29/30 steering ticks for
+that 30-tick decision block; this is the intended near-full PWM demand, not a
+bridge clamp. The PWM accumulator carries its fractional remainder across
+blocks. Since the actor sometimes commands exact full input already, and no
+controlled lap comparison shows that converting every near-full action to full
+is faster or safe, the action mapping was left unchanged. Existing transition
+replay and critics therefore retain consistent action semantics.
+
+Replay capture remains enabled. Session
+`632029087a9d4d7d8e0ed493fe9e8f61` had nine indexed entries at the latest check,
+including six finished training episodes at that check. The subsequent clean
+five-lap result at step 2,719,190 was 33.848 s with five barrier contacts, all
+at 98.735% progress (peak impulse 149.67). The candidate was rejected and its
+actor rolled back to protected Champion; critics and replay were preserved and
+the configured 1,000 critic-update recovery cooldown began. This contact result
+is direct evidence against snapping near-full actions to full duty: it could
+intensify the barrier regression. The rollback is active training recovery,
+not an interruption. At step 2,719,959 the GUI was still training with 808
+recovery updates remaining. The visual replay index had ten entries, seven
+finished. Champion remains 33.372 s; no action mapping, reward, profile, or
+controller changes were made.
