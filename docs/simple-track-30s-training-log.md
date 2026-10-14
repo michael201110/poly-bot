@@ -58,11 +58,13 @@ contacts. Both remain slower than the 33.495 s best clean candidate, so no
 Champion changed. At step 3,611,536, a five-lap evaluation regressed to
 33.736 s; at step 3,613,792 it recovered to 33.509 s (5/5 clean, zero
 contacts), just 0.014 s slower than the best candidate. Neither replaced
-Champion. The replay archive is complete: 91 of the 93 existing replay
-directories are on D: with junctions at their original paths; the current and
-previous runs remain local on C:. At the latest check, training was connected
-on port 8765 at step 3,614,393, reporting 11.4 steps/s. The current replay run
-contains 22 episodes. C: had about 30.6 GB free and D: had about 144.3 GB free.
+Champion. At step 3,616,048, a clean five-lap evaluation was 33.602 s, slower
+than the best candidate, and was rejected. The replay archive is complete: 91
+of the 93 existing replay directories are on D: with junctions at their
+original paths; the current and previous runs remain local on C:. At the
+latest check, training was connected on port 8765 at step 3,617,317, reporting
+11.8 steps/s. The current replay run contains 25 episodes. C: had about 30.6
+GB free and D: had about 144.3 GB free.
 
 ## Racing-line update behavior
 
