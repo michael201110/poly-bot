@@ -2567,3 +2567,12 @@ than the 33.526-second best candidate and 0.226 seconds slower than Champion;
 the weaker-actor streak is 1 of 5. Training remained live at step 3,202,152
 with full replay at 27.23 decisions/s. Visual capture contains 388 episodes
 (278 finished, 110 interrupted).
+
+At step 3,203,103 the five-lap evaluation candidate finished in 33.828
+seconds but registered five barrier-contact steps on each lap. Contacts
+recurred at 93.40%, 98.81%, 99.02%, 99.09%, and 99.44% progress. The contact
+gate rejected it and restored the 33.372-second Champion actor; critic replay
+was preserved and a 1,000-update critic cooldown began at actor LR 2e-6. At
+step 3,204,412 training continued with replay full at 27.21 decisions/s.
+Visual capture contains 391 episodes (280 finished, 111 interrupted),
+including the rejected contact regression for later analysis.
