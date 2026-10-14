@@ -1319,3 +1319,9 @@ barrier contact on each lap at 98.95% progress (peak impulse 87.96). The contact
 gate restored Champion; at step 2,546,885 the trainer remained active in critic
 recovery with 833 updates remaining. The visual replay archive contained 146
 attempts.
+
+At step 2,550,694 the next five-lap evaluation tied Champion at 33.372 seconds
+with zero contacts. It was not promoted; the protected Champion remains intact.
+At step 2,552,379 training remained active, but the actor had reached its 0.04
+reference-drift boundary with zero executed update norm. The replay archive
+contained 152 attempts.
