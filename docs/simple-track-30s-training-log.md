@@ -373,3 +373,21 @@ screen, although it remains 0.160 s slower than the protected Champion. At
 step 3,698,501, episode 54. The active replay index still held 74 entries
 while that next episode was being recorded; C: had 29.8 GB free and D: had
 144.3 GB. No checkpoint was promoted.
+
+## 2026-10-14 continued training after 33.484 evaluation
+
+The learner continued from step 3,698,096 without changing the protected
+Champion. At 20:03 local, PID 17144 still owned WebSocket port 8765 and had
+reached step 3,700,339 (episode 55). Episode 54 finished at 33.602 s and
+episode 55 at 33.640 s. The latest single-episode screen was 33.692 s, clean
+with no barrier contact; it is slower than the saved 33.484 s five-lap
+checkpoint, so that weaker actor remains only a training proposal. The replay
+index reached 77 entries, including the finished episode 54 and newer capture
+entries; visual replay recording continued. The latest protected Champion
+remains 33.324 s. Disk headroom remained C: 29.8 GB and D: 144.3 GB.
+
+The GRTQC runner's current scratch policy saves rejected pace proposals as
+checkpoints and leaves the candidate training, while Champion promotion
+requires a better reliable evaluation. It recovers the actor after five weak
+evaluations (this profile's `recovery_weak_evaluations` setting), so a single
+33.692 s screening result does not trigger a rollback or risk Champion.
