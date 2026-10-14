@@ -969,3 +969,12 @@ contact steps, but its max barrier impulse was 49.14. The candidate was
 rejected as slower than the protected 33.324 s Champion. Training resumed on
 PID 17144; at 23:11:50 it had reached step 3,838,376 in episode 178. The visual
 replay index held 243 episodes. C: had 28.2 GB free and D: had 144.3 GB.
+
+### Repeated finish-line contact, 23:15 local
+
+The actor screen at step 3,839,600 was 33.726 s. Five-lap verification
+finished 5/5 at the same median pace, but each lap contacted the barrier at
+98.95% progress (five contacts total; peak impulse 81.80). The candidate was
+rejected against the 33.324 s Champion. At 23:15:38, PID 17144 had resumed
+training at step 3,841,137. The visual replay index held 247 episodes. C: had
+28.2 GB free and D: had 144.3 GB.
