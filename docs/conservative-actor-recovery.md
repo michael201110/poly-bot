@@ -1999,6 +1999,12 @@ locked, replay was full, and throughput was 27.2 steps/s. The visual replay
 session contains 127 runs (92 finished, 35 interrupted). Champion remains
 protected at 33.372 seconds.
 
+The critic recovery completed by step 2,996,448. Actor updates were unlocked
+again, reference drift was 0.0025, replay remained full, and throughput was
+27.6 steps/s. The visual replay inventory now has 131 indexed runs (95
+finished, 36 interrupted); the training run continues from the protected
+Champion reference.
+
 The critic cooldown completed by step 2,987,052. The actor is unlocked again,
 the replay buffer remains full, and throughput is about 27.4 steps/s. The live
 training process continues from the restored Champion actor with critics and
