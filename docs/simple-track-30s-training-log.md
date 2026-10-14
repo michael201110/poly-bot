@@ -1186,3 +1186,16 @@ continued to step 3,910,504 in episode 26 with actor updates unlocked. The
 visual replay archive had 33 entries at 00:31:03 local. No champion or training
 configuration change was made. Port 8765 stayed active; C: had 25.7 GB free and
 D: 144.3 GB.
+
+### Actor update cap telemetry, 23:33 UTC
+
+I inspected the last 67 actor-update progress records at or after step 3,910,000.
+Mean proposed action drift was 0.00898 while mean executed drift was 0.00748;
+maximum executed drift was 0.00750, exactly the active per-update cap. Maximum
+cumulative reference drift in this sample was 0.1594 against the 0.5 allowance.
+This is direct evidence that the local per-update cap is constraining actor
+movement while the cumulative budget is not. It is a plausible contributor to
+slow line adaptation, not proof that relaxing it will improve lap time: the
+higher 0.01 setting previously coincided with contact regressions. I left the
+live run and its safeguards unchanged. Latest deterministic pace remains
+33.749 s clean, with Champion protected at 33.324 s.
