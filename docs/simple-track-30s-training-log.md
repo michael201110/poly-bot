@@ -222,3 +222,14 @@ restored, and a second 1,000-update critic recovery began with replay
 preserved. This contact location differs from the earlier rollback's
 0.99162-0.99233 progress region. The best clean candidate remains 33.401 s;
 Champion remains 33.324 s. Training and visual replay capture continue.
+
+
+After the second contact rollback, actor recovery completed and training
+returned to the protected Champion. The first clean five-lap candidate after
+that recovery was 33.736 s at step 3,668,880. Continued actor updates then
+improved the clean candidate to 33.615 s at step 3,671,136 (5/5 finishes,
+zero contacts), a 0.121 s gain. This is still 0.291 s slower than Champion
+and did not replace it. `latest` saved the evaluation at 18:29:02 UTC. At step
+3,672,333 the actor was unlocked with 51 Adam steps, accepted action drift
+0.004998 under the 0.005 cap, and cumulative drift 0.0943 of 0.5. The active
+visual replay run had 42 indexed entries and continued recording.
