@@ -1934,3 +1934,11 @@ Champion-level pace, not a new best. Training remained active at step 2,967,230
 with actor updates unlocked and rollback count zero. The current visual replay
 session contains 93 indexed runs: 68 finished and 25 interrupted; all prior
 swarm replay sessions remain preserved.
+
+The next five-lap screen, at step 2,967,231, was 33.667 seconds with no
+barrier contacts. Its candidate-rejected event left Champion unchanged and
+continued training. At step 2,968,781, the run remained active at about 27
+steps/s, the replay buffer was full at 250,000 transitions, actor updates were
+unlocked, and reference drift was 0.0596 under its 0.08 limit. The current
+visual replay session has 96 indexed runs: 70 finished and 26 interrupted.
+No training settings were changed; the 30-second target remains unmet.
