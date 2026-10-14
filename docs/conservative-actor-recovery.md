@@ -1054,3 +1054,16 @@ show no 3% action clamp; the average per-lap discrepancy is below 0.25
 percentage points. No action remapping was applied, since forcing every
 near-bound steering value to exactly 1 could increase overshoot without
 evidence of a pace gain.
+
+After cooldown, the step-2,433,862 candidate completed a clean five-lap
+confirmation at 33.372 seconds (5/5, zero contacts). It tied rather than beat
+Champion, so it was not promoted; the clean reference was refreshed. At step
+2,433,983 the actor was unlocked and moving within the new reference window
+(0.00499 cumulative action drift of the configured 0.04). Replay capture for
+the restarted run remained active with 10 indexed attempts.
+
+The following five-lap check at step 2,436,118 was clean at 33.694 seconds,
+0.322 seconds slower than Champion. It was rejected as weak pace, and the clean
+reference was refreshed. At step 2,436,744 the actor remained unlocked and was
+updating (0.02499 cumulative action drift); the replay session contained 13
+indexed attempts and recording continued.
