@@ -1141,3 +1141,13 @@ step 2,463,239 actor updates had resumed (update norm 0.000227, cumulative
 action drift 0.00490), with training still active. The visual replay archive
 contained 46 attempts. This is a clean pace screen, not a verified Champion
 improvement; the target remains 30 seconds.
+
+After the clean 33.597-second evaluation, the next five-lap check at step
+2,465,366 was 33.627 seconds and recorded one barrier contact on every lap at
+98.88% progress (peak impulse 153.45). Although closer in pace than the last
+contacting candidate, it was slower than Champion and failed the zero-contact
+gate; Champion was restored. At step 2,465,691 critic recovery had 919 updates
+remaining and actor changes were locked. The visual replay archive contained
+49 attempts. The repeating late-lap contact is now the main observed failure
+mode; no steering/throttle remapping or reward change was made while the run's
+critic and replay remain trained on the current reward definition.
