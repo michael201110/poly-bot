@@ -2428,3 +2428,9 @@ with all laps clean and zero contacts. It was rejected as equal; Champion
 remained protected. The critic cooldown completed and training resumed with
 actor updates unlocked, full replay, and 27.66 steps/s at step 3,153,726.
 Replay capture contained 326 episodes (235 finished, 91 interrupted).
+
+At step 3,155,903 the next five-lap evaluation finished cleanly at 33.794
+seconds, zero contacts. It was slower than Champion and the recent best, so
+it was rejected without rollback. Training continued with actor updates
+unlocked, full replay, and 27.67 steps/s at step 3,156,594. Visual replay
+capture contained 329 episodes (237 finished, 92 interrupted).
