@@ -1166,3 +1166,10 @@ rejected without rollback and the clean reference was refreshed. At step
 2,474,479 the actor was again updating (norm 0.000093, cumulative drift
 0.00750), and the GUI trainer remained active. The replay archive contained 59
 attempts. Champion remains 33.372 seconds; the target remains 30 seconds.
+
+At step 2,476,550 the next five-lap check was clean (33.774 seconds, zero
+contacts), but slower than both Champion and the prior clean check; it was
+rejected without rollback and refreshed the clean reference. The actor resumed
+updates by step 2,476,640 (update norm 0.000138, cumulative drift 0.00248),
+with the trainer active and 62 replay attempts archived. The protected
+33.372-second Champion remains unchanged.
