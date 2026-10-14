@@ -60,3 +60,5 @@ At step 3,339,600 the actor passed a clean five-lap check at 33.551 s with zero 
 At step 3,341,856, the five-lap evaluation was 33.641 s with zero barrier contacts. It was rejected against the protected Champion; the weak-actor counter is 1/5 and Latest continues training. The active training run's replay bundle currently has 84 episodes (59 finished, 25 interrupted); the broader Simple Track replay library already contains thousands of finished runs for later swarm selection.
 
 At step 3,344,112 another five-lap evaluation completed at 33.643 s with zero contacts. It was rejected against Champion and advanced the weak-actor counter to 2/5; training continues. The active replay bundle now contains 87 episodes (61 finished, 26 interrupted).
+
+At step 3,346,368 the actor achieved a clean five-lap median of 33.399 s with zero contacts. It is 0.054 s slower than Champion, so it was not promoted, but the learner classified it as a clean local pace improvement and reset the weak-actor counter. Training continued. The active replay bundle contains 90 episodes (63 finished, 27 interrupted).
