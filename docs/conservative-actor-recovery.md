@@ -2050,3 +2050,32 @@ continued at step 2,991,324 with actor updates active, reference drift 0.0549,
 no reference-cap saturation, full replay, and 27.2 steps/s. The current visual
 replay inventory is 123 runs (89 finished, 34 interrupted). No settings were
 changed, and Champion remains 33.372 seconds.
+
+At step 3,005,423, the clean screen tied Champion at 33.372 seconds and was not
+promoted. The next screen at step 3,007,679 was 33.440 seconds, also clean and
+rejected. Training continued past step 3,008,356 with actor updates unlocked,
+full replay, and about 27.3 steps/s. A later recorded training lap at step
+3,008,800 took 33.627 seconds; this is a training replay, not a verified
+five-lap Champion evaluation. Champion remains 33.372 seconds, 3.372 seconds
+off the 30-second target.
+
+Reviewed the action telemetry after the concern that the policy often stops at
+0.97. In the replay format, `actions` and HUD `model_output` contain the raw
+continuous policy request, while HUD `applied` contains the average of the
+digital PWM controls over the ticks executed in that decision (nominally 30,
+but possibly fewer at an episode boundary). For example, replay
+`episode-000147` records the same raw action in both places, but its final
+steering request of -0.2399 is applied as -0.2222, and the throttle request
+of 0.3399 is applied as 0.3333. Thus values such as 0.97 can be a quantized
+applied-control average, and do not imply that the
+policy output was capped below 1. In recent finished training replays, raw
+steering reached both -1 and +1, longitudinal action reached +1, and braking
+reached -0.972 in the recorded replay set; the policy can request the full
+steering and throttle ranges and nearly full brake. This does not show
+that full input is optimal at every state, so no action scaling or reward
+change was made. Visual replay capture continues, with 149 indexed episodes
+at the latest inspection. The 33.664-second screen at step 3,009,935 had one
+late contact (progress 99.02%, impulse 68.43); it was rejected and started a
+1,000-update critic cooldown. Training remains active; at step 3,010,393 the
+actor was locked with 886 recovery updates remaining. Champion remains
+protected at 33.372 seconds.
