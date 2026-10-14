@@ -1238,3 +1238,10 @@ contact gate restored Champion; at step 2,505,575 the trainer was active in
 critic recovery with 492 updates remaining, and the replay archive contained
 98 attempts. The repeated finish-area contact persists despite sub-0.04 actor
 updates; no candidate was promoted.
+
+At step 2,508,006 the next five-lap candidate measured 33.602 seconds but
+recorded two finish-area barrier contacts on every lap (99.23% and 99.30%
+progress; peak impulse 341.54). The contact gate restored Champion. At step
+2,505,575, 492 critic recovery updates remained; training and replay capture
+continued with the archive at 102 attempts. This candidate did not improve the
+33.372-second clean Champion.
