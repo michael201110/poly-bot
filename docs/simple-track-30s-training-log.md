@@ -55,12 +55,14 @@ contacts, slower than the 33.495 s best clean candidate, and was rejected. A
 later clean five-lap check improved to 33.623 s with zero contacts. At step
 3,609,296, another clean five-lap check improved to 33.582 s with zero
 contacts. Both remain slower than the 33.495 s best clean candidate, so no
-Champion changed. The replay archive is complete: 91 of the 93 existing replay
+Champion changed. At step 3,611,536, a five-lap evaluation regressed to
+33.736 s; at step 3,613,792 it recovered to 33.509 s (5/5 clean, zero
+contacts), just 0.014 s slower than the best candidate. Neither replaced
+Champion. The replay archive is complete: 91 of the 93 existing replay
 directories are on D: with junctions at their original paths; the current and
-previous active runs remain local on C:. At the latest check, training was
-connected on port 8765 at step 3,610,409, reporting 11.5 steps/s. The current
-replay run contains 17 episodes. C: had about 30.0 GB free and D: had about
-144.3 GB free.
+previous runs remain local on C:. At the latest check, training was connected
+on port 8765 at step 3,614,393, reporting 11.4 steps/s. The current replay run
+contains 22 episodes. C: had about 30.6 GB free and D: had about 144.3 GB free.
 
 ## Racing-line update behavior
 
@@ -71,13 +73,12 @@ current Champion, and avoid a regression in barrier-contact rate. When a line
 change is eligible, the trainer runs another five-lap evaluation using the
 candidate line before saving it. Thus the line used for guidance can remain
 unchanged while the actor explores; the actor's actions can still take a
-different path. Current actor settings are deliberately conservative
-(`actor_learning_rate=5e-6`, per-update action limit `0.00125`, cumulative
-reference drift limit `0.05`), which also slows large corner-line changes.
-These safeguards were left unchanged during the active run. The effect is a
-real exploration bottleneck: the line is downstream of a faster, clean policy,
-and the actor is constrained to small changes around its current reference.
-This makes large corner-line changes slow to discover. Any future relaxation
-should be made between runs and retain the five-lap verification and protected
-Champion gate; changing the loaded actor settings mid-run would not reliably
-alter the active model anyway.
+different path. At step 3,613,403 the actor proposed action drift of `0.0233`,
+but executed drift was `0.001245`, close to its `0.00125` per-update limit;
+cumulative reference drift was `0.0361` of the `0.05` limit. The live process
+loaded its configuration at startup and continues with those original limits.
+For the next continuation, the profile on disk now allows a `0.0025`
+per-update action change and `0.075` cumulative reference drift. Actor learning
+rate remains `5e-6`; five-lap evaluation and protected Champion gates are
+unchanged. This profile edit does not alter the active process and takes effect
+when a later process loads the profile.
