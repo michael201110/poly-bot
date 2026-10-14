@@ -1973,3 +1973,11 @@ promotion and the weaker-actor counter is 2 of 5. At step 2,978,840, training
 was active at 26.9 steps/s with actor updates unlocked, reference drift 0.0112,
 and the replay buffer full. The replay session has 109 indexed runs (79
 finished, 30 interrupted). No settings changed; Champion remains protected.
+
+The following screen at step 2,980,735 was 33.752 seconds with no contacts.
+It was rejected as slower than Champion, bringing the weaker-actor counter to
+3 of 5. Training continued at step 2,981,924 with the actor unlocked, reference
+drift 0.0448, the replay buffer full, and about 27.0 steps/s. The current
+visual replay inventory is 112 runs (81 finished, 31 interrupted). The
+additional one-million-step run has used about 92,000 steps; no settings were
+changed, and Champion remains 33.372 seconds.
