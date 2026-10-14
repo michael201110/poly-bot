@@ -160,3 +160,5 @@ The next five-lap check at step 3,483,488 was 33.626 s with zero contacts. It im
 After the 33.626 s check, the next five-lap evaluation at step 3,485,744 improved to 33.478 s with zero contacts. It is now the best clean result since the rollback, but remains 0.154 s slower than the protected Champion and was not promoted. Training continued to step 3,486,866; replay capture reached 263 episodes (188 finished, 75 interrupted).
 
 The next check at step 3,488,000 was 33.738 s over five clean finishes. It is slower than the 33.478 s local best, so it was rejected; the weak-actor counter is 1/5. Training continued to step 3,490,177 at about 25.6 decisions/s, with 266 saved replays (190 finished, 76 interrupted).
+
+At step 3,490,240 the next five-lap evaluation was 33.723 s with zero contacts. It edged the previous 33.738 s check, but was 0.245 s slower than the 33.478 s post-rollback local best and 0.399 s slower than Champion. It was rejected and the learner reset its weak-actor counter as a small local gain. Training continued to step 3,490,645 at about 25.4 decisions/s; replay capture has 267 episodes (191 finished, 76 interrupted).
