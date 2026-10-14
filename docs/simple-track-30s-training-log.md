@@ -960,3 +960,12 @@ protected Champion, and was saved at
 training remained live on PID 17144 and port 8765 at step 3,836,213 in episode
 176 (99.9% progress), with cooldown complete. The active replay index held 241
 entries. C: had 28.2 GB free and D: had 144.3 GB.
+
+### Slower full-track evaluation, 23:11 local
+
+At step 3,837,344, the actor screen and five-lap deterministic verification
+both measured 33.716 s (5/5 finishes). The evaluation reported zero barrier
+contact steps, but its max barrier impulse was 49.14. The candidate was
+rejected as slower than the protected 33.324 s Champion. Training resumed on
+PID 17144; at 23:11:50 it had reached step 3,838,376 in episode 178. The visual
+replay index held 243 episodes. C: had 28.2 GB free and D: had 144.3 GB.
