@@ -1212,3 +1212,14 @@ to the more exploratory actor and that a faster one-off candidate is not yet a
 safe verified pace improvement. Replay capture remains on; the archive held 35
 entries at the previous index refresh. Port 8765 remained active and C: had
 25.7 GB free.
+
+### Repeatable clean Champion match after contact recovery, 23:38 UTC
+
+After recovery from the step-3,912,083 contact regression, the next
+five-lap screen at step 3,916,547 matched Champion at 33.324 s (5/5 finishes,
+zero barrier contacts). It was retained as a clean anchor, not promoted because
+it tied the Champion. The preceding free-driving lap was slower at 33.908 s,
+showing why deterministic screening remains necessary. Training continued in
+episode 33 through step 3,918,124 with actor updates unlocked. The replay index
+had 39 entries at 00:37:07 local. Port 8765 remained active; C: had 25.6 GB free
+and D: 144.3 GB. The 30-second target remains open.
