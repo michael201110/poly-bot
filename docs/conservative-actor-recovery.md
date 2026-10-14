@@ -2399,3 +2399,11 @@ Champion, so it was not promoted. It was retained as a better actor candidate.
 Training continued at step 3,140,666 with actor unlocked, full replay, and
 27.52 steps/s. Replay capture contained 310 episodes (223 finished, 87
 interrupted).
+
+At step 3,142,463 the five-lap candidate measured 33.709 seconds and repeated
+one barrier contact at 98.59% progress on every lap (5 contact steps total;
+peak impulse 214.2). The contact gate restored Champion and preserved replay,
+starting a 1,000-update critic cooldown. At step 3,143,041 the actor was
+locked with 856 cooldown updates remaining, replay was full, and throughput
+was 27.50 steps/s. Replay capture contained 313 episodes (225 finished, 88
+interrupted).
