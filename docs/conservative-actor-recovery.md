@@ -2598,3 +2598,11 @@ post-rollback 33.848-second evaluation and was marked as an actor pace gain;
 it remains 0.157 seconds slower than the recent 33.526-second best candidate.
 Training continued at step 3,214,055 with full replay at 27.28 decisions/s.
 Visual capture contains 401 episodes (288 finished, 113 interrupted).
+
+At step 3,214,319 the five-lap candidate finished at 33.652 seconds but
+contacted the barrier once per lap at 99.37% progress. The contact gate
+rejected it against the zero-contact Champion and restored the Champion actor;
+critic replay was preserved and another 1,000-update cooldown began at actor
+LR 2e-6. At step 3,215,808 training continued with replay full at 27.23
+decisions/s. Visual capture contains 404 episodes (290 finished, 114
+interrupted), including this near-finish contact candidate.
