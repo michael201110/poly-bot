@@ -1180,3 +1180,9 @@ contact gate rejected it and restored Champion despite the 0.132-second pace
 gain; critic recovery restarted, with 977 updates remaining at step 2,478,899.
 The replay archive had 65 attempts. This is a concrete speed/contact tradeoff
 at the finish: the faster candidate is not clean enough for promotion.
+
+The post-recovery five-lap check at step 2,483,270 tied Champion at 33.372
+seconds with zero contacts. It was not promoted because it did not beat the
+protected model; the clean anchor was refreshed and training continued. At
+step 2,483,271 the trainer remained active, and the replay archive contained
+70 attempts. The target remains 30 seconds.
