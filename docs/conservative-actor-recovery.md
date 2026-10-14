@@ -1847,3 +1847,18 @@ Training is active at step 2,917,752 with 75,030 replay transitions, actor
 updates unlocked, and cumulative reference drift 0.0792 under the 0.08 limit.
 The refilled visual session now has 30 files (24 finished, 6 interrupted), all
 indexed files present. The existing finished swarm inventory remains intact.
+
+Post-refill follow-up: clean checks at steps 2,904,303 (33.672 s), 2,911,039
+(33.572 s), 2,915,551 (33.473 s), 2,917,807 (33.495 s), and 2,920,063
+(33.767 s) remain slower than Champion. The 33.435-second candidate at step
+2,906,559 had five low-impulse contacts and was rejected. The latest evaluation,
+at step 2,922,319, was 33.668 seconds with ten barrier-contact steps across five
+laps: two at 99.09% and 99.23% progress on each lap, peak impulse 514.95. It was
+rejected; Champion's actor was restored, with 429 critic recovery updates left
+at step 2,924,605. The new reward has not yet stopped the repeated finish-area
+contact, so the selected -9,000 penalty remains an unproven change. Replay size
+is 102,079 and training remains active.
+
+The new visual session now has 41 files (32 finished, 9 interrupted), all
+present. Earlier complete swarm replay sessions are retained. Champion remains
+33.372 seconds, and the 30-second goal remains unmet.
