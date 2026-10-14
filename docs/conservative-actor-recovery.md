@@ -2487,3 +2487,14 @@ When diagnosing a displayed near-full input, read the `model_output` field to se
 the actor's requested continuous value; `applied` is the PWM tick average. The
 latter can differ because the websocket profile advances 30 physics ticks per
 decision.
+
+At step 3,178,383 the candidate screened at 33.384 seconds, but contacted the
+barrier once at 98.23% progress with a 1,039.5 impulse. The full deterministic
+five-lap evaluation repeated that contact on all five laps (five contact steps
+in total). The contact gate rejected the candidate despite its 0.124-second
+improvement over the preceding 33.508-second screen. The recovery mechanism
+restored the protected 33.372-second Champion actor, retained critic replay,
+and began the configured 1,000-update critic cooldown at actor learning rate
+2e-6. At step 3,180,912 the resumed run was progressing at 27.46 steps/s with
+the replay buffer full. Visual capture had 361 episodes (259 finished, 102
+interrupted), including the rejected contact run for later inspection.
