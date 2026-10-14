@@ -947,6 +947,13 @@ per-update action cap, actor/critic rates, replay, rewards, exploration,
 evaluation frequency, five-lap promotion rule, and contact rollback remain
 unchanged.
 
+The next five-lap evaluation, at step 3,034,655, was clean at 33.597 seconds
+and was rejected as slower than Champion; the weaker-actor counter advanced
+to 2 of 5. Training continued with actor unlocked and replay full. By step
+3,036,684, cumulative action drift since the latest clean anchor was 0.0796
+against the configured 0.08 trust limit, with no saturation flag. Replay
+capture contains 179 runs (130 finished, 49 interrupted). No settings changed.
+
 The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
 one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
 Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
