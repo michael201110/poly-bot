@@ -1155,3 +1155,14 @@ matched the protected 33.324 s Champion. Training continued to step 3,902,160
 with actor updates unlocked and port 8765 still active. The resumed visual
 replay archive had 24 entries at 00:24:33 local. C: had 25.8 GB free and D:
 144.3 GB. The 30-second target remains unverified.
+
+### Repeated late-track contact after clean Champion match
+
+The next actor proposal, screened at step 3,903,091, completed all five laps at
+33.747 s median but contacted the barrier once on every lap (five contact steps,
+maximum impulse 67.11), each at 98.6637% progress. The contact gate rejected it
+and automatically started another recovery. At step 3,904,444, the run was
+still advancing with 662 recovery updates remaining and the actor locked. This
+matches the recurring near-finish contact pattern seen in earlier proposals;
+the candidate was not promoted. The replay archive had 26 entries at 00:27:05
+local. Port 8765 remained live; C: had 25.8 GB free and D: 144.3 GB.
