@@ -1586,3 +1586,12 @@ continues training. Latest records 33.674 s, Champion remains 33.372 s, and the
 active replay session had 24 entries, 17 finished. The GUI run was still active
 near step 2,730,411 with another evaluation pending. No action changes were
 made.
+
+That evaluation at step 2,730,438 completed at 33.745 s but contacted a barrier
+once on each of the five laps, all at 99.020% progress (peak impulse 145.63).
+The contact gate rejected the candidate and restored Champion's actor while
+preserving critics and replay; a new 1,000-update critic cooldown began. At
+step 2,731,112 the GUI was still training with 832 cooldown updates remaining.
+The replay session had 26 entries, 19 finished. This repeats the near-finish
+contact regression and further argues against increasing near-max control
+demand. Champion remains clean at 33.372 s; no action mapping was changed.
