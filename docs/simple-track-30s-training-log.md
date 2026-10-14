@@ -798,3 +798,14 @@ automatic recovery restored Champion and preserved critic replay. At 22:05,
 PID 17144 still owned port 8765 and had resumed at step 3,787,041 in episode
 133 (8.9% progress), with 684 critic cooldown updates remaining. The active
 visual replay index held 183 entries. C: had 28.7 GB free and D: had 144.3 GB.
+
+### Repeated contact at 93.4%, 22:09 local
+
+The actor screen at step 3,790,240 was 33.853 s with one contact at 93.40%.
+The deterministic five-lap check confirmed 5/5 finishes but repeated that
+contact once on every lap (five contacts; peak impulse 297.71). The candidate
+was rejected at `models/simple-track/grtqc/checkpoints/step-3790240-rejected/`;
+automatic recovery restored Champion and retained critic replay. At 22:10,
+PID 17144 was still live and collecting episode 137 at step 3,791,541 (11.1%
+progress), with 675 critic cooldown updates remaining. The visual replay index
+held 188 entries. C: had 28.7 GB free and D: had 144.3 GB.
