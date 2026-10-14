@@ -1641,8 +1641,11 @@ bridge clamp. Mapping near-full actions to full would increase barrier risk.
 Training was continued from Latest with the selected contact penalty and its
 existing actor settings. The GUI reported that the saved policy and critics
 were loaded, while the old training replay was discarded and is being refilled
-under the changed reward settings. The new run was active at step 2,754,451
-when recorded, using CUDA on the NVIDIA T500. The protected Champion and its
-five-lap gate were not changed. No post-change deterministic five-lap result is
-available yet, so the stronger penalty remains an experiment rather than a
-verified pace improvement.
+under the changed reward settings. The first post-change deterministic
+five-lap evaluation, at step 2,758,502, was clean (zero barrier contacts) at
+33.372 s. It ties Champion and did not promote a new checkpoint. One exploratory
+training episode did receive a -9,000 failure component. Training continued
+on CUDA on the NVIDIA T500 and was active at step 2,760,755 when recorded. The
+new visual replay session `b6c8fcf0739f410a90cdd22d0b252336` had 11 episode
+files at that point. The protected Champion and five-lap gate were not changed.
+The stronger penalty has so far produced a clean tie, not a verified pace gain.
