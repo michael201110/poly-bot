@@ -954,6 +954,13 @@ to 2 of 5. Training continued with actor unlocked and replay full. By step
 against the configured 0.08 trust limit, with no saturation flag. Replay
 capture contains 179 runs (130 finished, 49 interrupted). No settings changed.
 
+The next deterministic five-lap check, at step 3,036,911, was clean at
+33.677 seconds. It was rejected as slower than Champion and advanced the
+weaker-candidate count to 3 of 5. Training resumed with actor unlocked,
+critics and replay intact; at step 3,037,179 throughput was 27.2 steps/s.
+Visual replay capture now contains 181 runs (131 finished, 50 interrupted).
+Champion remains 33.372 seconds, and no training settings changed.
+
 The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
 one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
 Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
