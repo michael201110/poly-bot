@@ -172,7 +172,7 @@
     "n_step_return": 16,
     "target_entropy": "-4.0",
     "actor_step_action_limit": 0.0025,
-    "actor_reference_drift_limit": 0.05,
+    "actor_reference_drift_limit": 0.04,
     "recovery_critic_cooldown_updates": 1000,
     "actor_evaluation_interval_steps": 2000,
     "recovery_weak_evaluations": 5,

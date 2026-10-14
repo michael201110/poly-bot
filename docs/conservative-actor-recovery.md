@@ -1017,6 +1017,26 @@ contacts). The tie was not promoted. Training resumed from the saved Latest
 checkpoint at step 2,419,993; replay capture remains enabled, and session
 `1b81b6f8f0ad455795d83d8e23ade0aa` contains the recent training attempts.
 
+The later 0.05-window screen at step 2,422,249 was slower at 33.7 seconds and
+contacted the barrier on all five laps at 98.878% progress. The contact gate
+restored Champion and began another 1,000-update critic cooldown. After that
+rollback, I stopped cleanly at step 2,426,006, changed only the profile drift
+limit to 0.04, and resumed the same Latest checkpoint with its 250,000-item
+replay, critics, and one-million-decision session budget (`fresh_replay=false`,
+CUDA on the NVIDIA T500). The first 0.04-window five-lap evaluation at step
+2,429,398 was 33.454 seconds, with the same contact on every lap at 99.233%
+progress (peak impulse 1,074.05). It was rejected and Champion was restored;
+the 1,000-update cooldown began again. At step 2,431,140 training remained
+active with 565 cooldown updates left. The new replay session
+`14d4064ea20449b8928e5bd65d27239c` contains its training and evaluation
+attempts. Neither candidate improved the protected 33.372-second Champion.
+
+The first progress telemetry after lowering the limit still displayed the old
+0.05 cumulative-drift value. Inspecting the saved Latest policy after resume
+showed the actual reference drift was approximately 2.8e-6 with an empty actor
+optimizer state, and the new actor subsequently reached its 0.04 trust limit.
+The stale metric was not evidence that actor updates had been frozen.
+
 ## Requested versus applied controls
 
 Inspection of the saved replay `episode-000031.npz` resolves the apparent
