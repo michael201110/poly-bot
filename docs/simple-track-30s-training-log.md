@@ -978,3 +978,10 @@ finished 5/5 at the same median pace, but each lap contacted the barrier at
 rejected against the 33.324 s Champion. At 23:15:38, PID 17144 had resumed
 training at step 3,841,137. The visual replay index held 247 episodes. C: had
 28.2 GB free and D: had 144.3 GB.
+
+### Clean but slower verification, 23:19 local
+
+At step 3,844,048, the deterministic five-lap evaluation completed 5/5 at
+33.760 s with zero barrier contacts. It was rejected against Champion at
+33.324 s. At 23:19:37, PID 17144 was training at step 3,844,457. The visual
+replay index held 251 episodes. C: had 28.2 GB free and D: had 144.3 GB.
