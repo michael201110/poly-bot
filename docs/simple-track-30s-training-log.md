@@ -1003,3 +1003,14 @@ had resumed at step 3,851,881 in episode 190. The visual replay index held 259
 episodes. C: had 28.1 GB free and D: had 144.3 GB. The active process still
 has the old 0.005 action limit until it is continued from latest with the
 updated profile.
+
+### GUI continuation with increased actor movement, 23:32 local
+
+After saving the 3,850,752-step checkpoint, the prior CLI process was stopped
+and the GUI continued Latest with the selected actor settings. The GUI log
+confirms it restored Latest's policy, critics, replay, rewards, and curriculum,
+using actor LR 5e-6, per-update action limit 0.01, and cumulative drift limit
+0.5. It started GRTQC on the NVIDIA T500 with a 1,000,000-step budget and full
+track phase. At 23:32:19, the run had reached step 3,853,314 at about 25.4 TPS;
+a policy check was in progress. The visual replay index held 259 episodes. C:
+had 28.1 GB free and D: had 144.3 GB.
