@@ -1399,3 +1399,10 @@ has promoted and Champion remains 33.372 seconds. The active replay session
 `db3c90bf2c5848a0a14fa2a54741da5a` held eight entries at step 2,664,960,
 including finished runs and interrupted entries; capture continues during
 training.
+
+After rollback, a recorded training episode finished at step 2,665,362 in
+33.339 seconds with no contacts, 0.033 seconds faster than Champion. It is one
+exploratory training lap, not a deterministic five-lap verification, so it does
+not qualify for promotion. Its replay was saved as `episode-000009.npz`; the
+active session had ten indexed records (nine finished and one interrupted) at
+this checkpoint. Training remained active.
