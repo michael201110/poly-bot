@@ -2576,3 +2576,11 @@ was preserved and a 1,000-update critic cooldown began at actor LR 2e-6. At
 step 3,204,412 training continued with replay full at 27.21 decisions/s.
 Visual capture contains 391 episodes (280 finished, 111 interrupted),
 including the rejected contact regression for later analysis.
+
+Following the step 3,203,103 contact rollback, the next deterministic five-lap
+evaluation at step 3,207,567 matched Champion at 33.372 seconds with zero
+contacts across all five laps. The candidate was not promoted and the weaker
+streak is 1 of 5; this confirms the restored actor returns the protected clean
+pace. Training continued at step 3,208,656 with full replay at 27.29
+decisions/s. Visual capture contains 394 episodes (283 finished, 111
+interrupted).
