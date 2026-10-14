@@ -1284,3 +1284,13 @@ the actor locked. This candidate did not beat Champion and illustrates why the
 close 33.401 s clean screen remains only a candidate until the clean pace is
 reproduced. Replay capture reached 57 entries at 00:52:24 local. Port 8765
 remained active; C: had 25.5 GB free and D: 144.3 GB.
+
+### Post-recovery clean screen, 23:57 UTC
+
+After the step-3,930,083 contact rollback and critic recovery, the next
+five-lap screen at step 3,934,563 was 33.567 s median (5/5 finishes, zero
+contacts). It remained slower than the 33.401 s best candidate from this
+continuation and the 33.324 s Champion, so no promotion occurred. Training
+continued through step 3,936,576 in episode 49 with actor updates unlocked and
+another policy check pending. Replay capture reached 62 entries at 00:57:59
+local. Port 8765 remained active; C: had 25.4 GB free and D: 144.3 GB.
