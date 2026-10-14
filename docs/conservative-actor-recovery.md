@@ -1734,3 +1734,11 @@ rejected, Champion's actor restored, and critics/replay preserved for another
 clean at 33.372 s, tying Champion. Training remained active at step 2,819,739
 with 230,526 replay transitions and 84 visual replay episodes in the current
 session; C: had 15.65 GB free. No new Champion was promoted.
+
+After rollback, clean evaluations at steps 2,821,478 and 2,823,734 recorded
+33.790 s and 33.658 s; the latter improved by 0.132 s over the preceding
+33.790 s check. Step 2,825,990 was also clean at 33.737 s. All remain slower
+than Champion. Training was active at step 2,828,236 with the 250,000-entry
+replay full; checkpoint 2,820,678 was saved. Visual replay capture had reached
+96 episodes in session `b6c8fcf0739f410a90cdd22d0b252336`, with 15.32 GB free
+on C:. The 30-second target is not yet met.
