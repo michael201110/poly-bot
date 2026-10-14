@@ -1560,3 +1560,11 @@ not an interruption. At step 2,719,959 the GUI was still training with 808
 recovery updates remaining. The visual replay index had ten entries, seven
 finished. Champion remains 33.372 s; no action mapping, reward, profile, or
 controller changes were made.
+
+The cooldown completed and the actor unlocked. Its next clean deterministic
+five-lap evaluation, saved to Latest at step 2,723,670, was 33.777 s with zero
+barrier contacts. This is weak check 1/5 relative to the previous clean
+33.726 s candidate and remains slower than Champion; no promotion occurred.
+Training continued in the GUI near step 2,725,670 with another actor evaluation
+pending. The replay session had 19 entries, 13 finished. Champion metadata
+still verifies 33.372 s. No action remapping was made.
