@@ -2296,3 +2296,10 @@ with all five laps finishing cleanly and zero barrier contacts. The equal-time
 candidate was not promoted. Training resumed with actor updates unlocked and
 full replay; at step 3,098,084 throughput was 27.6 steps/s. Visual replay
 capture contained 256 episodes (185 finished, 71 interrupted).
+
+At step 3,099,807 the next five-lap screen finished all laps at a median
+33.800 seconds but repeated one barrier contact per lap (peak impulse 212.9).
+The contact gate restored Champion and started a 1,000-update critic cooldown
+with replay retained. At step 3,100,643 the actor was locked with 792 cooldown
+updates remaining; throughput was 27.6 steps/s. Replay capture contained 259
+episodes (187 finished, 72 interrupted).
