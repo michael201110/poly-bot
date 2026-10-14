@@ -867,3 +867,13 @@ at `models/simple-track/grtqc/checkpoints/step-3808208-rejected/`. At 22:33,
 training was active on PID 17144 and port 8765 at step 3,809,189 in episode 152
 (87.0% progress), with recovery cooldown complete. The active visual replay
 index held 209 entries. C: had 28.5 GB free and D: had 144.3 GB.
+
+### Clean pace gain, 22:36 local
+
+The five-lap candidate at step 3,810,464 evaluated at 33.504 s (5/5 finishes,
+zero contacts). This improved by 0.089 s over the prior 33.593 s candidate,
+but remained 0.180 s slower than Champion and was not promoted. It was saved
+at `models/simple-track/grtqc/checkpoints/step-3810464-rejected/`. At 22:36,
+PID 17144 still owned port 8765 and was training at step 3,810,804 in episode
+154 (26.0% progress). The active replay index held 212 entries. C: had 28.5 GB
+free and D: had 144.3 GB.
