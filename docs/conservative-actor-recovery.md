@@ -979,6 +979,15 @@ Champion and was not promoted. Training continued with actor unlocked, full
 replay, no rollback, and 27.1 steps/s at step 3,041,967; the visual replay
 inventory remains 187 runs (135 finished, 52 interrupted).
 
+At step 3,043,647 the candidate regressed to 33.787 seconds with two barrier
+contacts at 93.34% and 93.46% progress. Deterministic 5-lap verification
+repeated both contacts on every lap (10 contact steps total; peak impulse
+199.11), so the contact gate restored Champion and started a 1,000-update
+critic cooldown while preserving replay. At step 3,044,836 recovery had 703
+updates remaining, the actor was locked, and throughput was 27.1 steps/s.
+The visual replay inventory contains 191 runs (138 finished, 53 interrupted).
+Champion remains protected at 33.372 seconds.
+
 The GUI restarted with `--continue-latest-with-selected-actor-guard` and the
 one-million-step budget. Log `20261013T232611Z.jsonl` confirms it resumed
 Latest at step 2,394,185 on the NVIDIA T500 with `fresh_replay=false`. By step
