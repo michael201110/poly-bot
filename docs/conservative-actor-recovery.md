@@ -1159,3 +1159,10 @@ restored Champion; at step 2,471,669 the actor was locked with 537 critic
 recovery updates remaining. The visual replay archive had 56 attempts. This
 repeats the same late-lap failure after a fresh actor trial, so no candidate was
 promoted and no reward or action remapping was made.
+
+The following post-recovery evaluation at step 2,474,294 was clean (5/5,
+33.734 seconds, zero contacts), but 0.362 seconds slower than Champion; it was
+rejected without rollback and the clean reference was refreshed. At step
+2,474,479 the actor was again updating (norm 0.000093, cumulative drift
+0.00750), and the GUI trainer remained active. The replay archive contained 59
+attempts. Champion remains 33.372 seconds; the target remains 30 seconds.
