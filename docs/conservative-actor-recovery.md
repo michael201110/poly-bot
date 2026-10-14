@@ -2309,3 +2309,11 @@ protected Champion at 33.372 seconds, with zero barrier contacts on all five
 laps. It was rejected as equal and not promoted. At step 3,106,520 training
 continued with actor updates unlocked, full replay, and 27.8 steps/s. Replay
 capture contained 264 episodes (191 finished, 73 interrupted).
+
+At step 3,106,527 a new five-lap candidate was 33.764 seconds, with two
+repeated contact steps per lap at 93.46% and 93.59% progress (peak impulse
+265.9). The gate restored Champion and preserved replay. The saved post-rollback
+training replays at steps 3,107,640 and 3,108,756 measured 33.478 and 33.372
+seconds, respectively. By step 3,110,960 the critic cooldown had completed,
+actor updates were unlocked, and replay remained full at 27.97 steps/s. Visual
+capture contained 270 episodes (196 finished, 74 interrupted).
