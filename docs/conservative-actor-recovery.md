@@ -1742,3 +1742,11 @@ than Champion. Training was active at step 2,828,236 with the 250,000-entry
 replay full; checkpoint 2,820,678 was saved. Visual replay capture had reached
 96 episodes in session `b6c8fcf0739f410a90cdd22d0b252336`, with 15.32 GB free
 on C:. The 30-second target is not yet met.
+
+Three more verified five-lap runs at steps 2,828,246, 2,830,502, and 2,832,742
+were contact-free at 33.529 s, 33.788 s, and 33.705 s. Checkpoint 2,830,678
+was saved. Training remained active at step 2,834,985 with the 250,000-entry
+replay full. The replay index now lists 105 episode files: 75 finished and 30
+interrupted, with all indexed files present. This gives 75 complete runs for
+swarm selection; capture is continuing toward 100 complete runs. C: had 15.00
+GB free. Champion remains 33.372 s.
