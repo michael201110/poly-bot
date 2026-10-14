@@ -1942,3 +1942,10 @@ steps/s, the replay buffer was full at 250,000 transitions, actor updates were
 unlocked, and reference drift was 0.0596 under its 0.08 limit. The current
 visual replay session has 96 indexed runs: 70 finished and 26 interrupted.
 No training settings were changed; the 30-second target remains unmet.
+
+The next five-lap screen, at step 2,969,487, was 33.727 seconds with no
+contacts and was rejected as slower than Champion. Training continued: at step
+2,969,955 the actor was unlocked, reference drift was 0.0175, replay remained
+full, and throughput was 26.7 steps/s. The current visual replay inventory is
+98 runs (71 finished, 27 interrupted). No settings changed; the last clean
+Champion-level tie remains the best verified result for this candidate run.
