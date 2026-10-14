@@ -849,3 +849,12 @@ PID 17144 remained active at step 3,801,521 in episode 146 (0.5% progress),
 with 992 critic cooldown updates remaining and port 8765 owned by the trainer.
 The active visual replay index held 201 entries. C: had 28.6 GB free and D:
 had 144.3 GB.
+
+### Post-recovery clean Champion match, 22:29 local
+
+At step 3,805,952 the next deterministic five-lap check matched Champion at
+33.324 s (5/5 finishes, zero contacts), so it was not promoted. The checkpoint
+was preserved at `models/simple-track/grtqc/checkpoints/step-3805952-rejected/`.
+At 22:29, PID 17144 still owned port 8765 and had resumed at step 3,806,181 in
+episode 150 (15.1% progress), with critic cooldown complete. The active visual
+replay index held 206 entries. C: had 28.6 GB free and D: had 144.3 GB.
