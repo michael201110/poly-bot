@@ -2282,3 +2282,11 @@ on disk and pushed, but this already-running session still has its original
 The cooldown finished by step 3,093,081; actor updates resumed with replay
 still full, throughput at 27.6 steps/s, and visual capture at 251 episodes
 (181 finished, 70 interrupted).
+
+The next verification at step 3,093,087 again rejected the candidate: all five
+laps finished in 33.774 seconds, but each had a repeated contact at 98.66%
+progress (peak impulse 124.2). Champion actor restoration started another
+1,000-update critic cooldown with replay preserved. At step 3,096,614 the
+actor remained locked with 119 cooldown updates left; throughput was 27.7
+steps/s and replay capture contained 254 episodes (184 finished, 70
+interrupted). The protected 33.372-second Champion remains unchanged.
