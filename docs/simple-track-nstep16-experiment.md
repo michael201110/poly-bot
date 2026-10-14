@@ -158,3 +158,5 @@ The five-lap evaluation at step 3,472,224 was 33.638 s with zero barrier contact
 The next five-lap check at step 3,483,488 was 33.626 s with zero contacts. It improved 0.226 s over the preceding clean evaluation but remains 0.302 s slower than Champion, so it was rejected. Training continued to step 3,485,270 at about 25.6 decisions/s; the active replay bundle contains 260 episodes (186 finished, 74 interrupted).
 
 After the 33.626 s check, the next five-lap evaluation at step 3,485,744 improved to 33.478 s with zero contacts. It is now the best clean result since the rollback, but remains 0.154 s slower than the protected Champion and was not promoted. Training continued to step 3,486,866; replay capture reached 263 episodes (188 finished, 75 interrupted).
+
+The next check at step 3,488,000 was 33.738 s over five clean finishes. It is slower than the 33.478 s local best, so it was rejected; the weak-actor counter is 1/5. Training continued to step 3,490,177 at about 25.6 decisions/s, with 266 saved replays (190 finished, 76 interrupted).
