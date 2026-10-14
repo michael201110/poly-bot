@@ -1308,3 +1308,8 @@ After the contact rollback, the five-lap evaluation at step 2,541,702 tied the
 protected Champion at 33.372 seconds with zero contacts. It was not promoted;
 the clean reference refreshed and training resumed. At step 2,542,819 the
 actor remained unlocked, and the replay archive contained 141 attempts.
+
+The next five-lap check at step 2,543,958 completed cleanly at 33.789 seconds,
+slower than Champion, and was rejected without rollback. The clean reference
+refreshed; actor updates resumed (update norm 0.000112, drift 0.01984 at step
+2,544,467). Replay capture reached 143 attempts.
