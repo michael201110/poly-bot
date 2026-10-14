@@ -1035,3 +1035,24 @@ automatic actor recovery restored the verified policy with a 1,000-update
 critic cooldown. At 22:40:56 UTC, GUI PID 19940 was still training at step
 3,860,167 on port 8765. Replay index: 262 episodes. C: had 28.0 GB free; D:
 had 144.3 GB. Critics and replay were preserved through recovery.
+
+### Post-recovery checks and guarded cap adjustment, 00:01 local, 15 Oct
+
+After the 23:40 contact rollback, a clean five-lap check at step 3,863,120
+matched Champion at 33.324 s; later clean checks were 33.823 s (step 3,865,360)
+and 33.556 s (step 3,867,600). The candidate at step 3,869,840 was 33.674 s
+but contacted the barrier at 93.21% on all five laps (peak impulse 579.81),
+triggering another 1,000-update critic cooldown. After recovery, step 3,874,288
+again matched Champion at 33.324 s and step 3,876,544 was clean at 33.556 s.
+At step 3,878,784, the candidate was 33.481 s but repeated two late-track
+contacts (99.23% and 99.44%) on every lap (10 contact steps; peak impulse
+67.27), so it was rejected and the Champion actor restored.
+
+The repeated contacts after changing the per-update action cap to 0.01 justify
+backing it down to 0.0075 for the next continuation. Actor LR (5e-6), cumulative
+drift limit (0.5), n-step return (16), critics, replay, five-lap verification,
+and Champion rollback gates remain unchanged. At 23:01:36 UTC (00:01:36 local),
+GUI PID 19940 was still training at step 3,879,119. Its active visual replay
+archive `models/simple-track/grtqc/visual_replays/d1ff01715b3646d6b11b97baa7a19d9c/`
+held 31 episodes; prior archives remain intact. C: had 27.8 GB free and D: had
+144.3 GB. The GUI clean-stop/resume will apply the adjusted cap from Latest.
