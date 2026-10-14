@@ -2013,6 +2013,13 @@ full replay, and 27.4 steps/s. The visual replay session now contains 132 runs
 (96 finished, 36 interrupted). No settings changed; the 30-second goal remains
 unmet.
 
+The next clean screen, at step 2,998,719, was 33.755 seconds, also slower than
+Champion; the weaker-actor counter is now 2 of 5. Training remains active at
+step 3,000,530 with actor updates unlocked, drift 0.0685, no reference-cap
+saturation, full replay, and 27.4 steps/s. The current replay session has 135
+indexed runs (98 finished, 37 interrupted). No settings changed; Champion is
+still 33.372 seconds.
+
 The critic cooldown completed by step 2,987,052. The actor is unlocked again,
 the replay buffer remains full, and throughput is about 27.4 steps/s. The live
 training process continues from the restored Champion actor with critics and
