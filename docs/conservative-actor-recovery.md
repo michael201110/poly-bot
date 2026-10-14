@@ -1412,3 +1412,10 @@ seconds. It was rejected as slower than Champion and counted as weak pace check
 2/5; no model promotion occurred. Training continued with Champion protected.
 The replay session reached 13 entries (nine finished, including evaluation and
 training laps, plus in-progress/interrupted records) at step 2,667,632.
+
+At step 2,667,647 the next five-lap candidate measured 33.801 seconds and
+recorded five barrier contacts, one per lap. The contact gate again rejected it
+and restored Champion's actor while retaining critics and replay. Training
+continued from the saved workspace with Champion unchanged. The visual replay
+session had 14 entries (ten finished) at the next check; automatic recording is
+still enabled.
