@@ -1668,3 +1668,16 @@ respectively, all with zero barrier contacts. The actor remains behind the
 transitions and 32 visual episode files in session
 `b6c8fcf0739f410a90cdd22d0b252336`; C: had 17.07 GB free. Checkpointing and
 replay capture are continuing.
+
+The next evaluation, at step 2,776,534, repeated the late-finish barrier
+regression: two contacts per lap at 99.23% and 99.37% progress (ten over five
+laps, peak impulse 318.59) and a 33.710 s median. The gate rejected it, restored
+Champion's actor, and preserved critics and replay for a 1,000-update critic
+cooldown. The next deterministic five-lap checks, at steps 2,780,998 and
+2,783,254, were clean at 33.372 s and 33.685 s. The first tied Champion; neither
+improved on it. Checkpoint 2,780,678 was saved. Training remains active; the GUI
+reported step 2,785,509, replay size 108,732, and unlocked actor updates after
+cooldown. Visual replay session `b6c8fcf0739f410a90cdd22d0b252336` had 41
+episodes, and C: had 16.74 GB free. The stronger contact penalty has not
+prevented every exploratory contact regression; the verified actor rollback
+remains effective and Champion is unchanged.
