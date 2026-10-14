@@ -2407,3 +2407,10 @@ starting a 1,000-update critic cooldown. At step 3,143,041 the actor was
 locked with 856 cooldown updates remaining, replay was full, and throughput
 was 27.50 steps/s. Replay capture contained 313 episodes (225 finished, 88
 interrupted).
+
+After cooldown, the five-lap evaluation at step 3,146,927 finished cleanly at
+33.547 seconds with zero contacts. It remained 0.075 seconds slower than the
+recent 33.472-second best and 0.175 seconds slower than Champion, so it was
+not promoted. Training resumed with actor updates unlocked and replay full;
+at step 3,149,166 throughput was 27.72 steps/s. Replay capture contained 321
+episodes (231 finished, 90 interrupted).
