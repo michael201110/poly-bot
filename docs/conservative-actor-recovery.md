@@ -1809,3 +1809,29 @@ regression rather than a pace gain. I left the lap and contact gates unchanged.
 The new training replay session `2ff6eb24e8ee4416b76656720dd067fc` contains 19
 files: 15 finished and 4 interrupted, with no missing indexed files. Together
 with the earlier session, more than 100 complete swarm replays are available.
+
+## Contact penalty and fresh replay experiment
+
+The contact regression persisted after the 0.08 actor drift expansion, so I
+stopped Latest cleanly at step 2,889,791, retained its actor and critics, and
+continued with the selected reward setting `barrier_contact_penalty = -9000`
+(up from -4500). Ground braking remains unpenalized, the 30-second finish target
+and pace decay are unchanged, and the actor drift limits remain 0.0025 per
+update / 0.08 cumulative. Because reward values changed, the GUI correctly
+started with an empty replay buffer; visual replay files remain available.
+The existing `simple-track-grtqc-contact-aware-30.json` profile now matches the
+selected settings.
+
+The first clean five-lap evaluation with the refilled replay, at step
+2,897,599, was 33.816 seconds with no contacts. The next candidate, at step
+2,899,839, was 33.654 seconds with ten contact steps over five laps, at
+99.02% and 99.37% progress (maximum impulse 94.26). The safety gate rejected it
+and restored Champion, preserving the critics and new replay for a 1,000-update
+recovery cooldown. This early result does not show the stronger penalty working
+yet; the fresh buffer held about 23,582 transitions at the rollback. Training
+continues under the consistent new reward with the protected 33.372-second
+Champion unchanged.
+
+New visual replay session `2d58d332b8524b4e866c58c50b5195ee` had 10 files when
+recorded (9 finished, 1 interrupted); the prior 100-plus complete swarm runs
+remain intact. The 30-second target remains unmet.
