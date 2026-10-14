@@ -1870,3 +1870,12 @@ promoted. The actor continues updating under the 0.08 reference-drift cap. The
 run is active at step 2,933,557 with 131,191 replay transitions and no recovery
 cooldown. The new visual session has 52 files (39 finished, 13 interrupted),
 with no missing indexed files. The 30-second target remains unmet.
+
+The clean pace trend continued after the reward refill. Five-lap checks at
+steps 2,935,823, 2,938,079, and 2,940,319 were 33.712, 33.579, and 33.459
+seconds, all with zero barrier contacts. The latest is 0.113 seconds faster
+than the 33.572-second clean check and 0.087 seconds behind Champion, so it was
+not promoted. Training is active at step 2,940,640 with 165,190 replay
+transitions, actor updates unlocked, and drift 0.0125 since the latest clean
+anchor. The new visual session has 61 files (45 finished, 16 interrupted),
+with no missing indexed files. Champion remains protected at 33.372 seconds.
