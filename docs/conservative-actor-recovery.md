@@ -1406,3 +1406,9 @@ exploratory training lap, not a deterministic five-lap verification, so it does
 not qualify for promotion. Its replay was saved as `episode-000009.npz`; the
 active session had ten indexed records (nine finished and one interrupted) at
 this checkpoint. Training remained active.
+
+The next deterministic five-lap check at step 2,665,375 was clean at 33.735
+seconds. It was rejected as slower than Champion and counted as weak pace check
+2/5; no model promotion occurred. Training continued with Champion protected.
+The replay session reached 13 entries (nine finished, including evaluation and
+training laps, plus in-progress/interrupted records) at step 2,667,632.
