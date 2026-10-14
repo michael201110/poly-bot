@@ -649,3 +649,13 @@ contacts). It was not promoted because it did not beat Champion; this is the
 first weaker check since the recovery. At 21:15, PID 17144 had resumed on port
 8765 at step 3,750,277, episode 100 (41.4% progress). The visual replay index
 held 137 entries and C: had 29.1 GB free.
+
+### Next clean but slower actor check, 21:18 local
+
+At step 3,752,032 the five-lap candidate evaluated at 33.724 s (5/5 finishes,
+zero barrier contacts). The clean anchor refreshed, but the candidate remained
+slower than the 33.324 s Champion and was rejected; this is the second weaker
+evaluation since the latest recovery (2/5 toward automatic actor recovery).
+Training continued on PID 17144 at step 3,752,349, episode 102 (24.6%
+progress), with port 8765 live. The visual replay index had 140 entries and
+C: had 29.1 GB free.
