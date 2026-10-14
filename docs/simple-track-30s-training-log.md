@@ -155,3 +155,15 @@ and five-lap clean-evaluation and protected-Champion promotion gates remain
 unchanged. Training will resume from the saved 33.545 s clean checkpoint, which
 includes the existing full replay buffer; the intervening visual replay files
 remain saved in the prior run's replay folder.
+
+
+With cumulative actor drift widened to 0.5, the first clean five-lap evaluation
+was 33.663 s at step 3,634,032. A later clean five-lap evaluation improved to
+33.616 s at step 3,636,288, a 0.047 s gain; both remained slower than the
+protected 33.324 s Champion. The latter was saved as `latest` at 17:49:06 UTC.
+At step 3,636,700, actor proposed drift was 0.02586 and executed drift
+0.002496, so the per-update cap remains the active constraint. Cumulative
+drift was 0.01486 after the evaluation, below the 0.5 allowance. The new replay
+run `7fd2814c78e049589f4d65f1debe9818` had five indexed entries, including
+the training episodes and evaluation boundary. Training remained connected on
+port 8765; no Champion promotion occurred.
