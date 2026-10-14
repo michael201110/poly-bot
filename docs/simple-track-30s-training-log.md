@@ -667,3 +667,16 @@ The five-lap actor evaluation at step 3,754,288 completed at 33.747 s with
 the weaker-check count reached 3/5. The trainer remains active on PID 17144;
 at 21:21 it had resumed collection on port 8765 at step 3,754,321, episode
 104. The visual replay index held 143 entries and C: had 29.1 GB free.
+
+### Clean pace gain, 21:25 local
+
+The five-lap check at step 3,756,560 completed at 33.589 s (5/5 finishes,
+zero contacts). This improved 0.158 s over the previous 33.747 s candidate
+and reset the weaker-check streak, although it remains 0.265 s slower than
+Champion. The clean actor checkpoint was retained at
+`models/simple-track/grtqc/checkpoints/step-3756560-rejected/`. Episode 105
+immediately before screening had contacted at 63.08-63.33% and finished in
+34.098 s; the deterministic five-lap candidate remained contact-free. At
+21:25, PID 17144 had resumed on port 8765 at step 3,756,869, episode 106
+(23.3% progress). The visual replay index had 146 entries and C: had 29.0 GB
+free.
