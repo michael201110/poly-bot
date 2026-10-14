@@ -282,3 +282,31 @@ training episodes finished in 33.587 s at step 3,676,768 and 33.510 s at step
 was zero, and the RL replay buffer remained full. Champion remains 33.324 s.
 The active visual replay index continued recording through episode ID 50.
 C: had about 30.1 GB free and D: about 144.3 GB; no disk cleanup was needed.
+
+## 2026-10-14 fast-checkpoint policy comparison
+
+The saved actor checkpoint at step 2,616,006 was loaded on CPU and asked for
+deterministic actions on all 1,104 observations from the 33.105 s replay. Its
+mean absolute action error against the recorded controls was 0.0009 steering
+and 0.0011 longitudinal, with per-axis correlation 1.0. The recorded lap is
+therefore closely reproduced by that checkpoint's actor on its recorded
+states; the pace is not explained only by a lucky random action sequence.
+
+On the same observations, Champion's deterministic actor differs by 0.0017
+steering and 0.0098 longitudinal MAE. The current `latest` actor differs by
+0.0145 and 0.1311, respectively; its mean longitudinal output is 0.543 on
+these states versus 0.674 for the fast trace. This supports actor drift away
+from the faster trace as a reason current weights do not repeat it. These are
+open-loop same-state action comparisons, not a live lap test, so step 2,616,006
+must pass a deterministic five-lap simulator evaluation before promotion.
+Champion remains protected at 33.324 s.
+
+Meanwhile, the active run's five-lap clean evaluation improved from 33.502 s
+at step 3,677,888 to 33.360 s at step 3,680,128 (5/5 finishes, zero contacts).
+This is 0.036 s slower than Champion. Training and replay recording remained
+active; the current replay index reached 54 entries through episode ID 55.
+The fast historical checkpoint is preserved at
+`models/simple-track/grtqc/checkpoints/step-2616006/`; it was not loaded into
+the live trainer because that process currently owns the simulator bridge on
+port 8765. A separate verified evaluation remains necessary before changing
+which actor is trained or promoted.
