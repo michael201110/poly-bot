@@ -2553,3 +2553,10 @@ At step 3,196,351 the deterministic five-lap evaluation completed cleanly at
 streak is 2 of 5. Training remained live at step 3,196,628 with full replay
 and 27.23 decisions/s. Visual capture contains 382 episodes (273 finished,
 109 interrupted).
+
+At step 3,198,591 the deterministic five-lap evaluation improved to 33.526
+seconds with zero barrier contacts. This is 0.049 seconds faster than the
+previous 33.575-second candidate and 0.154 seconds slower than the protected
+33.372-second Champion. It was kept as a clean actor pace improvement; training
+continued past step 3,200,341 with a full replay buffer and 27.28 decisions/s.
+Visual capture contains 385 episodes (276 finished, 109 interrupted).
