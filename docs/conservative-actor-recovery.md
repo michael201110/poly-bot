@@ -1192,3 +1192,9 @@ than Champion and its prior clean tie; it was rejected without rollback and the
 reference was refreshed. Training remained active with actor learning unlocked
 at step 2,485,527. The replay archive contained 73 attempts; Champion is still
 33.372 seconds, 5/5 and contact free.
+
+The next five-lap check at step 2,487,782 was clean at 33.790 seconds but
+slower than Champion and the previous clean results. It was rejected without
+rollback and the reference was refreshed. Actor updates resumed immediately
+afterward (update norm 0.000138, drift 0.00250 by step 2,487,795). The replay
+archive contained 76 attempts; no model was promoted.
