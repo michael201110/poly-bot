@@ -1994,3 +1994,10 @@ The critic cooldown completed by step 2,987,052. The actor is unlocked again,
 the replay buffer remains full, and throughput is about 27.4 steps/s. The live
 training process continues from the restored Champion actor with critics and
 replay retained.
+
+The next screen, at step 2,987,455, again matched Champion at 33.372 seconds
+with zero contacts. The equal-time candidate was not promoted, and the weaker
+actor counter restarted at 1 of 5. Training remained active at step 2,987,745
+with actor updates unlocked, reference drift 0.0094, update norm 0.000225,
+full replay, and 27.1 steps/s. The visual replay session contains 120 runs
+(87 finished, 33 interrupted); Champion remains unchanged.
