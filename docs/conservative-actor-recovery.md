@@ -2538,3 +2538,11 @@ seconds with zero barrier contacts, 0.020 seconds faster than the preceding
 training; it remains 0.203 seconds slower than Champion. At step 3,193,164
 training remained active at 27.35 decisions/s with full replay. Visual capture
 contains 377 episodes (270 finished, 107 interrupted).
+
+At step 3,194,111 the deterministic five-lap evaluation completed at 33.713
+seconds with zero barrier contacts. It was slower than the 33.575-second
+recent actor best and the protected 33.372-second Champion, so it was rejected;
+the weaker-actor streak is 1 of 5 after the previous pace improvement reset it.
+Training remained active at step 3,194,916, with the replay buffer full and
+27.29 decisions/s. Visual replay capture currently contains 379 episodes
+(271 finished, 108 interrupted).
