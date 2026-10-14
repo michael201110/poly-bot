@@ -2584,3 +2584,10 @@ streak is 1 of 5; this confirms the restored actor returns the protected clean
 pace. Training continued at step 3,208,656 with full replay at 27.29
 decisions/s. Visual capture contains 394 episodes (283 finished, 111
 interrupted).
+
+After the post-rollback Champion tie, the next five-lap evaluation at step
+3,209,823 completed cleanly at 33.848 seconds with zero contacts. It was
+rejected as slower than Champion and the 33.526-second recent best; the weaker
+streak is 2 of 5. Training continued at step 3,209,980 with full replay at
+27.21 decisions/s. Visual capture contains 397 episodes (285 finished, 112
+interrupted).
