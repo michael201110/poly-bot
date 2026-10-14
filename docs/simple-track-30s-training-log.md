@@ -927,3 +927,14 @@ contacts). It was rejected as slower than the 33.324 s Champion and saved at
 training remained active on PID 17144 and port 8765 at step 3,823,944 in
 episode 166 (0.7% progress), with recovery cooldown complete. The active replay
 index held 228 entries. C: had 28.3 GB free and D: had 144.3 GB.
+
+### Finish-approach contact rollback, 22:58 local
+
+The actor screen at step 3,826,160 was 33.633 s with a contact at 98.95% of
+the route. Five-lap verification repeated the contact once on each lap (five
+contacts; peak impulse 54.61). The candidate was rejected and saved at
+`models/simple-track/grtqc/checkpoints/step-3826160-rejected/`; automatic
+recovery restored Champion while preserving critic replay. At 22:58, PID 17144
+still owned port 8765 and had resumed at step 3,827,257 in episode 168 (98.4%
+progress), with 726 critic cooldown updates remaining. The active replay index
+held 231 entries. C: had 28.3 GB free and D: had 144.3 GB.
