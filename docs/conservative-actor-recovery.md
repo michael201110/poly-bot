@@ -1989,3 +1989,8 @@ critic recovery. Training was still advancing at step 2,985,414 with 395
 recovery updates remaining, actor locked, and replay full at 250,000. The
 visual replay session contains 116 indexed runs (84 finished, 32 interrupted).
 The 30-second target remains unmet.
+
+The critic cooldown completed by step 2,987,052. The actor is unlocked again,
+the replay buffer remains full, and throughput is about 27.4 steps/s. The live
+training process continues from the restored Champion actor with critics and
+replay retained.
