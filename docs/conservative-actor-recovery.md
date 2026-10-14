@@ -1425,3 +1425,22 @@ seconds and was rejected as slower than Champion (weak pace check 1/5). The
 preceding exploratory lap was 33.488 seconds but had two contact impulses; it
 was not used for promotion. Training remained active at step 2,672,200, and the
 replay run had 18 indexed entries, with finished and interrupted laps retained.
+
+## Reverting the actor rate after repeated contact regressions
+
+The 5e-6 actor-rate run was stopped cleanly at step 2,678,646 after three
+five-lap candidate checks with barrier contacts caused actor rollback. Champion
+remains 33.372 seconds. Latest was preserved with its critics and 250,000-item
+replay buffer. Because the previous 2e-6 trial had a clean 33.667-second
+five-lap screen, the GUI resumed Latest with actor learning rate 2e-6 while
+keeping the 0.0025 per-update action limit, 0.04 reference-drift limit, full
+track, frame skip 30, n-step 16, and one-million-step budget. No reward,
+controller, critic, or Champion change was made.
+
+The restarted run began at step 2,678,646 on the NVIDIA T500. Its first
+five-lap actor screen at step 2,679,782 was clean at 33.542 seconds, improving
+on the prior 33.667-second clean screen but remaining 0.170 seconds slower than
+Champion; it was rejected and counted as weak pace check 1/5. Training remained
+active near step 2,681,771. Replay capture started a new session,
+`ea773856ace643b78cff20dff7a49736`, which had five indexed entries (three
+finished) at the latest check.
