@@ -125,6 +125,7 @@ class TrainingRunner:
         self._actor_unlock_event_pending = False
         self._actor_eval_episode_finished = False
         self._grtqc_weak_evaluations = 0
+        self._scratch_previous_clean_eval_lap_s: float | None = None
         self._scratch_section_results: deque[bool] = deque(
             maxlen=config.grtqc.scratch_section_success_window if config.grtqc else 40,
         )
@@ -815,9 +816,15 @@ class TrainingRunner:
             self._emit({"type": "scratch_stage", "stage": "pace", "timesteps": self.model.num_timesteps,
                         "target_entropy": self.model.target_entropy, "finish_rate": result.finish_rate})
         if clean:
-            # Keep a clean local reference for conservative actor updates, but
-            # still count repeated pace regressions against the protected
-            # champion below. Clean completion alone is not pace progress.
+            # Keep a clean local reference for conservative actor updates and
+            # distinguish a clean pace gain from repeated weak checks.
+            previous_clean_lap_s = self._scratch_previous_clean_eval_lap_s
+            clean_pace_improved = (
+                previous_clean_lap_s is not None
+                and result.median_lap_s is not None
+                and result.median_lap_s <= previous_clean_lap_s - 0.01
+            )
+            self._scratch_previous_clean_eval_lap_s = result.median_lap_s
             if observations:
                 self.model.set_actor_reference_observations(np.asarray(observations))
                 self._emit({
@@ -939,18 +946,31 @@ class TrainingRunner:
                 and champion is not None
                 and pace_is_weaker
             ):
-                self._grtqc_weak_evaluations += 1
-                self._emit({
-                    "type": "weaker_actor_evaluation",
-                    "timesteps": self.model.num_timesteps,
-                    "count": self._grtqc_weak_evaluations,
-                    "required": self.config.grtqc.recovery_weak_evaluations,
-                    "champion_lap_s": champion.median_lap_s,
-                    "candidate_lap_s": result.median_lap_s,
-                    "training_origin": "scratch",
-                })
-                if self._grtqc_weak_evaluations >= self.config.grtqc.recovery_weak_evaluations:
-                    self._recover_grtqc_actor(result, path)
+                if clean and clean_pace_improved:
+                    previous_weak_evaluations = self._grtqc_weak_evaluations
+                    self._grtqc_weak_evaluations = 0
+                    self._emit({
+                        "type": "actor_pace_improved",
+                        "timesteps": self.model.num_timesteps,
+                        "previous_clean_lap_s": previous_clean_lap_s,
+                        "candidate_lap_s": result.median_lap_s,
+                        "champion_lap_s": champion.median_lap_s,
+                        "reset_weak_evaluations": previous_weak_evaluations,
+                        "training_origin": "scratch",
+                    })
+                else:
+                    self._grtqc_weak_evaluations += 1
+                    self._emit({
+                        "type": "weaker_actor_evaluation",
+                        "timesteps": self.model.num_timesteps,
+                        "count": self._grtqc_weak_evaluations,
+                        "required": self.config.grtqc.recovery_weak_evaluations,
+                        "champion_lap_s": champion.median_lap_s,
+                        "candidate_lap_s": result.median_lap_s,
+                        "training_origin": "scratch",
+                    })
+                    if self._grtqc_weak_evaluations >= self.config.grtqc.recovery_weak_evaluations:
+                        self._recover_grtqc_actor(result, path)
             else:
                 self._grtqc_weak_evaluations = 0
         return result
@@ -1145,6 +1165,7 @@ class TrainingRunner:
         self.model._exploration_noise = None
         self._actor_unlock_seen = False
         self._grtqc_weak_evaluations = 0
+        self._scratch_previous_clean_eval_lap_s = None
         self.last_evaluation = None
         self._emit({
             "type": "actor_recovery", "timesteps": self.model.num_timesteps,
@@ -1462,6 +1483,28 @@ class TrainingRunner:
                 self.model = self.backend.create_model(cfg, training_env, self.device.resolved)
             else:
                 metadata = self.registry.read_metadata(resume)
+                if (
+                    cfg.algorithm == "grtqc" and cfg.grtqc is not None
+                    and cfg.grtqc.training_origin == "scratch"
+                    and metadata.evaluation is not None
+                ):
+                    resume_evaluation = EvaluationResult(**metadata.evaluation)
+                    if (
+                        resume_evaluation.episodes >= 5
+                        and resume_evaluation.finish_rate == 1.0
+                        and resume_evaluation.crash_rate == 0.0
+                        and resume_evaluation.off_track_rate == 0.0
+                        and resume_evaluation.stall_rate == 0.0
+                        and resume_evaluation.barrier_contact_steps == 0
+                    ):
+                        self._scratch_previous_clean_eval_lap_s = (
+                            resume_evaluation.median_lap_s
+                        )
+                        self._emit({
+                            "type": "scratch_resume_pace_reference",
+                            "median_lap_s": resume_evaluation.median_lap_s,
+                            "training_origin": "scratch",
+                        })
                 self.set_hud_model_context(
                     model_slot=resume.name,
                     policy_checkpoint_step=getattr(metadata, "training_timesteps", 0),

@@ -1495,3 +1495,32 @@ was refreshed and the weak-actor count reached 3/5; no rollback or promotion
 occurred. The GUI continued training with the actor unlocked and no critic
 recovery cooldown. At step 2,700,990 the replay index contained 27 entries,
 including finished run replays; Champion remained unchanged.
+
+### Preserve clean, improving scratch candidates
+
+The following deterministic clean five-lap evaluations were 33.848 s at step
+2,697,750, 33.821 s at 2,700,006, 33.764 s at 2,702,262, and 33.733 s at
+2,704,534. Each remained slower than the 33.372 s Champion, so the existing
+weak-evaluation counter rose to 5/5 and restored Champion's actor at
+2,704,534—even though the clean candidate's pace had improved at every check.
+Critics and replay were retained. This exposed a training-search issue: actor
+recovery considered only whether the candidate had beaten Champion, not whether
+its clean pace was moving in the right direction.
+
+The GUI run continued after that rollback. It later recorded clean five-lap
+checks at 33.372 s (step 2,709,030) and 33.654 s (step 2,711,286); the latter
+was weak evaluation 2/5. The run was stopped cleanly at step 2,711,286 and
+Latest saved. Its replay session `ea773856ace643b78cff20dff7a49736` contained
+41 indexed episodes. Champion remains a clean five-lap 33.372 s.
+
+Change: track the preceding clean five-lap median within each actor search.
+When a clean candidate improves by at least 0.01 s over the preceding clean
+evaluation, emit `actor_pace_improved` and reset the weak-evaluation streak.
+Five consecutive clean checks without such progress still recover Champion's
+actor. Contact regressions still trigger immediate rollback. Seed the pace
+reference from a clean saved evaluation when continuing Latest, so a GUI
+restart does not discard the pace comparison. No action mapping, rewards,
+learning rates, drift limits, critics, replay contents, or Champion weights
+were changed. The updated runner was syntax-compiled; the GUI is being
+restarted from saved Latest with the same training profile and one-million-step
+budget.
