@@ -2001,3 +2001,10 @@ actor counter restarted at 1 of 5. Training remained active at step 2,987,745
 with actor updates unlocked, reference drift 0.0094, update norm 0.000225,
 full replay, and 27.1 steps/s. The visual replay session contains 120 runs
 (87 finished, 33 interrupted); Champion remains unchanged.
+
+After recovery, the next screen at step 2,989,711 was 33.750 seconds, clean
+but slower than Champion; the weaker-actor counter advanced to 2 of 5. Training
+continued at step 2,991,324 with actor updates active, reference drift 0.0549,
+no reference-cap saturation, full replay, and 27.2 steps/s. The current visual
+replay inventory is 123 runs (89 finished, 34 interrupted). No settings were
+changed, and Champion remains 33.372 seconds.
