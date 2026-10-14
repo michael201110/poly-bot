@@ -1616,3 +1616,33 @@ the strict promotion gate kept Champion unchanged and counted weak check 1/5.
 Latest records the candidate at 33.372 s. Training continued near step
 2,743,906 with another evaluation pending; replay capture had grown to 40
 entries, 29 finished. No action mapping or reward settings changed.
+
+## Disk recovery and renewed contact penalty
+
+On 2026-10-14 the run stopped at step 2,755,174 when C: ran out of space.
+Latest had a saved checkpoint at step 2,751,286; the in-progress evaluation
+was not a checkpoint. Champion remained protected at 33.372 s. Following the
+user-approved cleanup, 78 historical checkpoint `replay.pkl` files (19.14 GB)
+were removed; visual replays and the Champion replay were left in place. The
+drive had about 19.14 GB free afterward.
+
+The existing Simple Track profile
+`profiles/training/simple-track-grtqc-contact-aware-30.json` now uses a
+`-4500` barrier-contact penalty, tripled from `-1500`, because repeated
+five-lap evaluations contacted a barrier near the finish and triggered actor
+rollback. Its checkpoint interval is 50,000 decisions instead of 10,000 to
+limit disk use. The full-track, frame-skip-30, one-million-decision budget and
+the existing actor safeguards remain. No action remapping was made: the recent
+14-episode replay sample contained exact -1 and +1 policy outputs. About 3.77%
+of steering and 2.58% of longitudinal samples fell in the 0.965-0.975 band.
+At frame skip 30, a 0.97 PWM request corresponds to about 29 of 30 ticks, not a
+bridge clamp. Mapping near-full actions to full would increase barrier risk.
+
+Training was continued from Latest with the selected contact penalty and its
+existing actor settings. The GUI reported that the saved policy and critics
+were loaded, while the old training replay was discarded and is being refilled
+under the changed reward settings. The new run was active at step 2,754,451
+when recorded, using CUDA on the NVIDIA T500. The protected Champion and its
+five-lap gate were not changed. No post-change deterministic five-lap result is
+available yet, so the stronger penalty remains an experiment rather than a
+verified pace improvement.
