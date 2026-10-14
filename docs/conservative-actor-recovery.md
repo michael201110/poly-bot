@@ -1257,3 +1257,9 @@ than Champion, and was rejected without rollback. After the clean reference was
 refreshed, actor updates resumed; at step 2,514,887 the update norm was
 0.000087 with cumulative drift 0.00492. Training remained active, with 108
 visual replay attempts preserved.
+
+The five-lap candidate at step 2,516,998 measured 33.773 seconds with one
+barrier contact on every lap at 99.02% progress (peak impulse 135.73). The
+contact gate restored Champion. At step 2,518,387 critic recovery had 653
+updates remaining and the actor was locked; the replay archive contained 112
+attempts. Champion remains 33.372 seconds, 5/5 and zero-contact verified.
