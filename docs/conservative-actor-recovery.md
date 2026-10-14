@@ -1291,3 +1291,9 @@ The next deterministic five-lap check at step 2,532,710 was clean at
 33.537 seconds, but 0.165 seconds slower than Champion; it was rejected and
 the clean anchor refreshed. At step 2,534,035 training was still active. The
 replay archive contained 131 attempts; no Champion replacement occurred.
+
+At step 2,534,966 the candidate completed five clean laps at 33.453 seconds.
+This is the closest clean result in the current actor search, but remains 0.081
+seconds slower than the protected 33.372-second Champion and was not promoted.
+The clean reference refreshed and training continued. The replay archive held
+135 attempts.
