@@ -48,12 +48,15 @@ reporting 10.3 steps/s and retaining its best training lap of 33.105 s. No
 new Champion has been promoted.
 
 The new visual replay run `3df0a4c5db0c4f5ca9e2d91062360b75` remains a normal
-directory on C: and contains 11 captured episodes so far. The newest completed
-training episode finished in 33.599 s; this is a training capture, not a
-verified champion evaluation. The background archive has moved 66 completed
-run directories to D: and installed junctions at their original paths. At the
-latest check, training was connected on port 8765 at step 3,604,770. C: had
-about 24.9 GB free and D: had about 148.4 GB free.
+directory on C: and contains 12 captured episodes so far. The latest completed
+training episode finished in 33.797 s; training captures are not champion
+evaluations. A later deterministic five-lap check finished in 33.693 s with
+zero contacts, slower than the 33.495 s best clean candidate, and was
+rejected. No Champion changed. The replay archive is complete: 91 of the 93
+existing replay directories are on D: with junctions at their original
+paths; the current and previous active runs remain local on C:. At the latest
+check, training was connected on port 8765 at step 3,606,153, reporting 11.5
+steps/s. C: had about 28.8 GB free and D: had about 144.3 GB free.
 
 ## Racing-line update behavior
 
