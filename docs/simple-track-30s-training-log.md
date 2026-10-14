@@ -1131,3 +1131,16 @@ but later regressed to 10 repeated contact steps at step 3,664,384. No cap
 change was made during this live run; its recovery and Champion guard remain in
 control. Replay capture is active, port 8765 is listening, and C: still has
 25.9 GB free.
+
+### Contact locations and recovery baseline, 23:20 UTC
+
+The next actor screen at step 3,896,403 measured 33.711 s (5/5 finishes) but
+had 15 barrier-contact steps and a maximum impulse of 111.08. Contacts repeated
+at progress 98.9489%, 99.2327%, and 99.3742% on each lap. The guard rejected
+that actor and entered recovery. During the ensuing actor lock, episodes 12 and
+13 completed cleanly at 33.324 s and 33.338 s, matching Champion pace; at step
+3,897,168, recovery had 809 critic updates remaining and actor updates were
+still locked. This separates the stable baseline behavior from the late-track
+contacting proposal. The current run's replay index contains the corresponding
+training and evaluation traces for swarm/replay analysis. Training stayed live
+on port 8765; C: had 25.9 GB free and D: 144.3 GB.
