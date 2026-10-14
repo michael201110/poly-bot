@@ -2498,3 +2498,12 @@ and began the configured 1,000-update critic cooldown at actor learning rate
 2e-6. At step 3,180,912 the resumed run was progressing at 27.46 steps/s with
 the replay buffer full. Visual capture had 361 episodes (259 finished, 102
 interrupted), including the rejected contact run for later inspection.
+
+After the contact-triggered actor restore, the deterministic five-lap evaluation
+at step 3,182,847 matched Champion at 33.372 seconds with zero barrier
+contacts across all five laps. It was not promoted because it did not beat the
+protected pace; the weaker-actor streak is 1 of 5 and training continues. At
+step 3,183,524 the trainer remained active with the 250,000-transition replay
+buffer full and throughput at 27.45 decisions/s. Visual capture contains 364
+episodes (261 finished, 103 interrupted), retaining the clean tie and the
+preceding rejected contact run.
