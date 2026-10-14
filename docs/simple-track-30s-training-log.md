@@ -606,3 +606,13 @@ This is evidence of a line shift associated with the contacts, not proof that
 the line shift alone caused them. At 20:59:53 local, the same trainer had
 resumed at step 3,739,181 in episode 90 (55.2% progress); port 8765 was owned
 by PID 17144. The visual replay index had 123 entries and C: had 29.2 GB free.
+
+### First candidate after contact recovery, 21:03 local
+
+Episodes 88-90 after recovery reproduced Champion's 33.324 s training pace.
+The first post-cooldown five-lap candidate at step 3,740,784 was 33.744 s,
+with 5/5 finishes and zero barrier contacts. It was preserved at
+`models/simple-track/grtqc/checkpoints/step-3740784-rejected/` and counted as
+the first weaker evaluation since recovery. At 21:03, PID 17144 still owned
+port 8765 and had reached step 3,741,633, episode 92 (74.4% progress). The
+visual replay index had 126 entries and C: had 29.2 GB free.
