@@ -178,3 +178,15 @@ that cap to 0.005 for the next continuation. The cumulative allowance remains
 screening, and Champion rollback/preservation gates are unchanged. The next
 continuation will resume from the saved 33.628 s checkpoint and its replay
 buffer; the active process is not changed by this profile edit alone.
+
+
+The profile change was activated from the clean latest checkpoint at step
+3,638,528 (33.628 s, 5/5, zero barrier contacts); resume restored all 250,000
+replay transitions. The new trainer reconnected on port 8765 and started visual
+replay run `b65f8d3033ef43d9a20fb1ebeeedf6d3`. At step 3,639,653, proposed
+actor drift was 0.03162 and executed drift 0.004994, confirming the 0.005
+per-update cap is active. The first deterministic five-lap evaluation under
+this cap finished 5/5 with zero contacts at 33.609 s (step 3,639,664), 0.019 s
+faster than its resume checkpoint but 0.064 s slower than the previous
+33.545 s clean candidate and 0.285 s slower than Champion. No promotion was
+made; replay recording and training remain active.
