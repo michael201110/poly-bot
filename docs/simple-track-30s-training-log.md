@@ -1085,3 +1085,12 @@ The first post-resume episode finished at step 3,882,964 in 33.603 s (full-track
 finish). Its visual replay index was created and had two entries by 00:06:48
 local, confirming capture has resumed. This is an ordinary training episode,
 not a five-lap candidate verification; Champion remains unchanged.
+
+### First resumed deterministic screen
+
+At step 3,882,979, the first post-resume five-lap deterministic screen measured
+33.725 s median and best, with all five finishes and zero barrier-contact steps.
+It was rejected as slower than Champion. The protected 33.324 s actor was not
+overwritten. Training continued past step 3,883,297, the T500 remained connected
+on port 8765, and this run's WebSocket visual replay index continues to hold the
+new episode recordings for future swarm playback.
