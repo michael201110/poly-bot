@@ -334,3 +334,24 @@ caused the divergence. The active visual replay index had 56 entries through
 episode ID 57; 96 replay directories were present overall. C: had 29.8 GB free
 and D: 144.3 GB. Training and replay capture remain active; Champion is
 unchanged.
+
+## 2026-10-14 actor exploration check
+
+At 19:59 local, training remained live as PID 17144 on port 8765 and had
+advanced to step 3,698,085 (episode 53 in progress). The latest finished
+training lap was 33.783 s; the latest five-lap screen remained 33.617 s, clean
+5/5 with zero barrier contacts. The current replay index had 76 entries,
+including finished training attempts and an interrupted short entry as the
+next evaluation began. Replay capture is still active. C: had 29.8 GB free and
+D: 144.3 GB.
+
+The live profile keeps exploration low (`exploration_std=0.0025`) and delays
+actor updates (`actor_update_interval=16`). Each actor step is also limited to
+0.005 action drift, with a 0.5 cumulative reference-drift cap. The recent
+progress log showed 63 actor Adam updates and entropy coefficient about
+0.00167. These values give a plausible explanation for the actor's reluctance
+to explore a substantially different line, but do not prove that exploration
+is the only cause of the plateau. The saved 33.105 s replay is still not a
+verified reproducible policy lap. I left the loaded profile and live process
+unchanged; these settings can only affect a future trainer launch, and changing
+them during this run would require a restart. Champion remains 33.324 s.
