@@ -2290,3 +2290,9 @@ progress (peak impulse 124.2). Champion actor restoration started another
 actor remained locked with 119 cooldown updates left; throughput was 27.7
 steps/s and replay capture contained 254 episodes (184 finished, 70
 interrupted). The protected 33.372-second Champion remains unchanged.
+
+The next five-lap screen at step 3,097,551 tied Champion at 33.372 seconds,
+with all five laps finishing cleanly and zero barrier contacts. The equal-time
+candidate was not promoted. Training resumed with actor updates unlocked and
+full replay; at step 3,098,084 throughput was 27.6 steps/s. Visual replay
+capture contained 256 episodes (185 finished, 71 interrupted).
