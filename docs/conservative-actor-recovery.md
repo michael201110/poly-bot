@@ -1726,3 +1726,11 @@ actor pace check improved 0.177 s over the prior 33.755 s check, but remained
 0.206 s slower than Champion. Training continued at step 2,813,099 with
 210,446 replay transitions and actor updates active. Visual replay capture
 reached 76 episodes in the current session; C: had 15.72 GB free.
+
+The 33.790 s evaluation at step 2,814,758 had one barrier contact on each of
+five laps, all at 99.23% progress (peak impulse 1,385.41). The candidate was
+rejected, Champion's actor restored, and critics/replay preserved for another
+1,000-update cooldown. The post-recovery five-lap check at step 2,819,222 was
+clean at 33.372 s, tying Champion. Training remained active at step 2,819,739
+with 230,526 replay transitions and 84 visual replay episodes in the current
+session; C: had 15.65 GB free. No new Champion was promoted.
