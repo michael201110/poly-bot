@@ -2414,3 +2414,11 @@ recent 33.472-second best and 0.175 seconds slower than Champion, so it was
 not promoted. Training resumed with actor updates unlocked and replay full;
 at step 3,149,166 throughput was 27.72 steps/s. Replay capture contained 321
 episodes (231 finished, 90 interrupted).
+
+The next candidate at step 3,149,167 ran 33.501 seconds but repeated one late
+contact per lap at 99.02% progress (5 contact steps total; peak impulse 81.2).
+The contact gate rejected it, restored Champion, and started a 1,000-update
+critic cooldown with replay retained. At step 3,151,936 the actor was locked
+with 308 cooldown updates remaining, replay full, and throughput at 27.73
+steps/s. Visual replay capture contained 323 episodes (233 finished, 90
+interrupted).
