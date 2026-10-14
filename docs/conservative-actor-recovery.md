@@ -1231,3 +1231,10 @@ at step 2,503,532 showed actor training unlocked but zero executed update norm
 and cumulative reference drift near 0.04; the run remains active. This merits
 continued monitoring of the trust-boundary updates. The replay archive had 96
 attempts.
+
+The next five-lap candidate at step 2,503,542 was 33.695 seconds with one
+barrier contact on every lap at 98.95% progress (peak impulse 73.79). The
+contact gate restored Champion; at step 2,505,575 the trainer was active in
+critic recovery with 492 updates remaining, and the replay archive contained
+98 attempts. The repeated finish-area contact persists despite sub-0.04 actor
+updates; no candidate was promoted.
