@@ -391,3 +391,15 @@ checkpoints and leaves the candidate training, while Champion promotion
 requires a better reliable evaluation. It recovers the actor after five weak
 evaluations (this profile's `recovery_weak_evaluations` setting), so a single
 33.692 s screening result does not trigger a rollback or risk Champion.
+
+The full five-lap evaluation for that proposal completed at step 3,700,352:
+33.692 s median and best, 5/5 finishes, zero barrier contacts. It was rejected
+as slower than Champion and preserved at
+`models/simple-track/grtqc/checkpoints/step-3700352-rejected/`. The preceding
+33.484 s five-lap candidate is also preserved at
+`models/simple-track/grtqc/checkpoints/step-3698096-rejected/`; it remains the
+best recent candidate, although still 0.160 s behind Champion. The weak-actor
+counter is 1 of 5. At 20:05 local, PID 17144 remained live and had resumed
+training through step 3,700,741. Replay capture had 77 indexed entries, with
+the next training episode in progress; C: remained at 29.8 GB free and D: at
+144.3 GB. No cleanup or trainer restart was needed.
