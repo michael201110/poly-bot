@@ -1386,3 +1386,16 @@ and 0.4% of steering samples. Thus the near-maximum display corresponds to
 actual near-maximum demands and the policy sometimes selects the endpoint. This
 single lap does not show that changing its requests to full demand would improve
 pace; do not apply a blanket endpoint snap from these counts.
+
+### First resumed evaluations
+
+The deterministic five-lap screen at step 2,658,655 was clean at 33.775 seconds
+and was rejected as slower than Champion (weak pace check 1/5). The next screen at
+step 2,660,911 measured 33.740 seconds but recorded ten barrier-contact steps
+across its five laps. The existing contact gate rejected the actor and restored
+the Champion actor; it kept the critics and replay. Later recorded training
+laps were 33.372 seconds, matching Champion after that rollback. No candidate
+has promoted and Champion remains 33.372 seconds. The active replay session
+`db3c90bf2c5848a0a14fa2a54741da5a` held eight entries at step 2,664,960,
+including finished runs and interrupted entries; capture continues during
+training.
