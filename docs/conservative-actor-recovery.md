@@ -1263,3 +1263,8 @@ barrier contact on every lap at 99.02% progress (peak impulse 135.73). The
 contact gate restored Champion. At step 2,518,387 critic recovery had 653
 updates remaining and the actor was locked; the replay archive contained 112
 attempts. Champion remains 33.372 seconds, 5/5 and zero-contact verified.
+
+After the finish-area rollback, the next five-lap evaluation at step 2,521,478
+was clean at 33.847 seconds. It was slower than Champion and was rejected; the
+clean anchor refreshed and actor updates resumed (norm 0.000107, drift 0.00984
+at step 2,521,745). The active replay archive contained 116 attempts.
