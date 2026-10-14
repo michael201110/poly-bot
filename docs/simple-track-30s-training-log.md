@@ -448,3 +448,21 @@ At 20:10 local, PID 17144 was still training on port 8765 and had reached step
 3,704,709. The replay index had 81 entries, and visual replay recording
 continued. C: had 29.7 GB free and D: 144.3 GB. The latest verified actor is
 0.030 s off Champion; no promotion or rollback occurred.
+
+## 2026-10-14 barrier-contact recovery
+
+At step 3,704,848, the next actor screening lap was 33.672 s with one barrier
+contact step. The full deterministic evaluation repeated that contact on all
+five laps (5/5 finishes, 5 total contact steps), so the contact-regression
+gate rejected the proposal and restored the protected Champion actor. The
+rejected actor is preserved at
+`models/simple-track/grtqc/checkpoints/step-3704848-rejected/`. Recovery kept
+the critic replay buffer and began the configured 1,000-update critic cooldown;
+the trainer itself stayed live on port 8765.
+
+Training resumed immediately from the restored actor. Its first post-recovery
+training episode (episode 60, step 3,705,959) finished in 33.324 s with a clean
+finish, and the visual replay is saved as `episode-000086.npz`. This is a
+single training lap, not a new five-lap verification. At 20:13 local, the
+trainer had advanced to step 3,706,443 and the replay index contained 84
+entries. C: had 29.7 GB free and D: had 144.3 GB. Champion remains 33.324 s.
