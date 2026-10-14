@@ -639,3 +639,13 @@ regression recovery again restored Champion, preserved critic replay, and
 started a 1,000-update cooldown. At 21:11, PID 17144 still owned port 8765 and
 had advanced to step 3,747,677, episode 98 (6.9% progress). The visual replay
 index held 134 entries and C: had 29.1 GB free.
+
+### Post-recovery Champion match, 21:15 local
+
+After the second contact recovery, episodes 97 and 98 returned to 33.324 s,
+and episode 99 completed in 33.191 s. The deterministic five-lap check at
+step 3,749,776 then matched Champion at 33.324 s (5/5 finishes, zero
+contacts). It was not promoted because it did not beat Champion; this is the
+first weaker check since the recovery. At 21:15, PID 17144 had resumed on port
+8765 at step 3,750,277, episode 100 (41.4% progress). The visual replay index
+held 137 entries and C: had 29.1 GB free.
