@@ -1469,3 +1469,16 @@ captures for episodes 1 and 3 (about 9.4 MB each); episode 2 has a short 84 KB
 capture. This confirms replay capture continues. The Champion remains 33.324 s
 (5/5 clean, zero contacts). No pace improvement has been verified yet; wait for
 the next deterministic evaluation before tuning further.
+
+### Contact rollback during uncertainty-aware continuation, 02:39 UTC
+
+The second candidate screening reached 33.973 s with two barrier contacts. Its
+full five-episode follow-up also had median 33.973 s but accumulated ten
+barrier-contact steps, so the regression guard rejected the actor, emitted
+`contact_regression_rollback`, and began actor recovery. At step 4,025,191 the
+same run was still advancing; the actor was locked, 840 critic recovery updates
+remained, actor uncertainty coefficient was 1.0, and the live visual replay
+index held five captures. The 33.324 s clean Champion remains protected. This
+trial has not improved pace and has increased contact risk; keep training
+through the configured recovery and evaluate the restored anchor before
+changing actor constraints again.
