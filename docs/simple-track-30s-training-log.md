@@ -1396,3 +1396,16 @@ At 01:36 local the trainer remained active through step 3,970,560, and the
 visual replay archive contained 103 entries through episode 000111. C: had
 25.0 GB free and D: had 144.3 GB. Champion remains 33.324 s; the 30 s goal
 is still unmet.
+
+### Post-recovery pace gain followed by near-finish rollback, 00:46 UTC
+
+After the step-3,970,563 contact rollback and critic cooldown, the next
+clean five-lap actor screen at step 3,977,283 improved to 33.618 s. It was
+still slower than the 33.324 s Champion, so Champion remained protected.
+The following candidate at step 3,979,555 measured 33.695 s and contacted
+the barrier once on each of its five deterministic evaluation laps at
+99.233% progress (peak impulse 1,050.63). This is a second failure location,
+separate from the earlier 63.4-63.7% corner. The contact gate restored the
+Champion actor again. Training continued through step 3,980,196, and the
+visual replay index had 114 entries through episode 000122. Port 8765 remained
+live; the protected Champion is unchanged at 33.324 s.
