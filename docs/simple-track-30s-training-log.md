@@ -2778,3 +2778,12 @@ The five-lap evaluation at step 4,687,052 completed in 33.867 s (5/5 finishes, n
 The following five-lap evaluation at step 4,711,596 finished at 34.037 s, with three repeated barrier contacts on every lap at progress 0.63083, 0.63145, and 0.63206 (15 total, maximum impulse 1,537.6). The contact gate rejected the candidate, restored it from Champion, and started a 1,000 critic cooldown while preserving critics and replay. Replay transitions (6,810) were retained.
 
 At 13:42:13 UTC training remained active at step 4,714,010, episode 558, with 397 cooldown updates remaining. C: had about 16.6 GiB free.
+
+
+### Clean slower evaluation followed by near-finish contact rollback, 13:47 UTC
+
+The five-lap evaluation at step 4,716,044 completed in 33.786 s (5/5 finishes, no contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion and was rejected without rollback; weaker-actor count became 1 of 5. Replay transitions (6,762) were retained.
+
+The following five-lap evaluation at step 4,718,300 finished in 33.778 s, with one repeated barrier contact on every lap at progress 0.98878 (five total, maximum impulse 195.9). The contact gate rejected the candidate, restored it from Champion, and started a 1,000 critic cooldown while preserving critics and replay. Replay transitions (6,756) were retained.
+
+Training and GUI processes remained active after rollback. C: had about 16.6 GiB free.
