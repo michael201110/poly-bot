@@ -1658,3 +1658,14 @@ with zero contact steps. It was rejected as slower than both Champion and the
 post-recovery clean tie; the weak-actor guard recorded the decline. Training
 continued beyond step 4,067,882 with automatic replay capture. This sample does
 not show pace improvement; Champion remains unchanged.
+
+
+### Repeated contact rollback in 0.005 exploration trial, 02:30 UTC
+
+The next candidate screened at step 4,068,917 and confirmed at 33.744 s, 5/5
+finishes, with five barrier-contact steps total. The contact gate rejected it,
+restored the Champion actor, and started another critic recovery while retaining
+training and replay. Training continued past step 4,070,642. The 0.005
+exploration setting has not yielded a verified pace gain and has now produced
+multiple contact rollbacks (including the 34.094 s screen at step 4,059,941).
+Keep the deterministic five-lap and contact gates; no Champion change.
