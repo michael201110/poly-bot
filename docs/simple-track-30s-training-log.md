@@ -1934,3 +1934,9 @@ At 06:24 UTC the same learner was active at step 4,292,354, episode 182, about 1
 The candidate at step 4,293,884 completed five deterministic laps at 33.864 s (5/5 finishes, five barrier-contact steps total, one per lap). The contact gate rejected it, restored the protected Champion actor, and began another 1,000-update critic recovery while preserving critics and replay.
 
 At 06:27 UTC the run was active at step 4,294,617, episode 184, about 15.8 decisions/s, with the actor locked and 817 recovery updates remaining. Replay capacity stayed full at 250,000 transitions, and the visual replay bundle contained 248 episodes. Champion and training settings were unchanged.
+
+### Recurring one-contact rollback, 06:31 UTC
+
+The candidate at step 4,298,348 completed five laps at 33.697 s (5/5 finishes, five barrier-contact steps total, one per lap). The contact gate rejected it and restored the protected Champion actor while retaining critics and replay, starting another 1,000-update critic recovery.
+
+At 06:31 UTC training remained active at step 4,299,753, episode 189, about 15.9 decisions/s, with 649 recovery updates remaining and actor updates locked. Replay remained full at 250,000 transitions; the visual replay bundle contained 253 episodes. No training settings or Champion files were changed.
