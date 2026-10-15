@@ -1619,3 +1619,13 @@ the 33.324 s Champion, while the clean pace-improvement tracker reset against
 the preceding 33.762 s Latest reference. The same run continued collecting
 training data after the screen (step 4,056,522); its visual replay bundle was
 created and continued receiving captures. No Champion change.
+
+
+### Second moderate-exploration evaluation, 02:18 UTC
+
+At step 4,057,669 the next deterministic five-lap check was 33.544 s, 5/5
+finishes, with zero barrier contacts. It was rejected: this is 0.220 s slower
+than Champion and 0.004 s slower than the preceding 33.548 s screen, so it did
+not reset the clean pace reference. Training continued with replay capture on;
+by 02:19 UTC it had reached step 4,059,142. The active WebSocket listener stayed
+on port 8765. No Champion update.
