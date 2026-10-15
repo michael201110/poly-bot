@@ -1786,3 +1786,6 @@ The candidate at step 4,123,228 confirmed at 33.943 s over five laps (5/5 finish
 
 
 The screen at step 4,127,708 was confirmed by five deterministic laps at 33.324 s (5/5, zero barrier contacts, off-track events, or crashes). It tied, but did not beat, Champion and was not promoted. At step 4,128,917, the active learner resumed with actor unlocked and full replay; its visual-replay bundle had 47 episodes. The current 0.0075 actor cap remains in use; the staged 0.00875 profile has not been loaded into the running trainer.
+
+
+The five-lap confirmation at step 4,129,964 measured 33.744 s (5/5 clean, zero barrier contacts, off-track events, or crashes), slower than Champion and therefore rejected. At step 4,131,501, the run was still active with actor unlocked, replay full, and the 0.5 uncertainty setting. The active replay bundle contained 50 episodes. The preceding screen's proposed action drift was below the 0.0075 cap, so there is no evidence that raising the cap would affect every actor update; the staged 0.00875 profile remains untested and unapplied.
