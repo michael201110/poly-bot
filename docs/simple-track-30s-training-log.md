@@ -2730,3 +2730,10 @@ At 12:55:31 UTC training remained active at step 4,666,973, episode 516, with cr
 The five-lap evaluation at step 4,668,876 completed in 33.829 s (5/5 finishes, no contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion, so it was rejected without rollback; weaker-actor count became 3 of 5. Evaluation replay transitions (6,768) were retained.
 
 At 12:58:15 UTC training remained active at step 4,669,357, episode 518, with critic recovery complete and replay capture active. C: had about 17.5 GiB free.
+
+
+### Recurrent mid-lap and finish contacts triggered rollback, 13:00 UTC
+
+The five-lap evaluation at step 4,671,148 finished in 33.985 s median, with three repeated barrier contacts on every lap at progress 0.63206, 0.63393, and 0.98806 (15 total, maximum impulse 1,311.6). The contact gate rejected the candidate, restored it from protected Champion, and started a 1,000 critic cooldown while preserving critics and replay. Evaluation replay transitions (6,798) were retained.
+
+At 13:00:57 UTC training remained active at step 4,671,743, episode 520, with 852 cooldown updates remaining. Champion remains 33.324 s. C: had about 17.5 GiB free.
