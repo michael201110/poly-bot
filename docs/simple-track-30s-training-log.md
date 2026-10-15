@@ -1681,3 +1681,18 @@ by 33.781 s, 33.744 s with five contact steps (rollback), and 33.873 s. The
 0.005 exploration trial has not improved the protected pace and continues to
 show actor instability. Training and replay capture remained active beyond step
 4,075,178; no Champion change.
+
+
+### Contact rollback and actor-objective check, 02:36 UTC
+
+At step 4,075,621, the five-lap evaluation was 33.833 s with 10 total contact
+steps (two on the initial screen, repeated across the five-lap confirmation).
+The contact guard rejected the actor and started the configured critic cooldown;
+training and replay collection continued. During this run's 722 unlocked-actor
+progress samples, mean `actor_q_mean` was -50.03 and mean
+`actor_uncertainty_penalty` was 0.689 (coefficient 1.0). Mean critic disagreement
+was 5.55 with a long tail to 72.91. These raw metrics do not indicate that the
+uncertainty term numerically dominates the Q scale, but they do not establish a
+causal relationship with pace. I left the uncertainty coefficient and reward
+unchanged. The training bridge remained active and the replay bundle retained
+the rejected candidate and evaluation.
