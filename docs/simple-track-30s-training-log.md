@@ -2684,3 +2684,10 @@ At 12:33:22 UTC training remained active at step 4,642,273, episode 494, with cr
 The five-lap evaluation at step 4,644,236 finished in 34.088 s median. All five laps repeated three barrier contacts at progress 0.62900, 0.62961, and 0.63455 (15 total, maximum impulse 3,571.0). The contact gate rejected the actor, restored it from protected Champion, and started a 1,000 critic cooldown while preserving critics and replay. Evaluation replay transitions (6,822) were retained.
 
 At 12:36:01 UTC training remained active at step 4,644,569, episode 496, with 917 cooldown updates remaining. The best recent clean candidate remains 33.402 s; protected Champion remains 33.324 s. C: had about 17.5 GiB free.
+
+
+### Repeated near-finish contact regression, 12:39 UTC
+
+The five-lap evaluation at step 4,648,700 finished in 33.569 s median (5/5 finishes), but every lap made a barrier contact at progress 0.99374 (five total, maximum impulse 1,163.4). The contact gate rejected the actor, restored it from protected Champion, and started a 1,000 critic cooldown while preserving critics and replay. Evaluation replay transitions (6,714) were retained.
+
+At 12:39:58 UTC training remained active at step 4,649,913, episode 501, with 697 cooldown updates remaining. Champion remains 33.324 s. C: had about 17.5 GiB free.
