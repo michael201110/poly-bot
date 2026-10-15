@@ -2486,3 +2486,10 @@ At 10:49:58 UTC training remained active at step 4,537,013, episode 400, with 84
 The deterministic five-lap evaluation at step 4,540,860 completed in 33.697 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.526 s clean actor-pace best and protected 33.324 s Champion, so it was rejected for promotion without rollback. The weaker-actor evaluation count reset to 1 of 5. The evaluation replay was saved.
 
 At 10:53:41 UTC training remained active at step 4,540,997, episode 404, with recovery complete and replay capture active. C: had about 18.3 GiB free. No settings or protected Champion files were changed.
+
+
+### Small clean actor pace gain to 33.668 s, 10:56 UTC
+
+The deterministic five-lap evaluation at step 4,543,116 completed in 33.668 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved 0.029 s over the preceding clean evaluation at 33.697 s and was marked as an actor pace improvement. It remains slower than the 33.526 s best recent actor candidate and protected 33.324 s Champion, so it was rejected for Champion promotion without rollback. The evaluation replay was saved.
+
+At 10:56:38 UTC training remained active at step 4,543,853, episode 406, with recovery complete and replay capture active. C: had about 18.2 GiB free. No settings or protected Champion files were changed.
