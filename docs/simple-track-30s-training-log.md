@@ -1358,3 +1358,25 @@ Training remained active on port 8765 after rollback. Episode 65 was underway
 at step 3,953,740 in the latest observed log; the active replay index had 90
 entries. C: had about 25.2 GB free and D: about 144.3 GB. The protected
 Champion remains 33.324 s.
+
+### Rejected line-change trace and continued training, 00:28 UTC
+
+I compared the rejected step-3,952,531 actor and protected Champion on the
+saved observations from episode 000087 around the repeated 63.455% contact
+section. The rejected actor's predicted actions closely matched the recorded
+training controls (whole-lap MAE 0.0057 steering and 0.0053 longitudinal).
+At the nearest contact-zone sample, its steering was -0.346 versus Champion's
+-0.071, while both predicted longitudinal actions were about 0.99. Across the
+20 samples within one percentage point of the section, the rejected actor
+steered 0.147 more negative on average. This shows a material alternate line
+choice in the saved training states, but does not prove that line is viable
+in closed loop: its deterministic five-lap rollout contacted the barrier at
+that exact progress on all five laps. The comparison is open-loop on saved
+states and cannot identify the cause of the later trajectory divergence.
+
+Post-recovery five-lap screens were 33.324 s at step 3,956,995 (clean tie
+with Champion), 33.621 s at step 3,959,251 (clean), and 33.657 s at step
+3,961,507 (clean). The latter two candidates were rejected as slower; Champion
+remains 33.324 s. Training was active at step 3,963,763, with visual replay
+capture at 94 indexed episodes through episode 000102. Port 8765 was live;
+C: had 25.1 GB free and D: had 144.3 GB.
