@@ -1611,3 +1611,11 @@ The resumed run reached step 4,055,397 and produced a one-lap screen of
 configured deterministic five-lap confirmation is now pending; this single lap
 is not a promotion result. The GUI remains active on port 8765 and the same run
 continues with its replay capture enabled.
+
+
+The confirmation completed at 02:15 UTC: 33.548 s median, 5/5 finishes, and
+zero barrier contacts. It was rejected because it remains 0.224 s slower than
+the 33.324 s Champion, while the clean pace-improvement tracker reset against
+the preceding 33.762 s Latest reference. The same run continued collecting
+training data after the screen (step 4,056,522); its visual replay bundle was
+created and continued receiving captures. No Champion change.
