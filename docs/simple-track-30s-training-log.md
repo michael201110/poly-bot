@@ -2120,3 +2120,10 @@ This contact regression occurred with the existing conservative update cap, so r
 After contact rollback and the 1,000-update critic cooldown, the actor unlocked. Recorded training episodes at steps 4,383,722 and 4,384,846 included a 33.713 s lap and a 33.313 s lap respectively; both replays are saved in the active visual-replay bundle. The 33.313 s result is a single training rollout, not a verified deterministic result. The following clean five-lap actor evaluation at step 4,385,964 was 33.521 s (5/5 finishes, zero barrier contacts, zero crashes/off-track events). It was rejected because it remains slower than the protected 33.324 s Champion; no promotion occurred.
 
 Training resumed at step 4,387,064, episode 266, about 15.7 decisions/s, with actor updates unlocked and no recovery cooldown. Replay capture remains active. The exploratory lap shows the run can occasionally reach Champion pace, but repeatability is still unproven and the 30 s target remains unmet. C: had 19.95 GiB free. No training settings or protected checkpoints were changed.
+
+
+### Second post-recovery contact regression, 08:10 UTC
+
+The actor evaluation at step 4,388,220 completed five laps at 33.912 s (5/5 finishes, 15 barrier-contact steps total, zero crashes and off-track events). It was rejected and `contact_regression_rollback` restored the actor; a new critic recovery cooldown started. At step 4,389,885, episode 269, training was still active at about 15.7 decisions/s with actor updates locked and 584 recovery updates remaining. The five-lap evaluation replay was saved. This is the second consecutive contact-heavy actor candidate after a recovery cycle, reinforcing that the current actor updates are not yet yielding repeatable clean pace; the Champion remains protected at 33.324 s.
+
+The current actor step cap remains 0.0075, cumulative reference drift limit 0.5, actor LR 5e-6, uncertainty coefficient 0.5, n-step return 16, and replay capacity 250,000. I did not change these during the active cooldown. Visual replay capture remains enabled; C: had 19.93 GiB free. Training and port 8765 remained live.
