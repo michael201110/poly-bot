@@ -2344,3 +2344,10 @@ At 09:44:15 UTC training remained active at step 4,477,144, episode 347, about 1
 The deterministic five-lap evaluation at step 4,478,012 completed in 33.791 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.349 s clean actor best and the protected 33.324 s Champion, so it was rejected without promotion or contact rollback. The evaluation replay was saved.
 
 At 09:47:01 UTC training remained active at step 4,479,375, episode 349, about 15.6 decisions/s, actor unlocked with cumulative reference drift 0.156/0.5 and no critic recovery cooldown. The replay buffer remained at 250,000 transitions and visual replay capture remained enabled. C: had 18.94 GiB free. No settings or protected Champion files were changed.
+
+
+### 93.5% barrier contact regression, 09:49 UTC
+
+The deterministic five-lap evaluation at step 4,480,268 completed in 33.702 s (5/5 finishes, five barrier-contact steps, one at 0.93527 progress on each lap; maximum impulse 315.2). The contact gate rejected the candidate, restored the actor, and saved the evaluation replay. Champion remains at 33.324 s.
+
+At 09:50:08 UTC training remained active at step 4,482,484, episode 351, about 15.6 decisions/s, actor updates locked during critic recovery (447 updates remaining). Replay capacity remained 250,000 transitions and visual replay capture remained enabled. C: had 18.92 GiB free. No settings or protected Champion files were changed.
