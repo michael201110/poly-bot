@@ -1696,3 +1696,25 @@ uncertainty term numerically dominates the Q scale, but they do not establish a
 causal relationship with pace. I left the uncertainty coefficient and reward
 unchanged. The training bridge remained active and the replay bundle retained
 the rejected candidate and evaluation.
+
+
+### Prepare a lower uncertainty penalty test, 02:40 UTC
+
+The 0.005 exploration run continued after the clean 33.324 s tie at step
+4,080,085; Latest has since advanced to step 4,081,442. Its previous screens
+included repeated actor regressions and two contact-triggered rollbacks, while
+the one-off 33.105 s rollout still has not been reproduced by a deterministic
+actor. The saved diagnostics show mean actor uncertainty penalty 0.689 against
+mean actor Q -50.03 (raw scale only; not causal evidence). To test whether the
+uncertainty-aware actor objective is limiting adoption of faster, less familiar
+actions, prepared
+`profiles/training/simple-track-grtqc-contact-aware-30-uncertainty5e-1-explore5e-3.json`.
+It changes only `actor_uncertainty_coefficient`, from 1.0 to 0.5; exploration
+0.005, actor LR 5e-6, update/drift guards, rewards, curriculum, critic setup,
+and five-lap/contact rollback gates are unchanged. The active run still uses
+coefficient 1.0 until it is cleanly continued with selected actor settings.
+
+The planned comparison resumes Latest and preserves its critics, 250,000-item
+replay, reward state, Champion, and five-lap verification. It will be judged on
+successive deterministic five-lap pace checks and contacts, not one-off training
+laps. No change to Champion or reward shaping is intended by this experiment.
