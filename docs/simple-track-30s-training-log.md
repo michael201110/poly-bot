@@ -2106,3 +2106,10 @@ The current per-update action-drift limit is being reached in actor diagnostics,
 The live continuation advanced to step 4,380,893, episode 261, at about 15.7 decisions/s. Its latest progress record shows proposed actor action drift 0.03965 versus executed drift 0.00749, confirming that the active per-update cap is substantially clipping actor changes. The last deterministic evaluation remains 33.796 s; the protected Champion remains 33.324 s. This diagnostic supports the hypothesis that line adaptation is conservative, but does not prove that a higher cap would yield a faster clean policy. The earlier 0.01-cap trial had repeated contact, so I made no live setting changes and did not interrupt training.
 
 Replay capture remains active (5,705 files, 36.76 GiB); C: had 20.01 GiB free. The GUI trainer PID 21944 and websocket bridge on port 8765 were live at the check.
+
+
+### Contact regression rolled back, 08:03 UTC
+
+The five-lap evaluation at step 4,381,500 reported 33.995 s with 5/5 finishes. Although the initial screen showed three contact steps, the completed evaluation replay and aggregate recorded 15 barrier-contact steps across the five laps (zero crashes and off-track events). The candidate was rejected, the actor was rolled back, and critic recovery started. At the latest progress check the trainer had resumed at step 4,382,444, episode 262, about 15.7 decisions/s, with 765 critic recovery updates remaining. The evaluation replay was saved.
+
+This contact regression occurred with the existing conservative update cap, so relaxing it now has no evidential basis and could increase contact risk. I left settings and protected Champion unchanged. C: had 19.99 GiB free, and the trainer/bridge remained active.
