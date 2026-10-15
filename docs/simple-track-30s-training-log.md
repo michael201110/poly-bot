@@ -1874,3 +1874,9 @@ At 05:47 UTC the live run had resumed at step 4,253,614, episode 148, about 15.6
 The candidate screened at step 4,257,996 completed five laps at 33.772 s (5/5 finishes, 15 barrier-contact steps total, three per lap). Despite the faster lap time relative to the preceding 33.839 s clean check, the contact gate rejected it and restored the protected 33.324 s Champion actor. Critics and replay were retained; another 1,000-update critic recovery began.
 
 At 05:51 UTC the trainer was active at step 4,258,641, episode 152, about 15.7 decisions/s, with 839 recovery updates left and the actor locked. Replay capacity remained full at 250,000 transitions. The current visual replay index last updated at 05:49 UTC and listed 205 episodes. C: had about 22 GiB free and D: about 144.3 GiB. No training settings or Champion files were changed.
+
+### Faster contact-affected candidate rejected, 05:55 UTC
+
+At step 4,262,460 the candidate completed five deterministic laps at 33.716 s (5/5 finishes) but had five barrier-contact steps total, one per lap. The contact regression gate rejected it despite the faster time relative to recent clean candidates, restored the protected 33.324 s Champion actor, preserved critics and replay, and started another 1,000-update critic recovery. This confirms the actor is finding some pace at the cost of repeatable barrier contact; it is not a safe verified improvement.
+
+At 05:55 UTC training was active at step 4,263,393, episode 156, about 15.8 decisions/s, with actor updates locked and 767 critic recovery updates remaining. The replay buffer remained full at 250,000 transitions, and the active visual replay bundle contained 210 episodes. No actor settings or Champion files were changed.
