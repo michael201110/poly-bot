@@ -2825,3 +2825,9 @@ Free-driving episodes 000785-000789 completed in 33.198, 33.842, 33.816, 33.758,
 The five-lap candidate at step 4,749,788 completed in 34.053 s but repeated four barrier impacts on each lap at progress 0.62961, 0.63083, 0.63145, and 0.63268 (20 contact steps total; maximum impulse 1,551.9). The contact gate rejected and rolled its actor back to protected Champion. The rejected checkpoint was saved at `models/simple-track/grtqc/checkpoints/step-4749788-rejected/`; its evaluation replay contributed 6,816 transitions. Recovery retained the critic and replay buffer and started a 1,000-update critic cooldown.
 
 Training continued without a restart. The post-rollback free-driving laps were 33.659 s, 33.324 s, and 33.324 s, all with zero contact steps; their visual replays are episodes 000812-000814 in run `34c873e331904d93810c93ee8efe367a`. By 14:21 UTC training was active at step 4,754,025 in episode 593, and the critic cooldown had completed. The Champion remained 33.324 s; disk headroom remained about 16 GiB on C: and 144 GiB on D:.
+
+### Near-finish contact rollback and continued recovery, 14:26 UTC
+
+The post-rollback candidate screened at 33.801 s and repeated three low-impulse barrier contacts near the finish (progress 0.98949, 0.99233, and 0.99374). Its five-lap evaluation repeated those three contacts on every lap (15 contact steps total; maximum impulse 92.1), so the contact gate rejected it despite 5/5 finishes. The 6,762 evaluation transitions were saved, the candidate checkpoint was preserved at `models/simple-track/grtqc/checkpoints/step-4756508-rejected/`, and the actor was restored from Champion. Critics and replay were retained and a fresh 1,000-update critic cooldown began.
+
+Training remained live after the rollback. At 14:26 UTC it was at step 4,757,864 in episode 597 (16.9% progress), with 662 cooldown updates remaining. Visual replay capture was continuing; C: had 15.9 GiB free and D: 144.3 GiB.
