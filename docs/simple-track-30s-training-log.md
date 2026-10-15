@@ -1649,3 +1649,12 @@ so the deterministic gate rejected promotion; no verified pace improvement was
 made. The evaluation replay was recorded and training resumed, reaching step
 4,066,198 by 02:25 UTC with the same 250,000-transition replay. The GUI and
 WebSocket listener remained active. Champion stays protected at 33.324 s.
+
+
+### Clean slower check after recovery, 02:27 UTC
+
+The next five-lap evaluation at step 4,066,661 was 33.781 s, 5/5 finished,
+with zero contact steps. It was rejected as slower than both Champion and the
+post-recovery clean tie; the weak-actor guard recorded the decline. Training
+continued beyond step 4,067,882 with automatic replay capture. This sample does
+not show pace improvement; Champion remains unchanged.
