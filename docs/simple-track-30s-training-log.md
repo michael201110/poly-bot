@@ -2851,3 +2851,9 @@ Training continued without restart. After recovery, free-driving episodes 616-61
 The evaluation at step 4,787,964 was 33.873 s and recorded three barrier-contact steps on every one of five laps at progress 0.63083, 0.63206, and 0.63393 (15 total). Its evaluation replay saved 6,780 transitions. The candidate was preserved under `models/simple-track/grtqc/checkpoints/step-4787964-rejected/`; the contact gate restored the protected 33.324 s Champion actor while preserving critics and replay, then began a 1,000-update critic cooldown.
 
 The live trainer continued after rollback. At 14:58 UTC it was at step 4,788,889, episode 624 (82.0% progress), running about 16 steps/s, with 769 cooldown updates remaining. C: had 15.6 GiB free and D: 144.3 GiB. Replay and evaluation gates remain active.
+
+### Finish-line contact rollback and continued recovery, 15:02 UTC
+
+At step 4,792,428 the five-lap candidate evaluated at 33.724 s and repeated three contacts per lap in the final 1.5% of the route (progress 0.98592, 0.99445, and 1.00000; 15 contacts total). The 6,750 evaluation transitions were retained. The contact gate rejected the actor, restored Champion, preserved critic/replay state, and started a 1,000-update cooldown.
+
+Training continued. A post-rollback free-driving episode immediately matched Champion at 33.324 s with zero contacts. At 15:02 UTC the live trainer was at step 4,795,181, episode 630 (44.2% progress), with 312 cooldown updates remaining and about 16 steps/s. C: had 15.5 GiB free; D: 144.3 GiB. The rejected candidate replay and ongoing visual replay capture are preserved.
