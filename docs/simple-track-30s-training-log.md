@@ -2581,3 +2581,10 @@ Training and GUI processes remained active after rollback. The protected Champio
 The five-lap evaluation at step 4,588,044 completed in 33.813 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion, so it was rejected without rollback; the weaker-actor count reset to 1 of 5. Evaluation replay transitions (6,768) were retained.
 
 At 11:40:44 UTC training remained active at step 4,589,351, episode 447, with critic recovery complete and replay capture active. The 33.105 s training-only lap remains unverified. C: had about 17.8 GiB free.
+
+
+### Clean actor pace gain to 33.737 s, 11:42 UTC
+
+The five-lap evaluation at step 4,590,300 completed in 33.737 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved over the prior clean candidate at 33.813 s and was marked as an actor pace improvement. It remains slower than protected 33.324 s Champion and was not promoted. Evaluation replay transitions (6,750) were retained.
+
+At 11:43:23 UTC training remained active at step 4,591,617, episode 449, with critic recovery complete and replay capture active. C: had about 17.8 GiB free.
