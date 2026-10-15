@@ -1516,3 +1516,22 @@ critic-collection noise, uncertainty term, LR, action-drift guards, reward,
 replay, and five-lap/contact gates remain as before. This profile has not yet
 been applied. If applied, continue from Latest with the selected exploration
 setting and require five-lap clean checks before promotion.
+
+### Wider actor-exploration trial started, 02:54 UTC
+
+After the 33.999 s / 15-contact regression had triggered rollback, I used the
+GUI's clean stop at step 4,037,413; Latest saved and retained the 250,000-item
+replay. Loaded the committed one-setting profile and chose Continue latest
+with selected exploration. The new run is
+`logs/simple-track/grtqc/20261015T015214Z.jsonl`; its startup record confirms
+resume from Latest at step 4,037,413, `fresh_replay=false`, CUDA/T500. The GUI
+activity log confirms selected actor exploration 0.01 (four times the prior
+0.0025); all other settings remain as in the uncertainty-aware profile.
+
+The first five-lap evaluation at step 4,038,533 tied the protected Champion at
+33.324 s, with 5/5 finishes and zero barrier contacts. It was rejected as a
+tie, not promoted, and its evaluation replay was saved. Training returned to
+collection at step 4,038,602 in episode 2 with replay retained and actor
+unlocked. This initial check verifies the restored baseline under the new
+setting; it does not yet show a pace gain. Await later policy checks to assess
+whether wider exploration produces a faster line without contacts.
