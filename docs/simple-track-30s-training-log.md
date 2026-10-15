@@ -2239,3 +2239,10 @@ At 08:56:59 UTC the trainer remained active at step 4,432,865, episode 307, abou
 After recovering from the 33.960 s contact regression, the deterministic five-lap evaluation at step 4,435,340 completed in 33.616 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved the clean scratch anchor from 33.671 s by 0.055 s, so the anchor was refreshed. It remains 0.292 s slower than the protected 33.324 s Champion, and the candidate was rejected without promotion. The evaluation replay was saved.
 
 At 09:00:58 UTC training was active at step 4,437,513, episode 311, about 15.7 decisions/s, actor unlocked with cumulative reference drift 0.166/0.5 and no recovery cooldown. The replay buffer remained at 250,000 transitions and visual replay capture remained enabled. C: had 19.41 GiB free. No training settings or protected Champion files were changed.
+
+
+### Finish-sector contact regression after the clean 33.616 s gain, 09:02 UTC
+
+The next deterministic five-lap evaluation at step 4,437,596 completed in 34.014 s (5/5 finishes, 10 barrier-contact steps, zero crashes/off-track events). Each lap had two contacts near progress 0.9327 and 0.9952; maximum impulse was 526.1. This is a different contact pattern from the preceding 63% corner regression. The candidate was rejected, its actor rolled back, and the evaluation replay was saved. Champion remains 33.324 s.
+
+At 09:02:50 UTC the trainer remained active at step 4,437,621, episode 312, about 15.6 decisions/s, with actor updates locked during the 1,000-update critic recovery (994 updates remained). Visual replay capture and the full 250,000-transition replay remained enabled. C: had 19.39 GiB free. No training settings or protected checkpoint files were changed.
