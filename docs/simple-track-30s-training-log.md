@@ -1928,3 +1928,9 @@ At 06:20 UTC the run remained active in recovery, with the actor locked. The ful
 The evaluation at step 4,291,628 completed five deterministic laps at 33.694 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). The clean anchor was refreshed, but this candidate was rejected as slower than the best clean scratch pace of 33.571 s and remained slower than the 33.324 s protected Champion. No contact rollback occurred.
 
 At 06:24 UTC the same learner was active at step 4,292,354, episode 182, about 15.9 decisions/s, with actor updates unlocked and no recovery cooldown. The replay buffer remained full at 250,000 transitions and the visual replay bundle contained 245 episodes. Training settings and Champion files were unchanged.
+
+### Contact rollback after the latest evaluation, 06:27 UTC
+
+The candidate at step 4,293,884 completed five deterministic laps at 33.864 s (5/5 finishes, five barrier-contact steps total, one per lap). The contact gate rejected it, restored the protected Champion actor, and began another 1,000-update critic recovery while preserving critics and replay.
+
+At 06:27 UTC the run was active at step 4,294,617, episode 184, about 15.8 decisions/s, with the actor locked and 817 recovery updates remaining. Replay capacity stayed full at 250,000 transitions, and the visual replay bundle contained 248 episodes. Champion and training settings were unchanged.
