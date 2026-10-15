@@ -1304,3 +1304,13 @@ and began recovery. During the actor lock, episode 51 completed cleanly at
 33.324 s, matching Champion. At step 3,939,082 recovery still had 431 critic
 updates remaining and training continued. The replay archive had 65 entries at
 01:00:59 local. Port 8765 remained active; C: had 25.3 GB free and D: 144.3 GB.
+
+### Clean Champion match after the next recovery, 00:03 UTC
+
+After the rollback at step 3,936,803, episode 52 finished at 33.324 s while the
+actor was still locked. Recovery then completed; episode 53 ran at 33.365 s,
+and the next deterministic five-lap screen at step 3,941,251 matched Champion
+at 33.324 s (5/5 finishes, zero contacts). It was not promoted because it tied
+the protected Champion. Training continued through step 3,941,928 in episode 54
+with actor updates unlocked. The replay archive had 68 entries at 01:01:57
+local. Port 8765 remained active; C: had 25.3 GB free and D: 144.3 GB.
