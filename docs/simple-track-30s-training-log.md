@@ -2677,3 +2677,10 @@ The five-lap evaluation at step 4,639,724 completed in 33.541 s (5/5 finishes, n
 The next five-lap evaluation at step 4,641,980 completed in 33.402 s, also 5/5 clean, improving 0.139 s over the preceding evaluation. It was marked as another actor pace improvement. It remains 0.078 s slower than Champion and was not promoted. Replay transitions (6,684) were retained.
 
 At 12:33:22 UTC training remained active at step 4,642,273, episode 494, with critic recovery complete and replay capture active. C: had about 17.5 GiB free.
+
+
+### Hard repeated mid-lap contacts after clean pace gain, 12:35 UTC
+
+The five-lap evaluation at step 4,644,236 finished in 34.088 s median. All five laps repeated three barrier contacts at progress 0.62900, 0.62961, and 0.63455 (15 total, maximum impulse 3,571.0). The contact gate rejected the actor, restored it from protected Champion, and started a 1,000 critic cooldown while preserving critics and replay. Evaluation replay transitions (6,822) were retained.
+
+At 12:36:01 UTC training remained active at step 4,644,569, episode 496, with 917 cooldown updates remaining. The best recent clean candidate remains 33.402 s; protected Champion remains 33.324 s. C: had about 17.5 GiB free.
