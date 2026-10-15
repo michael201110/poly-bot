@@ -1323,3 +1323,11 @@ continuation's 33.401 s best or the 33.324 s Champion. Training continued
 through step 3,944,336 in episode 56 with actor updates unlocked. Replay capture
 reached 71 entries at 01:06:22 local. Port 8765 remained active; C: had 25.3 GB
 free and D: 144.3 GB.
+
+### Clean but slower follow-up, 00:08 UTC
+
+The five-lap screen at step 3,945,763 was 33.700 s median and best, with 5/5
+finishes and zero contacts. It did not improve on the 33.401 s best candidate or
+the 33.324 s Champion. Training continued through step 3,946,708 in episode 58
+with actor updates unlocked. The visual replay archive had 74 entries at
+01:07:04 local. Port 8765 remained active; C: had 25.3 GB free and D: 144.3 GB.
