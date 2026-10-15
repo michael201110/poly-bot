@@ -2502,3 +2502,12 @@ The five-lap evaluation at step 4,545,372 completed in 33.723 s (5/5 finishes, z
 The next actor evaluation at step 4,547,644 ended after one of five attempts: a barrier impact at 63.8% progress caused a crash (impulse 3,682.1). The replay transitions were retained (750 transitions); the candidate was rejected and the actor restored from Champion. Critic cooldown began at 1,000 updates while replay and critics were preserved. This was not a valid lap-time evaluation.
 
 At 11:00:52 UTC the run had started actor recovery. Training and the GUI processes remained active; C: had about 18.2 GiB free. The training log still records 33.105 s as the best unverified training lap; no evaluation has reproduced it. The protected Champion remains 33.324 s.
+
+
+### Post-recovery evaluations, both clean but slower than Champion, 11:07 UTC
+
+After recovery completed, the five-lap evaluation at step 4,552,108 recorded 33.660 s (5/5 finishes, no contacts, crashes, or off-track events). Its 6,732 evaluation transitions were retained. It remained slower than the 33.324 s protected Champion and was rejected; weaker-actor count became 1 of 5.
+
+The following five-lap evaluation at step 4,554,364 recorded 33.812 s (5/5 finishes, no contacts, crashes, or off-track events). Its 6,768 evaluation transitions were retained. It was rejected as slower than Champion; weaker-actor count became 2 of 5.
+
+At 11:07:55 UTC training remained active at step 4,555,969, episode 417, with critic recovery complete and replay capture active. The 33.105 s training-only lap remains unverified; Champion is unchanged at 33.324 s. C: had about 18.2 GiB free.
