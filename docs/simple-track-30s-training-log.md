@@ -2794,3 +2794,10 @@ Training and GUI processes remained active after rollback. C: had about 16.6 GiB
 The five-lap evaluation at step 4,722,748 matched protected Champion at 33.324 s (5/5 finishes, zero contacts, crashes, or off-track events). It was not promoted because it did not beat Champion; weaker-actor count became 1 of 5. Evaluation replay transitions (6,666) were retained.
 
 At 13:51:07 UTC training remained active at step 4,723,289, episode 566, with critic recovery complete and replay capture active. C: had about 16.6 GiB free.
+
+
+### Clean evaluations at 33.656 s and 33.639 s, 13:56 UTC
+
+The five-lap evaluation at step 4,725,004 completed in 33.656 s (5/5 finishes, no contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion and was rejected without rollback; weaker-actor count became 2 of 5. Replay transitions (6,732) were retained.
+
+The next five-lap evaluation at step 4,727,260 completed in 33.639 s (5/5 clean). It improved 0.017 s and was marked as an actor pace improvement, while remaining slower than Champion and not promoted. Replay transitions (6,732) were retained.
