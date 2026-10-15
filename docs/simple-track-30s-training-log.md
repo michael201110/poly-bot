@@ -2609,3 +2609,12 @@ At 11:50:02 UTC training remained active at step 4,599,605, episode 456, with 35
 The five-lap evaluation at step 4,601,500 matched the protected Champion median at 33.324 s (5/5 finishes, no barrier contacts, crashes, or off-track events). It was not promoted because it did not beat Champion; weaker-actor count became 1 of 5. Evaluation replay transitions (6,666) were retained.
 
 At 11:53:01 UTC training remained active at step 4,602,661, episode 459, with critic recovery complete and replay capture active. C: had about 17.8 GiB free.
+
+
+### Two clean but slower post-recovery evaluations, 11:57 UTC
+
+The five-lap evaluation at step 4,603,756 completed in 33.585 s (5/5 finishes, no barrier contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion and was rejected without rollback; weaker-actor count became 2 of 5. Evaluation replay transitions (6,720) were retained.
+
+The next five-lap evaluation at step 4,606,028 completed in 33.597 s, also 5/5 clean. It too was rejected as slower than Champion without rollback; weaker-actor count became 3 of 5. Its replay transitions (6,720) were retained.
+
+At 11:58:35 UTC training remained active at step 4,607,725, episode 463, with critic recovery complete and replay capture active. C: had about 17.8 GiB free.
