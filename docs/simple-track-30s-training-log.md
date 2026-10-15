@@ -2232,3 +2232,10 @@ The deterministic five-lap evaluation at step 4,430,892 completed in 33.960 s (5
 Immediately before this screen, an actor update proposed action drift 0.03622, while the configured per-update cap executed 0.00750; cumulative reference drift was 0.229/0.5. Thus the per-update action cap is binding on this sample, but the cumulative trust limit is not. This alone does not establish that widening the cap would improve pace; the candidate was both slower than Champion and contact-heavy, so I left the setting unchanged.
 
 At 08:56:59 UTC the trainer remained active at step 4,432,865, episode 307, about 15.7 decisions/s. The actor was locked for critic recovery with 507 updates remaining; it had already resumed a clean 33.324 s training lap after rollback. The replay buffer remained at 250,000 transitions, visual replay capture remained enabled, and C: had 19.45 GiB free. Champion remains protected at 33.324 s.
+
+
+### Clean pace gain after contact rollback, 09:00 UTC
+
+After recovering from the 33.960 s contact regression, the deterministic five-lap evaluation at step 4,435,340 completed in 33.616 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved the clean scratch anchor from 33.671 s by 0.055 s, so the anchor was refreshed. It remains 0.292 s slower than the protected 33.324 s Champion, and the candidate was rejected without promotion. The evaluation replay was saved.
+
+At 09:00:58 UTC training was active at step 4,437,513, episode 311, about 15.7 decisions/s, actor unlocked with cumulative reference drift 0.166/0.5 and no recovery cooldown. The replay buffer remained at 250,000 transitions and visual replay capture remained enabled. C: had 19.41 GiB free. No training settings or protected Champion files were changed.
