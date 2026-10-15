@@ -1916,3 +1916,9 @@ At 06:14 UTC the live run continued at step 4,282,413, episode 173, about 15.8 d
 The evaluation at step 4,284,908 completed five deterministic laps at 33.773 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It was rejected as slower than the 33.571 s clean scratch candidate; it did not trigger a contact rollback or promote over the 33.324 s protected Champion.
 
 At 06:17 UTC training had resumed at step 4,284,933, episode 176, about 15.8 decisions/s, with actor updates unlocked and no critic cooldown. The 250,000-transition replay remained full, and the visual replay bundle contained 237 episodes. No settings or Champion files were changed.
+
+### Repeated one-contact-per-lap regression, 06:20 UTC
+
+The candidate evaluated at step 4,287,164 completed five deterministic laps at 33.771 s (5/5 finishes, five barrier-contact steps total, one per lap). The contact regression gate rejected it, restored the 33.324 s Champion actor, and began a 1,000-update critic recovery while preserving critics and replay. The result remains far from the 30 s objective and does not improve on the clean 33.571 s scratch candidate.
+
+At 06:20 UTC the run remained active in recovery, with the actor locked. The full 250,000-transition replay and visual replay recording were retained; the visual bundle contained 240 episodes. No training settings or Champion files were changed.
