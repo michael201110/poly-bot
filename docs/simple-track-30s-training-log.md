@@ -2546,3 +2546,10 @@ At 11:19:23 UTC training remained active at step 4,567,281, episode 427, with 58
 The five-lap evaluation at step 4,572,380 completed in 33.639 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It refreshed the clean scratch anchor but remained slower than protected 33.324 s Champion, so it was rejected for promotion without rollback. The weaker-actor count advanced to 2 of 5. Evaluation replay transitions (6,732) were retained.
 
 At 11:24:51 UTC training remained active at step 4,572,533, episode 432, with critic recovery complete and replay capture active. The 33.105 s training-only lap remains unverified. C: had about 18.1 GiB free.
+
+
+### Repeated contact regression after clean 33.639 s result, 11:27 UTC
+
+The five-lap evaluation at step 4,574,652 finished in 34.064 s median, with three repeated barrier contacts on each lap at progress 0.63145, 0.63455, and 0.98735 (15 contact steps total, maximum impulse 1,266.0). The contact gate rejected the actor and restored it from protected Champion, starting a 1,000 critic cooldown while preserving critics and replay. Evaluation replay transitions (6,816) were retained.
+
+At 11:27:30 UTC training remained active at step 4,574,781, episode 434, with 968 cooldown updates remaining. Champion remains 33.324 s. C: had about 18.1 GiB free.
