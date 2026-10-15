@@ -1856,3 +1856,9 @@ At 05:31 UTC training remained active at step 4,239,209, episode 135. The actor 
 At step 4,244,556 the candidate completed five deterministic laps with a 33.869 s median and 5/5 finishes, but it made two barrier contacts on each lap (10 contact steps total, concentrated near 99% progress). The contact gate rejected it and restored the protected Champion actor (33.324 s); critics and replay were preserved and a 1,000-update critic recovery began. A preceding single deterministic screen tied the Champion at 33.324 s, which was not sufficient to promote. This does not reproduce the earlier 33.105 s exploratory training lap; the nearby saved actor had already measured 33.755 s in its own five-lap check.
 
 At 05:38 UTC the same training process was active at step 4,246,949, episode 142, about 15.7 decisions/s. Actor updates remained locked with 402 critic recovery updates left; replay stayed full at 250,000 transitions. The active visual replay bundle `models/simple-track/grtqc/visual_replays/34c873e331904d93810c93ee8efe367a` contained 190 episodes. Champion and training settings were unchanged.
+
+### Clean evaluation after critic recovery, 05:44 UTC
+
+The candidate screened at step 4,251,276 completed five deterministic laps at 33.839 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It was rejected because it remained slower than the protected 33.324 s Champion; no actor promotion occurred. This is a clean result after recovery, but it does not establish further pace gain.
+
+At 05:44 UTC the learner was active at step 4,251,461, episode 146, about 15.6 decisions/s, with actor updates unlocked and no remaining critic cooldown. The 250,000-transition replay remained full, and visual replay bundle `models/simple-track/grtqc/visual_replays/34c873e331904d93810c93ee8efe367a` contained 197 episodes. Champion and training settings remain unchanged.
