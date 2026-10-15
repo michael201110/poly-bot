@@ -1629,3 +1629,13 @@ than Champion and 0.004 s slower than the preceding 33.548 s screen, so it did
 not reset the clean pace reference. Training continued with replay capture on;
 by 02:19 UTC it had reached step 4,059,142. The active WebSocket listener stayed
 on port 8765. No Champion update.
+
+
+### Contact regression and actor recovery, 02:21 UTC
+
+The third candidate screen at step 4,059,941 confirmed at 34.094 s median with
+5/5 finishes but 10 barrier-contact steps across the five laps. The contact
+regression gate rejected it, restored the protected actor, and emitted
+`actor_recovery` while retaining training and replay state. The run remained
+active and continued collection (step 4,063,710 by 02:23 UTC); this was an actor
+rollback, not a stopped session. Retain the 33.324 s Champion; no promotion.
