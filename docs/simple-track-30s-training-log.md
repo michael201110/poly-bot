@@ -2012,3 +2012,9 @@ At 07:08 UTC training was active at step 4,332,564, episode 218, about 15.7 deci
 The evaluation at step 4,336,556 completed five deterministic laps at 33.324 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). This matches the protected Champion's verified 33.324 s, but does not beat it, so the Champion slot remains untouched. The latest checkpoint records the same five-lap clean evaluation.
 
 At 07:12 UTC training was active at step 4,337,581, episode 222, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 916 files (5.82 GiB); C: had 21.1 GiB free. No training settings or Champion files were changed.
+
+### Clean follow-up after Champion tie, 07:15 UTC
+
+The evaluation at step 4,338,812 completed five deterministic laps at 33.651 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It did not repeat the 33.324 s Champion-tie evaluation and remains slower than both the protected Champion and the 33.480 s clean scratch best. The Champion was not changed.
+
+At 07:15 UTC training was active at step 4,339,053, episode 224, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 919 files (5.84 GiB); C: had 21.1 GiB free. Training settings and Champion files were unchanged.
