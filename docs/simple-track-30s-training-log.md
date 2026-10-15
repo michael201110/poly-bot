@@ -2316,3 +2316,10 @@ At 09:31:55 UTC training remained active at step 4,466,008, episode 337, about 1
 The deterministic five-lap evaluation at step 4,469,004 completed at 33.324 s (5/5 finishes, zero barrier contacts, crashes, or off-track events), tying the protected Champion. The candidate was rejected without promotion because it did not beat Champion; the evaluation replay was saved. This confirms recovery restored the verified actor after the 33.934 s contact regression.
 
 At 09:35:57 UTC training was active at step 4,470,957, episode 341, about 15.7 decisions/s, with actor updates unlocked, cumulative reference drift 0.228/0.5, and no recovery cooldown. Replay capacity remained 250,000 transitions and visual replay capture remained enabled. C: had 19.04 GiB free. No training settings or protected Champion files were changed.
+
+
+### Clean but slower evaluation after the 33.324 s tie, 09:37 UTC
+
+The deterministic five-lap evaluation at step 4,471,260 completed in 33.763 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.448 s clean actor best and protected 33.324 s Champion, so it was rejected without promotion or contact rollback. The evaluation replay was saved.
+
+At 09:38:07 UTC training remained active at step 4,471,761, episode 342, about 15.7 decisions/s, actor unlocked with cumulative reference drift 0.055/0.5 and no critic recovery cooldown. Replay capacity remained at 250,000 transitions, visual replay capture remained enabled, and C: had 19.03 GiB free. No training settings or protected Champion files were changed.
