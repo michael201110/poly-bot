@@ -2060,3 +2060,9 @@ At 07:37 UTC training was active at step 4,359,321, episode 242, about 15.7 deci
 The evaluation at step 4,361,308 completed five deterministic laps at 33.847 s (5/5 finishes, five barrier-contact steps total, zero off-track events or crashes). The contact gate rejected it and initiated critic recovery; the protected Champion remains unchanged.
 
 At 07:40 UTC training was active at step 4,361,732, episode 244, about 15.7 decisions/s, with actor updates locked and 895 critic recovery updates remaining. Replay remained full at 250,000 transitions. The visual replay bundle contained 947 files (6.02 GiB); C: had 20.8 GiB free. Training settings and Champion files were unchanged.
+
+### Second clean Champion tie, 07:43 UTC
+
+The evaluation at step 4,365,756 completed five deterministic laps at 33.324 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). This exactly ties the protected Champion, but does not beat it; the Champion slot was left unchanged.
+
+At 07:44 UTC training was active at step 4,366,721, episode 248, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 952 files (6.05 GiB); C: had 20.7 GiB free. Training settings and Champion files were unchanged.
