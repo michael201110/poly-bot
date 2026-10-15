@@ -2668,3 +2668,12 @@ The five-lap evaluation at step 4,635,212 completed in 33.548 s (5/5 finishes, n
 The following five-lap evaluation at step 4,637,468 completed in 33.837 s (5/5 finishes, no contacts, crashes, or off-track events). It too was rejected as slower than Champion without rollback; weaker-actor count became 2 of 5. Replay transitions (6,768) were retained.
 
 At 12:28:15 UTC training remained active at step 4,638,341, episode 490, with critic recovery complete and replay capture active. C: had about 17.5 GiB free.
+
+
+### Two successive clean actor pace improvements, 12:33 UTC
+
+The five-lap evaluation at step 4,639,724 completed in 33.541 s (5/5 finishes, no contacts, crashes, or off-track events). It was marked as an actor pace improvement, but remained slower than protected 33.324 s Champion and was not promoted. Replay transitions (6,714) were retained.
+
+The next five-lap evaluation at step 4,641,980 completed in 33.402 s, also 5/5 clean, improving 0.139 s over the preceding evaluation. It was marked as another actor pace improvement. It remains 0.078 s slower than Champion and was not promoted. Replay transitions (6,684) were retained.
+
+At 12:33:22 UTC training remained active at step 4,642,273, episode 494, with critic recovery complete and replay capture active. C: had about 17.5 GiB free.
