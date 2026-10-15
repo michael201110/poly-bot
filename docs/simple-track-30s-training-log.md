@@ -1801,3 +1801,12 @@ The five-lap evaluation at step 4,138,940 measured 33.808 s, 5/5 finishes with z
 
 
 The candidate at step 4,141,196 confirmed at 33.986 s over five laps (5/5 finishes, 25 barrier-contact steps, zero off-track events or crashes). It was rejected and triggered actor rollback with another 1,000-update critic cooldown. The current 0.0075 cap clipped proposed drift 0.0324 to 0.00750, yet the candidate remained contact-heavy. Therefore the previously staged 0.00875 cap is withdrawn from the GUI profile list; increasing the cap is not justified by this evidence. The live trainer remains on its original settings, running at step 4,142,052 with 787 cooldown updates remaining and full replay; training was not interrupted.
+
+
+### Resume verification and clean actor screens, 03:56 UTC
+
+The GUI process was still active after the previous status note; its Stop cleanly control remained enabled. The training log showed that the run had continued through step 4,145,651 and then screened the actor at step 4,145,660. Five-lap evaluation measured 33.669 s (5/5 finishes, zero barrier contacts), slower than the 33.324 s Champion, so the candidate was rejected and training continued. A later screen at step 4,147,916 measured 33.816 s (5/5, zero barrier contacts) and was also rejected. Episode 53's exploratory lap was 33.784 s.
+
+The earlier 33.105 s remains a one-off exploratory episode, not the pace of a verified saved actor. The actor associated with that historical run had previously measured 33.755 s over five clean deterministic laps. These new screens likewise show a gap between exploratory laps and the policy that can be repeatedly evaluated; no Champion promotion was made.
+
+At the time of this note, the same uncertainty-0.5 continuation was active at step 4,147,978, with replay capacity 250,000, actor learning rate 5e-6, per-update action limit 0.0075, cumulative drift limit 0.5, and n-step return 16. Visual replay recording remained enabled; the current bundle 34c873e331904d93810c93ee8efe367a contained 71 episodes. During inspection, selecting the ordinary game tab (default port 8765) restored a live simulator connection after Edge had been focused on the separate replay tab (port 8766); the run advanced without being restarted. Champion remains 33.324 s, and the 30 s goal is not yet reached.
