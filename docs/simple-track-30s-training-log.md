@@ -1494,3 +1494,25 @@ uncertainty coefficient still 1.0. The current run's visual replay index has
 10 captures, including the evaluation replay. This confirms recovery restored
 the clean baseline but the uncertainty trial has produced no faster champion.
 Continue collecting and retain the existing Champion gate.
+
+### Section-level line exploration diagnosis, 02:49 UTC
+
+The deterministic five-lap check at step 4,031,252 was 33.614 s with zero
+contacts, slower than the 33.324 s Champion. The adjacent saved training replay
+from the same policy step ran 33.698 s. Comparing that replay with the Champion
+replay at step 4,027,881, it covered about 4.7 m more path; normalized-distance
+splits place about 0.196 s of its 0.374 s deficit in the 10%-20% section. In
+that section its mean absolute steering was 0.569 versus 0.709 in the Champion
+replay. This is one pair of runs and is diagnostic evidence, not proof that
+steering magnitude caused the loss. A later five-lap check at step 4,033,524
+was 33.999 s with 15 total contact steps; the guard rejected it, rolled back
+the actor, and began another critic recovery. Training remained live at step
+4,035,277, episode 13, with 562 recovery updates remaining.
+
+To test whether the actor needs more generic line exploration, prepared
+`profiles/training/simple-track-grtqc-contact-aware-30-uncertainty1-explore1e-2.json`.
+It changes only unlocked-actor `exploration_std` from 0.0025 to 0.01; the
+critic-collection noise, uncertainty term, LR, action-drift guards, reward,
+replay, and five-lap/contact gates remain as before. This profile has not yet
+been applied. If applied, continue from Latest with the selected exploration
+setting and require five-lap clean checks before promotion.
