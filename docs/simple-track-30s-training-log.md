@@ -1768,3 +1768,6 @@ Actor diagnostics at step 4,107,434 showed proposed action drift 0.0368 but exec
 ### Candidate pace gain after recovery
 
 The five-lap check at step 4,109,692 measured 33.753 s, 5/5 finishes with zero barrier contacts, off-track events, or crashes. It remained slower than the 33.324 s Champion and was not promoted, but it improved the active scratch candidate from 33.846 s; the trainer logged `actor_pace_improved`, reset its weak-evaluation count, and kept the candidate training. At step 4,111,839 the actor was unlocked, replay capacity remained 250,000, and the active replay bundle had 26 episodes. This modest gain is reason to continue the present coefficient 0.5 / action cap 0.0075 run through further checks before using the staged 0.00875 cap.
+
+
+The next candidate at step 4,111,964 screened at 34.070 s and completed five laps at the same median, 5/5 finishes but 15 total barrier-contact steps (three per lap). There were zero off-track events or crashes. It was rejected and triggered another contact rollback; the Champion actor was restored, critics and replay retained, and a fresh 1,000-update critic cooldown began. At step 4,113,889, the run remained active with 519 recovery updates left and actor updates locked. The active replay bundle contained 29 episodes. The staged 0.00875 profile remains unapplied pending further evidence.
