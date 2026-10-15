@@ -2274,3 +2274,10 @@ At 09:14:14 UTC training remained active at step 4,450,817, episode 323, about 1
 The deterministic five-lap evaluation at step 4,453,260 completed at 33.324 s (5/5 finishes, zero barrier contacts, crashes, or off-track events), tying the protected Champion. The candidate was not promoted because it did not beat Champion; its evaluation replay was saved. This again confirms the contact rollback restores clean Champion pace, but does not show further improvement toward the 30 s target.
 
 At 09:17:34 UTC training remained active at step 4,454,096, episode 326, about 15.7 decisions/s, actor unlocked with cumulative reference drift 0.097/0.5 and no critic recovery cooldown. Replay capture remained enabled with replay capacity at 250,000 transitions. C: had 19.23 GiB free. No settings or protected Champion files were changed.
+
+
+### Clean but slower post-recovery evaluation, 09:19 UTC
+
+The deterministic five-lap evaluation at step 4,455,516 completed in 33.687 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.616 s clean scratch anchor and the protected 33.324 s Champion, so it was rejected without promotion or contact rollback. The evaluation replay was saved.
+
+At 09:20:09 UTC training remained active at step 4,455,892, episode 328, about 15.7 decisions/s, actor unlocked with cumulative reference-action drift 0.032/0.5 and no critic recovery cooldown. Replay capture remained active; replay capacity remained at 250,000 transitions. C: had 19.20 GiB free. No settings or protected Champion files were changed.
