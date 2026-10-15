@@ -1789,3 +1789,6 @@ The screen at step 4,127,708 was confirmed by five deterministic laps at 33.324 
 
 
 The five-lap confirmation at step 4,129,964 measured 33.744 s (5/5 clean, zero barrier contacts, off-track events, or crashes), slower than Champion and therefore rejected. At step 4,131,501, the run was still active with actor unlocked, replay full, and the 0.5 uncertainty setting. The active replay bundle contained 50 episodes. The preceding screen's proposed action drift was below the 0.0075 cap, so there is no evidence that raising the cap would affect every actor update; the staged 0.00875 profile remains untested and unapplied.
+
+
+The five-lap result at step 4,132,220 was 33.781 s (5/5 finishes, five barrier-contact steps, zero off-track events or crashes). The candidate was rejected and triggered Champion-actor rollback plus a 1,000-update critic recovery. Its diagnostic showed proposed action drift 0.0322 versus 0.00749 executed at the current 0.0075 limit; despite that clipping, the candidate still contacted barriers. At step 4,133,649, the live run continued with 643 cooldown updates remaining, actor locked, full replay, and 53 recorded replay episodes. This weakens the case for raising the action cap: the staged 0.00875 profile remains unapplied pending safer evidence.
