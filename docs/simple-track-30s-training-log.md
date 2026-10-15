@@ -2444,3 +2444,10 @@ At 10:33:04 UTC training remained active at step 4,521,745, episode 386, with re
 The deterministic five-lap evaluation at step 4,522,908 completed in 33.727 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.526 s clean actor-pace best and protected 33.324 s Champion, so it was rejected for promotion without rollback. The weaker-actor evaluation count advanced to 2 of 5. The evaluation replay was saved.
 
 At 10:35:53 UTC training remained active at step 4,524,253, episode 389, with recovery complete and replay recording active. C: had about 18.4 GiB free. No settings or protected Champion files were changed.
+
+
+### Clean but slower five-lap evaluation after the 33.651 s result, 10:37 UTC
+
+The deterministic five-lap evaluation at step 4,525,148 completed in 33.732 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.526 s clean actor-pace best and protected 33.324 s Champion, so it was rejected for promotion without rollback. The weaker-actor evaluation count advanced to 3 of 5. The evaluation replay was saved.
+
+At 10:38:24 UTC training remained active at step 4,526,037, episode 390, with recovery complete and replay recording active. C: had about 18.4 GiB free. No settings or protected Champion files were changed.
