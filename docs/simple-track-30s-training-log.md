@@ -2402,3 +2402,10 @@ At 10:14:39 UTC training continued at step 4,504,237, episode 371, with 620 crit
 The deterministic five-lap evaluation at step 4,507,180 completed in 33.705 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.526 s clean actor-pace best and the protected 33.324 s Champion, so it was rejected for promotion without rollback. The weaker-actor evaluation count is 1 of 5. The evaluation replay was saved.
 
 At 10:17:52 UTC training had resumed at step 4,507,825, episode 374, with critic recovery complete and replay capture continuing. C: had 18.63 GiB free. No settings or protected Champion files were changed.
+
+
+### Clean but slower evaluation after the 33.526 s actor best, 10:20 UTC
+
+The deterministic five-lap evaluation at step 4,509,436 completed in 33.709 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.526 s clean actor-pace best and protected 33.324 s Champion, so it was rejected for promotion without rollback. The weaker-actor evaluation count advanced to 2 of 5. The evaluation replay was saved.
+
+At 10:20:41 UTC training had resumed at step 4,510,429, episode 376, with recovery complete and replay recording active. C: had about 18.6 GiB free. No settings or protected Champion files were changed.
