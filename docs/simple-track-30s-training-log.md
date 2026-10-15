@@ -2113,3 +2113,10 @@ Replay capture remains active (5,705 files, 36.76 GiB); C: had 20.01 GiB free. T
 The five-lap evaluation at step 4,381,500 reported 33.995 s with 5/5 finishes. Although the initial screen showed three contact steps, the completed evaluation replay and aggregate recorded 15 barrier-contact steps across the five laps (zero crashes and off-track events). The candidate was rejected, the actor was rolled back, and critic recovery started. At the latest progress check the trainer had resumed at step 4,382,444, episode 262, about 15.7 decisions/s, with 765 critic recovery updates remaining. The evaluation replay was saved.
 
 This contact regression occurred with the existing conservative update cap, so relaxing it now has no evidential basis and could increase contact risk. I left settings and protected Champion unchanged. C: had 19.99 GiB free, and the trainer/bridge remained active.
+
+
+### Clean post-recovery evaluation and exploratory 33.313 s lap, 08:07 UTC
+
+After contact rollback and the 1,000-update critic cooldown, the actor unlocked. Recorded training episodes at steps 4,383,722 and 4,384,846 included a 33.713 s lap and a 33.313 s lap respectively; both replays are saved in the active visual-replay bundle. The 33.313 s result is a single training rollout, not a verified deterministic result. The following clean five-lap actor evaluation at step 4,385,964 was 33.521 s (5/5 finishes, zero barrier contacts, zero crashes/off-track events). It was rejected because it remains slower than the protected 33.324 s Champion; no promotion occurred.
+
+Training resumed at step 4,387,064, episode 266, about 15.7 decisions/s, with actor updates unlocked and no recovery cooldown. Replay capture remains active. The exploratory lap shows the run can occasionally reach Champion pace, but repeatability is still unproven and the 30 s target remains unmet. C: had 19.95 GiB free. No training settings or protected checkpoints were changed.
