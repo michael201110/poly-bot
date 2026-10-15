@@ -1441,3 +1441,18 @@ They were rejected, and training continued. The latest observed state was
 step 3,996,776 with replay capture through episode 000142 (134 indexed runs).
 Port 8765 remained live. C: had 24.7 GB free and D: had 144.3 GB. Champion
 remains protected at 33.324 s; the 30 s target remains unmet.
+
+### Preparing a critic-uncertainty actor experiment, 01:14 UTC
+
+The latest rollout at step 4,006,531 failed with 20 contacts across five
+evaluation laps at the 62.961-63.206% corner; its pre-evaluation actor
+diagnostics reported Q uncertainty 0.580 and critic disagreement 3.144. Other
+contact regressions had lower Q uncertainty, so uncertainty awareness is only
+a hypothesis, not an established fix. I created
+profiles/training/simple-track-grtqc-contact-aware-30-uncertainty1.json as an
+exact copy of the active profile except for actor_uncertainty_coefficient=1.0
+(previously 0.0). No reward, actor/critic architecture, replay, evaluation gate,
+or Champion setting is changed. The trainer was active at step 4,010,235 on
+port 8765 with 150 indexed visual replays. The profile will be applied by
+cleanly saving Latest and continuing from it; its effect must be judged by
+deterministic five-lap screens before any pace claim.
