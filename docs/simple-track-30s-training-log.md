@@ -1574,3 +1574,40 @@ changing only exploration_std from 0.01 to 0.005 (still twice the old 0.0025)
 to reduce contact risk while preserving some additional line exploration. Next
 continue from Latest with selected exploration, retaining replay, critics,
 rewards, curriculum, uncertainty objective and all evaluation/rollback gates.
+
+### Locate the 33.105 s lap and resume moderate exploration, 02:13 UTC
+
+Correction to the earlier replay search: the 33.105 s lap is saved. It is
+`episode-000234.npz` in visual-replay run
+`models/simple-track/grtqc/visual_replays/14d4064ea20449b8928e5bd65d27239c/`.
+The index records a finished 1,104-decision episode from training steps
+2,616,954–2,618,058, with observations. Its 33,105 simulator ticks match the
+reported 33.106 s PolyTrack personal best to a one-tick (1 ms) display offset.
+
+This was a training rollout, not the deterministic Champion score. At step
+2,618,070, immediately after the replay, the trainer completed a deterministic
+five-lap evaluation at 33.635 s with 5/5 finishes and zero barrier contacts.
+That candidate was rejected against the then-protected 33.324 s Champion. The
+33.105 one-off therefore was real and recorded, but its policy did not reproduce
+that pace under the promotion evaluation. The 33.105 value remains visible as
+the historical `best_training_lap_s` statistic; it does not mean Latest or
+Champion can currently repeat the lap. The latest screen before this trial was
+33.762 s at step 4,054,261, also clean but slower than Champion.
+
+Resumed Latest from step 4,054,261 using the prepared
+`simple-track-grtqc-contact-aware-30-uncertainty1-explore5e-3.json` setting.
+Run `logs/simple-track/grtqc/20261015T021312Z.jsonl` confirms CUDA on the NVIDIA
+T500, `fresh_replay=false`, the existing 250,000-transition replay, and a
+1,000,000-decision full-track budget. The GUI's WebSocket listener is active on
+port 8765; automatic visual replay capture remains enabled. The initial progress
+record was at step 4,054,262 and the newest observed progress was step 4,054,842
+at about 28.9 decisions/s. No post-resume five-lap result is available yet.
+
+
+### First screen after resuming, 02:14 UTC
+
+The resumed run reached step 4,055,397 and produced a one-lap screen of
+33.548 s with zero contact steps. The log emitted `evaluation_screen`, so the
+configured deterministic five-lap confirmation is now pending; this single lap
+is not a promotion result. The GUI remains active on port 8765 and the same run
+continues with its replay capture enabled.
