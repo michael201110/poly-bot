@@ -2787,3 +2787,10 @@ The five-lap evaluation at step 4,716,044 completed in 33.786 s (5/5 finishes, n
 The following five-lap evaluation at step 4,718,300 finished in 33.778 s, with one repeated barrier contact on every lap at progress 0.98878 (five total, maximum impulse 195.9). The contact gate rejected the candidate, restored it from Champion, and started a 1,000 critic cooldown while preserving critics and replay. Replay transitions (6,756) were retained.
 
 Training and GUI processes remained active after rollback. C: had about 16.6 GiB free.
+
+
+### Clean evaluation matched Champion after rollback, 13:50 UTC
+
+The five-lap evaluation at step 4,722,748 matched protected Champion at 33.324 s (5/5 finishes, zero contacts, crashes, or off-track events). It was not promoted because it did not beat Champion; weaker-actor count became 1 of 5. Evaluation replay transitions (6,666) were retained.
+
+At 13:51:07 UTC training remained active at step 4,723,289, episode 566, with critic recovery complete and replay capture active. C: had about 16.6 GiB free.
