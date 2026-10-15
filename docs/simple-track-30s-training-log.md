@@ -1560,3 +1560,17 @@ visual replay capture remains enabled. Under exploration_std=0.01, observed
 candidate outcomes so far are a 33.786 s clean check, a 34.023 s check with 20
 contacts and rollback, then a 33.798 s clean post-recovery check. There is no
 verified pace gain; continue the guarded trial while retaining Champion.
+
+### Reduce exploration after repeated contact regressions, 03:06 UTC
+
+The wider-exploration run's next candidate at step 4,049,797 evaluated at
+33.771 s with five total barrier-contact steps across five laps. The guard
+rejected it and began critic recovery; the actor remains protected. Across
+exploration_std=0.01 the results have been 33.786 s clean, 34.023 s with 20
+contact steps, 33.798 s clean after recovery, and 33.771 s with five contacts.
+None beats the 33.324 s Champion, while two candidates caused contact rollback.
+Prepared `profiles/training/simple-track-grtqc-contact-aware-30-uncertainty1-explore5e-3.json`,
+changing only exploration_std from 0.01 to 0.005 (still twice the old 0.0025)
+to reduce contact risk while preserving some additional line exploration. Next
+continue from Latest with selected exploration, retaining replay, critics,
+rewards, curriculum, uncertainty objective and all evaluation/rollback gates.
