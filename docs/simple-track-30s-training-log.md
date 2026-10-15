@@ -2006,3 +2006,9 @@ At 07:05 UTC training was active at step 4,330,149, episode 216, about 15.8 deci
 The evaluation at step 4,332,060 completed five deterministic laps at 33.987 s (5/5 finishes, 10 barrier-contact steps total, zero off-track events or crashes). The contact gate rejected it and began critic recovery; the protected 33.324 s Champion and the 33.480 s clean scratch best remain unchanged.
 
 At 07:08 UTC training was active at step 4,332,564, episode 218, about 15.7 decisions/s, with actor updates locked and 875 critic recovery updates remaining. Replay remained full at 250,000 transitions. The visual replay bundle contained 911 files (5.79 GiB); C: had 21.1 GiB free. Training settings and Champion files were unchanged.
+
+### Clean scratch candidate ties Champion, 07:12 UTC
+
+The evaluation at step 4,336,556 completed five deterministic laps at 33.324 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). This matches the protected Champion's verified 33.324 s, but does not beat it, so the Champion slot remains untouched. The latest checkpoint records the same five-lap clean evaluation.
+
+At 07:12 UTC training was active at step 4,337,581, episode 222, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 916 files (5.82 GiB); C: had 21.1 GiB free. No training settings or Champion files were changed.
