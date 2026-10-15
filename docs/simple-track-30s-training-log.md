@@ -2267,3 +2267,10 @@ At 09:09:52 UTC training remained active at step 4,445,089, episode 318, about 1
 The next deterministic five-lap evaluation at step 4,448,796 completed in 33.626 s (5/5 finishes, five barrier-contact steps, one at 0.99091 progress per lap; maximum impulse 113.7). It was 0.302 s slower than the protected Champion and the contact gate rejected it, restoring the actor. The evaluation replay was saved. Before this screen the actor proposed 0.03402 action drift while the 0.0075 per-update cap executed 0.00749; cumulative reference drift was only 0.00738 after the preceding rollback. The deterministic contact therefore followed a single capped actor update.
 
 At 09:14:14 UTC training remained active at step 4,450,817, episode 323, about 15.7 decisions/s, with actor updates locked for critic recovery (495 updates remaining). Replay capture remains active and replay capacity remains 250,000. C: had 19.26 GiB free. Champion remains unchanged at 33.324 s.
+
+
+### Second clean Champion tie after rollback, 09:17 UTC
+
+The deterministic five-lap evaluation at step 4,453,260 completed at 33.324 s (5/5 finishes, zero barrier contacts, crashes, or off-track events), tying the protected Champion. The candidate was not promoted because it did not beat Champion; its evaluation replay was saved. This again confirms the contact rollback restores clean Champion pace, but does not show further improvement toward the 30 s target.
+
+At 09:17:34 UTC training remained active at step 4,454,096, episode 326, about 15.7 decisions/s, actor unlocked with cumulative reference drift 0.097/0.5 and no critic recovery cooldown. Replay capture remained enabled with replay capacity at 250,000 transitions. C: had 19.23 GiB free. No settings or protected Champion files were changed.
