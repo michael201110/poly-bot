@@ -2153,3 +2153,10 @@ At 08:16:53 UTC training had resumed at step 4,395,457, episode 274, about 15.7 
 The deterministic five-lap evaluation at step 4,397,196 completed at 33.737 s with 5/5 finishes and zero barrier contacts, crashes, or off-track events. It was 0.018 s slower than the 33.719 s clean anchor, so it was rejected as weaker; no contact rollback occurred. Its evaluation replay was saved. The preceding exploratory training episode recorded three barrier contacts clustered around 63.08?63.27% progress, while the deterministic actor screen remained clean.
 
 Training resumed at step 4,397,373, episode 276, about 15.6 decisions/s, actor unlocked with no recovery cooldown. Visual replay capture remains active (5,725 files, 36.89 GiB); C: had 19.82 GiB free. No training settings or Champion files were changed.
+
+
+### Repeated 63% corner contact regression, 08:22 UTC
+
+The five-lap evaluation at step 4,399,484 completed at 34.200 s (5/5 finishes, 15 barrier-contact steps, zero crashes/off-track events). Contacts repeated at progress ratios 0.6266, 0.6278, and 0.6314 on every lap; maximum barrier impulse was 2,017.6. This repeats the earlier 63.1% corner contact cluster seen at step 4,381,500, after a clean intervening actor evaluation. The contact gate rejected the candidate and rolled back the actor; the evaluation replay was saved.
+
+At step 4,400,281, episode 278, the trainer remained active at about 15.6 decisions/s, actor locked with 801 critic recovery updates remaining. The clean Champion and clean anchor protections remain active; no hyperparameters were changed. C: had 19.80 GiB free.
