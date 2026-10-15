@@ -2839,3 +2839,9 @@ The saved Latest config (written 14:41 UTC during this run) matches the Simple T
 The five-lap candidate at step 4,776,716 completed cleanly at 33.677 s (5/5 finishes, zero barrier contacts). It was rejected against the 33.324 s Champion; the evaluation replay saved 6,738 transitions and the weaker-candidate count is 1/5. Subsequent stochastic training laps were 34.032 s and 34.051 s, with five and four collision-impulse steps respectively around 62.8-63.3% progress. These are exploratory training episodes, distinct from the clean deterministic evaluation. Their visual replays were saved in run `34c873e331904d93810c93ee8efe367a`.
 
 At 14:47 UTC the trainer was active at step 4,778,987, episode 615, about 16 steps/s, with another actor evaluation pending. The replay index contained 839 entries. C: had 15.7 GiB free and D: 144.3 GiB.
+
+### Repeated 63% contact rollback and recovery, 14:51 UTC
+
+The candidate at step 4,778,988 evaluated at 34.086 s and repeated three contacts on every one of five laps at progress 0.62779, 0.62839, and 0.62961 (15 contact steps total). The evaluation replay saved 6,822 transitions. The contact gate rejected the checkpoint, restored the protected Champion actor, preserved critics and replay, and began another 1,000-update critic cooldown.
+
+Training continued without restart. After recovery, free-driving episodes 616-618 each matched Champion at 33.324 s with no contact steps; episode 619 completed in 33.348 s, also clean. Their visual replays were captured. At 14:51 UTC the trainer was active at step 4,783,433, episode 619, with another actor evaluation pending and the cooldown complete. C: had 15.6 GiB free; D: 144.3 GiB.
