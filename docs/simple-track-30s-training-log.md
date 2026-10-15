@@ -1722,7 +1722,7 @@ laps. No change to Champion or reward shaping is intended by this experiment.
 
 ## 2026-10-15: lower actor uncertainty weight
 
-The 33.105 s training lap is a valid recorded rollout, but it was not a repeatable verified result: its subsequent five-lap deterministic check was 33.635 s. It therefore did not replace the protected 33.324 s 5/5 Champion. Recent scratch runs repeatedly proposed slower or contact-heavy actors and rolled the actor back while keeping critics and replay, limiting stable policy changes.
+The 33.105 s training lap is a valid recorded rollout, but it was not a repeatable verified result: its separate five-lap deterministic evaluation of the nearby saved actor checkpoint was 33.755 s. It therefore did not replace the protected 33.324 s 5/5 Champion. Recent scratch runs repeatedly proposed slower or contact-heavy actors and rolled the actor back while keeping critics and replay, limiting stable policy changes.
 
 Resumed Latest at decision 4,088,364 through **Continue latest with selected actor settings** using `simple-track-grtqc-contact-aware-30-uncertainty5e-1-explore5e-3.json`. Changed only `actor_uncertainty_coefficient` from 1.0 to 0.5; actor learning rate remains 5e-6, per-update action limit 0.0075, cumulative reference drift limit 0.5, exploration std 0.005, and the pace-polish rewards and gates remain selected. The run log confirms `resume_source=models\simple-track\grtqc\latest`, `fresh_replay=false`, replay size 250,000, CUDA on the NVIDIA T500, and coefficient 0.5. New run: `20261015T025008Z`; first resumed progress record is step 4,088,365. Replay recording remains enabled. Champion was not changed.
 
@@ -1749,3 +1749,10 @@ The five-lap evaluation at step 4,100,732 measured 33.701 s, with 5/5 finishes a
 
 
 The next candidate at step 4,102,988 finished its five-lap check at 33.874 s with 10 total barrier-contact steps (two per lap), zero off-track events, and zero crashes. It was rejected, and the contact gate restored Champion's actor while preserving critics and replay. At step 4,103,468 training was active in critic recovery with 881 of 1,000 cooldown updates remaining and actor updates temporarily locked. Port 8765 stayed connected, the replay bundle had 17 episodes, and C: had about 23.5 GiB free.
+
+
+### Historical timing correction and live recovery state
+
+Correction: the nearby saved actor associated with the recorded 33.105 s episode was separately tested at step 3,695,830 on port 8766 and completed five clean deterministic laps at 33.755 s. The 33.635 s five-lap result recorded earlier in this document belongs to a different continuation and was mistakenly attributed to the 33.105 s episode in the uncertainty-trial note. The 33.105 s replay remains a genuine stochastic training episode, not a verified actor pace.
+
+At 03:10:05 UTC, the active run `20261015T025008Z` had reached step 4,106,957 (episode 17), with the original 1,000-update critic cooldown nearly complete (8 updates remaining; actor temporarily locked). The replay buffer remained full, coefficient 0.5 remained active, and port 8765 was listening with a simulator connection. C: had about 23.5 GiB free. Training was left running.
