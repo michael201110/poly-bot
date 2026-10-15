@@ -1810,3 +1810,12 @@ The GUI process was still active after the previous status note; its Stop cleanl
 The earlier 33.105 s remains a one-off exploratory episode, not the pace of a verified saved actor. The actor associated with that historical run had previously measured 33.755 s over five clean deterministic laps. These new screens likewise show a gap between exploratory laps and the policy that can be repeatedly evaluated; no Champion promotion was made.
 
 At the time of this note, the same uncertainty-0.5 continuation was active at step 4,147,978, with replay capacity 250,000, actor learning rate 5e-6, per-update action limit 0.0075, cumulative drift limit 0.5, and n-step return 16. Visual replay recording remained enabled; the current bundle 34c873e331904d93810c93ee8efe367a contained 71 episodes. During inspection, selecting the ordinary game tab (default port 8765) restored a live simulator connection after Edge had been focused on the separate replay tab (port 8766); the run advanced without being restarted. Champion remains 33.324 s, and the 30 s goal is not yet reached.
+
+
+### Post-rollback recovery and clean pace checks, 04:06 UTC
+
+The five-lap confirmation at step 4,150,172 measured 34.002 s (5/5 finishes, ten total barrier-contact steps, zero off-track events or crashes). The contact gate restored Champion's actor and started another 1,000-update critic recovery while preserving critics and replay. The cooldown fell from 660 to 168 updates and then completed; the actor unlocked with cumulative reference drift 0.229 and executed update drift at the 0.0075 cap.
+
+The first post-recovery check at step 4,154,652 tied Champion at 33.324 s, 5/5 with zero contact steps, off-track events or crashes. It was not promoted because the gate requires a faster verified result. The next check at step 4,156,908 measured 33.585 s (5/5 clean) and was also rejected as slower. This remains a plateau around the current Champion rather than a verified improvement toward 30 s.
+
+At step 4,157,268 the learner was continuing on the same full replay with actor updates unlocked. The visual-replay bundle remained active and had 82 episodes. No actor settings, reward settings, evaluation gates or protected Champion files were changed.
