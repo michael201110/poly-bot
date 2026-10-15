@@ -2099,3 +2099,10 @@ At step 4,378,345 the actor proposed action drift of 0.02182 while the applied d
 At step 4,379,244 the five-lap evaluation completed at 33.796 s (5/5 finishes, zero barrier contacts, zero crashes, zero off-track events). The evaluation replay was saved. This candidate was rejected against the protected 33.324 s Champion; no critic recovery was needed. Training resumed at step 4,379,969, episode 260, about 15.7 decisions/s. It remains roughly 3.8 s above the 30 s target, and the inherited 33.105 s exploratory training lap remains unverified by deterministic evaluation.
 
 The current per-update action-drift limit is being reached in actor diagnostics, but the historical 0.01-cap experiment produced repeated barrier contact during verification. I left the running actor/configuration unchanged because the prior faster candidate was unsafe and there is no verified live-tuning path. The five-lap run replay was captured for later swarm use. Training and port 8765 remain active; C: had 20.02 GiB free. No cleanup was necessary.
+
+
+### Continued actor-update saturation, 08:00 UTC
+
+The live continuation advanced to step 4,380,893, episode 261, at about 15.7 decisions/s. Its latest progress record shows proposed actor action drift 0.03965 versus executed drift 0.00749, confirming that the active per-update cap is substantially clipping actor changes. The last deterministic evaluation remains 33.796 s; the protected Champion remains 33.324 s. This diagnostic supports the hypothesis that line adaptation is conservative, but does not prove that a higher cap would yield a faster clean policy. The earlier 0.01-cap trial had repeated contact, so I made no live setting changes and did not interrupt training.
+
+Replay capture remains active (5,705 files, 36.76 GiB); C: had 20.01 GiB free. The GUI trainer PID 21944 and websocket bridge on port 8765 were live at the check.
