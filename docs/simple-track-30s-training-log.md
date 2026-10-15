@@ -2723,3 +2723,10 @@ The five-lap evaluation at step 4,664,348 completed in 33.617 s (5/5 finishes, n
 The next five-lap evaluation at step 4,666,604 completed in 33.797 s, also 5/5 clean. It was rejected as slower than Champion without rollback; weaker-actor count became 2 of 5. Replay transitions (6,762) were retained.
 
 At 12:55:31 UTC training remained active at step 4,666,973, episode 516, with critic recovery complete and replay capture active. C: had about 17.5 GiB free.
+
+
+### Clean but slower evaluation at 33.829 s, 12:57 UTC
+
+The five-lap evaluation at step 4,668,876 completed in 33.829 s (5/5 finishes, no contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion, so it was rejected without rollback; weaker-actor count became 3 of 5. Evaluation replay transitions (6,768) were retained.
+
+At 12:58:15 UTC training remained active at step 4,669,357, episode 518, with critic recovery complete and replay capture active. C: had about 17.5 GiB free.
