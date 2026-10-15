@@ -1340,3 +1340,21 @@ best and the protected 33.324 s Champion, so it was not promoted. Training
 continued in episode 60 through step 3,949,120 with actor updates unlocked. The
 visual replay archive had 76 entries at 01:09:37 local. Port 8765 remained
 active; C: had 25.2 GB free and D: 144.3 GB.
+
+### Contact-triggered rollback, 00:17 UTC
+
+The next screened actor at step 3,952,531 completed its deterministic
+five-lap evaluation at 33.754 s median/best, but hit a barrier on every lap
+(five total contacts, one per lap). All five contacts occurred at the same
+63.455% track progress, with maximum impulse 590.68, so the candidate was
+rejected and the actor was restored from Champion. The trainer applied its
+1,000-update critic cooldown; it kept the replay and critics. The next recorded
+training lap finished cleanly at 33.324 s. This is evidence of repeatable
+candidate instability at one section, rather than a pace improvement hidden by
+the 33.105 s historical training-best field. That historical lap's nearby
+checkpoint already failed deterministic reproduction at 33.755 s (see above).
+
+Training remained active on port 8765 after rollback. Episode 65 was underway
+at step 3,953,740 in the latest observed log; the active replay index had 90
+entries. C: had about 25.2 GB free and D: about 144.3 GB. The protected
+Champion remains 33.324 s.
