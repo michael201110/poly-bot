@@ -1763,3 +1763,8 @@ At 03:10:05 UTC, the active run `20261015T025008Z` had reached step 4,106,957 (e
 The evaluation at step 4,107,436 finished 5/5 at 33.846 s with zero barrier contacts, off-track events, or crashes. It was rejected as slower than Champion. At step 4,108,827, the existing run was active with actor updates unlocked, coefficient 0.5, and full replay. Its latest replay bundle held 23 episodes.
 
 Actor diagnostics at step 4,107,434 showed proposed action drift 0.0368 but executed drift 0.00748 under the 0.0075 per-update limit, so the cap is constraining actor movement. A prior 0.01 cap produced a 33.375 s candidate but repeated barrier contact on every verification lap and still did not beat the 33.324 s Champion. I staged `simple-track-grtqc-contact-aware-30-uncertainty5e-1-cap8p75e-3-explore5e-3.json` as a measured intermediate: it changes only the per-update action cap from 0.0075 to 0.00875, keeping actor LR, cumulative drift cap, rewards, replay, and all evaluation/rollback gates unchanged. It has not been applied to the live run; training remains active.
+
+
+### Candidate pace gain after recovery
+
+The five-lap check at step 4,109,692 measured 33.753 s, 5/5 finishes with zero barrier contacts, off-track events, or crashes. It remained slower than the 33.324 s Champion and was not promoted, but it improved the active scratch candidate from 33.846 s; the trainer logged `actor_pace_improved`, reset its weak-evaluation count, and kept the candidate training. At step 4,111,839 the actor was unlocked, replay capacity remained 250,000, and the active replay bundle had 26 episodes. This modest gain is reason to continue the present coefficient 0.5 / action cap 0.0075 run through further checks before using the staged 0.00875 cap.
