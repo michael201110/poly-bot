@@ -1535,3 +1535,17 @@ collection at step 4,038,602 in episode 2 with replay retained and actor
 unlocked. This initial check verifies the restored baseline under the new
 setting; it does not yet show a pace gain. Await later policy checks to assess
 whether wider exploration produces a faster line without contacts.
+
+### Wider-exploration candidate checks, 03:00 UTC
+
+The first actor-policy check after the clean tie at step 4,038,533 completed five
+laps at 33.786 s with zero contacts; it was rejected as slower than Champion.
+After further learning under exploration_std=0.01, the next five-lap check at
+step 4,043,061 was 34.023 s with 20 total barrier-contact steps. The gate
+rejected it, restored the verified actor, and started critic recovery. At step
+4,043,970 the same run remained live in episode 6 with 773 recovery updates
+remaining. The new run's visual replay index continued to grow (8 captures at
+the last index check); no Champion or reward change occurred. This trial has
+not improved pace and its wider exploration raised contact risk. Let critic
+recovery finish and retain the clean Champion gate before judging further
+samples.
