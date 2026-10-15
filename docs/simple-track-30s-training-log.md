@@ -1994,3 +1994,9 @@ At 06:58 UTC training was active at step 4,323,322, episode 210, about 15.7 deci
 The evaluation at step 4,327,532 completed five deterministic laps at 33.637 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It improved on the immediately preceding 33.786 s contact-affected candidate, but did not beat the clean scratch best of 33.480 s or the protected 33.324 s Champion.
 
 At 07:02 UTC training was active at step 4,327,678, episode 214, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 905 files (5.75 GiB); C: had 21.2 GiB free. No training settings or Champion files were changed.
+
+### Clean but slower evaluation, 07:05 UTC
+
+The evaluation at step 4,329,788 completed five deterministic laps at 33.891 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It remained clean but was slower than the clean scratch best of 33.480 s and the protected 33.324 s Champion; neither was replaced. No contact recovery was triggered.
+
+At 07:05 UTC training was active at step 4,330,149, episode 216, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 908 files (5.77 GiB); C: had 21.2 GiB free. Training settings and Champion files were unchanged.
