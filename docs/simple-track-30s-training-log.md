@@ -2857,3 +2857,11 @@ The live trainer continued after rollback. At 14:58 UTC it was at step 4,788,889
 At step 4,792,428 the five-lap candidate evaluated at 33.724 s and repeated three contacts per lap in the final 1.5% of the route (progress 0.98592, 0.99445, and 1.00000; 15 contacts total). The 6,750 evaluation transitions were retained. The contact gate rejected the actor, restored Champion, preserved critic/replay state, and started a 1,000-update cooldown.
 
 Training continued. A post-rollback free-driving episode immediately matched Champion at 33.324 s with zero contacts. At 15:02 UTC the live trainer was at step 4,795,181, episode 630 (44.2% progress), with 312 cooldown updates remaining and about 16 steps/s. C: had 15.5 GiB free; D: 144.3 GiB. The rejected candidate replay and ongoing visual replay capture are preserved.
+
+### 33.105-second record audit and near-finish rollback, 15:10 UTC
+
+The current training log began at step 4,088,365 with `best_training_lap_s=33.105` already populated, so this is a carried-forward historical best, not a new result from this run. Across the 637 episode records in run `20261015T025008Z`, no episode is 33.105 s; the fastest recorded episode is 33.198 s (episode 585 at 14:12 UTC). The current protected Champion remains 33.324 s. This explains why the GUI can show a 33.105 best while current driving does not reproduce it: it is not a verified repeatable checkpoint pace, and the current run has not reproduced it.
+
+At step 4,799,132, the five-lap evaluation median was 33.846 s (5/5 finishes), with one barrier contact at 98.88% progress on every lap. The contact gate rejected that actor and restored the Champion while retaining critics and replay and starting a 1,000-update critic cooldown. A free-driving lap immediately after rollback finished cleanly in 33.324 s. At step 4,803,596, the subsequent one-lap actor screen also matched 33.324 s with zero barrier contacts; its full evaluation had not yet been recorded at this update.
+
+The trainer and GUI remained live on CUDA at about 16 decisions/s. Replay capture is still active (102 visual-replay run directories on disk). C: had about 15.4 GiB free and D: about 144.3 GiB. No training settings or model files were changed.
