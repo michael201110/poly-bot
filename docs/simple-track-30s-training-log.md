@@ -2036,3 +2036,9 @@ At 07:21 UTC training was active at step 4,343,469, episode 228, about 15.7 deci
 The evaluation at step 4,347,836 completed five deterministic laps at 33.697 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). This is 0.008 s faster than the preceding 33.705 s evaluation, but remains 0.217 s slower than the best clean scratch result (33.480 s) and 0.373 s slower than the protected 33.324 s Champion. No promotion occurred.
 
 At 07:26 UTC training was active at step 4,347,876, episode 232, about 15.6 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 931 files (5.91 GiB); C: had 20.9 GiB free. Training settings and Champion files were unchanged.
+
+### Contact rollback at 33.930 s, 07:29 UTC
+
+The evaluation at step 4,350,124 completed five deterministic laps at 33.930 s (5/5 finishes, 15 barrier-contact steps total, zero off-track events or crashes). The contact gate rejected this actor and restored the protected reference actor while retaining critics and replay.
+
+At 07:30 UTC training was active at step 4,350,941, episode 234, about 15.6 decisions/s, with actor updates locked and 796 critic recovery updates remaining. Replay remained full at 250,000 transitions. The visual replay bundle contained 935 files (5.94 GiB); C: had 20.9 GiB free. Training settings and Champion files were unchanged.
