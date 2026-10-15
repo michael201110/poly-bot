@@ -2223,3 +2223,12 @@ At 08:50:22 UTC training had resumed at step 4,426,713, episode 302, at 15.7 dec
 The next deterministic five-lap evaluation at step 4,428,620 completed in 33.789 s (5/5 finishes, zero barrier contacts). It was 0.465 s slower than the protected 33.324 s Champion and was rejected without promotion. The evaluation replay was saved.
 
 At 08:53:48 UTC training remained active at step 4,429,841, episode 305, about 15.7 decisions/s, with actor updates unlocked, cumulative reference-action drift 0.139/0.5, no saturated update, and no critic recovery cooldown. The replay buffer remained at 250,000 transitions and visual replay capture remained enabled. C: had 19.5 GiB free. No settings or protected checkpoint files were changed.
+
+
+### Repeated 63% corner contact regression, 08:56 UTC
+
+The deterministic five-lap evaluation at step 4,430,892 completed in 33.960 s (5/5 finishes, 15 barrier-contact steps, zero crashes/off-track events). The contacts repeated on each lap in a tight progress cluster from 0.6308 to 0.6339, with maximum impulse 1,225.6. This reproduces the same corner cluster seen in earlier rejected actor candidates at steps 4,381,500 and 4,399,484. The candidate was rejected and the actor rolled back; the evaluation replay was saved.
+
+Immediately before this screen, an actor update proposed action drift 0.03622, while the configured per-update cap executed 0.00750; cumulative reference drift was 0.229/0.5. Thus the per-update action cap is binding on this sample, but the cumulative trust limit is not. This alone does not establish that widening the cap would improve pace; the candidate was both slower than Champion and contact-heavy, so I left the setting unchanged.
+
+At 08:56:59 UTC the trainer remained active at step 4,432,865, episode 307, about 15.7 decisions/s. The actor was locked for critic recovery with 507 updates remaining; it had already resumed a clean 33.324 s training lap after rollback. The replay buffer remained at 250,000 transitions, visual replay capture remained enabled, and C: had 19.45 GiB free. Champion remains protected at 33.324 s.
