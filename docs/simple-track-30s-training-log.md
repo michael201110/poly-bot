@@ -2479,3 +2479,10 @@ At 10:47:15 UTC training remained active at step 4,534,765, episode 398, with re
 The deterministic five-lap evaluation at step 4,536,396 completed in 34.075 s (5/5 finishes, 25 barrier-contact steps, zero crashes/off-track events). Each lap repeated five contacts at progress 0.63083, 0.63206, 0.63268, 0.63393, and 0.63455; maximum impulse was 1,391.2. The contact gate rejected the candidate, restored the actor from the protected Champion, and started 1,000 critic recovery updates while preserving critics and replay. The evaluation replay was saved.
 
 At 10:49:58 UTC training remained active at step 4,537,013, episode 400, with 846 recovery updates remaining. Replay capture continued and C: had about 18.3 GiB free. No settings or protected Champion files were changed.
+
+
+### Clean but slower evaluation after the 63% contact rollback, 10:53 UTC
+
+The deterministic five-lap evaluation at step 4,540,860 completed in 33.697 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.526 s clean actor-pace best and protected 33.324 s Champion, so it was rejected for promotion without rollback. The weaker-actor evaluation count reset to 1 of 5. The evaluation replay was saved.
+
+At 10:53:41 UTC training remained active at step 4,540,997, episode 404, with recovery complete and replay capture active. C: had about 18.3 GiB free. No settings or protected Champion files were changed.
