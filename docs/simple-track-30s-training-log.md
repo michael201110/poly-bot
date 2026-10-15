@@ -1294,3 +1294,13 @@ continuation and the 33.324 s Champion, so no promotion occurred. Training
 continued through step 3,936,576 in episode 49 with actor updates unlocked and
 another policy check pending. Replay capture reached 62 entries at 00:57:59
 local. Port 8765 remained active; C: had 25.4 GB free and D: 144.3 GB.
+
+### Near-finish contact rollback and clean locked lap, 23:59 UTC
+
+At step 3,936,803, the next deterministic screen was 33.583 s median (5/5
+finishes) but contacted the barrier once on every lap at 98.7351% progress
+(five contact steps, peak impulse 124.54). The contact gate rejected the actor
+and began recovery. During the actor lock, episode 51 completed cleanly at
+33.324 s, matching Champion. At step 3,939,082 recovery still had 431 critic
+updates remaining and training continued. The replay archive had 65 entries at
+01:00:59 local. Port 8765 remained active; C: had 25.3 GB free and D: 144.3 GB.
