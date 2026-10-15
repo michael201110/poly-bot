@@ -1737,3 +1737,6 @@ At step 4,092,326 the 1,000,000-decision Latest continuation remained active on 
 
 
 The next evaluation at step 4,094,012 also finished 5/5 at 34.082 s, with 15 total barrier-contact steps (three per lap), zero off-track terminations, and zero crashes; it was slower than Champion and rejected. At step 4,094,673 the same run was still active with the 0.5 uncertainty coefficient, full replay buffer, and port 8765 connected. Its visual-replay bundle had grown to seven episodes. C: still had about 23.6 GiB free. The reduced-uncertainty trial has not produced a pace improvement; training continues and the 33.324 s Champion remains protected.
+
+
+The 34.082 s check at step 4,094,012 triggered `contact_regression_rollback`: three barrier-contact steps per lap versus zero for Champion. The runner restored the Champion actor and preserved the critic and replay, then started its configured 1,000-update critic recovery cooldown. At step 4,097,117 the run remained active at 14.4 decisions/s with 224 recovery updates remaining and `actor_unlocked=0`; actor updates were temporarily gated while critic recovery continued. This explains the current pause in actor policy improvement after the contact-heavy candidate. No training process was stopped.
