@@ -2167,3 +2167,10 @@ At step 4,400,281, episode 278, the trainer remained active at about 15.6 decisi
 The deterministic five-lap evaluation at step 4,403,948 completed in 33.659 s (5/5 finishes, 10 barrier-contact steps, zero crashes/off-track events). This is 0.060 s faster than the 33.719 s clean anchor but remains 0.335 s slower than Champion and made two contacts on every lap near progress 0.9909 and 0.9923; maximum impulse was 183.7. The contact gate rejected the candidate and restored the actor. The five-lap replay was saved.
 
 At 08:26:20 UTC training was active at step 4,404,273, episode 282, about 15.7 decisions/s, with actor locked and 919 critic recovery updates remaining. The deterministic contact cluster differs from the earlier 63% corner regression, confirming that recent faster actor variants are unsafe in multiple sectors. I did not alter the active profile or bypass the rollback. C: had 19.76 GiB free.
+
+
+### Clean pace improvement after finish-sector rollback, 08:30 UTC
+
+Following recovery from the 33.659 s contact rollback, the five-lap evaluation at step 4,408,396 completed in 33.683 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved the clean anchor by 0.036 s from 33.719 s, but remains 0.359 s slower than the protected 33.324 s Champion. The evaluation replay event was recorded; the training visual-replay archive remains active. No Champion promotion occurred.
+
+At 08:30:13 UTC training was active at step 4,408,777, episode 286, about 15.7 decisions/s, actor unlocked and no recovery cooldown. C: had 19.71 GiB free. No settings or protected checkpoint files were changed.
