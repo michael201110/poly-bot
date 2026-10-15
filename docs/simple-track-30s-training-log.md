@@ -2181,3 +2181,10 @@ At 08:30:13 UTC training was active at step 4,408,777, episode 286, about 15.7 d
 The five-lap evaluation at step 4,410,652 completed at 33.772 s (5/5 finishes, five barrier-contact steps, zero crashes/off-track events). Each lap contacted the barrier near progress 0.9895; maximum impulse was 116.6. It was slower than the 33.683 s clean anchor and triggered candidate rejection plus actor rollback. The evaluation replay was saved.
 
 At 08:33:11 UTC the trainer continued at step 4,411,157, episode 288, about 15.7 decisions/s, actor locked with 874 critic recovery updates remaining. The current 33.324 s Champion and clean anchor are preserved. C: had 19.69 GiB free. No settings were changed.
+
+
+### Rollback restored clean Champion pace, 08:37 UTC
+
+After recovery from the 33.772 s finish-contact regression, the five-lap evaluation at step 4,415,116 completed in exactly 33.324 s (5/5 finishes, zero barrier contacts, crashes, or off-track events), tying the protected Champion. The clean anchor was refreshed; no promotion occurred because the result did not beat Champion. The evaluation replay event was recorded.
+
+At 08:37:12 UTC the run resumed at step 4,415,933, episode 292, about 15.7 decisions/s, actor unlocked and no recovery cooldown. The visual replay archive remains enabled. C: had 19.64 GiB free. Training settings and Champion files were unchanged.
