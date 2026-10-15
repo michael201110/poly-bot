@@ -1743,3 +1743,6 @@ The 34.082 s check at step 4,094,012 triggered `contact_regression_rollback`: th
 
 
 After critic recovery completed, the evaluation at step 4,098,476 finished 5/5 at 33.584 s with zero barrier contacts, off-track events, or crashes. It was rejected as slower than the 33.324 s Champion. Actor updates were unlocked again, and by step 4,098,821 the same training run had resumed; its visual-replay bundle contained 12 episodes. The uncertainty 0.5 trial still has no verified pace improvement.
+
+
+The five-lap evaluation at step 4,100,732 measured 33.701 s, with 5/5 finishes and zero barrier contacts, off-track events, or crashes. It was rejected against the 33.324 s Champion. At step 4,102,293, training remained active at 14.4 decisions/s with actor updates unlocked and replay capacity still 250,000; the active visual-replay bundle contained 16 episodes. This is the fifth completed five-lap result in the 0.5 uncertainty trial; none has improved on Champion, so the trial remains inconclusive and continues without changing the protected checkpoint.
