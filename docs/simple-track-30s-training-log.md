@@ -1898,3 +1898,9 @@ At 06:02 UTC training had resumed at step 4,270,569, episode 163, about 15.9 dec
 The candidate screened at step 4,273,724 completed five laps at a 33.935 s median (5/5 finishes, 20 barrier-contact steps total, four per lap). It was rejected by the contact gate; the protected Champion actor was restored and the critics and replay were retained for another 1,000-update recovery.
 
 At 06:08 UTC the training process remained active at step 4,274,921, episode 167, about 15.8 decisions/s. Actor updates were locked with 701 critic recovery updates remaining; replay capacity was still full at 250,000. The visual replay bundle contained 225 episodes. No training settings or Champion files were changed.
+
+### Clean scratch pace improves to 33.571 s, 06:11 UTC
+
+The evaluation at step 4,278,172 completed five deterministic laps at 33.571 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). This improved the active scratch pace after the 33.684 s clean candidate and refreshed the clean anchor. It remains 0.247 s slower than the protected 33.324 s Champion, so it was not promoted.
+
+At 06:11 UTC the run was active at step 4,279,385, episode 171, about 15.8 decisions/s; actor updates were unlocked and no recovery cooldown remained. The replay buffer was full at 250,000 transitions, and the active visual replay bundle contained 230 episodes. No training settings or Champion files were changed.
