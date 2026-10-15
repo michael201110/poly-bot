@@ -1740,3 +1740,6 @@ The next evaluation at step 4,094,012 also finished 5/5 at 34.082 s, with 15 tot
 
 
 The 34.082 s check at step 4,094,012 triggered `contact_regression_rollback`: three barrier-contact steps per lap versus zero for Champion. The runner restored the Champion actor and preserved the critic and replay, then started its configured 1,000-update critic recovery cooldown. At step 4,097,117 the run remained active at 14.4 decisions/s with 224 recovery updates remaining and `actor_unlocked=0`; actor updates were temporarily gated while critic recovery continued. This explains the current pause in actor policy improvement after the contact-heavy candidate. No training process was stopped.
+
+
+After critic recovery completed, the evaluation at step 4,098,476 finished 5/5 at 33.584 s with zero barrier contacts, off-track events, or crashes. It was rejected as slower than the 33.324 s Champion. Actor updates were unlocked again, and by step 4,098,821 the same training run had resumed; its visual-replay bundle contained 12 episodes. The uncertainty 0.5 trial still has no verified pace improvement.
