@@ -2871,3 +2871,9 @@ The trainer and GUI remained live on CUDA at about 16 decisions/s. Replay captur
 The five-lap evaluation at step 4,803,596 matched the 33.324 s Champion at 33.324 s with 5/5 finishes and zero barrier contacts. A tie does not replace the protected Champion and was counted as a weaker actor evaluation (1/5). At step 4,805,852 the candidate evaluated at 33.859 s, again 5/5 finishes and zero contacts; it was rejected as slower and the weaker-evaluation count advanced to 2/5. The 33.324 s Champion remains protected.
 
 Training continued after both screens. At 15:14 UTC it was live at step 4,805,974 in episode 640, about 5.8% through the episode and running at about 16 decisions/s. Automatic visual replay capture remained active, with 872 replay files in the active run directory. C: had about 15.4 GiB free and D: about 144.3 GiB. No model, reward, or training settings were changed.
+
+### Scratch candidate clean-pace improvement, 15:17 UTC
+
+At step 4,808,108 the candidate completed five clean evaluation laps at a 33.731 s median (5/5 finishes, zero barrier contacts). This improved the preceding clean scratch-candidate median of 33.859 s by 0.128 s, so the runner emitted `actor_pace_improved` and reset the weaker-evaluation count from 2 to 0. It remains slower than the protected 33.324 s Champion, so it was saved as a rejected checkpoint and continues training rather than being promoted. The next free-driving lap was 33.584 s without reported contacts.
+
+At 15:17 UTC the GUI/trainer processes remained live, at step 4,809,389 in episode 643 and about 16 decisions/s. Replay capture continued. C: had about 15.3 GiB free and D: about 144.3 GiB. No active training settings were changed.
