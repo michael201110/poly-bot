@@ -2865,3 +2865,9 @@ The current training log began at step 4,088,365 with `best_training_lap_s=33.10
 At step 4,799,132, the five-lap evaluation median was 33.846 s (5/5 finishes), with one barrier contact at 98.88% progress on every lap. The contact gate rejected that actor and restored the Champion while retaining critics and replay and starting a 1,000-update critic cooldown. A free-driving lap immediately after rollback finished cleanly in 33.324 s. At step 4,803,596, the subsequent one-lap actor screen also matched 33.324 s with zero barrier contacts; its full evaluation had not yet been recorded at this update.
 
 The trainer and GUI remained live on CUDA at about 16 decisions/s. Replay capture is still active (102 visual-replay run directories on disk). C: had about 15.4 GiB free and D: about 144.3 GiB. No training settings or model files were changed.
+
+### Clean evaluations after finish-line rollback, 15:14 UTC
+
+The five-lap evaluation at step 4,803,596 matched the 33.324 s Champion at 33.324 s with 5/5 finishes and zero barrier contacts. A tie does not replace the protected Champion and was counted as a weaker actor evaluation (1/5). At step 4,805,852 the candidate evaluated at 33.859 s, again 5/5 finishes and zero contacts; it was rejected as slower and the weaker-evaluation count advanced to 2/5. The 33.324 s Champion remains protected.
+
+Training continued after both screens. At 15:14 UTC it was live at step 4,805,974 in episode 640, about 5.8% through the episode and running at about 16 decisions/s. Automatic visual replay capture remained active, with 872 replay files in the active run directory. C: had about 15.4 GiB free and D: about 144.3 GiB. No model, reward, or training settings were changed.
