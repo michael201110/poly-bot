@@ -1774,3 +1774,6 @@ The next candidate at step 4,111,964 screened at 34.070 s and completed five lap
 
 
 The first post-recovery five-lap check at step 4,116,428 tied the protected Champion at 33.324 s (5/5 finishes, zero barrier contacts, off-track events, or crashes). It was not promoted because the gate requires a faster lap, but this shows the actor returned to anchor pace after the prior rollback. At step 4,118,671, training continued with actor updates unlocked, full replay, and coefficient 0.5; the active replay bundle contained 35 episodes. Port 8765 remained connected. The 0.00875 next-continuation profile is still staged, not applied.
+
+
+The candidate at step 4,118,684 completed five-lap confirmation at 33.777 s, 5/5 clean with zero barrier contacts, off-track events, or crashes. It was rejected as slower than Champion; no pace gain was claimed. Training resumed and remained active at step 4,120,297, with actor unlocked and the 250,000-item replay full. The current visual-replay bundle had 36 episodes. The prepared 0.00875 cap remains staged and unapplied.
