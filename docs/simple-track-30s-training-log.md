@@ -1718,3 +1718,12 @@ The planned comparison resumes Latest and preserves its critics, 250,000-item
 replay, reward state, Champion, and five-lap verification. It will be judged on
 successive deterministic five-lap pace checks and contacts, not one-off training
 laps. No change to Champion or reward shaping is intended by this experiment.
+
+
+## 2026-10-15: lower actor uncertainty weight
+
+The 33.105 s training lap is a valid recorded rollout, but it was not a repeatable verified result: its subsequent five-lap deterministic check was 33.635 s. It therefore did not replace the protected 33.324 s 5/5 Champion. Recent scratch runs repeatedly proposed slower or contact-heavy actors and rolled the actor back while keeping critics and replay, limiting stable policy changes.
+
+Resumed Latest at decision 4,088,364 through **Continue latest with selected actor settings** using `simple-track-grtqc-contact-aware-30-uncertainty5e-1-explore5e-3.json`. Changed only `actor_uncertainty_coefficient` from 1.0 to 0.5; actor learning rate remains 5e-6, per-update action limit 0.0075, cumulative reference drift limit 0.5, exploration std 0.005, and the pace-polish rewards and gates remain selected. The run log confirms `resume_source=models\simple-track\grtqc\latest`, `fresh_replay=false`, replay size 250,000, CUDA on the NVIDIA T500, and coefficient 0.5. New run: `20261015T025008Z`; first resumed progress record is step 4,088,365. Replay recording remains enabled. Champion was not changed.
+
+This is a controlled experiment, not evidence of a pace gain yet. Compare the next deterministic five-lap evaluations and barrier contacts against 33.324 s before promoting anything.
