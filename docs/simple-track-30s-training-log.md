@@ -1771,3 +1771,6 @@ The five-lap check at step 4,109,692 measured 33.753 s, 5/5 finishes with zero b
 
 
 The next candidate at step 4,111,964 screened at 34.070 s and completed five laps at the same median, 5/5 finishes but 15 total barrier-contact steps (three per lap). There were zero off-track events or crashes. It was rejected and triggered another contact rollback; the Champion actor was restored, critics and replay retained, and a fresh 1,000-update critic cooldown began. At step 4,113,889, the run remained active with 519 recovery updates left and actor updates locked. The active replay bundle contained 29 episodes. The staged 0.00875 profile remains unapplied pending further evidence.
+
+
+The first post-recovery five-lap check at step 4,116,428 tied the protected Champion at 33.324 s (5/5 finishes, zero barrier contacts, off-track events, or crashes). It was not promoted because the gate requires a faster lap, but this shows the actor returned to anchor pace after the prior rollback. At step 4,118,671, training continued with actor updates unlocked, full replay, and coefficient 0.5; the active replay bundle contained 35 episodes. Port 8765 remained connected. The 0.00875 next-continuation profile is still staged, not applied.
