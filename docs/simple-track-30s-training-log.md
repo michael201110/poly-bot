@@ -1777,3 +1777,6 @@ The first post-recovery five-lap check at step 4,116,428 tied the protected Cham
 
 
 The candidate at step 4,118,684 completed five-lap confirmation at 33.777 s, 5/5 clean with zero barrier contacts, off-track events, or crashes. It was rejected as slower than Champion; no pace gain was claimed. Training resumed and remained active at step 4,120,297, with actor unlocked and the 250,000-item replay full. The current visual-replay bundle had 36 episodes. The prepared 0.00875 cap remains staged and unapplied.
+
+
+The five-lap check at step 4,120,940 completed at 33.728 s, 5/5 clean with zero barrier contacts, off-track events, or crashes. The trainer recorded a pace improvement over the previous clean candidate (33.777 s) but did not promote it because Champion remains 33.324 s. At step 4,121,701, actor updates were unlocked, replay remained full, and the latest visual-replay bundle contained 38 episodes. The current profile continues unchanged; the intermediate cap remains staged.
