@@ -2188,3 +2188,10 @@ At 08:33:11 UTC the trainer continued at step 4,411,157, episode 288, about 15.7
 After recovery from the 33.772 s finish-contact regression, the five-lap evaluation at step 4,415,116 completed in exactly 33.324 s (5/5 finishes, zero barrier contacts, crashes, or off-track events), tying the protected Champion. The clean anchor was refreshed; no promotion occurred because the result did not beat Champion. The evaluation replay event was recorded.
 
 At 08:37:12 UTC the run resumed at step 4,415,933, episode 292, about 15.7 decisions/s, actor unlocked and no recovery cooldown. The visual replay archive remains enabled. C: had 19.64 GiB free. Training settings and Champion files were unchanged.
+
+
+### Clean but slower actor candidate after Champion tie, 08:39 UTC
+
+The next deterministic five-lap evaluation at step 4,417,372 completed in 33.717 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was rejected as weaker than the protected 33.324 s Champion; no contact rollback was triggered. The evaluation replay event was recorded.
+
+At 08:39:52 UTC training resumed at step 4,417,705, episode 294, about 15.7 decisions/s, actor unlocked with no recovery cooldown. Replay capture remains active. C: had 19.61 GiB free. No settings or Champion files were changed.
