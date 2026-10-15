@@ -1639,3 +1639,13 @@ regression gate rejected it, restored the protected actor, and emitted
 `actor_recovery` while retaining training and replay state. The run remained
 active and continued collection (step 4,063,710 by 02:23 UTC); this was an actor
 rollback, not a stopped session. Retain the 33.324 s Champion; no promotion.
+
+
+### Post-recovery tie with Champion, 02:24 UTC
+
+The first candidate after actor recovery screened at step 4,064,405 and
+confirmed at 33.324 s, 5/5 finishes, zero contacts. This ties Champion exactly,
+so the deterministic gate rejected promotion; no verified pace improvement was
+made. The evaluation replay was recorded and training resumed, reaching step
+4,066,198 by 02:25 UTC with the same 250,000-transition replay. The GUI and
+WebSocket listener remained active. Champion stays protected at 33.324 s.
