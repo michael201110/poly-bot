@@ -1862,3 +1862,9 @@ At 05:38 UTC the same training process was active at step 4,246,949, episode 142
 The candidate screened at step 4,251,276 completed five deterministic laps at 33.839 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It was rejected because it remained slower than the protected 33.324 s Champion; no actor promotion occurred. This is a clean result after recovery, but it does not establish further pace gain.
 
 At 05:44 UTC the learner was active at step 4,251,461, episode 146, about 15.6 decisions/s, with actor updates unlocked and no remaining critic cooldown. The 250,000-transition replay remained full, and visual replay bundle `models/simple-track/grtqc/visual_replays/34c873e331904d93810c93ee8efe367a` contained 197 episodes. Champion and training settings remain unchanged.
+
+### Contact-heavy actor rollback, 05:47 UTC
+
+The candidate screened at step 4,253,548 completed five laps at a 34.115 s median (5/5 finishes, 35 barrier-contact steps total, seven per lap). It was rejected and the Champion actor restored; critic weights and replay were preserved, with another 1,000-update critic recovery started. The protected Champion remains 33.324 s.
+
+At 05:47 UTC the live run had resumed at step 4,253,614, episode 148, about 15.6 decisions/s. The actor was locked with 984 critic recovery updates remaining; replay remained full at 250,000 transitions. The visual replay bundle `models/simple-track/grtqc/visual_replays/34c873e331904d93810c93ee8efe367a` contained 200 episodes. No training settings or Champion files were changed.
