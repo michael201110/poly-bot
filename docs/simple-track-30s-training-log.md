@@ -2174,3 +2174,10 @@ At 08:26:20 UTC training was active at step 4,404,273, episode 282, about 15.7 d
 Following recovery from the 33.659 s contact rollback, the five-lap evaluation at step 4,408,396 completed in 33.683 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved the clean anchor by 0.036 s from 33.719 s, but remains 0.359 s slower than the protected 33.324 s Champion. The evaluation replay event was recorded; the training visual-replay archive remains active. No Champion promotion occurred.
 
 At 08:30:13 UTC training was active at step 4,408,777, episode 286, about 15.7 decisions/s, actor unlocked and no recovery cooldown. C: had 19.71 GiB free. No settings or protected checkpoint files were changed.
+
+
+### Finish-sector contact regression after clean 33.683 s anchor, 08:33 UTC
+
+The five-lap evaluation at step 4,410,652 completed at 33.772 s (5/5 finishes, five barrier-contact steps, zero crashes/off-track events). Each lap contacted the barrier near progress 0.9895; maximum impulse was 116.6. It was slower than the 33.683 s clean anchor and triggered candidate rejection plus actor rollback. The evaluation replay was saved.
+
+At 08:33:11 UTC the trainer continued at step 4,411,157, episode 288, about 15.7 decisions/s, actor locked with 874 critic recovery updates remaining. The current 33.324 s Champion and clean anchor are preserved. C: had 19.69 GiB free. No settings were changed.
