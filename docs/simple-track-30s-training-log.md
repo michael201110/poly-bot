@@ -2195,3 +2195,10 @@ At 08:37:12 UTC the run resumed at step 4,415,933, episode 292, about 15.7 decis
 The next deterministic five-lap evaluation at step 4,417,372 completed in 33.717 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was rejected as weaker than the protected 33.324 s Champion; no contact rollback was triggered. The evaluation replay event was recorded.
 
 At 08:39:52 UTC training resumed at step 4,417,705, episode 294, about 15.7 decisions/s, actor unlocked with no recovery cooldown. Replay capture remains active. C: had 19.61 GiB free. No settings or Champion files were changed.
+
+
+### Repeated near-finish contact rollback, 08:43 UTC
+
+The five-lap evaluation at step 4,419,628 completed in 33.786 s (5/5 finishes, five barrier-contact steps, zero crashes/off-track events). Every lap had one contact at progress 0.98878; maximum impulse was 119.6. This candidate was slower than the clean 33.324 s Champion tie and triggered contact rollback. The evaluation replay was saved.
+
+At 08:43:04 UTC training remained active at step 4,420,449, episode 296, about 15.7 decisions/s, actor locked with 795 critic recovery updates remaining. The Champion was unchanged. C: had 19.59 GiB free. I did not change the active configuration or stop the run.
