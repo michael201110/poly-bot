@@ -2365,3 +2365,10 @@ At 09:53:18 UTC training remained active at step 4,485,475, episode 354, about 1
 The deterministic five-lap evaluation at step 4,487,004 completed in 33.734 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved 0.023 s over the preceding clean screen at 33.757 s and was marked as an actor pace improvement. It remains slower than the clean actor best at 33.349 s and the protected 33.324 s Champion, so no Champion promotion occurred. The evaluation replay was saved.
 
 At 09:55:57 UTC training remained active at step 4,487,405, episode 356, about 15.6 decisions/s, actor unlocked with cumulative reference drift 0.047/0.5 and no critic recovery cooldown. Replay capture remained enabled and replay capacity was 250,000 transitions. C: had 18.86 GiB free. No settings or protected Champion files were changed.
+
+
+### Clean but slower evaluation, 09:58 UTC
+
+The deterministic five-lap evaluation at step 4,489,260 completed in 33.746 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than the 33.349 s clean actor best and the protected 33.324 s Champion, so it was rejected without promotion or contact rollback. The evaluation replay was saved.
+
+At 09:59:20 UTC training had resumed at step 4,490,613, episode 359, about 15.6 decisions/s, actor unlocked with cumulative reference drift 0.157/0.5 and no critic recovery cooldown. Replay capacity remained at 250,000 transitions, visual replay capture remained enabled, and C: had 18.81 GiB free. No settings or protected Champion files were changed.
