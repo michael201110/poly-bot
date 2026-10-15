@@ -2092,3 +2092,10 @@ At 07:55 UTC the GUI trainer was still alive, the bridge was listening on port 8
 The next five-lap evaluation completed at step 4,376,988 with a 33.752 s median (5/5 finishes, zero barrier-contact steps, zero crashes, zero off-track events). Its evaluation replay was saved. The candidate was rejected against the protected 33.324 s Champion, and training resumed without recovery at step 4,378,345, episode 259, about 15.7 decisions/s. The retained historical best training lap remains 33.105 s; it has not been reproduced by deterministic evaluation.
 
 At step 4,378,345 the actor proposed action drift of 0.02182 while the applied drift was 0.00749, showing that the configured per-update action-drift cap is binding. This is direct evidence that actor changes are being clipped, though it does not prove that increasing the cap would improve lap time. No live setting change or restart was made. Replay capture remained active: 5,702 files totaling 36.74 GiB, with 20.04 GiB free on C:. Training stayed active on port 8765.
+
+
+### Successive clean candidate remained slower, 08:00 UTC
+
+At step 4,379,244 the five-lap evaluation completed at 33.796 s (5/5 finishes, zero barrier contacts, zero crashes, zero off-track events). The evaluation replay was saved. This candidate was rejected against the protected 33.324 s Champion; no critic recovery was needed. Training resumed at step 4,379,969, episode 260, about 15.7 decisions/s. It remains roughly 3.8 s above the 30 s target, and the inherited 33.105 s exploratory training lap remains unverified by deterministic evaluation.
+
+The current per-update action-drift limit is being reached in actor diagnostics, but the historical 0.01-cap experiment produced repeated barrier contact during verification. I left the running actor/configuration unchanged because the prior faster candidate was unsafe and there is no verified live-tuning path. The five-lap run replay was captured for later swarm use. Training and port 8765 remain active; C: had 20.02 GiB free. No cleanup was necessary.
