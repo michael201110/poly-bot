@@ -2078,3 +2078,10 @@ At 07:47 UTC training was active at step 4,368,921, episode 250, about 15.7 deci
 The evaluation at step 4,372,460 completed five deterministic laps at 33.600 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It is clean but remains slower than the 33.480 s best scratch result and the protected 33.324 s Champion. The Champion was unchanged.
 
 At 07:50 UTC training was active at step 4,372,673, episode 254, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 960 files (6.10 GiB); C: had 20.6 GiB free. Training settings and Champion files were unchanged.
+
+
+### Historical 33.105 s lap versus the current policy, 07:55 UTC
+
+The current continuation inherited `best_training_lap_s = 33.105` from its checkpoint; the first progress record for this run already contained that value. The current deterministic five-lap evaluation at step 4,374,716 was 33.555 s (5/5 finishes, zero contacts, zero crashes, zero off-track events), so this policy has not repeated the historical lap. The evaluation was rejected against the protected 33.324 s Champion. GRTQC training rollouts add correlated exploration noise, while evaluation calls the policy deterministically; a fast exploratory episode is therefore not evidence that the deterministic policy can reproduce that pace. No Champion files or training settings were changed.
+
+At 07:55 UTC the GUI trainer was still alive, the bridge was listening on port 8765, and training had resumed at step 4,376,721, episode 257, about 15.8 decisions/s. Replay capacity remained full at 250,000 transitions. Visual replay capture contained 5,698 files totaling 36.71 GiB, including the evaluated run; C: had 20.07 GiB free. The latest hour added about 0.44 GiB, so no space cleanup was needed and training remained active.
