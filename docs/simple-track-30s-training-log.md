@@ -2819,3 +2819,9 @@ At 14:09 UTC, the next free-driving episodes were 33.727 s (episode 000795), 33.
 The five-lap evaluation at step 4,745,260 completed at a 33.582 s median with 5/5 finishes and no barrier contacts; its 6,720 evaluation transitions were saved. It remained slower than the 33.324 s Champion and was counted as the first weaker candidate in a new streak. The next evaluation at step 4,747,532 completed at 33.614 s, also 5/5 clean; 6,726 evaluation transitions were saved and the weaker-candidate count became 2/5. Champion was unchanged.
 
 Free-driving episodes 000785-000789 completed in 33.198, 33.842, 33.816, 33.758, and 33.512 s, respectively, with zero barrier-contact steps. Visual replay capture continued. At 14:18 UTC the trainer was live at step 4,749,776, episode 589, about 16 steps/s; a new evaluation was pending. C: had 16.0 GiB free and D: 144.3 GiB. No training settings or Champion files were changed.
+
+### Contact rollback and clean post-rollback laps, 14:21 UTC
+
+The five-lap candidate at step 4,749,788 completed in 34.053 s but repeated four barrier impacts on each lap at progress 0.62961, 0.63083, 0.63145, and 0.63268 (20 contact steps total; maximum impulse 1,551.9). The contact gate rejected and rolled its actor back to protected Champion. The rejected checkpoint was saved at `models/simple-track/grtqc/checkpoints/step-4749788-rejected/`; its evaluation replay contributed 6,816 transitions. Recovery retained the critic and replay buffer and started a 1,000-update critic cooldown.
+
+Training continued without a restart. The post-rollback free-driving laps were 33.659 s, 33.324 s, and 33.324 s, all with zero contact steps; their visual replays are episodes 000812-000814 in run `34c873e331904d93810c93ee8efe367a`. By 14:21 UTC training was active at step 4,754,025 in episode 593, and the critic cooldown had completed. The Champion remained 33.324 s; disk headroom remained about 16 GiB on C: and 144 GiB on D:.
