@@ -2146,3 +2146,10 @@ After the second 1,000-update critic recovery, the five-lap evaluation at step 4
 The five-lap deterministic evaluation at step 4,394,924 completed in 33.719 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). This is 0.092 s faster than the prior clean candidate at 33.811 s and refreshed the clean scratch anchor, but remains 0.395 s slower than the protected Champion at 33.324 s; no Champion promotion occurred. The evaluation replay was saved. Before this screen, cumulative actor reference-action drift was 0.237 against the configured 0.5 limit; the action change was clean on this evaluation.
 
 At 08:16:53 UTC training had resumed at step 4,395,457, episode 274, about 15.7 decisions/s, actor unlocked and no recovery cooldown. Replay capture remains active. C: had 19.85 GiB free. Settings and Champion files remain unchanged.
+
+
+### Clean screen remained just behind anchor, 08:19 UTC
+
+The deterministic five-lap evaluation at step 4,397,196 completed at 33.737 s with 5/5 finishes and zero barrier contacts, crashes, or off-track events. It was 0.018 s slower than the 33.719 s clean anchor, so it was rejected as weaker; no contact rollback occurred. Its evaluation replay was saved. The preceding exploratory training episode recorded three barrier contacts clustered around 63.08?63.27% progress, while the deterministic actor screen remained clean.
+
+Training resumed at step 4,397,373, episode 276, about 15.6 decisions/s, actor unlocked with no recovery cooldown. Visual replay capture remains active (5,725 files, 36.89 GiB); C: had 19.82 GiB free. No training settings or Champion files were changed.
