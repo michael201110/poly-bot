@@ -1836,3 +1836,10 @@ The next post-recovery candidate, screened at step 4,179,356 and five-lap confir
 The checks since the prior note were: 33.744 s at step 4,181,612 (5/5 clean, rejected); 34.080 s at step 4,183,884 (5/5, 15 barrier-contact steps, rollback); 33.685 s at step 4,188,348 (5/5 clean, rejected); 33.691 s at step 4,190,604 (5/5 clean, rejected); 33.789 s at step 4,192,876 (5/5 clean, rejected); 33.963 s at step 4,195,164 (5/5, 20 contact steps, rollback); and 33.324 s at step 4,199,612 (5/5 clean tie, not promoted). No candidate beat the protected 33.324 s Champion.
 
 At 04:51 UTC the same full-track learner remained active at step 4,201,213 with actor updates unlocked, replay size 250,000, and no recovery cooldown. Its visual replay bundle held 135 episodes. C: had 22.4 GiB free and D: had 144.3 GiB free. Training continued without changing actor settings, rewards, critics, evaluation gates, or Champion.
+
+
+### Evaluations after step 4,199,612, 05:15 UTC
+
+The subsequent five-lap checks were: 33.807 s at step 4,201,868 (five contact steps, rollback); 33.324 s at step 4,206,332 (clean tie, not promoted); 33.547 s at step 4,208,588 (clean, rejected as slower); 34.118 s at step 4,210,860 (ten contact steps, rollback); 33.762 s at step 4,215,324 (clean, rejected); 33.801 s at step 4,217,580 (ten contact steps, rollback); 33.590 s at step 4,222,060 (clean, rejected); and 33.786 s at step 4,224,316 (clean, rejected). All completed 5/5. The best clean candidate in this interval was 33.547 s; Champion remains 33.324 s.
+
+At 05:15 UTC the run was active at step 4,224,531, episode 122, with actor updates unlocked and the 250,000-entry replay retained. The visual-replay bundle contained 164 episodes. C: had 22.2 GiB free and D: had 144.3 GiB free. The full-track profile, rewards, critic/replay state, Champion, and evaluation gates were unchanged.
