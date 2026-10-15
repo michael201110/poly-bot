@@ -1946,3 +1946,9 @@ At 06:31 UTC training remained active at step 4,299,753, episode 189, about 15.9
 The evaluation at step 4,302,828 completed five deterministic laps at 33.567 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). The trainer refreshed the clean anchor. This is 0.004 s faster than the prior best clean scratch result (33.571 s), but remains 0.243 s slower than the protected 33.324 s Champion and was not promoted.
 
 At 06:35 UTC the learner was active at step 4,304,978, episode 193, about 16.0 decisions/s, with actor updates unlocked and no critic cooldown. Replay remained full at 250,000 transitions; the visual replay bundle contained 259 episodes. Settings and Champion files were unchanged.
+
+### New clean scratch pace: 33.520 s, 06:38 UTC
+
+The evaluation at step 4,305,084 completed five deterministic laps at 33.520 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It improved the previous best clean scratch result of 33.567 s by 0.047 s, refreshed the clean anchor, and was marked `actor_pace_improved`. It remains 0.196 s slower than the protected 33.324 s Champion and was not promoted.
+
+At 06:38 UTC training remained active at step 4,306,093, episode 194, about 15.9 decisions/s, with actor updates unlocked and no critic cooldown. Replay remained full at 250,000 transitions; the visual replay bundle contained 261 episodes. Training settings and Champion files were unchanged.
