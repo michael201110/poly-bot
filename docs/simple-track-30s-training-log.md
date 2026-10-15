@@ -1409,3 +1409,22 @@ separate from the earlier 63.4-63.7% corner. The contact gate restored the
 Champion actor again. Training continued through step 3,980,196, and the
 visual replay index had 114 entries through episode 000122. Port 8765 remained
 live; the protected Champion is unchanged at 33.324 s.
+
+### Near-finish action trace after contact regression, 00:49 UTC
+
+I compared the rejected step-3,979,555 actor and Champion on the saved
+observations from episode 000121 near the finish. At the closest saved sample
+(99.304% progress, just after the evaluation's 99.233% contact point), the
+candidate predicted steering -0.356 and longitudinal action 0.726; Champion
+predicted -0.431 and 0.641. Over 15 saved samples from 98.2-99.9% progress,
+candidate action MAE against recorded training controls was 0.003 steering
+and 0.0005 longitudinal. This is an open-loop comparison on a clean training
+replay, not the exact collision state, so it suggests but does not prove that
+the candidate's final approach was more throttle-heavy and less corrective.
+The deterministic five-lap evaluation still contacted at 99.233% on every lap
+and the actor was restored from Champion.
+
+The recovery cooldown completed; the actor was unlocked again at step
+3,984,002 with cumulative action drift 0.2247 of the 0.5 limit. Training was
+active and visual replay capture had 119 entries through episode 000127. C:
+had 24.8 GB free and D: 144.3 GB. Champion remains 33.324 s.
