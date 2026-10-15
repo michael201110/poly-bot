@@ -1746,3 +1746,6 @@ After critic recovery completed, the evaluation at step 4,098,476 finished 5/5 a
 
 
 The five-lap evaluation at step 4,100,732 measured 33.701 s, with 5/5 finishes and zero barrier contacts, off-track events, or crashes. It was rejected against the 33.324 s Champion. At step 4,102,293, training remained active at 14.4 decisions/s with actor updates unlocked and replay capacity still 250,000; the active visual-replay bundle contained 16 episodes. This is the fifth completed five-lap result in the 0.5 uncertainty trial; none has improved on Champion, so the trial remains inconclusive and continues without changing the protected checkpoint.
+
+
+The next candidate at step 4,102,988 finished its five-lap check at 33.874 s with 10 total barrier-contact steps (two per lap), zero off-track events, and zero crashes. It was rejected, and the contact gate restored Champion's actor while preserving critics and replay. At step 4,103,468 training was active in critic recovery with 881 of 1,000 cooldown updates remaining and actor updates temporarily locked. Port 8765 stayed connected, the replay bundle had 17 episodes, and C: had about 23.5 GiB free.
