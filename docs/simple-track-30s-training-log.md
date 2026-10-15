@@ -1783,3 +1783,6 @@ The five-lap check at step 4,120,940 completed at 33.728 s, 5/5 clean with zero 
 
 
 The candidate at step 4,123,228 confirmed at 33.943 s over five laps (5/5 finishes, 20 total barrier-contact steps, zero off-track events or crashes). The contact gate rejected it and restored Champion's actor while preserving critic and replay, starting another 1,000-update recovery. At step 4,123,597, training remained active with 908 cooldown updates left and actor updates locked. The current visual replay bundle contained 41 episodes; the staged 0.00875 cap is unchanged and unapplied.
+
+
+The screen at step 4,127,708 was confirmed by five deterministic laps at 33.324 s (5/5, zero barrier contacts, off-track events, or crashes). It tied, but did not beat, Champion and was not promoted. At step 4,128,917, the active learner resumed with actor unlocked and full replay; its visual-replay bundle had 47 episodes. The current 0.0075 actor cap remains in use; the staged 0.00875 profile has not been loaded into the running trainer.
