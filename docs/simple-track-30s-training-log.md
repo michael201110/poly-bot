@@ -1428,3 +1428,16 @@ The recovery cooldown completed; the actor was unlocked again at step
 3,984,002 with cumulative action drift 0.2247 of the 0.5 limit. Training was
 active and visual replay capture had 119 entries through episode 000127. C:
 had 24.8 GB free and D: 144.3 GB. Champion remains 33.324 s.
+
+### Repeated 63% rollback and post-recovery checks, 01:02 UTC
+
+The candidate at step 3,988,531 repeated the mid-track contact regression: its
+five-lap evaluation was 33.830 s with ten barrier contacts, two on each lap at
+63.268% and 63.644% progress (peak impulse 904.78). The runner restored the
+Champion actor and applied the critic cooldown. After recovery, the clean
+five-lap check at step 3,992,979 was 33.548 s, followed by 33.902 s at step
+3,995,251; both were 5/5 finishes with zero contacts and slower than Champion.
+They were rejected, and training continued. The latest observed state was
+step 3,996,776 with replay capture through episode 000142 (134 indexed runs).
+Port 8765 remained live. C: had 24.7 GB free and D: had 144.3 GB. Champion
+remains protected at 33.324 s; the 30 s target remains unmet.
