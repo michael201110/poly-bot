@@ -1988,3 +1988,9 @@ At 06:55 UTC training was active at step 4,320,856, episode 208, about 15.8 deci
 The evaluation at step 4,323,084 completed five deterministic laps at 33.786 s (5/5 finishes, five barrier-contact steps total, zero off-track events or crashes). The contact gate rejected this candidate and began another critic recovery; it did not replace the clean anchor or protected 33.324 s Champion.
 
 At 06:58 UTC training was active at step 4,323,322, episode 210, about 15.7 decisions/s, with actor updates locked and 941 critic recovery updates remaining. Replay remained full at 250,000 transitions. The visual replay bundle contained 900 files (5.72 GiB); C: had 21.2 GiB free. Training settings and Champion files were unchanged.
+
+### Clean evaluation after contact recovery, 07:02 UTC
+
+The evaluation at step 4,327,532 completed five deterministic laps at 33.637 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It improved on the immediately preceding 33.786 s contact-affected candidate, but did not beat the clean scratch best of 33.480 s or the protected 33.324 s Champion.
+
+At 07:02 UTC training was active at step 4,327,678, episode 214, about 15.8 decisions/s, with actor updates unlocked and no critic recovery. Replay remained full at 250,000 transitions. The visual replay bundle contained 905 files (5.75 GiB); C: had 21.2 GiB free. No training settings or Champion files were changed.
