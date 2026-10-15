@@ -2813,3 +2813,9 @@ I compared the archived historical 33.105 s trace (episode 000234) with current 
 At 14:06 UTC training was live at step 4,738,535, episode 579, running about 16 steps/s. Visual replay capture remained active. C: had 16.1 GiB free and D: 144.3 GiB. No training configuration or protected checkpoint was changed.
 
 At 14:09 UTC, the next free-driving episodes were 33.727 s (episode 000795), 33.757 s (000796), and 33.772 s (000798), all with zero barrier contacts. Episode 000799 then finished in 34.066 s with three contact steps at progress 0.63145, 0.63206, and 0.63330. Replay files were recorded for these episodes. At 14:11 UTC the trainer remained active at step 4,742,101 in episode 583 (10.8% progress), evaluation not pending. C: had 16.1 GiB free; D: had 144.3 GiB.
+
+### Additional clean but slower proposals, 14:18 UTC
+
+The five-lap evaluation at step 4,745,260 completed at a 33.582 s median with 5/5 finishes and no barrier contacts; its 6,720 evaluation transitions were saved. It remained slower than the 33.324 s Champion and was counted as the first weaker candidate in a new streak. The next evaluation at step 4,747,532 completed at 33.614 s, also 5/5 clean; 6,726 evaluation transitions were saved and the weaker-candidate count became 2/5. Champion was unchanged.
+
+Free-driving episodes 000785-000789 completed in 33.198, 33.842, 33.816, 33.758, and 33.512 s, respectively, with zero barrier-contact steps. Visual replay capture continued. At 14:18 UTC the trainer was live at step 4,749,776, episode 589, about 16 steps/s; a new evaluation was pending. C: had 16.0 GiB free and D: 144.3 GiB. No training settings or Champion files were changed.
