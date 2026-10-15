@@ -2127,3 +2127,10 @@ Training resumed at step 4,387,064, episode 266, about 15.7 decisions/s, with ac
 The actor evaluation at step 4,388,220 completed five laps at 33.912 s (5/5 finishes, 15 barrier-contact steps total, zero crashes and off-track events). It was rejected and `contact_regression_rollback` restored the actor; a new critic recovery cooldown started. At step 4,389,885, episode 269, training was still active at about 15.7 decisions/s with actor updates locked and 584 recovery updates remaining. The five-lap evaluation replay was saved. This is the second consecutive contact-heavy actor candidate after a recovery cycle, reinforcing that the current actor updates are not yet yielding repeatable clean pace; the Champion remains protected at 33.324 s.
 
 The current actor step cap remains 0.0075, cumulative reference drift limit 0.5, actor LR 5e-6, uncertainty coefficient 0.5, n-step return 16, and replay capacity 250,000. I did not change these during the active cooldown. Visual replay capture remains enabled; C: had 19.93 GiB free. Training and port 8765 remained live.
+
+
+### Contact locations shift with actor candidates, 08:12 UTC
+
+Reviewing the two latest rejected five-lap evaluations shows the contact regressions occurred in different parts of the track, rather than at one fixed finish-line location. At step 4,381,500, the 15 contact steps repeated at progress ratios 0.6308, 0.6314, and 0.6333 on each lap, with maximum impulse 1,216.9. At step 4,388,220, contacts repeated at 0.9359, 0.9866, and 0.9966, with maximum impulse 219.7. Both candidates were rolled back by the existing guard. This points to actor-dependent line regressions across different corners, not a single deterministic finish-line fault; no scripted line or action was added.
+
+The 1,000-update recovery after the latter rollback completed. At 08:11:54 UTC the trainer was active at step 4,392,667, episode 271, about 15.8 decisions/s, actor unlocked, and no recovery updates remaining. Replay capture continues and the evaluation replays are saved. C: had 19.87 GiB free. Champion remains protected at 33.324 s; target 30 s is unmet.
