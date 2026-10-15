@@ -1798,3 +1798,6 @@ The five-lap evaluation at step 4,136,684 completed 5/5 at 33.699 s with zero ba
 
 
 The five-lap evaluation at step 4,138,940 measured 33.808 s, 5/5 finishes with zero barrier contacts, off-track events, or crashes. It was rejected as slower than Champion. By step 4,140,737, training had resumed with the actor unlocked and replay full; the active visual-replay bundle held 61 episodes. The 0.00875 cap remains staged and unapplied.
+
+
+The candidate at step 4,141,196 confirmed at 33.986 s over five laps (5/5 finishes, 25 barrier-contact steps, zero off-track events or crashes). It was rejected and triggered actor rollback with another 1,000-update critic cooldown. The current 0.0075 cap clipped proposed drift 0.0324 to 0.00750, yet the candidate remained contact-heavy. Therefore the previously staged 0.00875 cap is withdrawn from the GUI profile list; increasing the cap is not justified by this evidence. The live trainer remains on its original settings, running at step 4,142,052 with 787 cooldown updates remaining and full replay; training was not interrupted.
