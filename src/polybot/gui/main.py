@@ -499,7 +499,7 @@ class PolyBotWindow(QWidget):
              "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor exploration setting."),
             ("Continue latest with selected actor settings",
              lambda: self._start(True, actor_guard_override=True),
-             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor learning rate and action drift limits."),
+             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor learning rate, action drift limits, and uncertainty coefficient."),
             ("Continue best with selected rewards",
              lambda: self._start(True, best=True, reward_override=True),
              "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
@@ -3590,6 +3590,9 @@ class PolyBotWindow(QWidget):
             selected_actor_learning_rate = (
                 cfg.grtqc.actor_learning_rate if cfg.grtqc else None
             )
+            selected_actor_uncertainty_coefficient = (
+                cfg.grtqc.actor_uncertainty_coefficient if cfg.grtqc else None
+            )
             if reward_override and cfg.algorithm not in {"grtqc", "tqc"}:
                 raise ValueError("selected reward continuation is available for GRTQC and TQC")
             fitted_curriculum = _fit_custom_curriculum_budget(cfg.curriculum, cfg.timesteps)
@@ -3651,12 +3654,17 @@ class PolyBotWindow(QWidget):
                     assert cfg.grtqc is not None and selected_exploration_std is not None
                     cfg.grtqc = replace(cfg.grtqc, exploration_std=selected_exploration_std)
                 if actor_guard_override:
-                    assert cfg.grtqc is not None and selected_actor_reference_drift_limit is not None
+                    assert (
+                        cfg.grtqc is not None
+                        and selected_actor_reference_drift_limit is not None
+                        and selected_actor_uncertainty_coefficient is not None
+                    )
                     cfg.grtqc = replace(
                         cfg.grtqc,
                         actor_learning_rate=selected_actor_learning_rate,
                         actor_step_action_limit=selected_actor_step_action_limit,
                         actor_reference_drift_limit=selected_actor_reference_drift_limit,
+                        actor_uncertainty_coefficient=selected_actor_uncertainty_coefficient,
                     )
                 if recover_actor:
                     cfg.grtqc = replace(
@@ -3701,7 +3709,8 @@ class PolyBotWindow(QWidget):
                         f"kept the selected actor learning rate at {cfg.grtqc.actor_learning_rate:g}, "
                         "per-update action limit at "
                         f"{cfg.grtqc.actor_step_action_limit:g}, and cumulative drift limit at "
-                        f"{cfg.grtqc.actor_reference_drift_limit:g}."
+                        f"{cfg.grtqc.actor_reference_drift_limit:g}; actor uncertainty coefficient "
+                        f"{cfg.grtqc.actor_uncertainty_coefficient:g}."
                     )
                 else:
                     self.log.append(
