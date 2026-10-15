@@ -1549,3 +1549,14 @@ the last index check); no Champion or reward change occurred. This trial has
 not improved pace and its wider exploration raised contact risk. Let critic
 recovery finish and retain the clean Champion gate before judging further
 samples.
+
+### Post-recovery check in wider-exploration run, 03:04 UTC
+
+After critic recovery from the 34.023 s / 20-contact candidate, the next screen
+at step 4,047,541 and its full five-lap confirmation were 33.798 s, 5/5 clean,
+zero contacts. The candidate was rejected as slower than the 33.324 s Champion.
+The trainer resumed at step 4,048,314 in episode 10 with the actor unlocked;
+visual replay capture remains enabled. Under exploration_std=0.01, observed
+candidate outcomes so far are a 33.786 s clean check, a 34.023 s check with 20
+contacts and rollback, then a 33.798 s clean post-recovery check. There is no
+verified pace gain; continue the guarded trial while retaining Champion.
