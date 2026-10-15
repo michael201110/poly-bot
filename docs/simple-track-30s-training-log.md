@@ -1829,3 +1829,10 @@ The run is still active at step 4,177,146, episode 80, about 15.4 decisions/s. F
 
 
 The next post-recovery candidate, screened at step 4,179,356 and five-lap confirmed at 4,179,356, measured 33.692 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It was rejected as slower than Champion. At step 4,181,101 the same run remained active with actor updates unlocked and full replay; its visual-replay bundle held 110 episodes. The protected 33.324 s Champion and current actor settings remain unchanged.
+
+
+### Continued evaluations after step 4,179,356, 04:51 UTC
+
+The checks since the prior note were: 33.744 s at step 4,181,612 (5/5 clean, rejected); 34.080 s at step 4,183,884 (5/5, 15 barrier-contact steps, rollback); 33.685 s at step 4,188,348 (5/5 clean, rejected); 33.691 s at step 4,190,604 (5/5 clean, rejected); 33.789 s at step 4,192,876 (5/5 clean, rejected); 33.963 s at step 4,195,164 (5/5, 20 contact steps, rollback); and 33.324 s at step 4,199,612 (5/5 clean tie, not promoted). No candidate beat the protected 33.324 s Champion.
+
+At 04:51 UTC the same full-track learner remained active at step 4,201,213 with actor updates unlocked, replay size 250,000, and no recovery cooldown. Its visual replay bundle held 135 episodes. C: had 22.4 GiB free and D: had 144.3 GiB free. Training continued without changing actor settings, rewards, critics, evaluation gates, or Champion.
