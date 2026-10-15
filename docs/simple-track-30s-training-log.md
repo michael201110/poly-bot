@@ -2643,3 +2643,12 @@ The five-lap evaluation at step 4,619,484 matched protected Champion at 33.324 s
 The following five-lap evaluation at step 4,621,740 completed in 33.723 s (5/5 finishes, no contacts, crashes, or off-track events). It was rejected as slower than Champion without rollback; weaker-actor count became 2 of 5. Replay transitions (6,750) were retained.
 
 At 12:13:27 UTC training remained active at step 4,623,069, episode 477, with critic recovery complete and replay capture active. C: had about 17.5 GiB free.
+
+
+### Clean pace gain followed by repeated contact rollback, 12:18 UTC
+
+The five-lap evaluation at step 4,624,012 completed in 33.487 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved on the prior 33.723 s clean evaluation and was marked as an actor pace improvement, but remains slower than protected 33.324 s Champion; it was not promoted. Replay transitions (6,702) were retained.
+
+The next five-lap evaluation at step 4,626,252 finished at a 33.847 s median, with four repeated contacts on each lap at progress 0.35560, 0.62718, 0.62839, and 0.62900 (20 total, maximum impulse 1,391.6). The contact gate rejected the candidate, restored the actor from Champion, and started a 1,000 critic cooldown while preserving critics and replay. Evaluation replay transitions (6,774) were retained.
+
+At 12:19:05 UTC training remained active at step 4,628,413, episode 481, with 460 cooldown updates remaining. C: had about 17.5 GiB free.
