@@ -2493,3 +2493,12 @@ At 10:53:41 UTC training remained active at step 4,540,997, episode 404, with re
 The deterministic five-lap evaluation at step 4,543,116 completed in 33.668 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It improved 0.029 s over the preceding clean evaluation at 33.697 s and was marked as an actor pace improvement. It remains slower than the 33.526 s best recent actor candidate and protected 33.324 s Champion, so it was rejected for Champion promotion without rollback. The evaluation replay was saved.
 
 At 10:56:38 UTC training remained active at step 4,543,853, episode 406, with recovery complete and replay capture active. C: had about 18.2 GiB free. No settings or protected Champion files were changed.
+
+
+### Clean but slower five-lap evaluation, then mid-lap contact rollback, 11:00 UTC
+
+The five-lap evaluation at step 4,545,372 completed in 33.723 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion and was rejected. Its evaluation transitions were retained for replay/training (6,750 transitions).
+
+The next actor evaluation at step 4,547,644 ended after one of five attempts: a barrier impact at 63.8% progress caused a crash (impulse 3,682.1). The replay transitions were retained (750 transitions); the candidate was rejected and the actor restored from Champion. Critic cooldown began at 1,000 updates while replay and critics were preserved. This was not a valid lap-time evaluation.
+
+At 11:00:52 UTC the run had started actor recovery. Training and the GUI processes remained active; C: had about 18.2 GiB free. The training log still records 33.105 s as the best unverified training lap; no evaluation has reproduced it. The protected Champion remains 33.324 s.
