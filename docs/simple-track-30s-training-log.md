@@ -1727,3 +1727,10 @@ The 33.105 s training lap is a valid recorded rollout, but it was not a repeatab
 Resumed Latest at decision 4,088,364 through **Continue latest with selected actor settings** using `simple-track-grtqc-contact-aware-30-uncertainty5e-1-explore5e-3.json`. Changed only `actor_uncertainty_coefficient` from 1.0 to 0.5; actor learning rate remains 5e-6, per-update action limit 0.0075, cumulative reference drift limit 0.5, exploration std 0.005, and the pace-polish rewards and gates remain selected. The run log confirms `resume_source=models\simple-track\grtqc\latest`, `fresh_replay=false`, replay size 250,000, CUDA on the NVIDIA T500, and coefficient 0.5. New run: `20261015T025008Z`; first resumed progress record is step 4,088,365. Replay recording remains enabled. Champion was not changed.
 
 This is a controlled experiment, not evidence of a pace gain yet. Compare the next deterministic five-lap evaluations and barrier contacts against 33.324 s before promoting anything.
+
+
+### Live result for the reduced uncertainty trial
+
+The five-lap checks at steps 4,089,484 and 4,091,756 both finished 5/5 with zero barrier-contact steps, off-track events, and crashes. Their medians were 33.549 s and 33.698 s, respectively, so both were rejected against the protected 33.324 s Champion. Each weaker-actor check left Champion intact while training continued. These results do not support the hypothesis that reducing the uncertainty penalty alone unlocks a faster repeatable line; the 33.105 s rollout remains a stochastic one-off.
+
+At step 4,092,326 the 1,000,000-decision Latest continuation remained active on CUDA, still using actor uncertainty coefficient 0.5 and a 250,000-item replay buffer. Its new visual-replay bundle `34c873e331904d93810c93ee8efe367a` contains five recorded episodes. Port 8765 remained listening with an established simulator connection. C: had about 23.6 GiB free, so no cleanup was needed. The trial continues; no pace improvement is claimed yet.
