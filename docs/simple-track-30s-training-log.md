@@ -1795,3 +1795,6 @@ The five-lap result at step 4,132,220 was 33.781 s (5/5 finishes, five barrier-c
 
 
 The five-lap evaluation at step 4,136,684 completed 5/5 at 33.699 s with zero barrier contacts, off-track events, or crashes. It was rejected as slower than Champion. The preceding exploratory training episode (step 4,136,681) did hit a barrier late at 98.7% progress; the evaluation replay did not, so the training contact is not evidence that the deterministic policy made the same contact. The temporary absence of an established 8765 connection was an episode-reset gap: the listener remained alive, the connection returned, and there was no disconnect error. At step 4,138,064 training had resumed with actor unlocked and replay full; the active visual-replay bundle contained 58 episodes. C: had about 23.1 GiB free.
+
+
+The five-lap evaluation at step 4,138,940 measured 33.808 s, 5/5 finishes with zero barrier contacts, off-track events, or crashes. It was rejected as slower than Champion. By step 4,140,737, training had resumed with the actor unlocked and replay full; the active visual-replay bundle held 61 episodes. The 0.00875 cap remains staged and unapplied.
