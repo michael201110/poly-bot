@@ -2877,3 +2877,9 @@ Training continued after both screens. At 15:14 UTC it was live at step 4,805,97
 At step 4,808,108 the candidate completed five clean evaluation laps at a 33.731 s median (5/5 finishes, zero barrier contacts). This improved the preceding clean scratch-candidate median of 33.859 s by 0.128 s, so the runner emitted `actor_pace_improved` and reset the weaker-evaluation count from 2 to 0. It remains slower than the protected 33.324 s Champion, so it was saved as a rejected checkpoint and continues training rather than being promoted. The next free-driving lap was 33.584 s without reported contacts.
 
 At 15:17 UTC the GUI/trainer processes remained live, at step 4,809,389 in episode 643 and about 16 decisions/s. Replay capture continued. C: had about 15.3 GiB free and D: about 144.3 GiB. No active training settings were changed.
+
+### Chicane contact rollback and recovery, 15:23 UTC
+
+The candidate at step 4,810,108 had improved the scratch candidate's clean pace to 33.731 s. The next checks were 33.726 s (clean, a 0.005 s change, below the 0.01 s clean-pace improvement threshold) and then 34.043 s with three barrier contacts near 62.7% of the route. The five-lap evaluation repeated those three contacts on every lap (15 total), so the contact gate rejected it and restored the 33.324 s Champion, retained critic and replay state, and began a 1,000-update recovery cooldown. This shows the scratch actor found a small clean pace gain but then regressed to the recurring chicane impact.
+
+Training continued without restart. The first two post-rollback laps (episodes 646-647) both matched the Champion at 33.324 s with no contacts. At 15:23 UTC it was live at step 4,815,093 in episode 648 (15.9% progress), about 16.1 decisions/s, with 386 critic-cooldown updates remaining. Visual replay capture had 883 files in the active run directory. C: had about 15.3 GiB free and D: about 144.3 GiB. No training configuration was changed.
