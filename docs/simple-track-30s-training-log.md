@@ -2560,3 +2560,10 @@ At 11:27:30 UTC training remained active at step 4,574,781, episode 434, with 96
 The five-lap evaluation at step 4,579,100 completed in 33.809 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was slower than protected 33.324 s Champion and was rejected for promotion without rollback; the weaker-actor count reset to 1 of 5. Evaluation replay transitions (6,762) were retained.
 
 At 11:31:19 UTC training remained active at step 4,579,877, episode 438, with critic recovery complete and replay capture active. C: had about 18.1 GiB free.
+
+
+### Small clean actor pace improvement to 33.694 s, 11:33 UTC
+
+The five-lap evaluation at step 4,581,356 completed in 33.694 s (5/5 finishes, zero barrier contacts, crashes, or off-track events). It was marked as an actor pace improvement and refreshed the clean scratch anchor. It remains slower than the protected 33.324 s Champion and was not promoted. Evaluation replay transitions (6,744) were retained.
+
+At 11:34:31 UTC training remained active at step 4,583,092, episode 441, with critic recovery complete and replay capture active. C: had about 17.8 GiB free.
