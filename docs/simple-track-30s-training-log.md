@@ -2160,3 +2160,10 @@ Training resumed at step 4,397,373, episode 276, about 15.6 decisions/s, actor u
 The five-lap evaluation at step 4,399,484 completed at 34.200 s (5/5 finishes, 15 barrier-contact steps, zero crashes/off-track events). Contacts repeated at progress ratios 0.6266, 0.6278, and 0.6314 on every lap; maximum barrier impulse was 2,017.6. This repeats the earlier 63.1% corner contact cluster seen at step 4,381,500, after a clean intervening actor evaluation. The contact gate rejected the candidate and rolled back the actor; the evaluation replay was saved.
 
 At step 4,400,281, episode 278, the trainer remained active at about 15.6 decisions/s, actor locked with 801 critic recovery updates remaining. The clean Champion and clean anchor protections remain active; no hyperparameters were changed. C: had 19.80 GiB free.
+
+
+### Faster candidate rolled back for finish-sector contacts, 08:26 UTC
+
+The deterministic five-lap evaluation at step 4,403,948 completed in 33.659 s (5/5 finishes, 10 barrier-contact steps, zero crashes/off-track events). This is 0.060 s faster than the 33.719 s clean anchor but remains 0.335 s slower than Champion and made two contacts on every lap near progress 0.9909 and 0.9923; maximum impulse was 183.7. The contact gate rejected the candidate and restored the actor. The five-lap replay was saved.
+
+At 08:26:20 UTC training was active at step 4,404,273, episode 282, about 15.7 decisions/s, with actor locked and 919 critic recovery updates remaining. The deterministic contact cluster differs from the earlier 63% corner regression, confirming that recent faster actor variants are unsafe in multiple sectors. I did not alter the active profile or bypass the rollback. C: had 19.76 GiB free.
