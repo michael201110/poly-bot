@@ -1976,3 +1976,9 @@ At 06:49 UTC training was active at step 4,314,943, episode 202, about 15.8 deci
 The evaluation at step 4,316,364 completed five deterministic laps at 33.955 s (5/5 finishes, 10 barrier-contact steps total, zero off-track events or crashes). The contact gate rejected the candidate and locked actor updates for critic recovery; the protected 33.324 s Champion remains unchanged.
 
 At 06:52 UTC training had resumed at step 4,317,405, episode 204, about 15.7 decisions/s, with 740 critic recovery updates remaining. Replay remained full at 250,000 transitions; the visual replay bundle contained 892 files. C: had 21.3 GiB free. No training settings or Champion files were changed.
+
+### Clean post-recovery evaluation, 06:55 UTC
+
+After critic recovery from the contact regression, the evaluation at step 4,320,828 completed five deterministic laps at 33.754 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). This is slower than the best clean scratch result of 33.480 s and the protected 33.324 s Champion; neither checkpoint was replaced. Actor updates were unlocked again after recovery.
+
+At 06:55 UTC training was active at step 4,320,856, episode 208, about 15.8 decisions/s, with no critic recovery remaining. Replay remained full at 250,000 transitions. The visual replay bundle contained 897 files (5.70 GiB); C: had 21.3 GiB free. Training settings and Champion files were unchanged.
