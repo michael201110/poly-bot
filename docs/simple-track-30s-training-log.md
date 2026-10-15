@@ -1482,3 +1482,15 @@ index held five captures. The 33.324 s clean Champion remains protected. This
 trial has not improved pace and has increased contact risk; keep training
 through the configured recovery and evaluate the restored anchor before
 changing actor constraints again.
+
+### Clean tie after contact recovery, 02:43 UTC
+
+After the contact-triggered actor rollback and 840 critic-recovery updates, the
+restored policy's next deterministic evaluation at step 4,028,996 completed
+5/5 laps at a 33.324 s median with zero barrier contacts. It tied the protected
+Champion and was therefore not promoted. The trainer returned to normal
+collection by step 4,029,329, episode 8, with the actor unlocked and the
+uncertainty coefficient still 1.0. The current run's visual replay index has
+10 captures, including the evaluation replay. This confirms recovery restored
+the clean baseline but the uncertainty trial has produced no faster champion.
+Continue collecting and retain the existing Champion gate.
