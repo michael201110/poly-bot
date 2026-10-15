@@ -1380,3 +1380,19 @@ with Champion), 33.621 s at step 3,959,251 (clean), and 33.657 s at step
 remains 33.324 s. Training was active at step 3,963,763, with visual replay
 capture at 94 indexed episodes through episode 000102. Port 8765 was live;
 C: had 25.1 GB free and D: had 144.3 GB.
+
+### Best post-recovery candidate remains unpromoted, 00:36 UTC
+
+Training continued from the recovered actor. The clean five-lap screen at
+step 3,963,763 measured 33.749 s and was rejected. The next deterministic
+screen at step 3,966,035 improved to 33.392 s median/best with 5/5 finishes
+and zero barrier contacts. It is 0.009 s faster than the continuation's prior
+33.401 s best candidate, but remains 0.068 s slower than Champion, so it was
+not promoted. Its policy checkpoint is preserved at
+models/simple-track/grtqc/checkpoints/step-3966035-rejected/.
+
+The following clean screen at step 3,968,307 was 33.679 s and was rejected.
+At 01:36 local the trainer remained active through step 3,970,560, and the
+visual replay archive contained 103 entries through episode 000111. C: had
+25.0 GB free and D: had 144.3 GB. Champion remains 33.324 s; the 30 s goal
+is still unmet.
