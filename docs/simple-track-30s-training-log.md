@@ -2845,3 +2845,9 @@ At 14:47 UTC the trainer was active at step 4,778,987, episode 615, about 16 ste
 The candidate at step 4,778,988 evaluated at 34.086 s and repeated three contacts on every one of five laps at progress 0.62779, 0.62839, and 0.62961 (15 contact steps total). The evaluation replay saved 6,822 transitions. The contact gate rejected the checkpoint, restored the protected Champion actor, preserved critics and replay, and began another 1,000-update critic cooldown.
 
 Training continued without restart. After recovery, free-driving episodes 616-618 each matched Champion at 33.324 s with no contact steps; episode 619 completed in 33.348 s, also clean. Their visual replays were captured. At 14:51 UTC the trainer was active at step 4,783,433, episode 619, with another actor evaluation pending and the cooldown complete. C: had 15.6 GiB free; D: 144.3 GiB.
+
+### Another repeated 63% contact rollback, 14:58 UTC
+
+The evaluation at step 4,787,964 was 33.873 s and recorded three barrier-contact steps on every one of five laps at progress 0.63083, 0.63206, and 0.63393 (15 total). Its evaluation replay saved 6,780 transitions. The candidate was preserved under `models/simple-track/grtqc/checkpoints/step-4787964-rejected/`; the contact gate restored the protected 33.324 s Champion actor while preserving critics and replay, then began a 1,000-update critic cooldown.
+
+The live trainer continued after rollback. At 14:58 UTC it was at step 4,788,889, episode 624 (82.0% progress), running about 16 steps/s, with 769 cooldown updates remaining. C: had 15.6 GiB free and D: 144.3 GiB. Replay and evaluation gates remain active.
