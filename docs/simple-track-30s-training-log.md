@@ -1669,3 +1669,15 @@ training and replay. Training continued past step 4,070,642. The 0.005
 exploration setting has not yielded a verified pace gain and has now produced
 multiple contact rollbacks (including the 34.094 s screen at step 4,059,941).
 Keep the deterministic five-lap and contact gates; no Champion change.
+
+
+### Further clean decline after recovery, 02:33 UTC
+
+The evaluation at step 4,073,365 returned 33.873 s across five clean laps
+(5/5 finishes, zero contacts). It was rejected and classified as a weaker actor
+than the current clean reference. Since the second contact rollback at step
+4,068,917, the recovered actor has produced one 33.324 s Champion tie followed
+by 33.781 s, 33.744 s with five contact steps (rollback), and 33.873 s. The
+0.005 exploration trial has not improved the protected pace and continues to
+show actor instability. Training and replay capture remained active beyond step
+4,075,178; no Champion change.
