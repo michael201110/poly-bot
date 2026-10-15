@@ -1880,3 +1880,9 @@ At 05:51 UTC the trainer was active at step 4,258,641, episode 152, about 15.7 d
 At step 4,262,460 the candidate completed five deterministic laps at 33.716 s (5/5 finishes) but had five barrier-contact steps total, one per lap. The contact regression gate rejected it despite the faster time relative to recent clean candidates, restored the protected 33.324 s Champion actor, preserved critics and replay, and started another 1,000-update critic recovery. This confirms the actor is finding some pace at the cost of repeatable barrier contact; it is not a safe verified improvement.
 
 At 05:55 UTC training was active at step 4,263,393, episode 156, about 15.8 decisions/s, with actor updates locked and 767 critic recovery updates remaining. The replay buffer remained full at 250,000 transitions, and the active visual replay bundle contained 210 episodes. No actor settings or Champion files were changed.
+
+### Clean scratch-anchor refresh, 05:59 UTC
+
+The evaluation at step 4,266,924 completed five deterministic laps at 33.747 s (5/5 finishes, zero barrier-contact steps, zero off-track events or crashes). It refreshed the scratch clean anchor but was rejected against the 33.324 s protected Champion. No contact rollback was triggered; the actor remained eligible for training updates.
+
+At 05:59 UTC the live run had resumed at step 4,268,141, episode 161, about 15.9 decisions/s, with actor updates unlocked and no recovery cooldown. Replay remained full at 250,000 transitions. The visual replay bundle contained 215 episodes. No training settings or Champion files were changed.
