@@ -1756,3 +1756,10 @@ The next candidate at step 4,102,988 finished its five-lap check at 33.874 s wit
 Correction: the nearby saved actor associated with the recorded 33.105 s episode was separately tested at step 3,695,830 on port 8766 and completed five clean deterministic laps at 33.755 s. The 33.635 s five-lap result recorded earlier in this document belongs to a different continuation and was mistakenly attributed to the 33.105 s episode in the uncertainty-trial note. The 33.105 s replay remains a genuine stochastic training episode, not a verified actor pace.
 
 At 03:10:05 UTC, the active run `20261015T025008Z` had reached step 4,106,957 (episode 17), with the original 1,000-update critic cooldown nearly complete (8 updates remaining; actor temporarily locked). The replay buffer remained full, coefficient 0.5 remained active, and port 8765 was listening with a simulator connection. C: had about 23.5 GiB free. Training was left running.
+
+
+### Stage an intermediate actor update cap
+
+The evaluation at step 4,107,436 finished 5/5 at 33.846 s with zero barrier contacts, off-track events, or crashes. It was rejected as slower than Champion. At step 4,108,827, the existing run was active with actor updates unlocked, coefficient 0.5, and full replay. Its latest replay bundle held 23 episodes.
+
+Actor diagnostics at step 4,107,434 showed proposed action drift 0.0368 but executed drift 0.00748 under the 0.0075 per-update limit, so the cap is constraining actor movement. A prior 0.01 cap produced a 33.375 s candidate but repeated barrier contact on every verification lap and still did not beat the 33.324 s Champion. I staged `simple-track-grtqc-contact-aware-30-uncertainty5e-1-cap8p75e-3-explore5e-3.json` as a measured intermediate: it changes only the per-update action cap from 0.0075 to 0.00875, keeping actor LR, cumulative drift cap, rewards, replay, and all evaluation/rollback gates unchanged. It has not been applied to the live run; training remains active.
