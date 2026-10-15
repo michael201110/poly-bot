@@ -1819,3 +1819,10 @@ The five-lap confirmation at step 4,150,172 measured 34.002 s (5/5 finishes, ten
 The first post-recovery check at step 4,154,652 tied Champion at 33.324 s, 5/5 with zero contact steps, off-track events or crashes. It was not promoted because the gate requires a faster verified result. The next check at step 4,156,908 measured 33.585 s (5/5 clean) and was also rejected as slower. This remains a plateau around the current Champion rather than a verified improvement toward 30 s.
 
 At step 4,157,268 the learner was continuing on the same full replay with actor updates unlocked. The visual-replay bundle remained active and had 82 episodes. No actor settings, reward settings, evaluation gates or protected Champion files were changed.
+
+
+### Continued clean ties and contact rollbacks, 04:25 UTC
+
+The current continuation kept running and saved visual replays. After the prior note, five-lap checks were: 34.035 s at step 4,159,180 with 10 contact steps (rollback); 33.684 s at step 4,163,660 with zero contacts (rejected as slower); 33.804 s at step 4,165,916 with five contacts (rollback); 33.324 s at step 4,170,380 with zero contacts (clean tie, not promoted); 33.764 s at step 4,172,636 with zero contacts (rejected); and 33.849 s at step 4,174,892 with 20 contact steps (rollback). Each evaluation finished 5/5; Champion stayed 33.324 s.
+
+The run is still active at step 4,177,146, episode 80, about 15.4 decisions/s. Following the last contact rollback, actor updates are locked during critic recovery with 437 updates remaining; critics and the 250,000-entry replay are retained. The active visual-replay bundle contains 105 episodes. No policy, reward or evaluation settings were changed. This evidence continues to show no verified pace improvement toward 30 s.
