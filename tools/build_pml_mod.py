@@ -39,6 +39,13 @@ def main() -> None:
         replay_placeholder = "/* POLYBOT_REPLAY_RENDERER */"
         if replay_placeholder in source:
             replay = (directory / "replay_renderer.mjs").read_text(encoding="utf-8")
+            if (directory / "swarm_worker.mjs").exists():
+                worker_source = (directory / "swarm_worker.mjs").read_text(encoding="utf-8")
+                client_source = (directory / "swarm_worker_client.mjs").read_text(encoding="utf-8")
+                replay = (
+                    (worker_source + "\n" + client_source).replace("export function ", "function ")
+                    + "\nglobalThis.__polybotCreateWorkerSwarm = createPolyBotSwarmWorker;\n" + replay
+                )
             source = source.replace(replay_placeholder, replay.replace(
                 "export function installPolyBotReplayRenderer", "function installPolyBotReplayRenderer", 1,
             ))
