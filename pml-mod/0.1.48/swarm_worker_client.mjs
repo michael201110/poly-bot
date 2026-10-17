@@ -50,7 +50,11 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
       const key=`${kind}:${material.name}`;let group=groupsByKey.get(key);
       if(!group){let rgb=material.color?.toArray?.()||[.1,.1,.1];
         if(material.name==='Rim')rgb=[.9047,.9216,.956];
+
         group={kind,name:material.name,colour:new Float32Array(rgb),paintMode:material.name==='Main'?1:material.name==='BrakeLight'?2:material.name==='Tire'?3:0,
+          materialType:material.type,flatShading:material.flatShading,roughness:material.roughness,metalness:material.metalness,
+          envMapIntensity:material.envMapIntensity,clearcoat:material.clearcoat,clearcoatRoughness:material.clearcoatRoughness,
+          emissive:material.emissive?.toArray?.(),emissiveIntensity:material.emissiveIntensity,
           shininess:material.shininess,specular:material.specular?.toArray?.(),reflectivity:material.reflectivity,
           positions:[],normals:[],morphs:kind===2?[[],[],[],[]]:null,
           normalMorphs:kind===2&&geometry.morphAttributes.normal?.length===4?[[],[],[],[]]:null};groupsByKey.set(key,group);}
@@ -74,6 +78,7 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   if(wheelIndex!==4)throw Error('native wheel geometry contract changed');
   leader.car.setCarState(saved,true);leader.car.update(0);
   const groups=[...groupsByKey.values()].map(g=>({...g,positions:new Float32Array(g.positions),normals:new Float32Array(g.normals),morphs:g.morphs?.map(a=>new Float32Array(a)),normalMorphs:g.normalMorphs?.map(a=>new Float32Array(a))}));
+  if(groups.length>24)throw Error('car uses too many material groups for packed worker protocol');
   let geometryBytes=0;for(const g of groups)geometryBytes+=g.positions.byteLength+g.normals.byteLength+(g.morphs?.reduce((n,a)=>n+a.byteLength,0)||0);
   const scene=context.scene,occluderObjects=[],sunLights=[],ambientLights=[];
   scene.updateMatrixWorld(true);
@@ -113,10 +118,10 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   }
   function resize(){if(!canvas)return;const rect=source.getBoundingClientRect();Object.assign(canvas.style,{left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`});}
   const observer=new ResizeObserver(resize);observer.observe(source);window.addEventListener('resize',resize);document.addEventListener('fullscreenchange',resize);resize();
-  const url=URL.createObjectURL(new Blob([`${createSwarmKernel.toString()}\n(${polybotSwarmWorker.toString()})();`],{type:'text/javascript'}));
+  const url=URL.createObjectURL(new Blob([`${createSwarmKernel.toString()}\n${createSwarmTrails.toString()}\n(${polybotSwarmWorker.toString()})();`],{type:'text/javascript'}));
   let worker,alive=true,ready=false,failure=null,stats={backend:'initializing worker'},mainMs=0,mainFrames=0;
   const pool=[new Float64Array(64),new Float64Array(64),new Float64Array(64)];
-  let settings={},lastSettings=-Infinity,epoch=0,lastClock=-1,sequence=0,handle=null,outputOffsets=null,renderClock=0;
+  let settings={},lastSettings=-Infinity,epoch=0,lastClock=-1,sequence=0,handle=null,outputOffsets=null,trailOffset=0,renderClock=0,renderEpoch=-1,pendingFrame=null;
   const fallbackRestore=()=>{
     for(let c=0;c<ghosts.length;c++)if(!ghosts[c].samples){const data=[];let distance=0;
       for(let r=canonical.offsets[c];r<canonical.offsets[c+1];r++){const a=r*53,row=Array.from(canonical.data.subarray(a,a+9));
@@ -134,17 +139,15 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   try{
     worker=new Worker(url,{name:'PolyBot renderer-only swarm'});
     worker.onmessage=event=>{const m=event.data;if(!alive||m.generation!==generation)return;
-      if(m.type==='ready'){ready=true;clearTimeout(timeout);stats=m;outputOffsets=m.outputOffsets;
+      if(m.type==='ready'){ready=true;clearTimeout(timeout);stats=m;outputOffsets=m.outputOffsets;trailOffset=m.trailOffset;
         // Retain one packed canonical copy for crash fallback. Drop the much
         // larger nested JS sample graphs; worker owns its transferred copy.
         for(const ghost of ghosts)if(ghost!==leader)ghost.samples=null;
       }else if(m.type==='instances'){
-        try {
-          const values=new Float32Array(m.buffer);
-          interop.updateSwarmInstances(handle,values,outputOffsets,values.subarray(0,outputOffsets.length));
-          renderClock=m.time;
-          worker.postMessage({type:'instances_recycle',generation,buffer:m.buffer},[m.buffer]);
-        } catch(error) { fail(String(error.message||error)); }
+        // Stage until the replay render boundary. Updating GPU transforms from
+        // an asynchronous message can leave the chase camera one frame behind.
+        if(pendingFrame)worker.postMessage({type:'instances_recycle',generation,buffer:pendingFrame.buffer},[pendingFrame.buffer]);
+        pendingFrame=m;
       }else if(m.type==='recycle')pool.push(new Float64Array(m.buffer));
       else if(m.type==='stats'){stats=m.stats;for(let c=0;c<ghosts.length;c++)if(ghosts[c]!==leader){
         const g=ghosts[c],o=c*4;g.position.x=m.positions[o];g.position.y=m.positions[o+1];g.position.z=m.positions[o+2];g.visible=!!m.positions[o+3];}}
@@ -185,7 +188,19 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
     }
     worker.postMessage({type:'frame',generation,buffer:p.buffer},[p.buffer]);mainMs+=performance.now()-begin;mainFrames++;
   }
-  return {frame,dispose,renderClock:()=>shared?renderClock:null,restore:fallbackRestore,updateColours(){const colours=colourData();worker.postMessage({type:'colours',generation,colours},[colours.buffer]);},
+  function present(){
+    if(!pendingFrame||!alive)return;
+    const m=pendingFrame;pendingFrame=null;
+    try {
+      if(m.epoch===epoch){const values=new Float32Array(m.buffer);
+        interop.updateSwarmInstances(handle,values,outputOffsets,values.subarray(0,outputOffsets.length));
+        if(interop.updateSwarmTrails)interop.updateSwarmTrails(handle,values,trailOffset,values[28],values[29]===1);
+        renderClock=m.time;renderEpoch=m.epoch;
+      }
+      worker.postMessage({type:'instances_recycle',generation,buffer:m.buffer},[m.buffer]);
+    }catch(error){fail(String(error.message||error));}
+  }
+  return {frame,present,dispose,renderClock:()=>shared?renderClock:null,isFresh:()=>!shared||renderEpoch===epoch,invalidate(){epoch++;},restore:fallbackRestore,updateColours(){const colours=colourData();worker.postMessage({type:'colours',generation,colours},[colours.buffer]);},
     diagnostics(){return {...stats,ready,failure,mainThreadMs:mainFrames?mainMs/mainFrames:0,
       canonicalBytes:canonical.data.byteLength,geometryBytes,inFlight:3-pool.length,sharedMemory:false,
       interop:shared?interop.diagnostics():null,renderClock};}};

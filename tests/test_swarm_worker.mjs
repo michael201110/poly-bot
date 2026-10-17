@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {createSwarmKernel,polybotSwarmWorker} from '../pml-mod/0.1.48/swarm_worker.mjs';
+import {createSwarmKernel,createSwarmTrails,polybotSwarmWorker} from '../pml-mod/0.1.48/swarm_worker.mjs';
 const fixture=JSON.parse(readFileSync(new URL('fixtures/swarm-recorded.json',import.meta.url)));
 const mounts=new Float64Array([.627909,.27,1.3478,-.627909,.27,1.3478,.720832,.27,-1.52686,-.720832,.27,-1.52686]);
 const old=readFileSync(new URL('../pml-mod/0.1.47/replay_renderer.mjs',import.meta.url),'utf8')
@@ -66,7 +66,7 @@ test('conservative frustum rejection never drops intersecting car bounds',()=>{
 });
 test('worker protocol rejects malformed packets and cannot access simulation APIs',()=>{
   const messages=[],self={},context={self,postMessage:m=>messages.push(m),Float32Array,Float64Array,Uint32Array,Uint8Array,ArrayBuffer,performance,close(){}};
-  vm.runInNewContext(createSwarmKernel.toString()+';('+polybotSwarmWorker.toString()+')();',context);
+  vm.runInNewContext(createSwarmKernel.toString()+';'+createSwarmTrails.toString()+';('+polybotSwarmWorker.toString()+')();',context);
   self.onmessage({data:{type:'init',generation:1,shared:true,replay:replay(),mounts,colours:new Float32Array([0,1,0]),groups:[{kind:0}],geometryBytes:36}});
   assert.equal(messages.at(-1).type,'ready');
   self.onmessage({data:{type:'frame',generation:1,buffer:new ArrayBuffer(2)}});assert.equal(messages.at(-1).type,'error');

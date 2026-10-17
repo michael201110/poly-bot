@@ -11,7 +11,7 @@ export function createSwarmKernel(replay, mounts) {
   const indices = new Uint32Array(count);
   const angles = new Float64Array(count * 4);
   const velocities = new Float64Array(count * 4);
-  const body = new Float32Array(count * 16);
+  const body = new Float32Array(count * 16),bodyDouble=new Float64Array(count*16);
   const wheels = new Float32Array(count * 64);
   const q = new Float64Array(4), wq = new Float64Array(4);
   let previous = -1;
@@ -85,7 +85,8 @@ export function createSwarmKernel(replay, mounts) {
       state[at+53]=span>0 ? Math.hypot(data[right+2]-data[left+2],data[right+3]-data[left+3],data[right+4]-data[left+4])/span*3.6*(ended?1-.5*coast/coastDuration:1) : 0;
       state[at+54]=ended?1:0;
       const x=state[at+2],y=state[at+3],z=state[at+4];
-      compose(body,car*16,x,y,z,q[0],q[1],q[2],q[3]);
+      compose(bodyDouble,car*16,x,y,z,q[0],q[1],q[2],q[3]);
+      for(let j=0;j<16;j++)body[car*16+j]=bodyDouble[car*16+j];
       const m=car*16;
       for(let wheel=0;wheel<4;wheel++) {
         const offset=9+wheel*10, k=car*4+wheel;
@@ -102,9 +103,9 @@ export function createSwarmKernel(replay, mounts) {
         }
         angles[k]+=velocities[k]*step;
         const mx=mounts[wheel*3],my=mounts[wheel*3+1]-state[at+offset+7],mz=mounts[wheel*3+2];
-        const px=x+body[m]*mx+body[m+4]*my+body[m+8]*mz;
-        const py=y+body[m+1]*mx+body[m+5]*my+body[m+9]*mz;
-        const pz=z+body[m+2]*mx+body[m+6]*my+body[m+10]*mz;
+        const px=x+bodyDouble[m]*mx+bodyDouble[m+4]*my+bodyDouble[m+8]*mz;
+        const py=y+bodyDouble[m+1]*mx+bodyDouble[m+5]*my+bodyDouble[m+9]*mz;
+        const pz=z+bodyDouble[m+2]*mx+bodyDouble[m+6]*my+bodyDouble[m+10]*mz;
         for(let j=0;j<4;j++)wq[j]=q[j];
         if(wheel<2)multiplyQuaternion(wq[0],wq[1],wq[2],wq[3],0,Math.sin(state[at+49]/2),0,Math.cos(state[at+49]/2),wq);
         multiplyQuaternion(wq[0],wq[1],wq[2],wq[3],Math.sin(angles[k]/2),0,0,Math.cos(angles[k]/2),wq);
@@ -125,7 +126,51 @@ export function createSwarmKernel(replay, mounts) {
     }
     return true;
   }
-  return {count,state,body,wheels,angles,velocities,evaluate,inFrustum};
+  return {count,state,body,bodyDouble,wheels,angles,velocities,evaluate,inFrustum};
+}
+
+export function createSwarmTrails(kernel,mounts) {
+  // Port of PolyTrack 0.6.3's native skid strip: 1000 allocated slots, wrap at
+  // 999, two projected tyre edges, identical winding, threshold and cooldown.
+  const count=kernel.count*4,cooldown=new Float64Array(count).fill(.075);
+  const previous=new Float64Array(count*6),valid=new Uint8Array(count),rings=new Uint16Array(count);
+  const effectFrames=new Float64Array(kernel.count).fill(-Infinity),corners=new Float64Array(6);
+  let resetCount=0;
+  function update(dt,reset,target,offset){let emitted=0;
+    if(reset){valid.fill(0);rings.fill(0);effectFrames.fill(-Infinity);resetCount++;}
+    const state=kernel.state,matrix=kernel.bodyDouble;
+    for(let car=0;car<kernel.count;car++){
+      const at=car*64,m=car*16,tick=state[at];
+      const effectStep=tick>=effectFrames[car]+10;
+      if(effectStep)effectFrames[car]=tick;
+      for(let wheel=0;wheel<4;wheel++){
+        const k=car*4+wheel,w=at+9+wheel*10;
+        const slipping=state[w]&&state[w+9]<Math.pow(Math.min(1,Math.abs(state[w+8])/.08),3)*.5;
+        if(effectStep){if(slipping)cooldown[k]=Math.max(0,cooldown[k]-.01);
+          else {cooldown[k]=.075;valid[k]=0;}}
+        if(!dt||reset||state[at+54]||!slipping||cooldown[k]!==0)continue;
+        const x=mounts[wheel*3],y=mounts[wheel*3+1]-state[w+7],z=mounts[wheel*3+2];
+        const px=matrix[m+12]+matrix[m]*x+matrix[m+4]*y+matrix[m+8]*z;
+        const py=matrix[m+13]+matrix[m+1]*x+matrix[m+5]*y+matrix[m+9]*z;
+        const pz=matrix[m+14]+matrix[m+2]*x+matrix[m+6]*y+matrix[m+10]*z;
+        const nx=state[w+4],ny=state[w+5],nz=state[w+6];
+        for(let side=0;side<2;side++){
+          const dx=side?-.172:.172;
+          let cx=px+matrix[m]*dx-matrix[m+4]*.3,cy=py+matrix[m+1]*dx-matrix[m+5]*.3,cz=pz+matrix[m+2]*dx-matrix[m+6]*.3;
+          const distance=(cx-state[w+1])*nx+(cy-state[w+2])*ny+(cz-state[w+3])*nz;
+          cx-=nx*distance;cy-=ny*distance;cz-=nz*distance;
+          corners[side*3]=cx;corners[side*3+1]=cy;corners[side*3+2]=cz;
+        }
+        const old=k*6;
+        if(valid[k]){const o=offset+emitted*13;target[o]=k*999+rings[k];
+          for(let j=0;j<3;j++){target[o+1+j]=corners[j];target[o+4+j]=previous[old+j];target[o+7+j]=corners[3+j];target[o+10+j]=previous[old+3+j];}
+          rings[k]=(rings[k]+1)%999;emitted++;}
+        for(let j=0;j<6;j++)previous[old+j]=corners[j];valid[k]=1;
+      }
+    }
+    return emitted;
+  }
+  return {update,cooldown,rings,previous,valid,get resetCount(){return resetCount;}};
 }
 
 export function polybotSwarmWorker() {
@@ -136,7 +181,7 @@ export function polybotSwarmWorker() {
   const ambient=new Float32Array(3), light=new Float32Array(3), scratch=new Float32Array(16), projection=new Float32Array(16);
   const visible=new Uint8Array(500);
   let extension, program, u, vaoDepth, depthProgram, depthLocation, depthCount=0;
-  let shared=false,outputPool=[],outputOffsets=[],outputLength=32,lastOutput=-1;
+  let shared=false,outputPool=[],outputOffsets=[],outputLength=32,lastOutput=-1,trails,trailOffset=0;
   const vs=`#version 300 es
   precision highp float;
   layout(location=0) in vec3 position;layout(location=1) in vec3 normal;
@@ -188,11 +233,12 @@ export function polybotSwarmWorker() {
     shared=message.shared===true;
     if(shared){
       kernel=createSwarmKernel(message.replay,message.mounts);colors=message.colours;
-      groups=message.groups;
+      groups=message.groups;trails=createSwarmTrails(kernel,message.mounts);
       for(const g of groups){outputOffsets.push(outputLength);outputLength+=kernel.count*(g.kind===1?4:1)*24;}
+      trailOffset=outputLength;outputLength+=kernel.count*4*13;
       outputPool=[new Float32Array(outputLength),new Float32Array(outputLength),new Float32Array(outputLength)];
       postMessage({type:'ready',generation,backend:'Worker + PolyShade WebGPU',replayBytes:message.replay.data.byteLength,
-        geometryBytes:message.geometryBytes,batches:groups.length,outputOffsets,outputLength});return;
+        geometryBytes:message.geometryBytes,batches:groups.length,outputOffsets,outputLength,trailOffset});return;
     }
     gl=canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:false,antialias:true,depth:true,preserveDrawingBuffer:false});
     if(!gl)throw Error('worker WebGL2 unavailable');
@@ -212,7 +258,8 @@ export function polybotSwarmWorker() {
   function multiply(a,b,out){for(let c=0;c<4;c++)for(let r=0;r<4;r++)out[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];}
   function sharedFrame(){if(!packetView||!outputPool.length||packetView[57]===lastOutput)return;
     const start=performance.now(),p=packetView,reset=p[2]!==resetId,time=p[0];
-    const state=kernel.evaluate(time,reset||lastTime<0?0:Math.max(0,time-lastTime),reset,p[3],p[4],p[5]);
+    const dt=reset||lastTime<0?0:Math.max(0,time-lastTime);
+    const state=kernel.evaluate(time,dt,reset,p[3],p[4],p[5]);
     lastOutput=p[57];resetId=p[2];lastTime=time;
     const interpolationEnd=performance.now(),target=outputPool.pop();
     for(let j=0;j<16;j++){scratch[j]=p[8+j];projection[j]=p[24+j];}multiply(projection,scratch,vp);
@@ -232,6 +279,7 @@ export function polybotSwarmWorker() {
         else target[o+20]=state[s+50];
       }
     }
+    target[28]=trails.update(dt,reset,target,trailOffset);target[29]=reset?1:0;
     const elapsed=performance.now()-start;history[cursor*4]=elapsed;cursor=(cursor+1)%240;frames++;
     postMessage({type:'instances',generation,buffer:target.buffer,time,epoch:resetId},[target.buffer]);
     const now=performance.now();if(now-lastStats>=500){lastStats=now;

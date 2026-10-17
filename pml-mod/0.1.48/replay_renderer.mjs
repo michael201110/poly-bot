@@ -759,6 +759,7 @@ export function installPolyBotReplayRenderer() {
         return output;
       }
       const target = first[1] + elapsed;
+      if (target < samples[Math.max(0, ghost.sampleIndex - 1)][1]) ghost.sampleIndex = 1;
       while (ghost.sampleIndex < lastIndex && samples[ghost.sampleIndex][1] < target) {
         ghost.sampleIndex += 1;
       }
@@ -781,6 +782,9 @@ export function installPolyBotReplayRenderer() {
     const replayRender = (deltaSeconds) => {
       if (!replayState.ghosts.length) return;
       const frameStart = performance.now();
+      const previousPresentation = replayState.worker?.renderClock();
+      replayState.worker?.present();
+      if (replayState.worker?.renderClock() !== previousPresentation) replayState.dirty = true;
       if (replayState.dirty) {
         replayState.endTime = replayState.durationSeconds
           + (replayState.endBehavior === "freeze" ? 0 : Math.max(0.75,replayState.fadeDuration));
@@ -800,7 +804,8 @@ export function installPolyBotReplayRenderer() {
       for (let ghostIndex = 0; ghostIndex < replayState.ghosts.length; ghostIndex += 1) {
         const ghost = replayState.ghosts[ghostIndex];
         if (replayState.worker && ghost !== replayState.leader) continue;
-        const elapsed = replayState.playbackSeconds;
+        const workerClock = replayState.worker?.renderClock();
+        const elapsed = Number.isFinite(workerClock) ? workerClock : replayState.playbackSeconds;
         const ended = elapsed > ghost.duration;
         const coastDuration = replayState.endBehavior === "fade"
           ? Math.max(0.75, replayState.fadeDuration) : 0.75;
@@ -875,12 +880,13 @@ export function installPolyBotReplayRenderer() {
         const span = right[1] - left[1];
         state.speedKmh = span > 0
           ? Math.hypot(right[2] - left[2], right[3] - left[3], right[4] - left[4]) / span * 3.6 * (ended ? 1 - 0.5 * coastTime / coastDuration : 1) : 0;
-        const resetEffects = ghost.cameraNeedsReset;
+        const workerFresh = !replayState.worker || replayState.worker.isFresh();
+        const resetEffects = ghost.cameraNeedsReset && workerFresh;
         const applied = ghost.hudFrame?.controls?.applied;
         state.controls.up = Number(applied?.throttle) > 0;
         state.controls.down = Number(applied?.brake) > 0;
         ghost.car.setCarState(state, resetEffects);
-        ghost.cameraNeedsReset = false;
+        if (workerFresh) ghost.cameraNeedsReset = false;
         ghost.car.isPaused = true;
         const audioVolume = ghost === replayState.leader && replayState.playing &&
           (!ended || coastTime > 0) ? (ended ? Math.max(0,1-coastTime/coastDuration) : 1) : 0;
@@ -897,6 +903,7 @@ export function installPolyBotReplayRenderer() {
       const endTime = replayState.endTime;
       if (replayState.playbackSeconds >= endTime) {
         if (globalThis.__polybotSwarmLoop === true && endTime > 0) {
+          replayState.worker?.invalidate();
           replayState.playbackSeconds %= endTime;
           for (const ghost of replayState.ghosts) replayResetIndex(ghost, ghost.firstElapsed);
           replayState.dirty = true;
@@ -965,6 +972,7 @@ export function installPolyBotReplayRenderer() {
           replayRender(0);
           return replayStatus();
         case "restart":
+          replayState.worker?.invalidate();
           if (!replayState.ghosts.length) throw new Error("no visual replay swarm is loaded");
           replayState.playbackSeconds = 0;
           for (const ghost of replayState.ghosts) replayResetIndex(ghost, ghost.firstElapsed);
@@ -972,6 +980,7 @@ export function installPolyBotReplayRenderer() {
           replayRender(0);
           return replayStatus();
         case "seek": {
+          replayState.worker?.invalidate();
           if (!replayState.ghosts.length) throw new Error("no visual replay swarm is loaded");
           const seconds = replayFinite(params.seconds, "seconds");
           const duration = Math.max(...replayState.ghosts.map((ghost) => ghost.duration));
@@ -1120,7 +1129,8 @@ export function installPolyBotReplayRenderer() {
       // Keep the fixed camera run's finish time while its car coasts away.
       const start = leader.samples[0][1];
       const end = Number.isFinite(leader.lapTime) ? leader.lapTime : start + leader.duration;
-      const seconds = Math.max(0,Math.min(start + replayState.playbackSeconds,end));
+      const clock = replayState.worker?.renderClock();
+      const seconds = Math.max(0,Math.min(start + (Number.isFinite(clock) ? clock : replayState.playbackSeconds),end));
       const NativeTime = player.getTime().constructor;
       return new NativeTime(Math.round(seconds * 1000));
     };

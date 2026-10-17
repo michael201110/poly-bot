@@ -2655,7 +2655,7 @@ function createSwarmKernel(replay, mounts) {
   const indices = new Uint32Array(count);
   const angles = new Float64Array(count * 4);
   const velocities = new Float64Array(count * 4);
-  const body = new Float32Array(count * 16);
+  const body = new Float32Array(count * 16),bodyDouble=new Float64Array(count*16);
   const wheels = new Float32Array(count * 64);
   const q = new Float64Array(4), wq = new Float64Array(4);
   let previous = -1;
@@ -2729,7 +2729,8 @@ function createSwarmKernel(replay, mounts) {
       state[at+53]=span>0 ? Math.hypot(data[right+2]-data[left+2],data[right+3]-data[left+3],data[right+4]-data[left+4])/span*3.6*(ended?1-.5*coast/coastDuration:1) : 0;
       state[at+54]=ended?1:0;
       const x=state[at+2],y=state[at+3],z=state[at+4];
-      compose(body,car*16,x,y,z,q[0],q[1],q[2],q[3]);
+      compose(bodyDouble,car*16,x,y,z,q[0],q[1],q[2],q[3]);
+      for(let j=0;j<16;j++)body[car*16+j]=bodyDouble[car*16+j];
       const m=car*16;
       for(let wheel=0;wheel<4;wheel++) {
         const offset=9+wheel*10, k=car*4+wheel;
@@ -2746,9 +2747,9 @@ function createSwarmKernel(replay, mounts) {
         }
         angles[k]+=velocities[k]*step;
         const mx=mounts[wheel*3],my=mounts[wheel*3+1]-state[at+offset+7],mz=mounts[wheel*3+2];
-        const px=x+body[m]*mx+body[m+4]*my+body[m+8]*mz;
-        const py=y+body[m+1]*mx+body[m+5]*my+body[m+9]*mz;
-        const pz=z+body[m+2]*mx+body[m+6]*my+body[m+10]*mz;
+        const px=x+bodyDouble[m]*mx+bodyDouble[m+4]*my+bodyDouble[m+8]*mz;
+        const py=y+bodyDouble[m+1]*mx+bodyDouble[m+5]*my+bodyDouble[m+9]*mz;
+        const pz=z+bodyDouble[m+2]*mx+bodyDouble[m+6]*my+bodyDouble[m+10]*mz;
         for(let j=0;j<4;j++)wq[j]=q[j];
         if(wheel<2)multiplyQuaternion(wq[0],wq[1],wq[2],wq[3],0,Math.sin(state[at+49]/2),0,Math.cos(state[at+49]/2),wq);
         multiplyQuaternion(wq[0],wq[1],wq[2],wq[3],Math.sin(angles[k]/2),0,0,Math.cos(angles[k]/2),wq);
@@ -2769,7 +2770,51 @@ function createSwarmKernel(replay, mounts) {
     }
     return true;
   }
-  return {count,state,body,wheels,angles,velocities,evaluate,inFrustum};
+  return {count,state,body,bodyDouble,wheels,angles,velocities,evaluate,inFrustum};
+}
+
+function createSwarmTrails(kernel,mounts) {
+  // Port of PolyTrack 0.6.3's native skid strip: 1000 allocated slots, wrap at
+  // 999, two projected tyre edges, identical winding, threshold and cooldown.
+  const count=kernel.count*4,cooldown=new Float64Array(count).fill(.075);
+  const previous=new Float64Array(count*6),valid=new Uint8Array(count),rings=new Uint16Array(count);
+  const effectFrames=new Float64Array(kernel.count).fill(-Infinity),corners=new Float64Array(6);
+  let resetCount=0;
+  function update(dt,reset,target,offset){let emitted=0;
+    if(reset){valid.fill(0);rings.fill(0);effectFrames.fill(-Infinity);resetCount++;}
+    const state=kernel.state,matrix=kernel.bodyDouble;
+    for(let car=0;car<kernel.count;car++){
+      const at=car*64,m=car*16,tick=state[at];
+      const effectStep=tick>=effectFrames[car]+10;
+      if(effectStep)effectFrames[car]=tick;
+      for(let wheel=0;wheel<4;wheel++){
+        const k=car*4+wheel,w=at+9+wheel*10;
+        const slipping=state[w]&&state[w+9]<Math.pow(Math.min(1,Math.abs(state[w+8])/.08),3)*.5;
+        if(effectStep){if(slipping)cooldown[k]=Math.max(0,cooldown[k]-.01);
+          else {cooldown[k]=.075;valid[k]=0;}}
+        if(!dt||reset||state[at+54]||!slipping||cooldown[k]!==0)continue;
+        const x=mounts[wheel*3],y=mounts[wheel*3+1]-state[w+7],z=mounts[wheel*3+2];
+        const px=matrix[m+12]+matrix[m]*x+matrix[m+4]*y+matrix[m+8]*z;
+        const py=matrix[m+13]+matrix[m+1]*x+matrix[m+5]*y+matrix[m+9]*z;
+        const pz=matrix[m+14]+matrix[m+2]*x+matrix[m+6]*y+matrix[m+10]*z;
+        const nx=state[w+4],ny=state[w+5],nz=state[w+6];
+        for(let side=0;side<2;side++){
+          const dx=side?-.172:.172;
+          let cx=px+matrix[m]*dx-matrix[m+4]*.3,cy=py+matrix[m+1]*dx-matrix[m+5]*.3,cz=pz+matrix[m+2]*dx-matrix[m+6]*.3;
+          const distance=(cx-state[w+1])*nx+(cy-state[w+2])*ny+(cz-state[w+3])*nz;
+          cx-=nx*distance;cy-=ny*distance;cz-=nz*distance;
+          corners[side*3]=cx;corners[side*3+1]=cy;corners[side*3+2]=cz;
+        }
+        const old=k*6;
+        if(valid[k]){const o=offset+emitted*13;target[o]=k*999+rings[k];
+          for(let j=0;j<3;j++){target[o+1+j]=corners[j];target[o+4+j]=previous[old+j];target[o+7+j]=corners[3+j];target[o+10+j]=previous[old+3+j];}
+          rings[k]=(rings[k]+1)%999;emitted++;}
+        for(let j=0;j<6;j++)previous[old+j]=corners[j];valid[k]=1;
+      }
+    }
+    return emitted;
+  }
+  return {update,cooldown,rings,previous,valid,get resetCount(){return resetCount;}};
 }
 
 function polybotSwarmWorker() {
@@ -2780,7 +2825,7 @@ function polybotSwarmWorker() {
   const ambient=new Float32Array(3), light=new Float32Array(3), scratch=new Float32Array(16), projection=new Float32Array(16);
   const visible=new Uint8Array(500);
   let extension, program, u, vaoDepth, depthProgram, depthLocation, depthCount=0;
-  let shared=false,outputPool=[],outputOffsets=[],outputLength=32,lastOutput=-1;
+  let shared=false,outputPool=[],outputOffsets=[],outputLength=32,lastOutput=-1,trails,trailOffset=0;
   const vs=`#version 300 es
   precision highp float;
   layout(location=0) in vec3 position;layout(location=1) in vec3 normal;
@@ -2832,11 +2877,12 @@ function polybotSwarmWorker() {
     shared=message.shared===true;
     if(shared){
       kernel=createSwarmKernel(message.replay,message.mounts);colors=message.colours;
-      groups=message.groups;
+      groups=message.groups;trails=createSwarmTrails(kernel,message.mounts);
       for(const g of groups){outputOffsets.push(outputLength);outputLength+=kernel.count*(g.kind===1?4:1)*24;}
+      trailOffset=outputLength;outputLength+=kernel.count*4*13;
       outputPool=[new Float32Array(outputLength),new Float32Array(outputLength),new Float32Array(outputLength)];
       postMessage({type:'ready',generation,backend:'Worker + PolyShade WebGPU',replayBytes:message.replay.data.byteLength,
-        geometryBytes:message.geometryBytes,batches:groups.length,outputOffsets,outputLength});return;
+        geometryBytes:message.geometryBytes,batches:groups.length,outputOffsets,outputLength,trailOffset});return;
     }
     gl=canvas.getContext('webgl2',{alpha:true,premultipliedAlpha:false,antialias:true,depth:true,preserveDrawingBuffer:false});
     if(!gl)throw Error('worker WebGL2 unavailable');
@@ -2856,7 +2902,8 @@ function polybotSwarmWorker() {
   function multiply(a,b,out){for(let c=0;c<4;c++)for(let r=0;r<4;r++)out[c*4+r]=a[r]*b[c*4]+a[4+r]*b[c*4+1]+a[8+r]*b[c*4+2]+a[12+r]*b[c*4+3];}
   function sharedFrame(){if(!packetView||!outputPool.length||packetView[57]===lastOutput)return;
     const start=performance.now(),p=packetView,reset=p[2]!==resetId,time=p[0];
-    const state=kernel.evaluate(time,reset||lastTime<0?0:Math.max(0,time-lastTime),reset,p[3],p[4],p[5]);
+    const dt=reset||lastTime<0?0:Math.max(0,time-lastTime);
+    const state=kernel.evaluate(time,dt,reset,p[3],p[4],p[5]);
     lastOutput=p[57];resetId=p[2];lastTime=time;
     const interpolationEnd=performance.now(),target=outputPool.pop();
     for(let j=0;j<16;j++){scratch[j]=p[8+j];projection[j]=p[24+j];}multiply(projection,scratch,vp);
@@ -2876,6 +2923,7 @@ function polybotSwarmWorker() {
         else target[o+20]=state[s+50];
       }
     }
+    target[28]=trails.update(dt,reset,target,trailOffset);target[29]=reset?1:0;
     const elapsed=performance.now()-start;history[cursor*4]=elapsed;cursor=(cursor+1)%240;frames++;
     postMessage({type:'instances',generation,buffer:target.buffer,time,epoch:resetId},[target.buffer]);
     const now=performance.now();if(now-lastStats>=500){lastStats=now;
@@ -3016,7 +3064,11 @@ function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
       const key=`${kind}:${material.name}`;let group=groupsByKey.get(key);
       if(!group){let rgb=material.color?.toArray?.()||[.1,.1,.1];
         if(material.name==='Rim')rgb=[.9047,.9216,.956];
+
         group={kind,name:material.name,colour:new Float32Array(rgb),paintMode:material.name==='Main'?1:material.name==='BrakeLight'?2:material.name==='Tire'?3:0,
+          materialType:material.type,flatShading:material.flatShading,roughness:material.roughness,metalness:material.metalness,
+          envMapIntensity:material.envMapIntensity,clearcoat:material.clearcoat,clearcoatRoughness:material.clearcoatRoughness,
+          emissive:material.emissive?.toArray?.(),emissiveIntensity:material.emissiveIntensity,
           shininess:material.shininess,specular:material.specular?.toArray?.(),reflectivity:material.reflectivity,
           positions:[],normals:[],morphs:kind===2?[[],[],[],[]]:null,
           normalMorphs:kind===2&&geometry.morphAttributes.normal?.length===4?[[],[],[],[]]:null};groupsByKey.set(key,group);}
@@ -3040,6 +3092,7 @@ function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   if(wheelIndex!==4)throw Error('native wheel geometry contract changed');
   leader.car.setCarState(saved,true);leader.car.update(0);
   const groups=[...groupsByKey.values()].map(g=>({...g,positions:new Float32Array(g.positions),normals:new Float32Array(g.normals),morphs:g.morphs?.map(a=>new Float32Array(a)),normalMorphs:g.normalMorphs?.map(a=>new Float32Array(a))}));
+  if(groups.length>24)throw Error('car uses too many material groups for packed worker protocol');
   let geometryBytes=0;for(const g of groups)geometryBytes+=g.positions.byteLength+g.normals.byteLength+(g.morphs?.reduce((n,a)=>n+a.byteLength,0)||0);
   const scene=context.scene,occluderObjects=[],sunLights=[],ambientLights=[];
   scene.updateMatrixWorld(true);
@@ -3079,10 +3132,10 @@ function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   }
   function resize(){if(!canvas)return;const rect=source.getBoundingClientRect();Object.assign(canvas.style,{left:`${rect.left}px`,top:`${rect.top}px`,width:`${rect.width}px`,height:`${rect.height}px`});}
   const observer=new ResizeObserver(resize);observer.observe(source);window.addEventListener('resize',resize);document.addEventListener('fullscreenchange',resize);resize();
-  const url=URL.createObjectURL(new Blob([`${createSwarmKernel.toString()}\n(${polybotSwarmWorker.toString()})();`],{type:'text/javascript'}));
+  const url=URL.createObjectURL(new Blob([`${createSwarmKernel.toString()}\n${createSwarmTrails.toString()}\n(${polybotSwarmWorker.toString()})();`],{type:'text/javascript'}));
   let worker,alive=true,ready=false,failure=null,stats={backend:'initializing worker'},mainMs=0,mainFrames=0;
   const pool=[new Float64Array(64),new Float64Array(64),new Float64Array(64)];
-  let settings={},lastSettings=-Infinity,epoch=0,lastClock=-1,sequence=0,handle=null,outputOffsets=null,renderClock=0;
+  let settings={},lastSettings=-Infinity,epoch=0,lastClock=-1,sequence=0,handle=null,outputOffsets=null,trailOffset=0,renderClock=0,renderEpoch=-1,pendingFrame=null;
   const fallbackRestore=()=>{
     for(let c=0;c<ghosts.length;c++)if(!ghosts[c].samples){const data=[];let distance=0;
       for(let r=canonical.offsets[c];r<canonical.offsets[c+1];r++){const a=r*53,row=Array.from(canonical.data.subarray(a,a+9));
@@ -3100,17 +3153,15 @@ function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   try{
     worker=new Worker(url,{name:'PolyBot renderer-only swarm'});
     worker.onmessage=event=>{const m=event.data;if(!alive||m.generation!==generation)return;
-      if(m.type==='ready'){ready=true;clearTimeout(timeout);stats=m;outputOffsets=m.outputOffsets;
+      if(m.type==='ready'){ready=true;clearTimeout(timeout);stats=m;outputOffsets=m.outputOffsets;trailOffset=m.trailOffset;
         // Retain one packed canonical copy for crash fallback. Drop the much
         // larger nested JS sample graphs; worker owns its transferred copy.
         for(const ghost of ghosts)if(ghost!==leader)ghost.samples=null;
       }else if(m.type==='instances'){
-        try {
-          const values=new Float32Array(m.buffer);
-          interop.updateSwarmInstances(handle,values,outputOffsets,values.subarray(0,outputOffsets.length));
-          renderClock=m.time;
-          worker.postMessage({type:'instances_recycle',generation,buffer:m.buffer},[m.buffer]);
-        } catch(error) { fail(String(error.message||error)); }
+        // Stage until the replay render boundary. Updating GPU transforms from
+        // an asynchronous message can leave the chase camera one frame behind.
+        if(pendingFrame)worker.postMessage({type:'instances_recycle',generation,buffer:pendingFrame.buffer},[pendingFrame.buffer]);
+        pendingFrame=m;
       }else if(m.type==='recycle')pool.push(new Float64Array(m.buffer));
       else if(m.type==='stats'){stats=m.stats;for(let c=0;c<ghosts.length;c++)if(ghosts[c]!==leader){
         const g=ghosts[c],o=c*4;g.position.x=m.positions[o];g.position.y=m.positions[o+1];g.position.z=m.positions[o+2];g.visible=!!m.positions[o+3];}}
@@ -3151,7 +3202,19 @@ function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
     }
     worker.postMessage({type:'frame',generation,buffer:p.buffer},[p.buffer]);mainMs+=performance.now()-begin;mainFrames++;
   }
-  return {frame,dispose,renderClock:()=>shared?renderClock:null,restore:fallbackRestore,updateColours(){const colours=colourData();worker.postMessage({type:'colours',generation,colours},[colours.buffer]);},
+  function present(){
+    if(!pendingFrame||!alive)return;
+    const m=pendingFrame;pendingFrame=null;
+    try {
+      if(m.epoch===epoch){const values=new Float32Array(m.buffer);
+        interop.updateSwarmInstances(handle,values,outputOffsets,values.subarray(0,outputOffsets.length));
+        if(interop.updateSwarmTrails)interop.updateSwarmTrails(handle,values,trailOffset,values[28],values[29]===1);
+        renderClock=m.time;renderEpoch=m.epoch;
+      }
+      worker.postMessage({type:'instances_recycle',generation,buffer:m.buffer},[m.buffer]);
+    }catch(error){fail(String(error.message||error));}
+  }
+  return {frame,present,dispose,renderClock:()=>shared?renderClock:null,isFresh:()=>!shared||renderEpoch===epoch,invalidate(){epoch++;},restore:fallbackRestore,updateColours(){const colours=colourData();worker.postMessage({type:'colours',generation,colours},[colours.buffer]);},
     diagnostics(){return {...stats,ready,failure,mainThreadMs:mainFrames?mainMs/mainFrames:0,
       canonicalBytes:canonical.data.byteLength,geometryBytes,inFlight:3-pool.length,sharedMemory:false,
       interop:shared?interop.diagnostics():null,renderClock};}};
@@ -3919,6 +3982,7 @@ function installPolyBotReplayRenderer() {
         return output;
       }
       const target = first[1] + elapsed;
+      if (target < samples[Math.max(0, ghost.sampleIndex - 1)][1]) ghost.sampleIndex = 1;
       while (ghost.sampleIndex < lastIndex && samples[ghost.sampleIndex][1] < target) {
         ghost.sampleIndex += 1;
       }
@@ -3941,6 +4005,9 @@ function installPolyBotReplayRenderer() {
     const replayRender = (deltaSeconds) => {
       if (!replayState.ghosts.length) return;
       const frameStart = performance.now();
+      const previousPresentation = replayState.worker?.renderClock();
+      replayState.worker?.present();
+      if (replayState.worker?.renderClock() !== previousPresentation) replayState.dirty = true;
       if (replayState.dirty) {
         replayState.endTime = replayState.durationSeconds
           + (replayState.endBehavior === "freeze" ? 0 : Math.max(0.75,replayState.fadeDuration));
@@ -3960,7 +4027,8 @@ function installPolyBotReplayRenderer() {
       for (let ghostIndex = 0; ghostIndex < replayState.ghosts.length; ghostIndex += 1) {
         const ghost = replayState.ghosts[ghostIndex];
         if (replayState.worker && ghost !== replayState.leader) continue;
-        const elapsed = replayState.playbackSeconds;
+        const workerClock = replayState.worker?.renderClock();
+        const elapsed = Number.isFinite(workerClock) ? workerClock : replayState.playbackSeconds;
         const ended = elapsed > ghost.duration;
         const coastDuration = replayState.endBehavior === "fade"
           ? Math.max(0.75, replayState.fadeDuration) : 0.75;
@@ -4035,12 +4103,13 @@ function installPolyBotReplayRenderer() {
         const span = right[1] - left[1];
         state.speedKmh = span > 0
           ? Math.hypot(right[2] - left[2], right[3] - left[3], right[4] - left[4]) / span * 3.6 * (ended ? 1 - 0.5 * coastTime / coastDuration : 1) : 0;
-        const resetEffects = ghost.cameraNeedsReset;
+        const workerFresh = !replayState.worker || replayState.worker.isFresh();
+        const resetEffects = ghost.cameraNeedsReset && workerFresh;
         const applied = ghost.hudFrame?.controls?.applied;
         state.controls.up = Number(applied?.throttle) > 0;
         state.controls.down = Number(applied?.brake) > 0;
         ghost.car.setCarState(state, resetEffects);
-        ghost.cameraNeedsReset = false;
+        if (workerFresh) ghost.cameraNeedsReset = false;
         ghost.car.isPaused = true;
         const audioVolume = ghost === replayState.leader && replayState.playing &&
           (!ended || coastTime > 0) ? (ended ? Math.max(0,1-coastTime/coastDuration) : 1) : 0;
@@ -4057,6 +4126,7 @@ function installPolyBotReplayRenderer() {
       const endTime = replayState.endTime;
       if (replayState.playbackSeconds >= endTime) {
         if (globalThis.__polybotSwarmLoop === true && endTime > 0) {
+          replayState.worker?.invalidate();
           replayState.playbackSeconds %= endTime;
           for (const ghost of replayState.ghosts) replayResetIndex(ghost, ghost.firstElapsed);
           replayState.dirty = true;
@@ -4125,6 +4195,7 @@ function installPolyBotReplayRenderer() {
           replayRender(0);
           return replayStatus();
         case "restart":
+          replayState.worker?.invalidate();
           if (!replayState.ghosts.length) throw new Error("no visual replay swarm is loaded");
           replayState.playbackSeconds = 0;
           for (const ghost of replayState.ghosts) replayResetIndex(ghost, ghost.firstElapsed);
@@ -4132,6 +4203,7 @@ function installPolyBotReplayRenderer() {
           replayRender(0);
           return replayStatus();
         case "seek": {
+          replayState.worker?.invalidate();
           if (!replayState.ghosts.length) throw new Error("no visual replay swarm is loaded");
           const seconds = replayFinite(params.seconds, "seconds");
           const duration = Math.max(...replayState.ghosts.map((ghost) => ghost.duration));
@@ -4280,7 +4352,8 @@ function installPolyBotReplayRenderer() {
       // Keep the fixed camera run's finish time while its car coasts away.
       const start = leader.samples[0][1];
       const end = Number.isFinite(leader.lapTime) ? leader.lapTime : start + leader.duration;
-      const seconds = Math.max(0,Math.min(start + replayState.playbackSeconds,end));
+      const clock = replayState.worker?.renderClock();
+      const seconds = Math.max(0,Math.min(start + (Number.isFinite(clock) ? clock : replayState.playbackSeconds),end));
       const NativeTime = player.getTime().constructor;
       return new NativeTime(Math.round(seconds * 1000));
     };
