@@ -3070,6 +3070,8 @@ function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
           materialType:material.type,flatShading:material.flatShading,roughness:material.roughness,metalness:material.metalness,
           envMapIntensity:material.envMapIntensity,clearcoat:material.clearcoat,clearcoatRoughness:material.clearcoatRoughness,
           emissive:material.emissive?.toArray?.(),emissiveIntensity:material.emissiveIntensity,
+          specularIntensity:material.specularIntensity,specularColor:material.specularColor?.toArray?.(),ior:material.ior,
+          side:material.side,shadowSide:material.shadowSide,toneMapped:material.toneMapped,fog:material.fog,
           shininess:material.shininess,specular:material.specular?.toArray?.(),reflectivity:material.reflectivity,
           positions:[],normals:[],morphs:kind===2?[[],[],[],[]]:null,
           normalMorphs:kind===2&&geometry.morphAttributes.normal?.length===4?[[],[],[],[]]:null};groupsByKey.set(key,group);}
