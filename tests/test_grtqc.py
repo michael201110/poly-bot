@@ -1574,9 +1574,9 @@ def test_scratch_rejected_candidates_recover_after_configured_weaker_checks(tmp_
     runner.model = SimpleNamespace(
         num_timesteps=12000, actor_unlocked=True, scratch_stage="pace",
     )
-    # An unclean slower finisher still counts toward recovery; only clean
-    # five-lap candidates are retained as local search progress.
-    champion = EvaluationResult(5, 1., 0.999935, 1., 22.709, 22.709, 0., 0., 0.)
+    # An unclean slower finisher with no increase in contacts counts toward
+    # weak-check recovery; increased contacts have their own immediate guard.
+    champion = EvaluationResult(5, 1., 0.999935, 1., 22.709, 22.709, 0., 0., 0., barrier_contact_steps=1)
     slower = EvaluationResult(5, 1., 1., 1., 22.9, 22.9, 0., 0., 0., barrier_contact_steps=1)
     recovered = []
     monkeypatch.setattr(runner, "_emit", lambda event: None)
@@ -1668,12 +1668,12 @@ def test_saturated_slower_scratch_candidate_recovers_immediately(tmp_path, monke
         _actor_reference_update_saturated=True,
     )
     champion = EvaluationResult(5, 1., 1., 1., 22.595, 22.595, 0., 0., 0.)
-    slower = EvaluationResult(5, 1., 1., 1., 22.872, 22.872, 0., 0., 0., barrier_contact_steps=5)
+    slower = EvaluationResult(5, 1., 1., 1., 22.872, 22.872, 0., 0., 0.)
     events = []
     recovered = []
     monkeypatch.setattr(runner, "_emit", events.append)
     monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
-    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args, **kwargs: recovered.append(args))
 
     runner._select_scratch_candidate(slower, champion)
 
@@ -1784,7 +1784,7 @@ def test_grtqc_resume_rollback_restores_actor_but_keeps_latest_training_state(tm
         runner.registry, "read_metadata", lambda _: SimpleNamespace(evaluation=champion.to_dict()),
     )
     recovered = []
-    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args: recovered.append(args))
+    monkeypatch.setattr(runner, "_recover_grtqc_actor", lambda *args, **kwargs: recovered.append(args))
     monkeypatch.setattr(runner, "_save", lambda name, evaluation=None: tmp_path / name)
     events = []
     monkeypatch.setattr(runner, "_emit", events.append)

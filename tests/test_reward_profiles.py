@@ -145,7 +145,7 @@ def test_pure_pace_completed_laps_rank_strictly_by_time(pure_pace_context, targe
         score, terms, _ = calculate_reward(replace(context, transition=transition))
         assert all(value == 0 for name, value in terms.items() if name not in {"elapsed", "finish"})
         scores.append(score)
-    assert all(faster > slower for faster, slower in zip(scores, scores[1:]))
+    assert all(faster > slower for faster, slower in zip(scores, scores[1:], strict=False))
     assert scores[-1] > 0  # Even a slow valid finish beats abandoning the lap.
 
 

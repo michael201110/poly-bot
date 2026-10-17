@@ -7,6 +7,7 @@ const rendererSource = readFileSync(new URL("../pml-mod/0.1.42/replay_renderer.m
   .replace("export function installPolyBotReplayRenderer", "function installPolyBotReplayRenderer");
 
 function makeHarness() {
+  const style = {primaryHex: 0xffffff, clone() { return {...this}; }};
   const cars = [];
   let clock = 0;
   const context = {
@@ -37,10 +38,11 @@ function makeHarness() {
         position: { x: 0, y: 0, z: 0 },
         quaternion: { x: 0, y: 0, z: 0, w: 1 },
       }),
-      getCarStyle: () => ({ clone: () => ({ primaryHex: 0xffffff }) }),
+      getCarStyle: () => style,
     },
-    createCar: () => {
+    createCar: (_base, withAudio) => {
       const car = {
+        order: withAudio ? cars.find(car => car.disposed).order : cars.length,
         states: [],
         cameraOrbit: {},
         updateCameras() { this.cameraOrbit.target = this.states.at(-1).position; },
@@ -87,7 +89,9 @@ function makeHarness() {
     return response.result;
   };
   bind();
-  return { cars, bind, changeOwner, dispatch, getCamera: () => camera,
+  // Selecting the audio leader replaces and disposes its initial silent car.
+  return { get cars() { return cars.filter(car => !car.disposed).sort((a, b) => a.order - b.order); }, allCars: cars,
+    bind, changeOwner, dispatch, getCamera: () => camera,
     initialCamera, isPlayerVisible: () => playerVisible };
 }
 
@@ -194,7 +198,7 @@ test("supports different episode endpoints, seek, pause, resume, restart, and cl
   assert.equal(harness.cars[0].visible, false);
   const cleared = harness.dispatch("clear");
   assert.equal(cleared.loaded_ghosts, 0);
-  assert.ok(harness.cars.every((car) => car.disposed));
+  assert.ok(harness.allCars.every((car) => car.disposed));
 });
 
 test("rejects malformed, duplicate, incomplete, and oversized swarm payloads", () => {
@@ -321,7 +325,7 @@ test("legacy one-replay protocol remains accepted without new payload metadata",
   assert.equal(harness.cars[0].style.primaryHex, 0x123456);
   assert.equal(harness.cars[0].visible, true);
   harness.changeOwner();
-  assert.equal(harness.cars[0].disposed, true);
+  assert.ok(harness.allCars.every(car => car.disposed));
   assert.equal(harness.dispatch("status").loaded_ghosts, 0);
 });
 

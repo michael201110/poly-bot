@@ -2,12 +2,23 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
 
 REPOSITORY = Path(__file__).resolve().parents[1]
 MOD_ROOT = REPOSITORY / "pml-mod"
+
+
+def test_latest_replay_renderer_behavior():
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("Node is not installed")
+    result = subprocess.run([node, "--test", "tests/test_latest_replay_renderer.mjs"],
+                            cwd=REPOSITORY, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def _load_validator():
@@ -39,7 +50,7 @@ def test_pml_manifest_resolves_versioned_entry_point(game_version: str) -> None:
         runtime.replace("export function polybotWorkerInjection()", "function polybotWorkerInjection()", 1)
         in main_source
     )
-    if version == "0.1.43":
+    if (MOD_ROOT / version / "hud_renderer.mjs").is_file():
         renderer = (MOD_ROOT / version / "hud_renderer.mjs").read_text(encoding="utf-8")
         assert renderer.replace(
             "export function installPolyBotHudOverlay(",
@@ -63,8 +74,7 @@ def test_worker_and_offline_anchors_are_declared_once_in_mod_source() -> None:
 
 def test_latest_063_bridge_adds_hud_without_changing_older_releases() -> None:
     manifest = json.loads((MOD_ROOT / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["latest"]["0.6.3"] == "0.1.43"
-    latest_worker = (MOD_ROOT / "0.1.43" / "worker_runtime.js").read_text(encoding="utf-8")
+    latest_worker = (MOD_ROOT / manifest["latest"]["0.6.3"] / "worker_runtime.js").read_text(encoding="utf-8")
     old_worker = (MOD_ROOT / "0.1.38" / "worker_runtime.js").read_text(encoding="utf-8")
     assert '"ai_overlay_hud"' in latest_worker
     assert 'request.op === "hud_frame"' in latest_worker

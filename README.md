@@ -62,6 +62,8 @@ The GUI's **Activity & logs** page and `polybot-live-log logs/<track-slug>/<algo
 
 Run `python -m pytest`, `python -m ruff check src tests tools`, `git diff --check`, and `python tools/validate_pml_mod.py` before committing. Community contributions follow the [Code of Conduct](CODE_OF_CONDUCT.md), [Contributing](CONTRIBUTING.md), and [Security](SECURITY.md) policies.
 
+Measured learner, control, replay and GUI timings, equivalence checks, and reproducible profiling commands are in the [performance report](docs/performance-optimization.md).
+
 ```text
 src/polybot/algorithms/    GRTQC, TQC and legacy PPO backends
 src/polybot/environment/   simulator environment, observations, rewards, curriculum

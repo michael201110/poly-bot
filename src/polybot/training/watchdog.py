@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
-from typing import Callable
 
 from polybot.environment.curriculum import build_plan
 from polybot.protocol import ProtocolViolation
@@ -54,7 +54,7 @@ def run_with_watchdog(
         saved: Path | None = None
         status = runner.status
 
-        def observe(event: dict) -> None:
+        def observe(event: dict, status: Callable[[dict], None] | None = status) -> None:
             nonlocal saved
             if event.get("type") == "transport_disconnected":
                 saved = Path(event["checkpoint"])
@@ -98,7 +98,9 @@ def run_with_watchdog(
                     status({"type": "watchdog_exhausted", "error": str(exc),
                             "max_retries": max_retries, "resume": str(resume) if resume else None})
                 raise
-            completed = max(0, runner.registry.read_metadata(resume).training_timesteps - initial_steps) if resume else 0
+            completed = (
+                max(0, runner.registry.read_metadata(resume).training_timesteps - initial_steps) if resume else 0
+            )
             config = remaining_config(original, completed)
             if config is None:
                 return resume

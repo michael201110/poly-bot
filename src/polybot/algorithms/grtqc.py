@@ -531,6 +531,22 @@ class GRTQC(SeededWarmupTQC):
         return value
 
     @staticmethod
+    def _gradient_metrics(module: nn.Module) -> tuple[float, dict[str, float]]:
+        """Read the existing norms with one device-to-host transfer.
+
+        Keep the same per-parameter and aggregate reductions as the diagnostic
+        path; only their delivery to Python is batched.
+        """
+        gradients = {name: p.grad.detach().norm() for name, p in module.named_parameters() if p.grad is not None}
+        if not gradients:
+            return 0.0, {}
+        norms = th.stack(list(gradients.values()))
+        values = th.cat((norms.norm().reshape(1), norms)).cpu().tolist()
+        if not np.isfinite(values[0]):
+            raise RuntimeError("non-finite GRTQC parameter gradient")
+        return values[0], dict(zip(gradients, values[1:], strict=True))
+
+    @staticmethod
     def _lower_confidence_actor_value(
         critic_quantiles: th.Tensor, uncertainty_coefficient: float,
     ) -> tuple[th.Tensor, th.Tensor, th.Tensor]:
@@ -588,34 +604,37 @@ class GRTQC(SeededWarmupTQC):
                 raise RuntimeError("non-finite GRTQC critic loss")
             self.critic.optimizer.zero_grad()
             critic_loss.backward()
-            self._record("train/critic_gradient_norm", self._gradient_norm(self.critic))
+            gradient_norm, critic_gradients = self._gradient_metrics(self.critic)
+            self._record("train/critic_gradient_norm", gradient_norm)
             critic_before = [p.detach().clone() for p in self.critic.parameters()]
-            critic_gradients = {name: float(p.grad.detach().norm())
-                                for name, p in self.critic.named_parameters() if p.grad is not None}
             self.critic.optimizer.step()
-            critic_changes = {name: float((p.detach() - old).norm())
-                              for (name, p), old in zip(self.critic.named_parameters(), critic_before, strict=True)}
+            changes = {name: (p.detach() - old).norm()
+                       for (name, p), old in zip(self.critic.named_parameters(), critic_before, strict=True)}
+            diagnostic_names = (
+                "critic_loss", "quantile_loss", "disagreement", "disagreement_penalty",
+                "quantile_mean", "quantile_std", "target_mean", "target_std", "td_absolute_mean",
+            )
+            diagnostic_tensors = (
+                critic_loss.detach(), quantile_loss.detach(), disagreement.detach(),
+                (self.disagreement_coefficient * disagreement).detach(),
+                current.detach().mean(), current.detach().std(unbiased=False),
+                targets.mean(), targets.std(unbiased=False),
+                (targets.mean(dim=(1, 2)) - current.detach().mean(dim=(1, 2))).abs().mean(),
+            )
+            values = th.stack([*changes.values(), *diagnostic_tensors]).cpu().tolist()
+            critic_changes = dict(zip(changes, values[:len(changes)], strict=True))
+            diagnostics = dict(zip(diagnostic_names, values[len(changes):], strict=True))
             self._record("train/critic_layer_gradient_norms", critic_gradients)
             self._record("train/critic_layer_update_norms", critic_changes)
             self._record("train/critic_update_norm", float(np.linalg.norm(list(critic_changes.values()))))
             self.critic_updates_since_transfer += 1
             self.critic_recovery_updates_remaining = max(0, self.critic_recovery_updates_remaining - 1)
-            self._critic_loss_history.append(float(quantile_loss.item()))
-            self._disagreement_history.append(float(disagreement.item()))
+            self._critic_loss_history.append(diagnostics["quantile_loss"])
+            self._disagreement_history.append(diagnostics["disagreement"])
             if not self.actor_unlocked and self._critic_ready():
                 self.actor_unlocked = True
-            self._record("train/critic_loss", float(critic_loss.item()))
-            self._record("train/quantile_loss", float(quantile_loss.item()))
-            self._record("train/disagreement", float(disagreement.item()))
-            penalty = self.disagreement_coefficient * disagreement
-            self._record("train/disagreement_penalty", float(penalty.item()))
-            self._record("train/quantile_mean", float(current.detach().mean().item()))
-            self._record("train/quantile_std", float(current.detach().std(unbiased=False).item()))
-            self._record("train/target_mean", float(targets.mean().item()))
-            self._record("train/target_std", float(targets.std(unbiased=False).item()))
-            self._record("train/td_absolute_mean", float((
-                targets.mean(dim=(1, 2)) - current.detach().mean(dim=(1, 2))
-            ).abs().mean()))
+            for name, value in diagnostics.items():
+                self._record(f"train/{name}", value)
             self._record("train/actor_unlocked", int(self.actor_unlocked))
             self._record("train/critic_warmup_updates", self.critic_updates_since_transfer)
             self._record("train/critic_recovery_updates_remaining", self.critic_recovery_updates_remaining)
@@ -634,9 +653,12 @@ class GRTQC(SeededWarmupTQC):
                 )
                 uncertainty_penalty = getattr(self, "actor_uncertainty_coefficient", 0.0) * q_uncertainty
                 actor_loss = (ent_coef * log_prob - q_pi).mean()
-                self._record("train/actor_q_mean", float(mean_q_pi.detach().mean().item()))
-                self._record("train/actor_q_uncertainty", float(q_uncertainty.detach().mean().item()))
-                self._record("train/actor_uncertainty_penalty", float(uncertainty_penalty.detach().mean().item()))
+                actor_values = th.stack([
+                    mean_q_pi.detach().mean(), q_uncertainty.detach().mean(), uncertainty_penalty.detach().mean(),
+                ]).cpu().tolist()
+                for name, value in zip(("actor_q_mean", "actor_q_uncertainty", "actor_uncertainty_penalty"),
+                                       actor_values, strict=True):
+                    self._record(f"train/{name}", value)
                 with th.no_grad():
                     before_actions = self.actor(data.observations, deterministic=True).detach()
                     reference_before = (
@@ -646,9 +668,8 @@ class GRTQC(SeededWarmupTQC):
                     before_parameters = [parameter.detach().clone() for parameter in self.actor.parameters()]
                 self.actor.optimizer.zero_grad()
                 actor_loss.backward()
-                self._record("train/actor_gradient_norm", self._gradient_norm(self.actor))
-                layer_gradients = {name: float(p.grad.detach().norm())
-                                   for name, p in self.actor.named_parameters() if p.grad is not None}
+                gradient_norm, layer_gradients = self._gradient_metrics(self.actor)
+                self._record("train/actor_gradient_norm", gradient_norm)
                 self.actor.optimizer.step()
                 with th.no_grad():
                     after_actions = self.actor(data.observations, deterministic=True)
@@ -684,17 +705,19 @@ class GRTQC(SeededWarmupTQC):
                             local_drift = float((
                                 self.actor(data.observations, deterministic=True) - before_actions
                             ).abs().max().item())
+                            reference_actions = (
+                                self.actor(self._actor_reference_observations, deterministic=True)
+                                if self._actor_reference_observations is not None else None
+                            )
                             reference_drift = (
                                 float((
-                                    self.actor(self._actor_reference_observations, deterministic=True)
-                                    - reference_before
+                                    reference_actions - reference_before
                                 ).abs().max().item())
                                 if reference_before is not None else 0.0
                             )
                             reference_cumulative_drift = (
                                 float((
-                                    self.actor(self._actor_reference_observations, deterministic=True)
-                                    - self._actor_reference_actions
+                                    reference_actions - self._actor_reference_actions
                                 ).abs().max().item())
                                 if self._actor_reference_observations is not None
                                 and self._actor_reference_actions is not None else 0.0
@@ -713,27 +736,33 @@ class GRTQC(SeededWarmupTQC):
                             self.actor.parameters(), before_parameters, proposed_parameters, strict=True,
                         ):
                             parameter.copy_(previous + low * (proposed - previous))
+                        after_actions = self.actor(data.observations, deterministic=True)
+                        reference_after = (
+                            self.actor(self._actor_reference_observations, deterministic=True)
+                            if self._actor_reference_observations is not None else None
+                        )
                     executed_local_drift = float((
-                        self.actor(data.observations, deterministic=True) - before_actions
+                        after_actions - before_actions
                     ).abs().max().item())
                     executed_reference_drift = (
                         float((
-                            self.actor(self._actor_reference_observations, deterministic=True)
-                            - reference_before
+                            reference_after - reference_before
                         ).abs().max().item())
                         if reference_before is not None else 0.0
                     )
                     executed_reference_cumulative_drift = (
                         float((
-                            self.actor(self._actor_reference_observations, deterministic=True)
-                            - self._actor_reference_actions
+                            reference_after - self._actor_reference_actions
                         ).abs().max().item())
                         if self._actor_reference_observations is not None
                         and self._actor_reference_actions is not None else 0.0
                     )
                     executed_drift = max(executed_local_drift, executed_reference_drift)
-                changes = {name: float((p.detach() - old).norm())
-                           for (name, p), old in zip(self.actor.named_parameters(), before_parameters, strict=True)}
+                change_tensors = {name: (p.detach() - old).norm()
+                                  for (name, p), old in zip(
+                                      self.actor.named_parameters(), before_parameters, strict=True,
+                                  )}
+                changes = dict(zip(change_tensors, th.stack(list(change_tensors.values())).cpu().tolist(), strict=True))
                 actor_update_norm = float(np.linalg.norm(list(changes.values())))
                 reference_limit_tolerance = max(1e-9, self.actor_reference_drift_limit * 1e-7)
                 reference_cap_saturated = (

@@ -5,11 +5,11 @@ from __future__ import annotations
 import argparse
 import json
 import time
-from datetime import UTC, datetime
-from uuid import uuid4
 from collections.abc import Sequence
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from polybot.algorithms.registry import ALGORITHMS, backend_for
 from polybot.controller import CenterlineController

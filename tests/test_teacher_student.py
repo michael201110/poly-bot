@@ -135,14 +135,14 @@ def test_named_reward_profile_overrides_teacher_reward_configuration() -> None:
 
     assert selected is config
     assert config.reward_profile == "Pace + failure x3"
-    assert config.rewards.finish_target_s == 24.0
+    assert config.rewards.finish_target_s == 30.0
     assert config.rewards.ground_brake_penalty_per_s == 0.0
     assert config.rewards.imitation_bonus_per_s == 0.0
     assert config.rewards.barrier_contact_penalty == -300.0
     assert config.rewards.barrier_collision_impulse_threshold == 250.0
-    assert config.rewards.crash_penalty == -450.0
-    assert config.rewards.stall_penalty == -300.0
-    assert config.rewards.off_track_penalty == -300.0
+    assert config.rewards.crash_penalty == -3000.0
+    assert config.rewards.stall_penalty == -3000.0
+    assert config.rewards.off_track_penalty == -3000.0
 
 
 @pytest.mark.parametrize(

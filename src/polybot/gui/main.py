@@ -7,9 +7,9 @@ import json
 import sys
 import threading
 import time
-from math import floor, log10
 from dataclasses import asdict, fields, replace
 from datetime import UTC, datetime
+from math import floor, log10
 from pathlib import Path
 from typing import Any
 
@@ -25,8 +25,8 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QFrame,
-    QGroupBox,
     QGridLayout,
+    QGroupBox,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -34,24 +34,24 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
-    QPushButton,
     QProgressBar,
+    QPushButton,
     QScrollArea,
     QSpinBox,
     QStackedWidget,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
-    QToolButton,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
     QWizard,
     QWizardPage,
 )
 
+from polybot.ai_overlay import HUD_MODES, AIOverlaySettings, AIOverlaySettingsStore
 from polybot.algorithms.registry import backend_for
-from polybot.ai_overlay import AIOverlaySettings, AIOverlaySettingsStore, HUD_MODES
 from polybot.environment.curriculum import build_plan
 from polybot.environment.rewards import RewardConfig
 from polybot.gui.events import format_event
@@ -63,19 +63,19 @@ from polybot.replay_swarm import (
     ColorScale,
     ReplayPlaybackOptions,
     ReplaySelection,
-    replay_camera_rank,
     SelectedReplayPayload,
-    filter_replays,
     evenly_sample_replays,
+    filter_replays,
     load_replay_episode,
     load_replay_index,
     parse_color_stops,
+    replay_camera_rank,
     resolve_replay_directories,
     select_replays,
     selection_report,
-    swarm_colors,
-    send_replay_swarm,
     send_replay_playback,
+    send_replay_swarm,
+    swarm_colors,
 )
 from polybot.tracks.registry import TrackDefinition, TrackRegistry, track_slug
 from polybot.tracks.workspace import TrackWorkspace
@@ -496,19 +496,23 @@ class PolyBotWindow(QWidget):
              "Keep the latest policy and critics, use the selected reward settings, and refill replay from scratch."),
             ("Continue latest with selected exploration",
              lambda: self._start(True, exploration_override=True),
-             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor exploration setting."),
+             "Keep Latest's policy, critics, replay, rewards and curriculum; "
+             "use the selected GRTQC actor exploration setting."),
             ("Continue latest with selected actor settings",
              lambda: self._start(True, actor_guard_override=True),
-             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC actor learning rate, action drift limits, and uncertainty coefficient."),
+             "Keep Latest's policy, critics, replay, rewards and curriculum; use the selected GRTQC "
+             "actor learning rate, action drift limits, and uncertainty coefficient."),
             ("Continue best with selected rewards",
              lambda: self._start(True, best=True, reward_override=True),
              "Keep the best policy and critics, use the selected reward settings, and refill replay from scratch."),
             ("Recover champion actor",
              lambda: self._start(True, recover_actor=True),
-             "Restore the verified GRTQC champion actor into Latest, keep its critics and replay, and train the actor on states from its verified lap."),
+             "Restore the verified GRTQC champion actor into Latest, keep its critics and replay, "
+             "and train the actor on states from its verified lap."),
             ("Recover champion actor with selected rewards",
              lambda: self._start(True, reward_override=True, recover_actor=True),
-             "Restore the verified champion actor into Latest, keep its critics, apply the selected rewards, refill replay, and retain champion rollback protection."),
+             "Restore the verified champion actor into Latest, keep its critics, apply the selected rewards, "
+             "refill replay, and retain champion rollback protection."),
             ("Play champion", lambda: self._model_command("drive", "champion"),
              "Watch the champion drive a live lap in PolyTrack."),
             ("Evaluate champion", lambda: self._model_command("evaluate", "champion"),
@@ -613,7 +617,8 @@ class PolyBotWindow(QWidget):
             QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox {{ min-height: 26px; padding: 2px 5px; }}
             QGroupBox {{ border: 1px solid {border}; border-radius: 7px; margin-top: 14px; padding: 16px 12px 12px; }}
             QGroupBox::title {{ subcontrol-origin: margin; left: 12px; padding: 0 5px; font-weight: 600; }}
-            QToolButton#sectionToggle {{ padding: 9px; background: {surface}; border: 1px solid {border}; border-radius: 5px; }}
+            QToolButton#sectionToggle {{ padding: 9px; background: {surface};
+                border: 1px solid {border}; border-radius: 5px; }}
             QToolTip {{ padding: 5px; }}
             QFrame#feedbackBar {{ border: 1px solid #b58035; border-radius: 6px; }}
         """)
@@ -1347,7 +1352,9 @@ class PolyBotWindow(QWidget):
         self.models_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
         self.models_table.setMinimumHeight(160)
         self.models_table.setMaximumHeight(230)
-        self.models_table.setToolTip("Champion is the best evaluated checkpoint. Latest may have regressed. Hover for its folder.")
+        self.models_table.setToolTip(
+            "Champion is the best evaluated checkpoint. Latest may have regressed. Hover for its folder."
+        )
         page.addWidget(self.models_table)
         self.models_inventory = QTextEdit()
         self.models_inventory.setReadOnly(True)
@@ -1772,7 +1779,8 @@ class PolyBotWindow(QWidget):
         page.addLayout(action_row)
         self.replay_swarm_loaded_ghosts = QCheckBox("Play alongside loaded ghosts")
         self.replay_swarm_loaded_ghosts.setToolTip(
-            "Keep PolyTrack ghosts already loaded in the race visible during replay, and match their opacity to the replay."
+            "Keep PolyTrack ghosts already loaded in the race visible during replay, "
+            "and match their opacity to the replay."
         )
         self.replay_swarm_loaded_ghosts.toggled.connect(
             lambda _enabled: self._submit_replay_swarm("configure")
@@ -2083,7 +2091,11 @@ class PolyBotWindow(QWidget):
                     step = int(entry["training_step_start"])
                     lap = entry.get("lap_time_s")
                     status = str(entry["status"]).capitalize()
-                    lap_text = f"{float(lap):.3f}s" if lap is not None else f"{status} · {float(entry.get('final_progress_ratio', 0.0)):.0%} complete"
+                    lap_text = (
+                        f"{float(lap):.3f}s"
+                        if lap is not None
+                        else f"{status} · {float(entry.get('final_progress_ratio', 0.0)):.0%} complete"
+                    )
                     label = f"Attempt {entry['episode_id'].rsplit('-', 1)[-1]} · {lap_text}"
                     tooltip = (
                         f"{status} · {float(entry.get('final_progress_m', 0.0)):.1f} m · "
@@ -2471,7 +2483,8 @@ class PolyBotWindow(QWidget):
         self.ai_overlay_widgets: dict[str, QWidget] = {}
         options: tuple[tuple[str, str, Any, str, tuple[str, ...]], ...] = (
             ("display_mode", "HUD mode", settings.display_mode,
-             "Choose a presentation for live driving or saved replay telemetry. Also switch modes in the game.", HUD_MODES),
+             "Choose a presentation for live driving or saved replay telemetry. "
+             "Also switch modes in the game.", HUD_MODES),
             ("wr_target_s", "World record target (seconds)", settings.wr_target_s,
              "Set the verified WR target for WR Chase. Zero leaves the target unknown.", ()),
             ("preset", "Layout", settings.preset,
@@ -2491,7 +2504,8 @@ class PolyBotWindow(QWidget):
             ("show_event_popups", "Event popups", settings.show_event_popups,
              "Briefly surface finish, crash, timeout, and other episode events.", ()),
             ("lookahead_points", "Lookahead points", settings.lookahead_points,
-             "Maximum route points shown in the upcoming-track diagram. The input list separately selects the most important 60%.", ()),
+             "Maximum route points shown in the upcoming-track diagram. "
+             "The input list separately selects the most important 60%.", ()),
         )
         for name, label_text, value, help_text, choices in options:
             widget = _editor(value, help_text, choices)
@@ -2668,6 +2682,7 @@ class PolyBotWindow(QWidget):
             self.algorithm.currentText()
         ].load(preset)
         if self.algorithm.currentText() == "grtqc" and name == "Scratch (8-step)":
+            _set(self.reward_profile, "Scratch completion")
             self._load_reward_profile("Scratch completion")
 
     def _current_algorithm_settings(self) -> PPOConfig | GRTQCConfig | TQCConfig:
@@ -3716,7 +3731,8 @@ class PolyBotWindow(QWidget):
                     self.log.append(
                         "Loaded the checkpoint's policy, critic, and curriculum; kept the selected step budget."
                         if reward_override else
-                        "Loaded the checkpoint's policy, critic, curriculum, and reward settings; kept the selected step budget."
+                        "Loaded the checkpoint's policy, critic, curriculum, and reward settings; "
+                        "kept the selected step budget."
                     )
                 saved_rewards = resume_metadata.training_config.get("rewards")
                 if isinstance(saved_rewards, dict) and RewardConfig(**saved_rewards) != cfg.rewards:
@@ -4396,7 +4412,9 @@ class PolyBotWindow(QWidget):
             self._close_when_idle = True
             if self.stop_button.isEnabled():
                 self._stop()
-            self.feedback_label.setText("Closing when the active task finishes. Training and searches stop safely first.")
+            self.feedback_label.setText(
+                "Closing when the active task finishes. Training and searches stop safely first."
+            )
             self.dismiss_feedback_button.setText("Keep open")
             self.feedback_bar.show()
             event.ignore()

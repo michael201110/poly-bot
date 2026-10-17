@@ -13,8 +13,8 @@ from polybot.replay_swarm import (
     ReplayPlaybackOptions,
     ReplaySelection,
     SelectedReplayPayload,
-    filter_replays,
     evenly_sample_replays,
+    filter_replays,
     interpolate_position,
     interpolate_quaternion,
     interpolate_replay,
@@ -258,7 +258,10 @@ def test_replay_transfer_rejects_oversized_payload_without_iterating_it() -> Non
         list(replay_sample_chunks([sample] * 500_001))
 
 
-def test_live_playback_uses_existing_v2_bridge_and_chunks_without_changing_training_ops() -> None:
+@pytest.mark.parametrize("metadata, step", [
+    ({}, 0), ({"training_step": 42}, 42), ({"training_step": 42, "training_step_start": 17}, 17),
+])
+def test_live_playback_uses_existing_v2_bridge_and_chunks_without_changing_training_ops(metadata, step) -> None:
     class RecordingTransport:
         def __init__(self) -> None:
             self.messages: list[dict] = []
@@ -280,7 +283,7 @@ def test_live_playback_uses_existing_v2_bridge_and_chunks_without_changing_train
     send_replay_playback(
         transport,
         action="play",
-        payload=ReplayPayload(metadata={}, samples=samples),
+        payload=ReplayPayload(metadata=metadata, samples=samples),
         options=ReplayPlaybackOptions(color="#123456"),
     )
     assert [message["op"] for message in transport.messages] == [
@@ -296,6 +299,7 @@ def test_live_playback_uses_existing_v2_bridge_and_chunks_without_changing_train
         "lookahead_count": 1,
     }
     assert transport.messages[1]["params"]["sample_count"] == 300
+    assert transport.messages[1]["params"]["training_step_start"] == step
     assert transport.messages[-1]["params"] == {"autoplay": True}
 
     with pytest.raises(ValueError, match="seek requires"):

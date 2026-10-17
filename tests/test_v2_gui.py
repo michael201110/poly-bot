@@ -82,7 +82,6 @@ def window(qt_app, tmp_path, monkeypatch):
     widget.replay_swarm_step_min.setValue(0)
     widget.replay_swarm_step_max.setValue(1_000_000)
     widget.replay_swarm_color_min.setValue(0)
-    widget.replay_swarm_color_max.setValue(1_000_000)
     yield widget
     widget.close()
 
@@ -143,7 +142,7 @@ def test_pure_pace_profile_exposes_editable_target_in_reward_setup(window) -> No
 
 
 def test_editing_reward_values_marks_profile_custom(window) -> None:
-    assert window.reward_profile.currentText() == "Balanced"
+    assert window.reward_profile.currentText() == "Scratch completion"
     window.reward_basic["failure_multiplier"].setValue(1.5)
     assert window.reward_profile.currentText() == "Custom"
     assert window.configuration().rewards.crash_penalty == pytest.approx(
@@ -304,7 +303,8 @@ def test_every_training_field_has_plain_language_help(window) -> None:
 
 def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert window.algorithm.currentText() == "grtqc"
-    assert window.configuration().rewards.barrier_collision_impulse_threshold == 1_000_000_000.0
+    assert window.reward_profile.currentText() == "Scratch completion"
+    assert window.configuration().rewards.barrier_collision_impulse_threshold == 250.0
     assert window.algorithm_stack.currentWidget() is window.grtqc_form
     assert window.ppo_form.widgets["gamma"].isHidden()
     window.algorithm.setCurrentText("ppo")
@@ -313,6 +313,10 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     window.advanced.setChecked(True)
     assert not window.ppo_form.widgets["gamma"].isHidden()
     assert not window.reward_scroll.isHidden()
+    # Advanced workflows are visible but collapsed until explicitly expanded.
+    for section in window.workflow_sections:
+        assert not section.isHidden()
+        section.expand()
     assert not window.pace_polish_section.isHidden()
     assert not window.adaptation_section.isHidden()
     assert not window.distillation_section.isHidden()
@@ -338,12 +342,8 @@ def test_algorithm_switch_and_progressive_disclosure(window) -> None:
     assert window.configuration().tqc is None
     window.advanced.setChecked(False)
     assert window.ppo_form.widgets["gamma"].isHidden()
-    assert window.pace_polish_section.isHidden()
-    assert window.adaptation_section.isHidden()
-    assert window.wr_search_section.isHidden()
+    assert all(section.isHidden() for section in window.workflow_sections)
     assert window.section_optimizer_section.isHidden()
-    assert window.distillation_section.isHidden()
-    assert window.teacher_student_section.isHidden()
     window.algorithm.setCurrentText("grtqc")
     assert window.algorithm_stack.currentWidget() is window.grtqc_form
     assert window.ppo_form.isHidden() and window.tqc_form.isHidden()
@@ -708,7 +708,7 @@ def test_replay_swarm_bridge_controls_do_not_require_replay_path(window, monkeyp
         "end_behavior": "fade", "fade_duration_s": 1.25,
     })
     assert calls[-2][1]["update_settings"] == (
-        "speed", "opacity", "end_behavior", "fade_duration",
+        "speed", "opacity", "end_behavior", "fade_duration", "loaded_ghosts",
     )
 
 

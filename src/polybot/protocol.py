@@ -252,16 +252,11 @@ class Telemetry:
             float(self.previous_action.throttle),
             float(self.previous_action.brake),
         ]
-        future: list[float] = []
-        for forward_m, right_m, up_m, curvature_inv_m in self.lookahead:
-            future.extend(
-                (
-                    float(np.clip(forward_m / 100.0, -5.0, 5.0)),
-                    float(np.clip(right_m / 50.0, -5.0, 5.0)),
-                    float(np.clip(up_m / 50.0, -5.0, 5.0)),
-                    float(np.clip(curvature_inv_m / 0.2, -5.0, 5.0)),
-                )
-            )
+        # Normalize in float64 before the final float32 cast, as in the wire
+        # schema's scalar implementation. One array clip avoids four NumPy
+        # dispatches per lookahead point without changing observation values.
+        future = np.asarray(self.lookahead, dtype=np.float64).reshape(-1, 4)
+        future = np.clip(future / (100.0, 50.0, 50.0, 0.2), -5.0, 5.0).ravel()
         vector = np.asarray([*base, *future, *self.lookahead_mask], dtype=np.float32)
         expected = self.vector_size(len(self.lookahead))
         if vector.shape != (expected,):  # Defensive check for schema edits.

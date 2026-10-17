@@ -179,7 +179,9 @@ def load_replay_episode(
                     int(tick), float(seconds), tuple(map(float, xyz)), tuple(map(float, quat)),
                     tuple(map(float, wheels[index])) if wheels is not None else None,
                 )
-                for index, (tick, seconds, xyz, quat) in enumerate(zip(ticks, elapsed_s, position, quaternion, strict=True))
+                for index, (tick, seconds, xyz, quat) in enumerate(
+                    zip(ticks, elapsed_s, position, quaternion, strict=True)
+                )
             ]
             optional: dict[str, np.ndarray | None] = {
                 name: None for name in ("decision_ticks", "decision_elapsed_s", "observations", "actions")
@@ -492,7 +494,9 @@ class VisualReplaySession:
             "episode_terms": dict(episode.reward_terms),
             "episode_groups": dict(episode.reward_groups),
             "episode_learner_terms": {name: value * self.reward_scale for name, value in episode.reward_terms.items()},
-            "episode_learner_groups": {name: value * self.reward_scale for name, value in episode.reward_groups.items()},
+            "episode_learner_groups": {
+                name: value * self.reward_scale for name, value in episode.reward_groups.items()
+            },
         })
         if self.hud_context_provider is not None:
             hud_frame.update(self.hud_context_provider())
@@ -713,12 +717,18 @@ class VisualReplayCaptureWrapper(gym.Wrapper):
             capture_info = self._replay_info(result[4])
             if self.session.record_observations:
                 from polybot.environment.observations import (
-                    SCHEMA, CONTROLLER_STATE_SCHEMA, TRAINING_STATE_SCHEMA, size,
+                    CONTROLLER_STATE_SCHEMA,
+                    SCHEMA,
+                    TRAINING_STATE_SCHEMA,
+                    size,
                 )
                 capture_info["replay_policy_features"] = policy_features or []
                 capture_info["replay_observation_schema"] = (
-                    TRAINING_STATE_SCHEMA if getattr(core, "expose_training_state", False)
-                    else CONTROLLER_STATE_SCHEMA if observation is not None and observation.size > size(len(input_state.lookahead) if input_state is not None else 12)
+                    TRAINING_STATE_SCHEMA
+                    if getattr(core, "expose_training_state", False)
+                    else CONTROLLER_STATE_SCHEMA
+                    if observation is not None
+                    and observation.size > size(len(input_state.lookahead) if input_state is not None else 12)
                     else SCHEMA
                 )
                 capture_info["replay_observation_elapsed_s"] = getattr(input_state, "elapsed_s", None)

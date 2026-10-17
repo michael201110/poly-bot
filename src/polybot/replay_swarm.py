@@ -17,7 +17,6 @@ from typing import Any
 import numpy as np
 
 from polybot.ai_overlay import AIOverlaySettings, AIOverlaySettingsStore
-
 from polybot.protocol import PROTOCOL_NAME, PROTOCOL_VERSION, ProtocolViolation, request_message, response_result
 from polybot.tracks.registry import TrackRegistry, track_slug
 from polybot.training.visual_replays import (
@@ -182,7 +181,7 @@ def replay_sample_chunks(
         raise ValueError("replay HUD frames must include elapsed simulation time")
     if hud_frames is not None and any(
         float(current["elapsed_simulation_s"]) < float(previous["elapsed_simulation_s"])
-        for previous, current in zip(hud_frames, hud_frames[1:])
+        for previous, current in zip(hud_frames, hud_frames[1:], strict=False)
     ):
         raise ValueError("replay HUD frames must be ordered by elapsed simulation time")
     frame_index = 0
@@ -321,7 +320,8 @@ def send_replay_playback(
             "visual_replay_begin",
             {
                 "sample_count": len(payload.samples),
-                "training_step_start": int(payload.metadata["training_step_start"]),
+                "training_step_start": int(payload.metadata.get("training_step_start",
+                                                               payload.metadata.get("training_step", 0))),
                 "lap_time_s": payload.metadata.get("lap_time_s"),
                 "color": options.color,
                 "speed": options.speed,

@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
+from typing import Any
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QLabel, QTextEdit, QVBoxLayout, QWidget
 
 from polybot.gui.events import format_event
+from polybot.gui.log_tail import read_event_batch
 
 
 class LiveLogWindow(QWidget):
@@ -33,9 +34,13 @@ class LiveLogWindow(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
         self.timer.start(1000)
+        self.catch_up_timer = QTimer(self)
+        self.catch_up_timer.setSingleShot(True)
+        self.catch_up_timer.timeout.connect(self.refresh)
         self.refresh()
 
     def refresh(self) -> None:
+        self.catch_up_timer.stop()
         if self.follow_newest:
             candidates = list(self.source.parent.glob(self.source.name))
             if candidates:
@@ -46,46 +51,53 @@ class LiveLogWindow(QWidget):
                     self.events.clear()
         if not self.path.is_file():
             return
-        with self.path.open(encoding="utf-8") as stream:
-            stream.seek(self.position)
-            while True:
-                before = stream.tell()
-                line = stream.readline()
-                if not line:
-                    break
-                try:
-                    event = json.loads(line)
-                except json.JSONDecodeError:
-                    stream.seek(before)
-                    break
-                summary = format_event(event)
-                if summary:
-                    self.events.append(summary)
-                if event.get("type") == "progress":
-                    learning = ""
-                    if event.get("actor_evaluation_pending"):
-                        learning = "\nFinishing attempt before policy check · critic updates continue"
-                    elif "actor_unlocked" in event:
-                        learning = (
-                            ("\nLearning controller input adapter" if event.get("controller_adapter_only")
-                             else "\nPolicy learning")
-                            if event["actor_unlocked"]
-                            else f"\nPolicy frozen · critic warmup {event.get('critic_warmup_updates', 0):,} updates"
-                        )
-                        if not event["actor_unlocked"] and event.get("critic_mc_initialization_updates"):
-                            learning += (
-                                f" · complete-return initialization {event.get('critic_mc_updates', 0):,}"
-                                f"/{event['critic_mc_initialization_updates']:,}"
-                            )
-                            error = event.get("critic_reference_relative_error")
-                            if error is not None:
-                                learning += f" · driving-return error {error:.1%}"
-                    self.status.setText(
-                        f"Step {event['timesteps']:,} · {event['steps_per_second']:.1f} TPS · "
-                        f"attempt {event['progress']:.1%} · best seen {event['run_max_progress']:.1%} · "
-                        f"updates {event.get('updates', 0):,}{learning}\nFull detail: {self.path}"
+        if self.position > self.path.stat().st_size:
+            self.position = 0
+            self.events.clear()
+        events, self.position, limited = read_event_batch(self.path, self.position)
+        summaries = []
+        progress = None
+        for event in events:
+            summary = format_event(event)
+            if summary:
+                summaries.append(summary)
+            if event.get("type") == "progress":
+                progress = event
+        if summaries:
+            self.events.append("\n".join(summaries))
+        if progress is not None:
+            event = progress
+            learning = ""
+            if event.get("actor_evaluation_pending"):
+                learning = "\nFinishing attempt before policy check · critic updates continue"
+            elif "actor_unlocked" in event:
+                learning = (
+                    ("\nLearning controller input adapter" if event.get("controller_adapter_only")
+                     else "\nPolicy learning")
+                    if event["actor_unlocked"]
+                    else f"\nPolicy frozen · critic warmup {event.get('critic_warmup_updates', 0):,} updates"
+                )
+                if not event["actor_unlocked"] and event.get("critic_mc_initialization_updates"):
+                    learning += (
+                        f" · complete-return initialization {event.get('critic_mc_updates', 0):,}"
+                        f"/{event['critic_mc_initialization_updates']:,}"
                     )
-            self.position = stream.tell()
+                    error = event.get("critic_reference_relative_error")
+                    if error is not None:
+                        learning += f" · driving-return error {error:.1%}"
+            self.status.setText(
+                f"Step {event['timesteps']:,} · {event['steps_per_second']:.1f} TPS · "
+                f"attempt {event['progress']:.1%} · best seen {event['run_max_progress']:.1%} · "
+                f"updates {event.get('updates', 0):,}{learning}\nFull detail: {self.path}"
+            )
+        if limited:
+            # Let Qt paint and handle input between catch-up batches.
+            self.catch_up_timer.start(0)
+
+    def closeEvent(self, event: Any) -> None:
+        self.timer.stop()
+        self.catch_up_timer.stop()
+        super().closeEvent(event)
 
 
 def main(argv: list[str] | None = None) -> int:

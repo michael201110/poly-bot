@@ -119,7 +119,12 @@ function sampleFrame(overrides = {}) {
 }
 
 function sectionBody(root, index) {
-  return root.children[index].children.at(-1);
+  return contentNodes(root)[index].children.at(-1);
+}
+
+// Window drag/resize controls precede the content; they are not HUD sections.
+function contentNodes(root) {
+  return root.children.filter(node => !["polybot-ai-hud-grip", "polybot-ai-hud-resize"].includes(node.className));
 }
 
 function hudRoot(document) {
@@ -144,7 +149,7 @@ test("plugin toggle controls the overlay and telemetry updates reuse feature row
   update(frame);
   assert.equal(root.attributes["aria-hidden"], "false");
   assert.equal(root.style.transform, "scale(1.00)");
-  const firstInput = sectionBody(root, 3).children[0];
+  const firstInput = sectionBody(root, 3).children.find(node => !node.hidden);
   const firstValue = firstInput.children[1];
   assert.match(firstValue.textContent, /^0\.000/);
 
@@ -158,7 +163,7 @@ test("plugin toggle controls the overlay and telemetry updates reuse feature row
     ).length,
     1,
   );
-  assert.equal(sectionBody(root, 3).children[0], firstInput);
+  assert.equal(sectionBody(root, 3).children.find(node => !node.hidden), firstInput);
   assert.match(firstValue.textContent, /^0\.750/);
 
   update({ enabled: false });
@@ -178,7 +183,7 @@ test("HUD control exists before Python telemetry is available", () => {
   assert.ok(root);
   toggle.click();
   assert.equal(root.hidden, false);
-  assert.match(root.children[1].textContent, /Waiting for Python telemetry/);
+  assert.match(contentNodes(root)[1].textContent, /No model or replay loaded/);
 });
 
 test("HUD control waits for the page body when PML initializes early", () => {
@@ -193,18 +198,19 @@ test("unsupported feature schemas are made explicit instead of being mislabeled"
   const { document, update } = createRenderer();
   update(sampleFrame({ observation_schema: "polybot.observation.v3" }));
   const root = hudRoot(document);
-  const inputSection = root.children[3];
+  const inputSection = contentNodes(root)[3];
   assert.match(inputSection.children[1].textContent, /Unsupported observation schema/);
   assert.equal(inputSection.children.at(-1).hidden, true);
 });
 
 test("renderer mock-DOM update work stays below one millisecond per full frame", () => {
-  const { update } = createRenderer();
+  const { document, update } = createRenderer();
+  document.body.children.find(node => node.className.includes("polybot-ai-hud-toggle")).click();
   const frame = sampleFrame();
   update(frame);
   const started = process.hrtime.bigint();
   for (let index = 0; index < 1_000; index += 1) {
-    update(frame);
+    update({...frame, training_step: index});
   }
   const elapsedMs = Number(process.hrtime.bigint() - started) / 1e6;
   const meanMs = elapsedMs / 1_000;
@@ -216,6 +222,7 @@ test("renderer mock-DOM update work stays below one millisecond per full frame",
 test("all requested modes switch live and OFF hides the overlay", () => {
   const {document, update} = createRenderer();
   const root = hudRoot(document);
+  document.body.children.find(n => n.className.includes("polybot-ai-hud-toggle")).click();
   const selector = document.body.children.find(n => n.className === "polybot-ai-hud-mode");
   assert.equal(selector.children.length, 15);
   for (const mode of HUD_MODES) {
@@ -223,9 +230,9 @@ test("all requested modes switch live and OFF hides the overlay", () => {
     selector.listeners.change();
     update(sampleFrame());
     assert.equal(root.hidden, mode === "OFF", mode);
-    assert.equal(root.children[3].hidden, !["NEURAL_NET","RL_DEBUG","OBSERVATIONS"].includes(mode), mode);
-    assert.equal(root.children[5].hidden, !["RL_DEBUG","REWARD"].includes(mode), mode);
-    assert.equal(root.children[4].hidden, ["OFF","TRAINING","TRAINING_GRAPH"].includes(mode), mode);
+    assert.equal(contentNodes(root)[3].hidden, !["NEURAL_NET","RL_DEBUG","OBSERVATIONS"].includes(mode), mode);
+    assert.equal(contentNodes(root)[5].hidden, !["RL_DEBUG","REWARD"].includes(mode), mode);
+    assert.equal(contentNodes(root)[4].hidden, ["OFF","TRAINING","TRAINING_GRAPH"].includes(mode), mode);
   }
 });
 
