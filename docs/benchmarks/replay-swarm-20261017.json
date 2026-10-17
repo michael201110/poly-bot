@@ -1,0 +1,258 @@
+{
+  "baseline_revision": "5115240",
+  "native_optimized_revision": "5919e50",
+  "native_final_revision": "9294447",
+  "storage": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.14.7",
+    "source": "models\\simple-track\\grtqc\\champion\\replay.pkl",
+    "repeats": 3,
+    "cases": [
+      {
+        "capacity": 10000,
+        "codec": "baseline-gzip3",
+        "compressed_bytes": 6600535,
+        "save_median_ms": 227.14430000633,
+        "save_p95_ms": 229.6908500007703,
+        "load_median_ms": 46.13000000244938,
+        "load_p95_ms": 50.215100003697444,
+        "save_python_peak_bytes": 10957882,
+        "load_python_peak_bytes": 19778463,
+        "serialized_sha256": "200a2d23cd7133397e8b549175e78941adbd8012401492f47aacbd2c03d28601"
+      },
+      {
+        "capacity": 10000,
+        "codec": "current-zstd3-2w",
+        "compressed_bytes": 1904858,
+        "save_median_ms": 43.58480000519194,
+        "save_p95_ms": 43.609550010296516,
+        "load_median_ms": 24.80719999584835,
+        "load_p95_ms": 26.68694000749383,
+        "save_python_peak_bytes": 8657796,
+        "load_python_peak_bytes": 16736282,
+        "serialized_sha256": "200a2d23cd7133397e8b549175e78941adbd8012401492f47aacbd2c03d28601"
+      },
+      {
+        "capacity": 50000,
+        "codec": "baseline-gzip3",
+        "compressed_bytes": 33015890,
+        "save_median_ms": 982.5814000068931,
+        "save_p95_ms": 983.7249400050496,
+        "load_median_ms": 231.4637999952538,
+        "load_p95_ms": 233.77094998722896,
+        "save_python_peak_bytes": 49273665,
+        "load_python_peak_bytes": 90963713,
+        "serialized_sha256": "0fadc69d78fcf4b536ca4a1073276d842aa257009972719584aa9bc7e43e88fe"
+      },
+      {
+        "capacity": 50000,
+        "codec": "current-zstd3-2w",
+        "compressed_bytes": 13037200,
+        "save_median_ms": 181.6060999990441,
+        "save_p95_ms": 187.60018999892054,
+        "load_median_ms": 92.45460000238381,
+        "load_p95_ms": 95.4285599902505,
+        "save_python_peak_bytes": 21711159,
+        "load_python_peak_bytes": 59498148,
+        "serialized_sha256": "0fadc69d78fcf4b536ca4a1073276d842aa257009972719584aa9bc7e43e88fe"
+      },
+      {
+        "capacity": 250000,
+        "codec": "baseline-gzip3",
+        "compressed_bytes": 165065224,
+        "save_median_ms": 5128.710799996043,
+        "save_p95_ms": 5142.777800004114,
+        "load_median_ms": 1198.5793000058038,
+        "load_p95_ms": 1326.3170199963497,
+        "save_python_peak_bytes": 198855750,
+        "load_python_peak_bytes": 381323719,
+        "serialized_sha256": "60e31b28fcfe49e2fe78d53d08f9e5db8a24070d5241005a3c0c3a3e20ea3fb9"
+      },
+      {
+        "capacity": 250000,
+        "codec": "current-zstd3-2w",
+        "compressed_bytes": 63374691,
+        "save_median_ms": 807.2784999967553,
+        "save_p95_ms": 817.6647700049216,
+        "load_median_ms": 395.9663999994518,
+        "load_p95_ms": 407.89058999653207,
+        "save_python_peak_bytes": 11525254,
+        "load_python_peak_bytes": 253181191,
+        "serialized_sha256": "60e31b28fcfe49e2fe78d53d08f9e5db8a24070d5241005a3c0c3a3e20ea3fb9"
+      }
+    ]
+  },
+  "native": {
+    "baseline_044": {
+      "source": "models\\simple-track\\grtqc\\visual_replays\\06338533209f43fca66793220b522049",
+      "episode": "episode-000010",
+      "samples_per_car": 85,
+      "leader_hud_frames": 167,
+      "settle_seconds": 12.0,
+      "cases": [
+        {
+          "cars": 1,
+          "frame_ms": 16.666666666666668,
+          "draw_calls": 58,
+          "triangles": 86774,
+          "renderer_cpu_ms": 1.9866666689515113,
+          "replay_cpu_ms": 0.24666666636864346
+        },
+        {
+          "cars": 10,
+          "frame_ms": 16.666666666666668,
+          "draw_calls": 265,
+          "triangles": 186692,
+          "renderer_cpu_ms": 4.948333332935969,
+          "replay_cpu_ms": 0.41333333353201546
+        },
+        {
+          "cars": 50,
+          "frame_ms": 21.791666666666668,
+          "draw_calls": 1185,
+          "triangles": 630772,
+          "renderer_cpu_ms": 18.6300000016888,
+          "replay_cpu_ms": 0.8733333359162013
+        },
+        {
+          "cars": 100,
+          "frame_ms": 41.108333333333334,
+          "draw_calls": 2335,
+          "triangles": 1185872,
+          "renderer_cpu_ms": 37.29833333293597,
+          "replay_cpu_ms": 1.5266666640837987
+        },
+        {
+          "cars": 250,
+          "frame_ms": 99.95666666676601,
+          "draw_calls": 5785,
+          "triangles": 2851172,
+          "renderer_cpu_ms": 93.84999999552966,
+          "replay_cpu_ms": 3.5233333319425584
+        },
+        {
+          "cars": 500,
+          "frame_ms": 193.49666666686534,
+          "draw_calls": 11535,
+          "triangles": 5626672,
+          "renderer_cpu_ms": 183.7749999995033,
+          "replay_cpu_ms": 7.186666669448217
+        }
+      ]
+    },
+    "optimized_046": {
+      "source": "models\\simple-track\\grtqc\\visual_replays\\06338533209f43fca66793220b522049",
+      "episode": "episode-000010",
+      "samples_per_car": 85,
+      "leader_hud_frames": 167,
+      "settle_seconds": 12.0,
+      "cases": [
+        {
+          "cars": 1,
+          "frame_ms": 16.66500000009934,
+          "draw_calls": 49,
+          "triangles": 86774,
+          "renderer_cpu_ms": 1.9333333318432173,
+          "replay_cpu_ms": 0.25333333512147266
+        },
+        {
+          "cars": 10,
+          "frame_ms": 16.666666666666668,
+          "draw_calls": 121,
+          "triangles": 186692,
+          "renderer_cpu_ms": 2.6799999992052714,
+          "replay_cpu_ms": 0.4599999949336052
+        },
+        {
+          "cars": 50,
+          "frame_ms": 16.666666666666668,
+          "draw_calls": 441,
+          "triangles": 630772,
+          "renderer_cpu_ms": 4.248333334426085,
+          "replay_cpu_ms": 1.1483333324392637
+        },
+        {
+          "cars": 100,
+          "frame_ms": 16.66500000009934,
+          "draw_calls": 841,
+          "triangles": 1185872,
+          "renderer_cpu_ms": 7.303333335618178,
+          "replay_cpu_ms": 2.5683333337306977
+        },
+        {
+          "cars": 250,
+          "frame_ms": 25.18833333303531,
+          "draw_calls": 2041,
+          "triangles": 2851172,
+          "renderer_cpu_ms": 18.84166667064031,
+          "replay_cpu_ms": 4.18500000188748
+        },
+        {
+          "cars": 500,
+          "frame_ms": 48.163333333532016,
+          "draw_calls": 4041,
+          "triangles": 5626672,
+          "renderer_cpu_ms": 37.14499999980132,
+          "replay_cpu_ms": 8.696666664381821
+        }
+      ]
+    },
+    "final_047": {
+      "source": "models\\simple-track\\grtqc\\visual_replays\\06338533209f43fca66793220b522049",
+      "episode": "episode-000010",
+      "samples_per_car": 85,
+      "leader_hud_frames": 167,
+      "settle_seconds": 12.0,
+      "cases": [
+        {
+          "cars": 1,
+          "frame_ms": 16.66500000009934,
+          "draw_calls": 49,
+          "triangles": 86774,
+          "renderer_cpu_ms": 2.3483333349227906,
+          "replay_cpu_ms": 0.29166666567325594
+        },
+        {
+          "cars": 10,
+          "frame_ms": 16.66500000009934,
+          "draw_calls": 121,
+          "triangles": 186692,
+          "renderer_cpu_ms": 3.323333331445853,
+          "replay_cpu_ms": 0.5166666661699613
+        },
+        {
+          "cars": 50,
+          "frame_ms": 16.666666666666668,
+          "draw_calls": 441,
+          "triangles": 630772,
+          "renderer_cpu_ms": 5.134999999403954,
+          "replay_cpu_ms": 1.3366666644811631
+        },
+        {
+          "cars": 100,
+          "frame_ms": 16.89000000009934,
+          "draw_calls": 841,
+          "triangles": 1185872,
+          "renderer_cpu_ms": 9.968333334227403,
+          "replay_cpu_ms": 2.73833333303531
+        },
+        {
+          "cars": 250,
+          "frame_ms": 31.1433333337307,
+          "draw_calls": 2041,
+          "triangles": 2851172,
+          "renderer_cpu_ms": 23.81000000188748,
+          "replay_cpu_ms": 4.6800000006953875
+        },
+        {
+          "cars": 500,
+          "frame_ms": 52.46333333303531,
+          "draw_calls": 4041,
+          "triangles": 5626672,
+          "renderer_cpu_ms": 41.278333333134654,
+          "replay_cpu_ms": 8.713333333532015
+        }
+      ]
+    }
+  }
+}

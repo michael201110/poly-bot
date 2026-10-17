@@ -1,5 +1,8 @@
 # Performance and reliability pass — 17 October 2026
 
+The subsequent [replay storage/native swarm pass](replay-swarm-optimization.md)
+measures and addresses the two remaining bottlenecks described here.
+
 ## Scope and baseline
 
 Baseline: `7f815a85ef2cfd027db2b3fa02e9b851e8807d76`, clean `main`.

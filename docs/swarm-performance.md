@@ -1,5 +1,8 @@
 # Live swarm performance — 2026-10-10
 
+See the [17 October follow-up](replay-swarm-optimization.md) for the repaired
+native instancing path, exact wheel morph support and controlled measurements.
+
 Measured in the user's existing Edge / PolyTrack 0.6.3 session on the NVIDIA
 T500, using bridge 0.1.40 and the saved 100-run telemetry collection. No
 training was started. HUD was hidden. Playback speed was 0.1 to allow sampling

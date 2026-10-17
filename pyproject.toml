@@ -17,6 +17,7 @@ dependencies = [
 
 [project.optional-dependencies]
 train = [
+  "backports.zstd>=1.0,<2; python_version<'3.14'",
   "stable-baselines3>=2.9,<2.10",
   "sb3-contrib>=2.9,<2.10",
 ]
