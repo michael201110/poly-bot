@@ -23,7 +23,9 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   }
   function colourData(){const result=new Float32Array(ghosts.length*3);
     for(let c=0;c<ghosts.length;c++){const hex=Number.parseInt(ghosts[c].color.slice(1),16);
-      for(let j=0;j<3;j++){let v=((hex>>(16-j*8))&255)/255;result[c*3+j]=v<=.04045?v/12.92:((v+.055)/1.055)**2.4;}}
+      // PolyTrack's car-style uniforms store byte channels directly; applying
+      // an extra sRGB conversion changes all intermediate generation colours.
+      for(let j=0;j<3;j++)result[c*3+j]=((hex>>(16-j*8))&255)/255;}
     return result;}
   const root=leader.car.polybotReplayRoot,originalParent=root.parent;
   const saved=leader.car.getCarState(),base=structuredClone(saved);
@@ -49,7 +51,6 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
       if(material.transparent&&material.opacity!==1)throw Error('unsupported native transparent car material');
       const key=`${kind}:${material.name}`;let group=groupsByKey.get(key);
       if(!group){let rgb=material.color?.toArray?.()||[.1,.1,.1];
-        if(material.name==='Rim')rgb=[.9047,.9216,.956];
 
         group={kind,name:material.name,colour:new Float32Array(rgb),paintMode:material.name==='Main'?1:material.name==='BrakeLight'?2:material.name==='Tire'?3:0,
           materialType:material.type,flatShading:material.flatShading,roughness:material.roughness,metalness:material.metalness,
@@ -121,7 +122,7 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
   const url=URL.createObjectURL(new Blob([`${createSwarmKernel.toString()}\n${createSwarmTrails.toString()}\n(${polybotSwarmWorker.toString()})();`],{type:'text/javascript'}));
   let worker,alive=true,ready=false,failure=null,stats={backend:'initializing worker'},mainMs=0,mainFrames=0;
   const pool=[new Float64Array(64),new Float64Array(64),new Float64Array(64)];
-  let settings={},lastSettings=-Infinity,epoch=0,lastClock=-1,sequence=0,handle=null,outputOffsets=null,trailOffset=0,renderClock=0,renderEpoch=-1,pendingFrame=null;
+  let settings={},lastSettings=-Infinity,epoch=0,lastClock=-1,sequence=0,handle=null,outputOffsets=null,trailOffset=0,renderClock=0,renderEpoch=-1,pendingFrames=[];
   const fallbackRestore=()=>{
     for(let c=0;c<ghosts.length;c++)if(!ghosts[c].samples){const data=[];let distance=0;
       for(let r=canonical.offsets[c];r<canonical.offsets[c+1];r++){const a=r*53,row=Array.from(canonical.data.subarray(a,a+9));
@@ -146,8 +147,8 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
       }else if(m.type==='instances'){
         // Stage until the replay render boundary. Updating GPU transforms from
         // an asynchronous message can leave the chase camera one frame behind.
-        if(pendingFrame)worker.postMessage({type:'instances_recycle',generation,buffer:pendingFrame.buffer},[pendingFrame.buffer]);
-        pendingFrame=m;
+        if(pendingFrames.length>=3){fail('swarm output pool exceeded');return;}
+        pendingFrames.push(m);
       }else if(m.type==='recycle')pool.push(new Float64Array(m.buffer));
       else if(m.type==='stats'){stats=m.stats;for(let c=0;c<ghosts.length;c++)if(ghosts[c]!==leader){
         const g=ghosts[c],o=c*4;g.position.x=m.positions[o];g.position.y=m.positions[o+1];g.position.z=m.positions[o+2];g.visible=!!m.positions[o+3];}}
@@ -189,15 +190,17 @@ export function createPolyBotSwarmWorker(context, ghosts, leader, onFailure) {
     worker.postMessage({type:'frame',generation,buffer:p.buffer},[p.buffer]);mainMs+=performance.now()-begin;mainFrames++;
   }
   function present(){
-    if(!pendingFrame||!alive)return;
-    const m=pendingFrame;pendingFrame=null;
+    if(!pendingFrames.length||!alive)return;
     try {
+      for(const m of pendingFrames){
       if(m.epoch===epoch){const values=new Float32Array(m.buffer);
         interop.updateSwarmInstances(handle,values,outputOffsets,values.subarray(0,outputOffsets.length));
         if(interop.updateSwarmTrails)interop.updateSwarmTrails(handle,values,trailOffset,values[28],values[29]===1);
         renderClock=m.time;renderEpoch=m.epoch;
       }
       worker.postMessage({type:'instances_recycle',generation,buffer:m.buffer},[m.buffer]);
+      }
+      pendingFrames.length=0;
     }catch(error){fail(String(error.message||error));}
   }
   return {frame,present,dispose,renderClock:()=>shared?renderClock:null,isFresh:()=>!shared||renderEpoch===epoch,invalidate(){epoch++;},restore:fallbackRestore,updateColours(){const colours=colourData();worker.postMessage({type:'colours',generation,colours},[colours.buffer]);},
