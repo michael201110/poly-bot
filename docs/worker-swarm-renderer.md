@@ -56,3 +56,38 @@ SGSR2. User feedback reports smooth native-resolution playback in the worker
 prototype. This is not a controlled final benchmark. Before/after timing across
 1/25/50/100/250/500 cars, effect parity, standalone rendering, memory lifecycle and
 final sustained moving-car captures remain outstanding.
+
+## Suspension and showcase follow-up
+
+The live compiled shader revealed that Three r181 `geometryNode` assignments
+were emitted after model-view projection, leaving suspension arms visually rigid
+while the velocity pass already deformed them. The renderer now supplies the
+four local morph deltas through `positionNode`. Live WGSL confirms the order:
+raw vertex -> weighted suspension deltas -> exactly one instance matrix ->
+projection. Shadows use the same node; the existing velocity pass uses the same
+deltas/weights. Per-wheel weights were observed changing during live playback.
+
+The final showcase loads 500 distinct complete short saved attempts (80..250
+samples each), selected evenly across their real training steps. No recording
+is truncated/resampled and the existing 64 MiB/250,000-sample limits remain.
+The unfiltered 500-run selection exceeded the byte limit. Reproduce with:
+
+```powershell
+.venv\Scripts\python.exe tools/showcase_swarm.py --run models/simple-track/grtqc/visual_replays --report "$env:TEMP/polybot-showcase-500.json"
+```
+
+Current installed pins: PolyBot `0b844c5`, PolyShade `188ccc3`. Golden Hour and
+native resolution were restored after temporary SGSR2 quality measurements.
+The 500-car showcase is not a claim of sustained 60 FPS at that size.
+
+A 100-car native-resolution interval measured 59.7 FPS, median 16.7 ms,
+p95 16.9 ms and p99 17.3 ms. Longer measurements varied substantially (including
+one-second gaps); GPU temperature reached 91 C and paging was active. SGSR2
+quality measured 44.4 FPS over 15 s with median 16.7 ms / p95 33.5 ms. These are
+observations, not controlled final acceptance. The full size/quality matrix and
+complete nonleader smoke/standalone effect parity remain unfinished. User asked
+to wrap up after the visual/suspension fixes and final 500-car showcase.
+
+Final checks: 477 Python tests, 32 PolyBot Node tests, 82 PolyShade Node tests;
+Ruff, manifest validation and diff whitespace checks pass. All 34 protected
+policy/metadata/checkpoint hashes match their pre-work snapshots.
