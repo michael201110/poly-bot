@@ -117,12 +117,13 @@ test("latest wheel telemetry, seek and fixed-camera audio preserve recorded valu
 });
 
 test("latest renderer accepts the supported 500-car workload without physics APIs", () => {
-  const h = harness();
+  const h = harness({batching: true});
   load(h, 500);
   h.bind(.25);
   const status = h.dispatch("status");
   assert.equal(status.visible_ghosts, 500);
   assert.equal(status.leader_episode_id, "e0");
+  assert.equal(status.instanced_batches, 2);
   const active = h.cars.filter((car) => !car.disposed);
   assert.equal(active.length, 500);
   assert.equal(active.filter((car) => car.withAudio).length, 1);
@@ -157,6 +158,16 @@ test("native instancing preserves every recorded car state and falls back for pe
   const morphBatch = after.batches.find(batch => batch.geometry.uuid === 'wheel');
   assert.deepEqual(morphBatch.morphTexture.weights, [[.25,.75],[.25,.75],[.25,.75]]);
   assert.equal(morphBatch.morphTexture.needsUpdate, true);
+  assert.deepEqual(Array.from(morphBatch.morphTargetInfluences), [.25,.75]);
+  const uniform = morphBatch.morphTargetInfluences;
+  active(after)[0].parts[1].morphTargetInfluences = [.5,.5];
+  after.dispatch('seek', {seconds: .5});
+  assert.equal(morphBatch.count, 0); // Shared-uniform WebGPU cannot vary weights.
+  assert.ok(active(after).every(c => c.parts[1].visible));
+  active(after)[0].parts[1].morphTargetInfluences = [.25,.75];
+  after.dispatch('seek', {seconds: .5});
+  assert.equal(morphBatch.count, 3);
+  assert.equal(morphBatch.morphTargetInfluences, uniform);
   after.dispatch('opacity', {value: .5});
   assert.ok(after.batches.every(b => b.count === 0));
   after.dispatch('opacity', {value: 1});
