@@ -292,5 +292,3 @@ def observation_reference(self) -> np.ndarray:
             f"feature schema produced {vector.size} values, expected {expected}"
         )
     return vector
-
-
