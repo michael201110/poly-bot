@@ -26,6 +26,10 @@ function harness({ renderer = source, batching = false } = {}) {
         instanceMatrix: {array: new Float32Array(16 * count)}, dispose() { this.disposed = true; }});
       batches.push(this);
     }
+    setMorphAt(index, object) {
+      this.morphTexture ||= {weights: []};
+      this.morphTexture.weights[index] = [...object.morphTargetInfluences];
+    }
   }
   const game = {
     owner: {}, deltaSeconds: 0,
@@ -38,6 +42,7 @@ function harness({ renderer = source, batching = false } = {}) {
         matrixWorld: {elements: [1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1]}});
       const parts = [part('metal', material('Metal')),
         part('wheel', [material('Tire'), material('Rim')]), part('body', material('Main'))];
+      parts[1].morphTargetInfluences = [.25, .75];
       const root = {traverse(fn) { parts.forEach(fn); }, updateWorldMatrix() {
         for (const part of parts) part.matrixWorld.elements[12] = car.states.at(-1)?.position.x ?? 0;
       }};
@@ -149,6 +154,9 @@ test("native instancing preserves every recorded car state and falls back for pe
     assert.equal(after.batches[i].count, 3);
     assert.equal(buffers[i][12], 10);
   }
+  const morphBatch = after.batches.find(batch => batch.geometry.uuid === 'wheel');
+  assert.deepEqual(morphBatch.morphTexture.weights, [[.25,.75],[.25,.75],[.25,.75]]);
+  assert.equal(morphBatch.morphTexture.needsUpdate, true);
   after.dispatch('opacity', {value: .5});
   assert.ok(after.batches.every(b => b.count === 0));
   after.dispatch('opacity', {value: 1});
@@ -159,7 +167,7 @@ test("native instancing preserves every recorded car state and falls back for pe
 
 test("new rendering release changes neither simulation worker nor physics integration hooks", () => {
   for (const file of ['worker_runtime.js', 'main.template.js']) {
-    assert.deepEqual(readFileSync(new URL(`../pml-mod/0.1.45/${file}`, import.meta.url)),
+    assert.deepEqual(readFileSync(new URL(`../pml-mod/${manifest.latest['0.6.3']}/${file}`, import.meta.url)),
       readFileSync(new URL(`../pml-mod/0.1.44/${file}`, import.meta.url)));
   }
 });
