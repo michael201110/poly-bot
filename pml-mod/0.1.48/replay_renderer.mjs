@@ -606,7 +606,8 @@ export function installPolyBotReplayRenderer() {
           episode.samples.length !== episode.expected) {
         throw new Error("episode payload is incomplete");
       }
-      episode.duration = episode.samples.at(-1)[1] - episode.samples[0][1];
+      episode.firstElapsed = episode.samples[0][1];
+      episode.duration = episode.samples.at(-1)[1] - episode.firstElapsed;
       let distance = 0;
       episode.samples.forEach((sample, index) => {
         if (index) {
@@ -895,8 +896,14 @@ export function installPolyBotReplayRenderer() {
         replayState.opacity, replayState.endBehavior, replayState.fadeDuration);
       const endTime = replayState.endTime;
       if (replayState.playbackSeconds >= endTime) {
-        replayState.playbackSeconds = endTime;
-        replayState.playing = false;
+        if (globalThis.__polybotSwarmLoop === true && endTime > 0) {
+          replayState.playbackSeconds %= endTime;
+          for (const ghost of replayState.ghosts) replayResetIndex(ghost, ghost.firstElapsed);
+          replayState.dirty = true;
+        } else {
+          replayState.playbackSeconds = endTime;
+          replayState.playing = false;
+        }
       }
       replayState.renderFrames += 1;
       replayState.renderTimeMs += performance.now() - frameStart;
@@ -960,7 +967,7 @@ export function installPolyBotReplayRenderer() {
         case "restart":
           if (!replayState.ghosts.length) throw new Error("no visual replay swarm is loaded");
           replayState.playbackSeconds = 0;
-          for (const ghost of replayState.ghosts) replayResetIndex(ghost, ghost.samples[0][1]);
+          for (const ghost of replayState.ghosts) replayResetIndex(ghost, ghost.firstElapsed);
           replayState.playing = true;
           replayRender(0);
           return replayStatus();
@@ -971,7 +978,7 @@ export function installPolyBotReplayRenderer() {
           if (seconds < 0 || seconds > duration) throw new Error(`seek seconds must be from 0 to ${duration}`);
           replayState.playbackSeconds = seconds;
           for (const ghost of replayState.ghosts) {
-            replayResetIndex(ghost, ghost.samples[0][1] + Math.min(seconds, ghost.duration));
+            replayResetIndex(ghost, ghost.firstElapsed + Math.min(seconds, ghost.duration));
           }
           replayRender(0);
           return replayStatus();
