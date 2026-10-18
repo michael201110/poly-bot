@@ -19,28 +19,47 @@ function fixture() {
     getCarState:()=>({}),setCarState(){},update(){}}};
   const others={samples:[sample(),sample()],color:'#7f8040'};
   const uploads=[],trails=[],sent=[],workers=[];
-  const interop={apiVersion:1,capabilities:()=>({ready:true}),registerSwarmSource:d=>(interop.description=d,1),
+  const interop={apiVersion:1,ready:true,capabilities:()=>({ready:interop.ready}),registerSwarmSource:d=>(interop.description=d,1),
     updateSwarmInstances:(...a)=>uploads.push(a),updateSwarmTrails:(...a)=>trails.push(a),
     unregisterSwarmSource(){},diagnostics:()=>({})};
   const sandbox={Float32Array,Float64Array,Uint32Array,performance,structuredClone,
     Blob:class {},URL:{createObjectURL:()=>'',revokeObjectURL(){}},
     Worker:class {constructor(){workers.push(this);}postMessage(m){sent.push(m);}terminate(){}},
     ResizeObserver:class {observe(){}disconnect(){}},
-    document:{querySelector:()=>({width:1280,height:720}),addEventListener(){},removeEventListener(){}},
+    OffscreenCanvas:class {},HTMLCanvasElement:class {transferControlToOffscreen(){}},
+    document:{querySelector:()=>({width:1280,height:720,after(){},getBoundingClientRect:()=>({left:0,top:0,width:1280,height:720})}),
+      createElement:()=>({style:{},setAttribute(){},remove(){},transferControlToOffscreen(){return {};}}),addEventListener(){},removeEventListener(){}},
     window:{addEventListener(){},removeEventListener(){}},setTimeout:()=>1,clearTimeout(){},
     polyShadeSwarm:interop,createSwarmKernel(){},createSwarmTrails(){},polybotSwarmWorker(){}};
   sandbox.globalThis=sandbox;
-  vm.runInNewContext(readFileSync(new URL('../pml-mod/0.1.48/swarm_worker_client.mjs',import.meta.url),'utf8')
+  vm.runInNewContext(readFileSync(new URL('../pml-mod/0.1.49/swarm_worker_client.mjs',import.meta.url),'utf8')
     .replace('export function','function')+';globalThis.create=createPolyBotSwarmWorker;',sandbox);
   const context={scene:{updateMatrixWorld(){},traverse(){}},three:{kn4:class {}},
-    getCamera:()=>({updateMatrixWorld(){},matrixWorldInverse:{elements:identity},projectionMatrix:{elements:identity}})};
-  const failures=[];
-  const controller=sandbox.create(context,[leader,others],leader,r=>failures.push(r));
+    getCamera:()=>({updateMatrixWorld(){},matrixWorld:{elements:identity},matrixWorldInverse:{elements:identity},projectionMatrix:{elements:identity}})};
+  const failures=[],handoffs=[],ghosts=[leader,others];
+  const onFailure=(r,h)=>{failures.push(r);if(h)handoffs.push(h);};
+  const controller=sandbox.create(context,ghosts,leader,onFailure);
   const worker=workers[0],generation=sent[0].generation;
   const receive=m=>worker.onmessage({data:{generation,...m}});
   receive({type:'ready',outputOffsets:[32],trailOffset:80});
-  return {controller,receive,uploads,trails,sent,failures,interop,root,parent,others};
+  return {controller,receive,uploads,trails,sent,failures,handoffs,interop,root,parent,others,sandbox,context,ghosts,leader,onFailure,workers};
 }
+
+test('renderer handoffs retain canonical replay storage without expanding native cars/sample graphs',()=>{
+ const f=fixture();f.interop.ready=false;f.interop.description.onUnavailable('renderer disabled');
+ assert.equal(f.others.samples,null);assert.equal(f.handoffs.length,1);
+ const packed=f.handoffs[0].canonical;
+ const standalone=f.sandbox.create(f.context,f.ghosts,f.leader,f.onFailure,f.handoffs[0]);
+ assert.equal(f.sent.findLast(m=>m.type==='init').shared,false);
+ assert.equal(f.others.samples,null);
+ const init=f.sent.findLast(m=>m.type==='init');
+ f.workers.at(-1).onmessage({data:{type:'ready',generation:init.generation}});
+ f.interop.ready=true;standalone.frame(4,true,1,'disappear',.75);
+ assert.equal(f.handoffs.length,2);assert.equal(f.handoffs[1].canonical,packed);
+ const shared=f.sandbox.create(f.context,f.ghosts,f.leader,f.onFailure,f.handoffs[1]);
+ assert.equal(f.sent.findLast(m=>m.type==='init').shared,true);
+ assert.equal(f.others.samples,null);shared.dispose();
+});
 
 test('worker frames commit at the camera boundary and preserve all queued skid deltas',()=>{
   const f=fixture();

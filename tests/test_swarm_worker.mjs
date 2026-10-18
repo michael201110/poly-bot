@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
-import {createSwarmKernel,createSwarmTrails,polybotSwarmWorker} from '../pml-mod/0.1.48/swarm_worker.mjs';
+import {createSwarmKernel,createSwarmTrails,polybotSwarmWorker} from '../pml-mod/0.1.49/swarm_worker.mjs';
 const fixture=JSON.parse(readFileSync(new URL('fixtures/swarm-recorded.json',import.meta.url)));
 const mounts=new Float64Array([.627909,.27,1.3478,-.627909,.27,1.3478,.720832,.27,-1.52686,-.720832,.27,-1.52686]);
 const old=readFileSync(new URL('../pml-mod/0.1.47/replay_renderer.mjs',import.meta.url),'utf8')

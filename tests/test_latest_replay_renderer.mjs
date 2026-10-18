@@ -70,8 +70,36 @@ function harness({ renderer = source, batching = false } = {}) {
     return response.result;
   }
   bind(0);
-  return { cars, bind, dispatch, camera: () => camera, originalCamera, batches };
+  return { cars, bind, dispatch, camera: () => camera, originalCamera, batches, context };
 }
+
+test('renderer availability handoff keeps the playback clock and creates only the fixed leader',()=>{
+ const h=harness(),created=[];
+ h.context.__polybotCreateWorkerSwarm=(context,ghosts,leader,onFailure,handoff)=>{
+  const worker={present(){},frame(){},renderClock:()=>null,isFresh:()=>true,dispose(){},diagnostics:()=>({backend:'mock worker'})};
+  created.push({ghosts,leader,onFailure,handoff,worker});return worker;
+ };
+ load(h,25);h.bind(.3);const before=h.dispatch('status');
+ assert.equal(h.cars.length,1);
+ const handoff={rendererTransition:true,canonical:{},clock:before.playback_seconds,restore(){throw Error('must not expand packed replay');}};
+ created[0].onFailure('renderer changed',handoff);
+ assert.equal(created.length,2);assert.equal(created[1].handoff,handoff);
+ const after=h.dispatch('status');assert.equal(after.playback_seconds,before.playback_seconds);
+ assert.equal(after.leader_episode_id,before.leader_episode_id);assert.equal(after.loaded_ghosts,25);
+ assert.equal(h.cars.length,1);h.bind(.1);assert.ok(h.dispatch('status').playback_seconds>before.playback_seconds);
+});
+
+test('unsupported handoff restores canonical samples before the existing native crash fallback',()=>{
+ const h=harness();let fail,restored=false;
+ h.context.__polybotCreateWorkerSwarm=(context,ghosts,leader,onFailure,handoff)=>{
+  if(handoff)throw Error('OffscreenCanvas unsupported');fail=onFailure;
+  return {present(){},frame(){},renderClock:()=>null,isFresh:()=>true,dispose(){},diagnostics:()=>({})};
+ };
+ load(h,3);assert.equal(h.cars.length,1);
+ fail('renderer disabled',{rendererTransition:true,restore(){restored=true;}});
+ assert.equal(restored,true);assert.equal(h.cars.length,3);
+ assert.equal(h.dispatch('status').swarm_renderer.backend,'Native');
+});
 
 function load(h, count) {
   const samples = [[0, 0, 0, 0, 0, 0, 0, 0, 1], [1, 0.5, 10, 0, 0, 0, 0, 0, 1],

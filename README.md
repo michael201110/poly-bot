@@ -2,6 +2,8 @@
 
 PolyBot trains driving policies for [PolyTrack](https://www.kodub.com/apps/polytrack). **GRTQC is the primary learner** for Summer 1. The verified 24.263-second TQC champion is an immutable source policy; legacy TQC and PPO code remain available for reference and controlled experiments. The PolyModLoader bridge targets PolyTrack 0.6.3, with 0.6.2 support. The simulator protocol and model schema remain v2; PolyBot is version 2.3.0.
 
+Bridge **0.1.49** supports live instanced renderer handoff when PolyShade is toggled. Pair it with PolyShade **0.5.2** for GPU device retirement; see [compatibility and verification](docs/swarm-renderer-handoff.md).
+
 ## Install and run
 
 Python 3.11 or newer and Git LFS are required to use the pinned champion replay.
