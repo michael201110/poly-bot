@@ -6,6 +6,8 @@ Bridge **0.1.49** supports live instanced renderer handoff when PolyShade is tog
 
 Bridge **0.1.50** adds coordinated liquid glass recording controls with PolyCam **0.1.12** and PolyShade **0.5.3**. **F2** hides the plugin windows and HUD controls; **None** in the HUD dropdown hides the HUD itself. See [recording UI and compatibility](docs/recording-ui.md).
 
+Bridge **0.1.51** standardizes the HUD title as **PolyBot**, matching **PolyCam 0.1.13** and **PolyShade**.
+
 ## Install and run
 
 Python 3.11 or newer and Git LFS are required to use the pinned champion replay.
